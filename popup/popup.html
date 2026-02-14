@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>지부월드 전투 보조 설정</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+
+    <!-- ── 헤더 ────────────────────────────────── -->
+    <header class="popup-header">
+      <div class="header-title">
+        <span class="header-icon">⚔️</span>
+        <div>
+          <h1>지부월드 전투 보조</h1>
+          <span class="header-version">v0.1</span>
+        </div>
+      </div>
+      <div class="header-status" id="connection-status">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-text">연결 확인 중...</span>
+      </div>
+    </header>
+
+    <!-- ── 활성화 토글 ─────────────────────────── -->
+    <div class="toggle-section">
+      <label class="toggle-label">
+        <span>확장 프로그램 활성화</span>
+        <input type="checkbox" id="toggle-enabled" checked>
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+
+    <!-- ── 탭 네비게이션 ───────────────────────── -->
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="templates">메시지</button>
+      <button class="tab-btn" data-tab="timing">타이밍</button>
+      <button class="tab-btn" data-tab="rules">규칙</button>
+      <button class="tab-btn" data-tab="sounds">효과음</button>
+      <button class="tab-btn" data-tab="advanced">고급</button>
+    </nav>
+
+    <!-- ── 탭 콘텐츠 ──────────────────────────── -->
+    <div class="tab-content">
+
+      <!-- 메시지 템플릿 탭 -->
+      <div class="tab-panel active" id="tab-templates">
+        <div class="section-desc">전투 중 출력할 메시지 형식을 편집합니다. <code>{변수명}</code> 형태로 동적 값을 삽입합니다.</div>
+
+        <div class="field-group">
+          <label class="field-label">
+            합 헤더
+            <span class="field-hint">변수: {round}, {attacker}, {atkDice}, {defender}, {defDice}</span>
+          </label>
+          <textarea class="field-input" id="tpl-roundHeader" rows="2"></textarea>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">
+            공격자 굴림 명령
+            <span class="field-hint">변수: {attacker}, {sound}</span>
+          </label>
+          <input type="text" class="field-input" id="tpl-attackerRoll">
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">
+            방어자 굴림 명령
+            <span class="field-hint">변수: {defender}, {sound}</span>
+          </label>
+          <input type="text" class="field-input" id="tpl-defenderRoll">
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">
+            일반 승리 결과
+            <span class="field-hint">변수: {attacker}, {defender}, {atkValue}, {defValue}, {winner}</span>
+          </label>
+          <textarea class="field-input" id="tpl-roundResultWin" rows="2"></textarea>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">
+            대성공 결과
+            <span class="field-hint">변수: {name}, {value}</span>
+          </label>
+          <textarea class="field-input" id="tpl-roundResultCrit" rows="2"></textarea>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">
+            대실패 결과
+            <span class="field-hint">변수: {name}, {value}</span>
+          </label>
+          <textarea class="field-input" id="tpl-roundResultFumble" rows="2"></textarea>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">
+            쌍방 대성공
+            <span class="field-hint">변수: {atkValue}, {defValue}</span>
+          </label>
+          <textarea class="field-input" id="tpl-roundResultBothCrit" rows="2"></textarea>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">
+            무승부 (동점)
+            <span class="field-hint">변수: {atkValue}, {defValue}</span>
+          </label>
+          <textarea class="field-input" id="tpl-roundResultTie" rows="2"></textarea>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">
+            합 승리 선언
+            <span class="field-hint">변수: {winnerIcon}, {winner}, {sound}</span>
+          </label>
+          <input type="text" class="field-input" id="tpl-victory">
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">
+            합 중지 트리거 문구
+          </label>
+          <input type="text" class="field-input" id="tpl-combatCancel">
+        </div>
+      </div>
+
+      <!-- 타이밍 설정 탭 -->
+      <div class="tab-panel" id="tab-timing">
+        <div class="section-desc">각 단계 사이의 대기 시간을 밀리초(ms) 단위로 설정합니다.</div>
+
+        <div class="field-group">
+          <label class="field-label">합 헤더 → 첫 번째 굴림</label>
+          <div class="field-row">
+            <input type="range" class="field-range" id="time-beforeFirstRoll" min="0" max="5000" step="100">
+            <input type="number" class="field-number" id="time-beforeFirstRoll-num" min="0" max="10000" step="100">
+            <span class="field-unit">ms</span>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">공격자 결과 → 방어자 굴림</label>
+          <div class="field-row">
+            <input type="range" class="field-range" id="time-betweenRolls" min="0" max="5000" step="100">
+            <input type="number" class="field-number" id="time-betweenRolls-num" min="0" max="10000" step="100">
+            <span class="field-unit">ms</span>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">방어자 결과 → 결과 출력</label>
+          <div class="field-row">
+            <input type="range" class="field-range" id="time-beforeRoundResult" min="0" max="5000" step="100">
+            <input type="number" class="field-number" id="time-beforeRoundResult-num" min="0" max="10000" step="100">
+            <span class="field-unit">ms</span>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">결과 출력 → 다음 합</label>
+          <div class="field-row">
+            <input type="range" class="field-range" id="time-beforeNextRound" min="0" max="5000" step="100">
+            <input type="number" class="field-number" id="time-beforeNextRound-num" min="0" max="10000" step="100">
+            <span class="field-unit">ms</span>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">마지막 합 → 승리 선언</label>
+          <div class="field-row">
+            <input type="range" class="field-range" id="time-beforeVictory" min="0" max="5000" step="100">
+            <input type="number" class="field-number" id="time-beforeVictory-num" min="0" max="10000" step="100">
+            <span class="field-unit">ms</span>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">결과 대기 타임아웃</label>
+          <div class="field-row">
+            <input type="range" class="field-range" id="time-resultTimeout" min="3000" max="30000" step="1000">
+            <input type="number" class="field-number" id="time-resultTimeout-num" min="1000" max="60000" step="1000">
+            <span class="field-unit">ms</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 규칙 설정 탭 -->
+      <div class="tab-panel" id="tab-rules">
+        <div class="section-desc">근접전 합 처리의 규칙을 설정합니다.</div>
+
+        <div class="field-group">
+          <label class="field-label">주사위 면 수</label>
+          <input type="number" class="field-input" id="rule-diceType" min="2" max="100">
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">대성공 값</label>
+          <input type="number" class="field-input" id="rule-criticalValue" min="1" max="100">
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">대실패 값</label>
+          <input type="number" class="field-input" id="rule-fumbleValue" min="1" max="100">
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">대성공 보너스 (추가 주사위)</label>
+          <input type="number" class="field-input" id="rule-criticalBonus" min="0" max="10">
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">대실패 패널티 (추가 감소)</label>
+          <input type="number" class="field-input" id="rule-fumblePenalty" min="0" max="10">
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">동점 처리 규칙</label>
+          <select class="field-input" id="rule-tieRule">
+            <option value="reroll">재굴림</option>
+            <option value="bothLose">양쪽 모두 주사위 파괴</option>
+            <option value="nothing">아무 일도 없음 (다음 합)</option>
+            <option value="attackerWins">공격자 우위</option>
+            <option value="defenderWins">방어자 우위</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 효과음 설정 탭 -->
+      <div class="tab-panel" id="tab-sounds">
+        <div class="section-desc">코코포리아 세션에 등록된 효과음 이름을 입력합니다. (@효과음명 형태로 사용됩니다)</div>
+
+        <div class="field-group">
+          <label class="field-label">주사위 굴림 효과음 (무작위 선택)</label>
+          <div id="sound-roll-list" class="tag-list"></div>
+          <div class="tag-add-row">
+            <input type="text" class="field-input tag-input" id="sound-roll-input" placeholder="효과음 이름 입력">
+            <button class="btn-small" id="sound-roll-add">추가</button>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">승리 효과음</label>
+          <div id="sound-victory-list" class="tag-list"></div>
+          <div class="tag-add-row">
+            <input type="text" class="field-input tag-input" id="sound-victory-input" placeholder="효과음 이름 입력">
+            <button class="btn-small" id="sound-victory-add">추가</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 고급 설정 탭 -->
+      <div class="tab-panel" id="tab-advanced">
+        <div class="section-desc">DOM 선택자와 정규식 패턴을 설정합니다. 코코포리아 업데이트로 인해 동작하지 않을 경우 수정하세요.</div>
+
+        <details class="advanced-section">
+          <summary>정규식 패턴</summary>
+
+          <div class="field-group">
+            <label class="field-label">
+              합 개시 트리거 패턴
+              <span class="field-hint">캡처그룹: (공격자명)(주사위)(대성공)(대실패)(방어자명)(주사위)(대성공)(대실패)</span>
+            </label>
+            <textarea class="field-input field-mono" id="pat-triggerRegex" rows="3"></textarea>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label">
+              주사위 결과 감지 패턴
+              <span class="field-hint">캡처그룹 1 = 결과 값</span>
+            </label>
+            <input type="text" class="field-input field-mono" id="pat-diceResultRegex">
+          </div>
+
+          <div class="field-group">
+            <label class="field-label">전투 중지 감지 패턴</label>
+            <input type="text" class="field-input field-mono" id="pat-cancelRegex">
+          </div>
+        </details>
+
+        <details class="advanced-section">
+          <summary>DOM 선택자 (쉼표 구분)</summary>
+
+          <div class="field-group">
+            <label class="field-label">채팅 컨테이너</label>
+            <textarea class="field-input field-mono" id="sel-chatContainer" rows="2"></textarea>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label">채팅 메시지</label>
+            <textarea class="field-input field-mono" id="sel-chatMessage" rows="2"></textarea>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label">메시지 텍스트</label>
+            <textarea class="field-input field-mono" id="sel-messageText" rows="2"></textarea>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label">채팅 입력 필드</label>
+            <textarea class="field-input field-mono" id="sel-chatInput" rows="2"></textarea>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label">전송 버튼</label>
+            <textarea class="field-input field-mono" id="sel-sendButton" rows="2"></textarea>
+          </div>
+        </details>
+
+        <details class="advanced-section">
+          <summary>기타 설정</summary>
+
+          <div class="field-group">
+            <label class="toggle-label inline">
+              <span>자동 스크롤</span>
+              <input type="checkbox" id="gen-autoScroll">
+              <span class="toggle-slider small"></span>
+            </label>
+          </div>
+
+          <div class="field-group">
+            <label class="toggle-label inline">
+              <span>오버레이 표시</span>
+              <input type="checkbox" id="gen-showOverlay">
+              <span class="toggle-slider small"></span>
+            </label>
+          </div>
+
+          <div class="field-group">
+            <label class="toggle-label inline">
+              <span>디버그 모드</span>
+              <input type="checkbox" id="gen-debugMode">
+              <span class="toggle-slider small"></span>
+            </label>
+          </div>
+        </details>
+
+        <details class="advanced-section">
+          <summary>DOM 연결 확인</summary>
+          <div class="field-group">
+            <button class="btn-full" id="btn-refresh-dom">DOM 재탐색</button>
+            <div id="dom-status" class="dom-status"></div>
+          </div>
+          <div class="field-group">
+            <label class="field-label">테스트 메시지 전송</label>
+            <div class="tag-add-row">
+              <input type="text" class="field-input" id="test-message" placeholder="테스트 메시지">
+              <button class="btn-small" id="btn-test-send">전송</button>
+            </div>
+          </div>
+        </details>
+      </div>
+
+    </div>
+
+    <!-- ── 하단 버튼 ───────────────────────────── -->
+    <footer class="popup-footer">
+      <div class="footer-left">
+        <button class="btn btn-secondary" id="btn-import">가져오기</button>
+        <button class="btn btn-secondary" id="btn-export">내보내기</button>
+      </div>
+      <div class="footer-right">
+        <button class="btn btn-danger" id="btn-reset">초기화</button>
+        <button class="btn btn-primary" id="btn-save">저장</button>
+      </div>
+    </footer>
+
+    <!-- 숨겨진 파일 입력 -->
+    <input type="file" id="import-file" accept=".json" style="display:none;">
+
+    <!-- 토스트 메시지 -->
+    <div class="toast" id="toast"></div>
+
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

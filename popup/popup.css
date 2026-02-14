@@ -1,0 +1,570 @@
+/* ============================================================
+   Branch World Battle Roll - Popup 스타일시트
+   설정 UI 스타일링
+   ============================================================ */
+
+/* ── 기본 리셋 ────────────────────────────────── */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Segoe UI', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 13px;
+  color: #e0e0e0;
+  background: #1a1a2e;
+  min-width: 420px;
+  max-width: 420px;
+}
+
+/* ── 컨테이너 ─────────────────────────────────── */
+
+.popup-container {
+  display: flex;
+  flex-direction: column;
+  max-height: 580px;
+}
+
+/* ── 헤더 ─────────────────────────────────────── */
+
+.popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #16213e, #1a1a2e);
+  border-bottom: 1px solid rgba(100, 140, 255, 0.2);
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.header-icon {
+  font-size: 22px;
+}
+
+.header-title h1 {
+  font-size: 15px;
+  font-weight: 700;
+  color: #8ab4ff;
+  line-height: 1.2;
+}
+
+.header-version {
+  font-size: 10px;
+  color: #666;
+}
+
+.header-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #888;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #555;
+}
+
+.status-dot.connected { background: #4caf50; }
+.status-dot.disconnected { background: #f44336; }
+.status-dot.checking { background: #ff9800; animation: pulse 1s infinite; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ── 활성화 토글 ──────────────────────────────── */
+
+.toggle-section {
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  font-size: 13px;
+  gap: 10px;
+}
+
+.toggle-label.inline {
+  justify-content: flex-start;
+}
+
+.toggle-label input[type="checkbox"] {
+  display: none;
+}
+
+.toggle-slider {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  background: #333;
+  border-radius: 11px;
+  transition: background 0.3s;
+  flex-shrink: 0;
+}
+
+.toggle-slider::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  background: #888;
+  border-radius: 50%;
+  transition: all 0.3s;
+}
+
+.toggle-slider.small {
+  width: 34px;
+  height: 18px;
+  border-radius: 9px;
+}
+
+.toggle-slider.small::after {
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+}
+
+input[type="checkbox"]:checked + .toggle-slider {
+  background: #4a7cff;
+}
+
+input[type="checkbox"]:checked + .toggle-slider::after {
+  left: calc(100% - 19px);
+  background: #fff;
+}
+
+input[type="checkbox"]:checked + .toggle-slider.small::after {
+  left: calc(100% - 16px);
+}
+
+/* ── 탭 네비게이션 ────────────────────────────── */
+
+.tab-nav {
+  display: flex;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.2);
+  padding: 0 8px;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 8px 4px;
+  border: none;
+  background: none;
+  color: #777;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.tab-btn:hover {
+  color: #aaa;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tab-btn.active {
+  color: #8ab4ff;
+  border-bottom-color: #4a7cff;
+}
+
+/* ── 탭 콘텐츠 ────────────────────────────────── */
+
+.tab-content {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 380px;
+}
+
+.tab-content::-webkit-scrollbar {
+  width: 5px;
+}
+
+.tab-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.tab-panel {
+  display: none;
+  padding: 12px 16px;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
+.section-desc {
+  font-size: 11px;
+  color: #666;
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.section-desc code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: #8ab4ff;
+}
+
+/* ── 필드 스타일 ──────────────────────────────── */
+
+.field-group {
+  margin-bottom: 12px;
+}
+
+.field-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #bbb;
+  margin-bottom: 4px;
+}
+
+.field-hint {
+  display: block;
+  font-size: 10px;
+  color: #555;
+  font-weight: 400;
+  margin-top: 1px;
+}
+
+.field-input {
+  width: 100%;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #ddd;
+  font-size: 12px;
+  font-family: inherit;
+  transition: border-color 0.2s;
+  resize: vertical;
+}
+
+.field-input:focus {
+  outline: none;
+  border-color: #4a7cff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.field-input.field-mono {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 11px;
+}
+
+select.field-input {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 28px;
+}
+
+select.field-input option {
+  background: #1a1a2e;
+  color: #ddd;
+}
+
+/* ── 슬라이더 + 숫자 입력 행 ──────────────────── */
+
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.field-range {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  outline: none;
+}
+
+.field-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #4a7cff;
+  cursor: pointer;
+}
+
+.field-number {
+  width: 70px;
+  padding: 4px 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  color: #ddd;
+  font-size: 12px;
+  text-align: center;
+}
+
+.field-number:focus {
+  outline: none;
+  border-color: #4a7cff;
+}
+
+.field-unit {
+  color: #666;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+/* ── 태그 리스트 (효과음 등) ──────────────────── */
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+  min-height: 28px;
+}
+
+.tag-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: rgba(74, 124, 255, 0.15);
+  border: 1px solid rgba(74, 124, 255, 0.3);
+  border-radius: 14px;
+  font-size: 11px;
+  color: #8ab4ff;
+}
+
+.tag-item .tag-remove {
+  cursor: pointer;
+  color: #666;
+  font-size: 14px;
+  line-height: 1;
+  transition: color 0.2s;
+}
+
+.tag-item .tag-remove:hover {
+  color: #f44336;
+}
+
+.tag-add-row {
+  display: flex;
+  gap: 6px;
+}
+
+.tag-input {
+  flex: 1;
+}
+
+.btn-small {
+  padding: 4px 12px;
+  background: rgba(74, 124, 255, 0.2);
+  border: 1px solid rgba(74, 124, 255, 0.3);
+  border-radius: 6px;
+  color: #8ab4ff;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.btn-small:hover {
+  background: rgba(74, 124, 255, 0.3);
+}
+
+/* ── 고급 설정 (details) ──────────────────────── */
+
+.advanced-section {
+  margin-bottom: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.advanced-section summary {
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: #aaa;
+  list-style: none;
+}
+
+.advanced-section summary::before {
+  content: '▶ ';
+  font-size: 10px;
+  transition: transform 0.2s;
+  display: inline-block;
+}
+
+.advanced-section[open] summary::before {
+  content: '▼ ';
+}
+
+.advanced-section summary:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.advanced-section > :not(summary) {
+  padding: 8px 12px;
+}
+
+/* ── DOM 상태 표시 ────────────────────────────── */
+
+.dom-status {
+  margin-top: 8px;
+  padding: 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.dom-status.success {
+  background: rgba(76, 175, 80, 0.1);
+  border: 1px solid rgba(76, 175, 80, 0.3);
+  color: #4caf50;
+}
+
+.dom-status.error {
+  background: rgba(244, 67, 54, 0.1);
+  border: 1px solid rgba(244, 67, 54, 0.3);
+  color: #f44336;
+}
+
+/* ── 버튼 ─────────────────────────────────────── */
+
+.btn {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: #4a7cff;
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: #3b6de6;
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: #aaa;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ddd;
+}
+
+.btn-danger {
+  background: rgba(244, 67, 54, 0.15);
+  color: #f44336;
+  border: 1px solid rgba(244, 67, 54, 0.3);
+}
+
+.btn-danger:hover {
+  background: rgba(244, 67, 54, 0.25);
+}
+
+.btn-full {
+  width: 100%;
+  padding: 8px;
+  background: rgba(74, 124, 255, 0.15);
+  border: 1px solid rgba(74, 124, 255, 0.3);
+  border-radius: 6px;
+  color: #8ab4ff;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-full:hover {
+  background: rgba(74, 124, 255, 0.25);
+}
+
+/* ── 푸터 ─────────────────────────────────────── */
+
+.popup-footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.footer-left,
+.footer-right {
+  display: flex;
+  gap: 6px;
+}
+
+/* ── 토스트 메시지 ────────────────────────────── */
+
+.toast {
+  position: fixed;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  padding: 8px 20px;
+  background: rgba(30, 30, 50, 0.95);
+  border: 1px solid rgba(74, 124, 255, 0.5);
+  border-radius: 8px;
+  color: #8ab4ff;
+  font-size: 12px;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.3s;
+  z-index: 1000;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.toast.error {
+  border-color: rgba(244, 67, 54, 0.5);
+  color: #f44336;
+}
+
+.toast.success {
+  border-color: rgba(76, 175, 80, 0.5);
+  color: #4caf50;
+}
