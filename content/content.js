@@ -82,9 +82,11 @@
         if (result.bwbr_config) {
           // 저장된 설정과 기본값 병합 (새 키 추가 대응)
           const merged = deepMerge(window.BWBR_DEFAULTS, result.bwbr_config);
-          // 정규식 패턴은 항상 최신 기본값을 사용 (이전 버전 호환)
+          // 정규식, 템플릿, 효과음은 항상 최신 기본값을 사용 (이전 버전 호환)
           merged.patterns = JSON.parse(JSON.stringify(window.BWBR_DEFAULTS.patterns));
-          alwaysLog('저장된 설정 로드 (패턴은 기본값 사용)');
+          merged.templates = JSON.parse(JSON.stringify(window.BWBR_DEFAULTS.templates));
+          merged.sounds = JSON.parse(JSON.stringify(window.BWBR_DEFAULTS.sounds));
+          alwaysLog('저장된 설정 로드 (패턴/템플릿/효과음은 기본값 사용)');
           resolve(merged);
         } else {
           alwaysLog('기본 설정 사용');
@@ -222,6 +224,9 @@
   }
 
   function checkForAttackerResult(text) {
+    // 코코포리아 다이스봇 결과만 인식: '1D20' 또는 '(1D20)' 포함 필수
+    if (!text.match(/1[Dd]20/)) return;
+
     const value = chat.parseDiceResult(text);
     if (value === null) return;
 
@@ -257,6 +262,9 @@
   }
 
   function checkForDefenderResult(text) {
+    // 코코포리아 다이스봇 결과만 인식: '1D20' 또는 '(1D20)' 포함 필수
+    if (!text.match(/1[Dd]20/)) return;
+
     const value = chat.parseDiceResult(text);
     if (value === null) return;
 
@@ -286,6 +294,11 @@
 
     try {
       const result = engine.processRoundResult();
+      if (!result) {
+        alwaysLog('⚠️ processRoundResult가 null 반환 → 재시도 대기');
+        flowState = STATE.IDLE;
+        return;
+      }
 
       // 결과 메시지 전송
       if (result.description) {

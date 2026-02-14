@@ -113,7 +113,9 @@ window.BattleRollEngine = class BattleRollEngine {
    */
   processRoundResult() {
     if (!this.combat || this.lastAttackerRoll === null || this.lastDefenderRoll === null) {
-      throw new Error('전투 상태 또는 주사위 값이 올바르지 않습니다.');
+      this._log('⚠️ processRoundResult 호출 시 상태 부적절 → null 반환');
+      this._log(`  combat=${!!this.combat}, atkRoll=${this.lastAttackerRoll}, defRoll=${this.lastDefenderRoll}`);
+      return null;
     }
 
     const atkVal = this.lastAttackerRoll;

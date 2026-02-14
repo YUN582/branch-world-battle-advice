@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "지부월드 전투 보조 (Branch World Battle Roll)",
-  "version": "0.1",
+  "name": "가지세계 도우미",
+  "version": "0.2",
   "description": "코코포리아 GM 보조 확장 프로그램 - 근접전 합 처리 자동화",
   "permissions": [
     "storage",
@@ -9,7 +9,7 @@
   ],
   "action": {
     "default_popup": "popup/popup.html",
-    "default_title": "지부월드 전투 보조"
+    "default_title": "가지세계 도우미"
   },
   "content_scripts": [
     {

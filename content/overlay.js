@@ -32,7 +32,7 @@ window.BattleRollOverlay = class BattleRollOverlay {
       <div id="bwbr-header">
         <div class="bwbr-title">
           <span class="bwbr-icon">⚔️</span>
-          <span>전투 보조</span>
+          <span>가지세계 도우미</span>
         </div>
         <div class="bwbr-controls">
           <button id="bwbr-btn-minimize" title="최소화">─</button>

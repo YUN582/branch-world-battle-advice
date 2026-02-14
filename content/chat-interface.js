@@ -1,10 +1,10 @@
 // ============================================================
-// Branch World Battle Roll - 코코포리아 채팅 인터페이스 v5
+// Branch World Battle Roll - 코코포리아 채팅 인터페이스 v6
 //
-// === 설계 원칙 ===
-// MutationObserver → "뭔가 바뀜" 신호만 발생 → 즉시 poll 트리거
-// 실제 메시지 감지 → 스냅샷(배열) 비교로 "끝에 추가된 것"만 처리
-// 탭 전환 → 스냅샷과 현재 목록이 50%+ 다르면 재스냅샷
+// === 핵심 설계 ===
+// 1) Set 기반 메시지 추적: 이미 본 텍스트를 Set에 저장
+// 2) "맨 아래 N개"만 검사: 스크롤로 위에 로드된 메시지 무시
+// 3) 탭 전환 감지: 모든 최하단 메시지가 미확인이면 탭 전환
 //
 // === 코코포리아 DOM ===
 // textarea[name="text"]  — 채팅 입력
@@ -23,11 +23,11 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
     this.pollingTimer = null;
     this.messageCallback = null;
 
-    // ── 스냅샷 기반 감지 ──
+    // ── Set 기반 감지 ──
     this._ready = false;
-    this._snapshot = [];           // 마지막으로 본 메시지 텍스트 배열
+    this._seenTexts = new Set();   // 이미 본 메시지 텍스트
     this._lastSentMessages = [];
-    this._lastSentMaxAge = 10000;
+    this._lastSentMaxAge = 15000;
     this._pollDebounceTimer = null;
   }
 
@@ -49,17 +49,13 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
   }
 
   _findChatInput() {
-    // 1) 코코포리아: name="text"
     let el = document.querySelector('textarea[name="text"]');
     if (el && this._isVisible(el)) return el;
-    // 2) MUI textarea
     el = document.querySelector('textarea.MuiInputBase-inputMultiline');
     if (el && this._isVisible(el)) return el;
-    // 3) 아무 visible textarea
     for (const ta of document.querySelectorAll('textarea')) {
       if (this._isVisible(ta)) return ta;
     }
-    // 4) contenteditable
     for (const ce of document.querySelectorAll('[contenteditable="true"]')) {
       if (this._isVisible(ce)) return ce;
     }
@@ -78,25 +74,23 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
   }
 
   _findChatContainer() {
-    // 전략 1: config 선택자
     for (const sel of this._asArray(this.config.selectors.chatContainer)) {
       try {
         for (const el of document.querySelectorAll(sel)) {
           if (this._isVisible(el) && this._looksLikeChat(el)) {
-            this._log(`컨테이너: 설정 "${sel}"`);
+            this._log(`컨테이너: "${sel}"`);
             return el;
           }
         }
       } catch (e) {}
     }
-    // 전략 2: form 기준 형제 탐색
     if (this.chatInput) {
       let parent = this.chatForm?.parentElement || this.chatInput.parentElement;
       let depth = 0;
       while (parent && depth < 15) {
         for (const sib of parent.children) {
           if (!sib.contains?.(this.chatInput) && this._looksLikeChat(sib)) {
-            this._log(`컨테이너: 형제탐색 depth=${depth}`);
+            this._log(`컨테이너: 형제 depth=${depth}`);
             return sib;
           }
         }
@@ -104,10 +98,8 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
         depth++;
       }
     }
-    // 전략 3: role="log"
     const logEl = document.querySelector('[role="log"]');
     if (logEl && this._isVisible(logEl)) return logEl;
-    // 전략 4: body
     this._log('컨테이너: body 폴백');
     return document.body;
   }
@@ -139,7 +131,7 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
   }
 
   // ================================================================
-  //  채팅 관찰  ──  스냅샷 비교 방식
+  //  채팅 관찰  ──  Set 기반 + 맨 아래만 검사
   // ================================================================
 
   observeChat(callback) {
@@ -151,12 +143,14 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
 
     this.stopObserving();
 
-    // ▶ 초기 스냅샷 (기존 메시지 전부 등록)
-    this._snapshot = this._collectAllTexts();
+    // ▶ 현재 모든 메시지를 "이미 본 것"으로 등록
+    this._seenTexts = new Set();
+    const initial = this._collectAllTexts();
+    for (const t of initial) this._seenTexts.add(t);
     this._ready = false;
-    this._log(`초기 스냅샷: ${this._snapshot.length}개 메시지`);
+    this._log(`초기 등록: ${initial.length}개 메시지`);
 
-    // ▶ MutationObserver — 변화 감지 시 즉시 poll 트리거
+    // ▶ MutationObserver → poll 트리거
     this.observer = new MutationObserver(() => {
       if (!this._ready) return;
       this._debouncedPoll();
@@ -165,7 +159,7 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
       childList: true, subtree: true
     });
 
-    // ▶ 정기 폴링 (안전망, 1초 간격)
+    // ▶ 정기 폴링 (안전망)
     this.pollingTimer = setInterval(() => {
       if (!this._ready) return;
       this._doPoll();
@@ -173,10 +167,11 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
 
     // ▶ 2초 유예 후 활성화
     setTimeout(() => {
-      // 유예 중 추가된 메시지도 스냅샷에 포함
-      this._snapshot = this._collectAllTexts();
+      // 유예 중 추가된 메시지도 등록
+      const current = this._collectAllTexts();
+      for (const t of current) this._seenTexts.add(t);
       this._ready = true;
-      this._log(`✅ 관찰 활성화 (스냅샷 ${this._snapshot.length}개)`);
+      this._log(`✅ 관찰 활성화 (${this._seenTexts.size}개 등록됨)`);
     }, 2000);
 
     this._log('관찰 준비 중 (2초 유예)...');
@@ -190,93 +185,66 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
     this._ready = false;
   }
 
-  /** MutationObserver에서 호출 — 짧은 디바운스 후 poll */
   _debouncedPoll() {
     if (this._pollDebounceTimer) clearTimeout(this._pollDebounceTimer);
     this._pollDebounceTimer = setTimeout(() => this._doPoll(), 150);
   }
 
   /**
-   * 핵심 감지 로직: 스냅샷과 현재 메시지 목록을 비교
-   * - 끝에 추가된 메시지만 새 메시지로 처리
-   * - 대량 변화 → 탭 전환으로 판정 → 재스냅샷
+   * 핵심 감지 로직 (v7):
+   * - _seenTexts Set에 없는 모든 메시지를 검사
+   * - Set이 이미 기존 메시지를 모두 포함하므로 스크롤로 나타난 옛날 메시지는 이미 Set에 있음
+   * - 탭 전환: 보이는 메시지의 대다수(70%+)가 미확인이면 탭 전환
    */
   _doPoll() {
     if (!this.chatContainer) return;
 
     const current = this._collectAllTexts();
-    const prev = this._snapshot;
+    if (current.length === 0) return;
 
-    // 변화 없음
-    if (current.length === prev.length && current[current.length - 1] === prev[prev.length - 1]) {
+    // 메시지 전체에서 unseen 찾기
+    const unseenMessages = [];
+    for (let i = 0; i < current.length; i++) {
+      const text = current[i];
+      if (text && text.length >= 2 && !this._seenTexts.has(text)) {
+        unseenMessages.push({ text, index: i });
+      }
+    }
+
+    // 모든 현재 메시지를 seen에 등록 (스크롤로 보인 옛날 메시지 포함)
+    for (const t of current) {
+      if (t) this._seenTexts.add(t);
+    }
+
+    // Set 크기 관리
+    if (this._seenTexts.size > 1000) {
+      const arr = [...this._seenTexts];
+      this._seenTexts = new Set(arr.slice(-500));
+    }
+
+    if (unseenMessages.length === 0) return;
+
+    // 탭 전환 감지: 보이는 메시지의 70% 이상이 unseen이면 탭 전환
+    const unseenRatio = unseenMessages.length / current.length;
+    if (current.length >= 3 && unseenRatio > 0.7) {
+      this._log(`⚠️ 탭 전환 감지 (${unseenMessages.length}/${current.length} = ${Math.round(unseenRatio*100)}% unseen) → 무시`);
       return;
     }
 
-    // ── 탭 전환 감지 ──
-    // 1) 메시지가 크게 줄었으면 탭 전환
-    if (current.length < prev.length - 3) {
-      this._log(`⚠️ 탭 전환: 메시지 감소 (${prev.length}→${current.length})`);
-      this._snapshot = current;
+    // 대량 신규(8개+) → 로드/탭전환
+    if (unseenMessages.length > 8) {
+      this._log(`⚠️ 대량 신규(${unseenMessages.length}개) → 무시`);
       return;
     }
 
-    // 2) 기존 메시지의 앞부분이 완전히 달라졌으면 탭 전환
-    //    (같은 탭이면 이전 메시지가 여전히 존재해야 함)
-    if (prev.length >= 3 && current.length >= 3) {
-      let matchCount = 0;
-      const checkLen = Math.min(5, prev.length, current.length);
-      for (let i = 0; i < checkLen; i++) {
-        if (current.includes(prev[prev.length - 1 - i])) matchCount++;
-      }
-      if (matchCount < checkLen * 0.4) {
-        this._log(`⚠️ 탭 전환: 기존 메시지 불일치 (${matchCount}/${checkLen})`);
-        this._snapshot = current;
-        return;
-      }
-    }
+    // 새 메시지 처리
+    this._log(`📨 새 메시지 ${unseenMessages.length}개`);
 
-    // ── 새 메시지 추출 ──
-    // 이전 스냅샷의 마지막 메시지가 현재 목록의 어디에 있는지 찾기
-    let startIdx = current.length; // 기본: 새 메시지 없음
-    if (prev.length === 0) {
-      startIdx = 0;
-    } else {
-      const lastPrev = prev[prev.length - 1];
-      // 뒤에서부터 검색 (가장 최근 일치 위치 찾기)
-      for (let i = current.length - 1; i >= 0; i--) {
-        if (current[i] === lastPrev) {
-          startIdx = i + 1;
-          break;
-        }
-      }
-      // 이전 마지막 메시지를 못 찾으면 → current가 prev보다 길 때만
-      if (startIdx === current.length && current.length > prev.length) {
-        startIdx = prev.length;
-      }
-    }
-
-    const newMessages = current.slice(startIdx);
-    this._snapshot = current;
-
-    if (newMessages.length === 0) return;
-
-    // 과도하게 많으면 (20개+) 탭 전환/로드로 간주
-    if (newMessages.length > 20) {
-      this._log(`⚠️ 대량 신규(${newMessages.length}개) → 무시`);
-      return;
-    }
-
-    this._log(`📨 새 메시지 ${newMessages.length}개 감지`);
-
-    for (const text of newMessages) {
-      if (!text || text.length < 2) continue;
-
-      // 자체 전송 메시지 무시
+    for (const { text } of unseenMessages) {
       if (this._isOwnMessage(text)) {
         this._log(`  [자체] "${text.substring(0, 40)}"`);
         continue;
       }
-
       this._log(`  [NEW] "${text.substring(0, 100)}"`);
       if (this.messageCallback) {
         try { this.messageCallback(text, null); } catch (e) { console.error('[BWBR]', e); }
@@ -289,8 +257,6 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
   _collectAllTexts() {
     if (!this.chatContainer) return [];
     const texts = [];
-
-    // chatMessage 선택자로 메시지 요소 찾기
     let messageEls = [];
     for (const sel of this._asArray(this.config.selectors.chatMessage)) {
       try {
@@ -299,12 +265,7 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
         });
       } catch (e) {}
     }
-
-    // 못 찾으면 direct children
-    if (messageEls.length === 0) {
-      messageEls = Array.from(this.chatContainer.children);
-    }
-
+    if (messageEls.length === 0) messageEls = Array.from(this.chatContainer.children);
     for (const el of messageEls) {
       if (el.id?.includes('bwbr')) continue;
       const t = (el.textContent || '').trim();
@@ -368,22 +329,19 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
     }
 
     this._lastSentMessages.push({ text, time: Date.now() });
+    // 전송할 메시지를 미리 seen에 등록 (돌아왔을 때 무시)
+    this._seenTexts.add(text);
     this._log(`📤 전송: "${text.substring(0, 60)}"`);
 
-    // 시도 1: React fiber onChange + 버튼 클릭
     if (await this._sendViaReactFiber(text)) return true;
-    // 시도 2: nativeValueSetter + InputEvent + 버튼
     if (await this._sendViaNativeSetter(text)) return true;
-    // 시도 3: execCommand
     if (await this._sendViaExecCommand(text)) return true;
-    // 시도 4: 클립보드
     if (await this._sendViaClipboard(text)) return true;
 
     this._log('❌ 전송 실패');
     return false;
   }
 
-  // ── 방법 1: React Fiber onChange ──
   async _sendViaReactFiber(text) {
     try {
       const el = this.chatInput;
@@ -418,7 +376,6 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
     }
   }
 
-  // ── 방법 2: Native setter + InputEvent ──
   async _sendViaNativeSetter(text) {
     try {
       const el = this.chatInput;
@@ -434,7 +391,6 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
     } catch (e) { return false; }
   }
 
-  // ── 방법 3: execCommand ──
   async _sendViaExecCommand(text) {
     try {
       const el = this.chatInput;
@@ -448,7 +404,6 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
     } catch (e) { return false; }
   }
 
-  // ── 방법 4: 클립보드 ──
   async _sendViaClipboard(text) {
     try {
       const el = this.chatInput;
@@ -471,50 +426,67 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
     } catch (e) { return false; }
   }
 
-  // ── 폼 제출 ──
+  /**
+   * 폼 제출 -- 코코포리아 컨티인(@효과음) 지원을 위해
+   * React onKeyDown(Enter) → 네이티브 Enter 이벤트 → 버튼 클릭 순으로 시도.
+   * 컨틴인은 Enter 키로 전송할 때만 작동하므로 Enter를 최우선.
+   */
   async _submitForm() {
-    // A) 전송 버튼 클릭
-    if (this.sendButton && this._isVisible(this.sendButton)) {
-      this._log('전송: 버튼 클릭');
-      this.sendButton.click();
-      await this._delay(200);
-      return true;
-    }
-    // B) form.requestSubmit()
-    if (this.chatForm) {
-      try { this.chatForm.requestSubmit(); await this._delay(200); return true; } catch (e) {}
-      try {
-        this.chatForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-        await this._delay(200); return true;
-      } catch (e) {}
-    }
-    // C) Enter 키
     const el = this.chatInput;
+
+    // A) React onKeyDown(Enter) — 컨틴인 지원됨
+    try {
+      const pk = Object.keys(el).find(k => k.startsWith('__reactProps$'));
+      if (pk && el[pk]?.onKeyDown) {
+        this._log('전송: React onKeyDown(Enter)');
+        const prevented = { value: false };
+        el[pk].onKeyDown({
+          key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+          shiftKey: false, ctrlKey: false, altKey: false, metaKey: false,
+          target: el, currentTarget: el,
+          preventDefault() { prevented.value = true; },
+          stopPropagation() {},
+          nativeEvent: new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }),
+          persist() {},
+          isDefaultPrevented() { return prevented.value; }
+        });
+        await this._delay(200);
+
+        // Enter 후 입력란이 비어졌으면 성공
+        if (!el.value || el.value.trim() === '') return true;
+        // 비어지지 않았으면 다음 방법 시도
+      }
+    } catch (e) {
+      this._log(`React Enter 오류: ${e.message}`);
+    }
+
+    // B) 네이티브 KeyboardEvent Enter
+    this._log('전송: 네이티브 Enter');
     for (const type of ['keydown', 'keypress', 'keyup']) {
       el.dispatchEvent(new KeyboardEvent(type, {
         key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
         bubbles: true, cancelable: true, composed: true
       }));
     }
-    await this._delay(100);
-    // D) React onKeyDown
-    try {
-      const pk = Object.keys(el).find(k => k.startsWith('__reactProps$'));
-      if (pk && el[pk]?.onKeyDown) {
-        el[pk].onKeyDown({
-          key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
-          shiftKey: false, ctrlKey: false, target: el, currentTarget: el,
-          preventDefault() {}, stopPropagation() {},
-          nativeEvent: new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13 }),
-          persist() {}
-        });
-      }
-    } catch (e) {}
-    await this._delay(100);
+    await this._delay(200);
+    if (!el.value || el.value.trim() === '') return true;
+
+    // C) 전송 버튼 (컨티인 미지원 펴백)
+    if (this.sendButton && this._isVisible(this.sendButton)) {
+      this._log('전송: 버튼 클릭 (펴백)');
+      this.sendButton.click();
+      await this._delay(200);
+      return true;
+    }
+
+    // D) form submit (최후 수단)
+    if (this.chatForm) {
+      try { this.chatForm.requestSubmit(); await this._delay(200); return true; } catch (e) {}
+    }
+
     return true;
   }
 
-  // ── Native value setter ──
   _setNativeValue(el, text) {
     if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
       const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
@@ -525,7 +497,6 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
     else el.textContent = text;
   }
 
-  // ── 유틸리티 ──
   _delay(ms) { return new Promise(r => setTimeout(r, ms)); }
   _asArray(v) { return Array.isArray(v) ? v : (v ? [v] : []); }
   _log(msg) {
