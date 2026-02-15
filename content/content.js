@@ -64,6 +64,20 @@
     alwaysLog('채팅 DOM 발견! 채팅 관찰 시작...');
     overlay.addLog('코코포리아 연결 완료', 'success');
 
+    // 수동 전송 대기 상태 콜백 (오버레이에 Enter 대기 표시)
+    chat.onWaitingForEnter((waiting) => {
+      if (waiting) {
+        overlay.setStatus('waiting', '⏎ Enter를 눌러 전송하세요');
+      } else if (flowState !== STATE.IDLE) {
+        overlay.setStatus('active', '전투 진행 중');
+      }
+    });
+
+    if (config.general.manualSend) {
+      alwaysLog('📋 수동 전송 모드: 메시지를 입력창에 채우고 Enter 대기');
+      overlay.addLog('수동 전송 모드 (Enter로 전송)', 'info');
+    }
+
     // 채팅 관찰 시작
     chat.observeChat(onNewMessage);
 

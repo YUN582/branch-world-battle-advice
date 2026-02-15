@@ -18,10 +18,10 @@ window.BWBR_DEFAULTS = {
       '《{round}합》\n⚔️ {attacker} {atkDice} : 🛡️ {defender} {defDice}',
 
     // 공격자 주사위 굴림 명령
-    attackerRoll: '1D20 ⚔️ {attacker}',
+    attackerRoll: '1D20 ⚔️ {attacker} @{sound}',
 
     // 방어자 주사위 굴림 명령
-    defenderRoll: '1D20 🛡️ {defender}',
+    defenderRoll: '1D20 🛡️ {defender} @{sound}',
 
     // 합 결과 메시지
     roundResultWin:
@@ -36,7 +36,7 @@ window.BWBR_DEFAULTS = {
       '⚖️ 무승부! ⚔️【{atkValue}】 🛡️【{defValue}】 → 재굴림',
 
     // 합 승리 메시지
-    victory: '《합 승리》- {winnerIcon} {winner}',
+    victory: '《합 승리》- {winnerIcon} {winner} @합',
 
     // 합 중지 메시지 (이 패턴 감지 시 전투 중지)
     combatCancel: '《합 중지》'
@@ -126,8 +126,8 @@ window.BWBR_DEFAULTS = {
 
   // ── 일반 설정 ──────────────────────────────────────────
   general: {
-    enabled: true,              // 확장 프로그램 활성화
-    autoScroll: true,           // 새 메시지 시 자동 스크롤
+    enabled: true,              // 확장 프로그램 활성화    manualSend: true,           // true: 메시지를 입력창에 채우고 사용자가 Enter (효과음 지원)
+                                // false: 자동 전송    autoScroll: true,           // 새 메시지 시 자동 스크롤
     showOverlay: true,          // 페이지 내 오버레이 표시
     debugMode: false,           // 디버그 로그 출력
     language: 'ko'              // UI 언어

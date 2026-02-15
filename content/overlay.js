@@ -180,14 +180,14 @@ window.BattleRollOverlay = class BattleRollOverlay {
           <div class="bwbr-role">⚔️</div>
           <div class="bwbr-name" title="${this._esc(atk.name)}">${this._esc(atk.name)}</div>
           <div class="bwbr-dice-count">${atk.dice}</div>
-          <div class="bwbr-stats">대성공 ${atk.crits} / 대실패 ${atk.fumbles}</div>
+          <div class="bwbr-stats">대성공 ${atk.critThreshold}+ / 대실패 ${atk.fumbleThreshold}-</div>
         </div>
         <div class="bwbr-vs">VS</div>
         <div class="bwbr-combatant">
           <div class="bwbr-role">🛡️</div>
           <div class="bwbr-name" title="${this._esc(def.name)}">${this._esc(def.name)}</div>
           <div class="bwbr-dice-count">${def.dice}</div>
-          <div class="bwbr-stats">대성공 ${def.crits} / 대실패 ${def.fumbles}</div>
+          <div class="bwbr-stats">대성공 ${def.critThreshold}+ / 대실패 ${def.fumbleThreshold}-</div>
         </div>
       </div>
     `;
