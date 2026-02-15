@@ -1,195 +1,292 @@
 /* ============================================================
-   Branch World Battle Roll - 오버레이 패널 스타일
-   코코포리아 페이지 위에 표시되는 전투 상태 패널
+   Branch World Battle Roll - 임베디드 패널 스타일
+   코코포리아 채팅 패널 내부에 삽입 · 코코포리아 컬러 통일
+   주조색: #3b3d33  ·  보조색: #212121
    ============================================================ */
 
-#bwbr-overlay {
-  position: fixed;
-  top: 10px;
-  right: 10px;
-  width: 320px;
-  max-height: 500px;
-  background: rgba(20, 20, 30, 0.95);
-  border: 1px solid rgba(100, 140, 255, 0.4);
-  border-radius: 10px;
+/* ── 패널 컨테이너 ───────────────────────────── */
+
+#bwbr-panel {
+  background: #2e3029;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+  font-family: inherit;
+  font-size: 14px;
   color: #e0e0e0;
-  font-family: 'Segoe UI', 'Noto Sans KR', sans-serif;
-  font-size: 13px;
-  z-index: 99999;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  transition: opacity 0.3s, transform 0.3s;
   user-select: none;
+  position: relative;
+  z-index: 1;
 }
 
-#bwbr-overlay.hidden {
-  opacity: 0;
-  transform: translateX(340px);
-  pointer-events: none;
-}
+/* ── 토글 바 (접기/펼치기) ────────────────────── */
 
-#bwbr-overlay.minimized {
-  max-height: 40px;
-}
-
-#bwbr-overlay.minimized #bwbr-body,
-#bwbr-overlay.minimized #bwbr-log {
-  display: none;
-}
-
-/* ── 헤더 ─────────────────────────────────────── */
-
-#bwbr-header {
+#bwbr-toggle {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
-  background: linear-gradient(135deg, rgba(40, 40, 60, 0.9), rgba(30, 30, 50, 0.9));
-  border-bottom: 1px solid rgba(100, 140, 255, 0.3);
-  cursor: move;
+  padding: 8px 14px;
+  cursor: pointer;
+  background: #212121;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  transition: background 0.2s;
 }
 
-#bwbr-header .bwbr-title {
-  font-weight: 700;
-  font-size: 14px;
-  color: #8ab4ff;
+#bwbr-toggle:hover {
+  background: #2a2a2a;
+}
+
+.bwbr-toggle-left {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
-#bwbr-header .bwbr-title .bwbr-icon {
+.bwbr-toggle-icon {
   font-size: 16px;
 }
 
-#bwbr-header .bwbr-controls {
-  display: flex;
-  gap: 6px;
+.bwbr-toggle-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ccc;
 }
 
-#bwbr-header .bwbr-controls button {
+#bwbr-btn-expand {
   background: none;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: #aaa;
-  width: 24px;
-  height: 24px;
-  border-radius: 4px;
+  border: none;
+  color: #888;
   cursor: pointer;
-  font-size: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  font-size: 13px;
+  padding: 4px 8px;
+  border-radius: 4px;
   transition: all 0.2s;
 }
 
-#bwbr-header .bwbr-controls button:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.4);
+#bwbr-btn-expand:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ccc;
 }
 
-/* ── 상태 표시줄 ──────────────────────────────── */
+/* ── 상태 점(dot) ─────────────────────────────── */
 
-#bwbr-status {
-  padding: 6px 12px;
-  font-size: 11px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-#bwbr-status .bwbr-dot {
+.bwbr-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #555;
+  background: #666;
   flex-shrink: 0;
 }
 
-#bwbr-status .bwbr-dot.idle { background: #888; }
-#bwbr-status .bwbr-dot.active { background: #4caf50; animation: bwbr-pulse 1.5s infinite; }
-#bwbr-status .bwbr-dot.waiting { background: #ff9800; animation: bwbr-pulse 1s infinite; }
-#bwbr-status .bwbr-dot.error { background: #f44336; }
-#bwbr-status .bwbr-dot.disabled { background: #555; }
+.bwbr-dot.idle       { background: #777; }
+.bwbr-dot.active     { background: #4caf50; animation: bwbr-pulse 1.5s infinite; }
+.bwbr-dot.waiting    { background: #ff9800; animation: bwbr-pulse 1s infinite; }
+.bwbr-dot.error      { background: #f44336; }
+.bwbr-dot.disabled   { background: #555; }
 
 @keyframes bwbr-pulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  50%      { opacity: 0.3; }
 }
 
-#bwbr-status-text {
-  color: #aaa;
+.bwbr-status-text {
+  font-size: 12px;
+  color: #999;
+}
+
+/* ── 패널 본체 (접기/펼치기 대상) ─────────────── */
+
+#bwbr-body {
+  overflow: hidden;
+  transition: max-height 0.25s ease, opacity 0.25s ease;
+  max-height: 600px;
+  opacity: 1;
+}
+
+#bwbr-body.bwbr-collapsed {
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* ── 전투 정보 ────────────────────────────────── */
 
-#bwbr-body {
-  padding: 10px 12px;
+#bwbr-combat-info {
+  padding: 10px 14px;
 }
 
-.bwbr-combatants {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.bwbr-no-combat {
+  text-align: center;
+  color: #888;
+  font-size: 13px;
   padding: 8px 0;
 }
 
-.bwbr-combatant {
+.bwbr-round-badge {
+  text-align: center;
+  font-size: 14px;
+  color: #e0e0e0;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.bwbr-fighters {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.bwbr-fighter {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
+  min-width: 80px;
 }
 
-.bwbr-combatant .bwbr-role {
-  font-size: 18px;
+.bwbr-fighter-icon {
+  font-size: 20px;
 }
 
-.bwbr-combatant .bwbr-name {
+.bwbr-fighter-name {
+  font-size: 14px;
   font-weight: 600;
-  font-size: 13px;
-  color: #ddd;
-  max-width: 100px;
+  color: #e0e0e0;
+  max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.bwbr-combatant .bwbr-dice-count {
-  font-size: 22px;
+.bwbr-fighter-dice {
+  font-size: 26px;
   font-weight: 700;
-  color: #8ab4ff;
+  color: #fff;
+  line-height: 1.2;
 }
 
-.bwbr-combatant .bwbr-stats {
-  font-size: 10px;
-  color: #888;
+.bwbr-fighter-thresholds {
+  font-size: 11px;
+  color: #999;
 }
 
 .bwbr-vs {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 700;
+  color: #888;
+}
+
+/* ── 빈 슬롯 (미지정 상태) ───────────────────── */
+
+.bwbr-fighter-name.bwbr-empty {
   color: #666;
+  font-style: italic;
 }
 
-.bwbr-round-info {
-  text-align: center;
-  padding: 6px 0;
-  font-size: 12px;
-  color: #8ab4ff;
+/* ── 수동 입력 ────────────────────────────────── */
+
+#bwbr-manual-input {
+  padding: 10px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 152, 0, 0.06);
+}
+
+.bwbr-manual-label {
+  font-size: 13px;
+  color: #ff9800;
+  margin-bottom: 8px;
+}
+
+.bwbr-manual-row {
+  display: flex;
+  gap: 8px;
+}
+
+#bwbr-manual-value {
+  flex: 1;
+  background: #212121;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  color: #e0e0e0;
+  font-size: 16px;
+  padding: 8px 12px;
+  outline: none;
+  font-family: inherit;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+#bwbr-manual-value::-webkit-inner-spin-button,
+#bwbr-manual-value::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+#bwbr-manual-value:focus {
+  border-color: #ff9800;
+}
+
+#bwbr-manual-value.bwbr-input-error {
+  border-color: #f44336;
+  animation: bwbr-shake 0.3s;
+}
+
+@keyframes bwbr-shake {
+  0%, 100% { transform: translateX(0); }
+  25%      { transform: translateX(-3px); }
+  75%      { transform: translateX(3px); }
+}
+
+#bwbr-manual-submit {
+  background: #ff9800;
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 14px;
   font-weight: 600;
+  padding: 8px 18px;
+  cursor: pointer;
+  transition: background 0.2s;
+  font-family: inherit;
 }
 
-/* ── 로그 영역 ────────────────────────────────── */
+#bwbr-manual-submit:hover {
+  background: #f57c00;
+}
+
+/* ── 액션 (전투 중지) ─────────────────────────── */
+
+#bwbr-actions {
+  padding: 8px 14px;
+  text-align: right;
+}
+
+#bwbr-btn-cancel {
+  background: none;
+  border: 1px solid rgba(244, 67, 54, 0.3);
+  border-radius: 4px;
+  color: #e57373;
+  font-size: 13px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+#bwbr-btn-cancel:hover {
+  background: rgba(244, 67, 54, 0.10);
+  border-color: #f44336;
+}
+
+/* ── 로그 ─────────────────────────────────────── */
 
 #bwbr-log {
-  max-height: 180px;
+  max-height: 120px;
   overflow-y: auto;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 6px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#bwbr-log:empty {
+  display: none;
 }
 
 #bwbr-log::-webkit-scrollbar {
@@ -197,41 +294,21 @@
 }
 
 #bwbr-log::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.15);
   border-radius: 2px;
 }
 
 .bwbr-log-entry {
-  padding: 3px 12px;
-  font-size: 11px;
-  color: #999;
-  line-height: 1.4;
-  word-break: break-all;
-}
-
-.bwbr-log-entry.bwbr-log-info { color: #8ab4ff; }
-.bwbr-log-entry.bwbr-log-success { color: #4caf50; }
-.bwbr-log-entry.bwbr-log-warning { color: #ff9800; }
-.bwbr-log-entry.bwbr-log-error { color: #f44336; }
-.bwbr-log-entry.bwbr-log-crit { color: #ffd700; font-weight: 600; }
-.bwbr-log-entry.bwbr-log-fumble { color: #ff6b6b; font-weight: 600; }
-
-/* ── 전투 없음 상태 ──────────────────────────── */
-
-.bwbr-no-combat {
-  text-align: center;
-  padding: 16px 12px;
-  color: #666;
+  padding: 4px 14px;
   font-size: 12px;
-}
-
-.bwbr-no-combat .bwbr-trigger-hint {
-  margin-top: 8px;
-  color: #555;
-  font-size: 10px;
-  padding: 6px;
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 4px;
-  font-family: monospace;
+  color: #999;
+  line-height: 1.5;
   word-break: break-all;
 }
+
+.bwbr-log-entry.bwbr-log-info    { color: #b0bec5; }
+.bwbr-log-entry.bwbr-log-success { color: #81c784; }
+.bwbr-log-entry.bwbr-log-warning { color: #ffb74d; }
+.bwbr-log-entry.bwbr-log-error   { color: #ef5350; }
+.bwbr-log-entry.bwbr-log-crit    { color: #ffd54f; font-weight: 600; }
+.bwbr-log-entry.bwbr-log-fumble  { color: #ff8a80; font-weight: 600; }

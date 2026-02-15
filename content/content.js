@@ -42,13 +42,8 @@
 
     enabled = config.general.enabled;
 
-    // 오버레이 이벤트
+    // 패널 이벤트
     overlay.onCancel(() => cancelCombat());
-
-    // 오버레이 표시 설정
-    if (config.general.showOverlay) {
-      overlay.show();
-    }
     overlay.setStatus(enabled ? 'idle' : 'disabled', enabled ? '대기 중' : '비활성');
 
     // DOM 요소 탐색 (코코포리아 로드 대기)
@@ -64,22 +59,11 @@
     alwaysLog('채팅 DOM 발견! 채팅 관찰 시작...');
     overlay.addLog('코코포리아 연결 완료', 'success');
 
-    // 수동 전송 대기 상태 콜백 (오버레이에 Enter 대기 표시)
-    chat.onWaitingForEnter((waiting) => {
-      if (waiting) {
-        overlay.setStatus('waiting', '⏎ Enter를 눌러 전송하세요');
-      } else if (flowState !== STATE.IDLE) {
-        overlay.setStatus('active', '전투 진행 중');
-      }
-    });
-
-    if (config.general.manualSend) {
-      alwaysLog('📋 수동 전송 모드: 메시지를 입력창에 채우고 Enter 대기');
-      overlay.addLog('수동 전송 모드 (Enter로 전송)', 'info');
-    }
-
-    // 채팅 관찰 시작
+    // 채팅 관찰 시작 (주사위 결과 감지용)
     chat.observeChat(onNewMessage);
+
+    // 입력 훅 설정 (합 개시 트리거 감지용 — 사용자가 Enter 눌러 전송할 때)
+    chat.hookInputSubmit(onInputSubmit);
 
     // 메시지 리스너 (popup ↔ content 통신)
     chrome.runtime.onMessage.addListener(onExtensionMessage);
@@ -129,7 +113,19 @@
     return result;
   }
 
-  // ── 채팅 메시지 처리 ─────────────────────────────────────
+  // ── 사용자 입력 감지 (Enter 키) ───────────────────
+
+  function onInputSubmit(text) {
+    if (!enabled) return;
+    alwaysLog(`[입력 감지] "${text.substring(0, 80)}"`);
+
+    if (flowState === STATE.IDLE) {
+      checkForTrigger(text);
+    }
+    checkForCancel(text);
+  }
+
+  // ── 채팅 로그 메시지 처리 ───────────────────────
 
   function onNewMessage(text, element) {
     if (!enabled) return;
@@ -138,7 +134,7 @@
 
     switch (flowState) {
       case STATE.IDLE:
-        checkForTrigger(text);
+        // 합 개시 트리거는 입력 훅(onInputSubmit)에서 감지
         checkForCancel(text);
         break;
 
@@ -197,6 +193,7 @@
 
     log('전투 중지');
     clearTimeout(resultTimeoutId);
+    overlay.hideManualInput();
     flowState = STATE.IDLE;
     engine.reset();
     overlay.addLog('전투가 중지되었습니다.', 'warning');
@@ -281,9 +278,10 @@
     const value = extractDiceValue(text, state.combat.attacker.name, '⚔');
     if (value === null) return;
 
-    // 즉시 상태 전환 → 중복 감지 차단 (동일 결과가 다른 DOM 요소에서 여러 번 수집됨)
+    // 즉시 상태 전환 → 중복 감지 차단
     flowState = STATE.PROCESSING_RESULT;
     clearTimeout(resultTimeoutId);
+    overlay.hideManualInput(); // 채팅에서 인식되면 수동입력 숨김
     alwaysLog(`공격자 결과: ${value}`);
     engine.setAttackerRoll(value);
 
@@ -318,6 +316,7 @@
     // 즉시 상태 전환 → 중복 감지 차단
     flowState = STATE.PROCESSING_RESULT;
     clearTimeout(resultTimeoutId);
+    overlay.hideManualInput(); // 채팅에서 인식되면 수동입력 숨김
     alwaysLog(`방어자 결과: ${value}`);
     engine.setDefenderRoll(value);
 
@@ -416,19 +415,53 @@
     }, 5000);
   }
 
-  // ── 타임아웃 처리 ────────────────────────────────────────
+  // ── 타임아웃 → 수동 입력 요청 ──────────────────────
 
   function setResultTimeout(who) {
     clearTimeout(resultTimeoutId);
-    resultTimeoutId = setTimeout(() => {
-      log(`${who} 결과 타임아웃!`);
-      overlay.addLog(`${who} 결과 대기 시간 초과. 재시도합니다...`, 'warning');
+    resultTimeoutId = setTimeout(async () => {
+      alwaysLog(`${who} 결과 타임아웃 → 수동 입력 요청`);
+      overlay.addLog(`${who} 결과를 자동 인식하지 못했습니다. 도우미에 직접 입력해주세요.`, 'warning');
 
-      // 재시도: 현재 상태에 따라 재굴림
+      const state = engine.getState();
+      if (!state?.combat) return;
+
+      let emoji, playerName;
       if (flowState === STATE.WAITING_ATTACKER_RESULT) {
-        rollForAttacker();
+        emoji = '⚔️';
+        playerName = state.combat.attacker.name;
       } else if (flowState === STATE.WAITING_DEFENDER_RESULT) {
-        rollForDefender();
+        emoji = '🛡️';
+        playerName = state.combat.defender.name;
+      } else {
+        return; // 이미 다른 상태로 전환될 경우
+      }
+
+      // 수동 입력 UI 표시 & 대기
+      const manualValue = await overlay.showManualInput(who, emoji, playerName);
+      if (manualValue === null) {
+        // 수동 입력 취소됨 (채팅에서 인식되었거나 전투 중지)
+        alwaysLog('수동 입력: 취소됨 (채팅 인식 또는 중지)');
+        return;
+      }
+
+      alwaysLog(`수동 입력: ${who} = ${manualValue}`);
+      overlay.addLog(`${emoji} ${playerName}: ${manualValue} (수동 입력)`, 'info');
+
+      if (flowState === STATE.WAITING_ATTACKER_RESULT) {
+        flowState = STATE.PROCESSING_RESULT;
+        engine.setAttackerRoll(manualValue);
+        const logType = manualValue >= state.combat.attacker.critThreshold ? 'crit'
+          : manualValue <= state.combat.attacker.fumbleThreshold ? 'fumble' : 'info';
+        overlay.addLog(`⚔️ ${state.combat.attacker.name}: ${manualValue}`, logType);
+        setTimeout(() => rollForDefender(), config.timing.betweenRolls);
+      } else if (flowState === STATE.WAITING_DEFENDER_RESULT) {
+        flowState = STATE.PROCESSING_RESULT;
+        engine.setDefenderRoll(manualValue);
+        const logType = manualValue >= state.combat.defender.critThreshold ? 'crit'
+          : manualValue <= state.combat.defender.fumbleThreshold ? 'fumble' : 'info';
+        overlay.addLog(`🛡️ ${state.combat.defender.name}: ${manualValue}`, logType);
+        setTimeout(() => processRoundResult(), config.timing.beforeRoundResult);
       }
     }, config.timing.resultTimeout);
   }

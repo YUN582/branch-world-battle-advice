@@ -151,6 +151,12 @@ window.BattleRollEngine = class BattleRollEngine {
       description: ''
     };
 
+    // ── 결과별 효과음 선택 ──
+    const isSpecial = atkCrit || atkFumble || defCrit || defFumble;
+    const resultSound = isSpecial
+      ? (this.config.sounds.resultSpecialSound || '챙4')
+      : this._pickRandom(this.config.sounds.resultNormalSounds || ['챙1', '챙2', '챙3']);
+
     // ── 특수 케이스 판정 ──
 
     // 1) 쌍방 대성공
@@ -162,13 +168,14 @@ window.BattleRollEngine = class BattleRollEngine {
       this.combat.defender.critCount++;
       result.description = this._formatTemplate(this.config.templates.roundResultBothCrit, {
         atkValue: atkVal,
-        defValue: defVal
+        defValue: defVal,
+        sound: resultSound
       });
     }
     // 2) 쌍방 대실패
     else if (atkFumble && defFumble) {
       result.type = 'bothFumble';
-      result.atkDiceChange = -(1 + rules.fumblePenalty);  // 파괴(-1) + 페널티(-1) = -2
+      result.atkDiceChange = -(1 + rules.fumblePenalty);
       result.defDiceChange = -(1 + rules.fumblePenalty);
       this.combat.attacker.fumbleCount++;
       this.combat.defender.fumbleCount++;
@@ -212,7 +219,8 @@ window.BattleRollEngine = class BattleRollEngine {
       this.combat.attacker.critCount++;
       result.description = this._formatTemplate(this.config.templates.roundResultCrit, {
         name: this.combat.attacker.name,
-        value: atkVal
+        value: atkVal,
+        sound: resultSound
       });
     }
     // 6) 방어자만 대성공
@@ -224,7 +232,8 @@ window.BattleRollEngine = class BattleRollEngine {
       this.combat.defender.critCount++;
       result.description = this._formatTemplate(this.config.templates.roundResultCrit, {
         name: this.combat.defender.name,
-        value: defVal
+        value: defVal,
+        sound: resultSound
       });
     }
     // 7) 공격자만 대실패
@@ -235,7 +244,8 @@ window.BattleRollEngine = class BattleRollEngine {
       this.combat.attacker.fumbleCount++;
       result.description = this._formatTemplate(this.config.templates.roundResultFumble, {
         name: this.combat.attacker.name,
-        value: atkVal
+        value: atkVal,
+        sound: resultSound
       });
     }
     // 8) 방어자만 대실패
@@ -246,13 +256,14 @@ window.BattleRollEngine = class BattleRollEngine {
       this.combat.defender.fumbleCount++;
       result.description = this._formatTemplate(this.config.templates.roundResultFumble, {
         name: this.combat.defender.name,
-        value: defVal
+        value: defVal,
+        sound: resultSound
       });
     }
     // 9) 동점 (크리티컬/대실패 아님)
     else if (atkVal === defVal) {
       result.type = 'tie';
-      result = this._handleTie(result);
+      result = this._handleTie(result, resultSound);
     }
     // 10) 일반 비교
     else {
@@ -265,7 +276,8 @@ window.BattleRollEngine = class BattleRollEngine {
           defender: this.combat.defender.name,
           atkValue: atkVal,
           defValue: defVal,
-          winner: '⚔️ ' + this.combat.attacker.name
+          winner: '⚔️ ' + this.combat.attacker.name,
+          sound: resultSound
         });
       } else {
         result.winner = 'defender';
@@ -275,9 +287,15 @@ window.BattleRollEngine = class BattleRollEngine {
           defender: this.combat.defender.name,
           atkValue: atkVal,
           defValue: defVal,
-          winner: '🛡️ ' + this.combat.defender.name
+          winner: '🛡️ ' + this.combat.defender.name,
+          sound: resultSound
         });
       }
+    }
+
+    // 효과음 추가 (결과 메시지 끝에)
+    if (resultSound && result.description) {
+      result.description += ' @' + resultSound;
     }
 
     // 주사위 수 적용
@@ -299,13 +317,14 @@ window.BattleRollEngine = class BattleRollEngine {
   }
 
   /** 동점 처리 */
-  _handleTie(result) {
+  _handleTie(result, resultSound) {
     const tieRule = this.config.rules.tieRule;
     switch (tieRule) {
       case 'reroll':
         result.description = this._formatTemplate(this.config.templates.roundResultTie, {
           atkValue: result.attackerRoll,
-          defValue: result.defenderRoll
+          defValue: result.defenderRoll,
+          sound: resultSound
         });
         result.needsReroll = true;
         break;
@@ -314,7 +333,8 @@ window.BattleRollEngine = class BattleRollEngine {
         result.defDiceChange = -1;
         result.description = this._formatTemplate(this.config.templates.roundResultTie, {
           atkValue: result.attackerRoll,
-          defValue: result.defenderRoll
+          defValue: result.defenderRoll,
+          sound: resultSound
         }) + ' → 양쪽 주사위 파괴';
         break;
       case 'attackerWins':
@@ -325,7 +345,8 @@ window.BattleRollEngine = class BattleRollEngine {
           defender: this.combat.defender.name,
           atkValue: result.attackerRoll,
           defValue: result.defenderRoll,
-          winner: '⚔️ ' + this.combat.attacker.name + ' (동점 공격자 우위)'
+          winner: '⚔️ ' + this.combat.attacker.name + ' (동점 공격자 우위)',
+          sound: resultSound
         });
         break;
       case 'defenderWins':
@@ -336,13 +357,15 @@ window.BattleRollEngine = class BattleRollEngine {
           defender: this.combat.defender.name,
           atkValue: result.attackerRoll,
           defValue: result.defenderRoll,
-          winner: '🛡️ ' + this.combat.defender.name + ' (동점 방어자 우위)'
+          winner: '🛡️ ' + this.combat.defender.name + ' (동점 방어자 우위)',
+          sound: resultSound
         });
         break;
       default: // 'nothing'
         result.description = this._formatTemplate(this.config.templates.roundResultTie, {
           atkValue: result.attackerRoll,
-          defValue: result.defenderRoll
+          defValue: result.defenderRoll,
+          sound: resultSound
         });
         break;
     }
@@ -374,12 +397,12 @@ window.BattleRollEngine = class BattleRollEngine {
     if (!winner) return '';
 
     if (winner === 'draw') {
-      return '《합 종료》- 무승부 @합';
+      return '《합 종료》 | 무승부 @' + (this.config.sounds.victorySound || '합');
     }
 
     const winnerData = winner === 'attacker' ? this.combat.attacker : this.combat.defender;
     const winnerIcon = winner === 'attacker' ? '⚔️' : '🛡️';
-    const sound = this.config.sounds.victorySounds[0] || '합';
+    const sound = this.config.sounds.victorySound || '합';
 
     return this._formatTemplate(this.config.templates.victory, {
       winnerIcon: winnerIcon,
@@ -393,34 +416,31 @@ window.BattleRollEngine = class BattleRollEngine {
   /** 라운드 헤더 메시지 생성 */
   getRoundHeaderMessage() {
     if (!this.combat) return '';
+    const sounds = this.config.sounds.roundHeaderSounds || [];
+    const sound = sounds[Math.floor(Math.random() * sounds.length)] || '';
     return this._formatTemplate(this.config.templates.roundHeader, {
       round: this.round,
       attacker: this.combat.attacker.name,
       atkDice: this.combat.attacker.dice,
       defender: this.combat.defender.name,
-      defDice: this.combat.defender.dice
+      defDice: this.combat.defender.dice,
+      sound: sound
     });
   }
 
   /** 공격자 굴림 메시지 생성 */
   getAttackerRollMessage() {
     if (!this.combat) return '';
-    const sounds = this.config.sounds.rollSounds;
-    const sound = sounds[Math.floor(Math.random() * sounds.length)] || '';
     return this._formatTemplate(this.config.templates.attackerRoll, {
-      attacker: this.combat.attacker.name,
-      sound: sound
+      attacker: this.combat.attacker.name
     });
   }
 
   /** 방어자 굴림 메시지 생성 */
   getDefenderRollMessage() {
     if (!this.combat) return '';
-    const sounds = this.config.sounds.rollSounds;
-    const sound = sounds[Math.floor(Math.random() * sounds.length)] || '';
     return this._formatTemplate(this.config.templates.defenderRoll, {
-      defender: this.combat.defender.name,
-      sound: sound
+      defender: this.combat.defender.name
     });
   }
 
@@ -439,6 +459,12 @@ window.BattleRollEngine = class BattleRollEngine {
   }
 
   // ── 유틸리티 ─────────────────────────────────────────────
+
+  /** 배열에서 무작위 선택 */
+  _pickRandom(arr) {
+    if (!arr || arr.length === 0) return '';
+    return arr[Math.floor(Math.random() * arr.length)];
+  }
 
   /** 템플릿 문자열에서 {key}를 값으로 교체합니다. */
   _formatTemplate(template, data) {

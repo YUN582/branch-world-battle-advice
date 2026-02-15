@@ -185,6 +185,51 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
     this._ready = false;
   }
 
+  // ================================================================
+  //  입력 감지 훅  ──  사용자 Enter 눌림 감지
+  // ================================================================
+
+  /**
+   * 채팅 입력창에서 사용자가 Enter를 눌러 메시지를 전송할 때 콜백을 호출합니다.
+   * document 레벨 이벤트 위임을 사용하므로 textarea가 React에 의해 교체되어도 작동합니다.
+   * @param {function} callback - 입력 텍스트를 전달받는 콜백
+   */
+  hookInputSubmit(callback) {
+    this._inputSubmitCallback = callback;
+    if (this._inputHooked) return true;
+
+    let composing = false;
+
+    document.addEventListener('compositionstart', (e) => {
+      if (this._isChatInput(e.target)) composing = true;
+    }, true);
+
+    document.addEventListener('compositionend', (e) => {
+      if (this._isChatInput(e.target)) composing = false;
+    }, true);
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || e.shiftKey || composing || e.isComposing) return;
+      if (!this._isChatInput(e.target)) return;
+
+      const text = e.target.value?.trim();
+      if (text && this._inputSubmitCallback) {
+        this._log(`🔑 입력 감지: "${text.substring(0, 80)}"`);
+        this._inputSubmitCallback(text);
+      }
+    }, true); // capture phase
+
+    this._inputHooked = true;
+    this._log('✅ 입력 훅 설정 완료');
+    return true;
+  }
+
+  /** 대상이 코코포리아 채팅 입력창인지 확인 */
+  _isChatInput(el) {
+    if (!el || el.tagName !== 'TEXTAREA') return false;
+    return el.name === 'text' || el === this.chatInput;
+  }
+
   _debouncedPoll() {
     if (this._pollDebounceTimer) clearTimeout(this._pollDebounceTimer);
     this._pollDebounceTimer = setTimeout(() => this._doPoll(), 150);
@@ -198,6 +243,26 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
    */
   _doPoll() {
     if (!this.chatContainer) return;
+
+    // 컨테이너가 DOM에서 분리됐으면 재탐색 (React 리렌더 대응)
+    if (!this.chatContainer.isConnected) {
+      this._log('⚠️ 컨테이너 DOM 분리 감지 → 재탐색');
+      if (this.observer) { this.observer.disconnect(); this.observer = null; }
+      if (!this.findElements() || !this.chatContainer) {
+        return; // 다음 폴링에서 재시도
+      }
+      // 새 컨테이너의 기존 메시지 등록
+      const reconnTexts = this._collectAllTexts();
+      for (const t of reconnTexts) this._seenTexts.add(t);
+      // Observer 재설정
+      this.observer = new MutationObserver(() => {
+        if (!this._ready) return;
+        this._debouncedPoll();
+      });
+      this.observer.observe(this.chatContainer, { childList: true, subtree: true });
+      this._log(`✅ DOM 재연결 성공 (${reconnTexts.length}개 메시지 등록)`);
+      return;
+    }
 
     const current = this._collectAllTexts();
     if (current.length === 0) return;
@@ -323,7 +388,7 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
   }
 
   // ================================================================
-  //  메시지 전송  ──  수동/자동 모드 지원
+  //  메시지 전송  ──  React fiber + form submit
   // ================================================================
 
   async sendMessage(text) {
@@ -340,123 +405,21 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
     }
 
     // 주사위 명령이 아닌 경우에만 자체 메시지로 등록
+    // (주사위 결과 메시지가 substring 매칭으로 필터링되는 것을 방지)
     if (!/^\d+[dD]\d+/.test(text)) {
       this._lastSentMessages.push({ text, time: Date.now() });
     }
+    // 전송할 메시지를 미리 seen에 등록 (돌아왔을 때 무시)
     this._seenTexts.add(text);
+    this._log(`📤 전송: "${text.substring(0, 60)}"`);
 
-    // ── 수동 모드: 텍스트를 채우고 사용자 Enter 대기 ──
-    if (this.config.general.manualSend) {
-      return await this._sendManual(text);
-    }
-
-    // ── 자동 모드: 기존 방식 ──
-    this._log(`📤 자동 전송: "${text.substring(0, 60)}"`);
     if (await this._sendViaReactFiber(text)) return true;
     if (await this._sendViaNativeSetter(text)) return true;
     if (await this._sendViaExecCommand(text)) return true;
     if (await this._sendViaClipboard(text)) return true;
+
     this._log('❌ 전송 실패');
     return false;
-  }
-
-  /**
-   * 수동 전송 모드: 입력창에 텍스트를 채우고 사용자가 Enter키를 누를 때까지 대기
-   * 사용자가 직접 Enter를 누르므로 isTrusted=true → @효과음 작동
-   */
-  async _sendManual(text) {
-    this._log(`✍️ 수동모드: 입력창에 채움 → Enter 대기: "${text.substring(0, 60)}"`);
-
-    // 입력창에 텍스트 채우기 (React onChange)
-    const filled = await this._fillText(text);
-    if (!filled) {
-      this._log('❌ 텍스트 채우기 실패');
-      return false;
-    }
-
-    // 사용자가 Enter를 누를 때까지 대기 (입력창이 비어지면 전송된 것)
-    return await this._waitForSend(60000); // 최대 60초 대기
-  }
-
-  /**
-   * React onChange로 입력창에 텍스트를 채움 (전송은 하지 않음)
-   */
-  async _fillText(text) {
-    const el = this.chatInput;
-    el.focus();
-    await this._delay(50);
-
-    // React onChange 시도
-    const propsKey = Object.keys(el).find(k => k.startsWith('__reactProps$'));
-    if (propsKey && el[propsKey]?.onChange) {
-      this._setNativeValue(el, text);
-      el[propsKey].onChange({
-        target: el, currentTarget: el, type: 'change',
-        preventDefault() {}, stopPropagation() {},
-        nativeEvent: new Event('change'), persist() {}
-      });
-      await this._delay(200);
-      if (el.value === text) return true;
-
-      // 재시도
-      this._setNativeValue(el, text);
-      el[propsKey].onChange({
-        target: el, currentTarget: el, type: 'change',
-        preventDefault() {}, stopPropagation() {},
-        nativeEvent: new Event('change'), persist() {}
-      });
-      await this._delay(200);
-      if (el.value === text) return true;
-    }
-
-    // nativeInputValueSetter 폴백
-    this._setNativeValue(el, text);
-    el.dispatchEvent(new InputEvent('input', {
-      bubbles: true, cancelable: true, inputType: 'insertText', data: text
-    }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-    await this._delay(200);
-    return el.value === text || el.value.includes(text.substring(0, 10));
-  }
-
-  /**
-   * 입력창이 비어질 때까지 대기 (사용자가 Enter를 누른 것으로 판단)
-   */
-  async _waitForSend(maxWait = 60000) {
-    const el = this.chatInput;
-    const start = Date.now();
-
-    // 오버레이 상태 업데이트 콜백 (대기 중 표시 용)
-    if (this._onWaitingForEnter) this._onWaitingForEnter(true);
-
-    return new Promise((resolve) => {
-      const checkInterval = setInterval(() => {
-        const elapsed = Date.now() - start;
-
-        // 입력창이 비어졌으면 전송 완료
-        if (!el.value || el.value.trim() === '') {
-          clearInterval(checkInterval);
-          this._log('✅ 사용자 Enter 감지 → 전송 완료');
-          if (this._onWaitingForEnter) this._onWaitingForEnter(false);
-          resolve(true);
-          return;
-        }
-
-        // 타임아웃
-        if (elapsed >= maxWait) {
-          clearInterval(checkInterval);
-          this._log('⚠️ Enter 대기 타임아웃');
-          if (this._onWaitingForEnter) this._onWaitingForEnter(false);
-          resolve(false);
-          return;
-        }
-      }, 100); // 100ms 간격으로 확인
-    });
-  }
-
-  /** 대기 상태 콜백 등록 (오버레이에서 사용) */
-  onWaitingForEnter(callback) {
-    this._onWaitingForEnter = callback;
   }
 
   async _sendViaReactFiber(text) {
