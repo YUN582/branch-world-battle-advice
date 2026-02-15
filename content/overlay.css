@@ -1,16 +1,16 @@
 /* ============================================================
    Branch World Battle Roll - 임베디드 패널 스타일
    코코포리아 채팅 패널 내부에 삽입 · 코코포리아 컬러 통일
-   주조색: #3b3d33  ·  보조색: #212121
+   주조색: #3a3a3a  ·  보조색: #212121
    ============================================================ */
 
 /* ── 패널 컨테이너 ───────────────────────────── */
 
 #bwbr-panel {
-  background: #2e3029;
+  background: #2d2d2d;
   border-bottom: 1px solid rgba(255, 255, 255, 0.10);
   font-family: inherit;
-  font-size: 14px;
+  font-size: 15px;
   color: #e0e0e0;
   user-select: none;
   position: relative;
@@ -23,7 +23,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 14px;
+  padding: 10px 16px;
   cursor: pointer;
   background: #212121;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
@@ -37,15 +37,15 @@
 .bwbr-toggle-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .bwbr-toggle-icon {
-  font-size: 16px;
+  font-size: 18px;
 }
 
 .bwbr-toggle-title {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   color: #ccc;
 }
@@ -55,8 +55,8 @@
   border: none;
   color: #888;
   cursor: pointer;
-  font-size: 13px;
-  padding: 4px 8px;
+  font-size: 14px;
+  padding: 6px 10px;
   border-radius: 4px;
   transition: all 0.2s;
 }
@@ -69,8 +69,8 @@
 /* ── 상태 점(dot) ─────────────────────────────── */
 
 .bwbr-dot {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: #666;
   flex-shrink: 0;
@@ -79,6 +79,7 @@
 .bwbr-dot.idle       { background: #777; }
 .bwbr-dot.active     { background: #4caf50; animation: bwbr-pulse 1.5s infinite; }
 .bwbr-dot.waiting    { background: #ff9800; animation: bwbr-pulse 1s infinite; }
+.bwbr-dot.paused     { background: #ffb74d; animation: bwbr-pulse 2s infinite; }
 .bwbr-dot.error      { background: #f44336; }
 .bwbr-dot.disabled   { background: #555; }
 
@@ -88,7 +89,7 @@
 }
 
 .bwbr-status-text {
-  font-size: 12px;
+  font-size: 13px;
   color: #999;
 }
 
@@ -96,8 +97,8 @@
 
 #bwbr-body {
   overflow: hidden;
-  transition: max-height 0.25s ease, opacity 0.25s ease;
-  max-height: 600px;
+  transition: max-height 0.3s ease, opacity 0.3s ease;
+  max-height: 800px;
   opacity: 1;
 }
 
@@ -110,95 +111,183 @@
 /* ── 전투 정보 ────────────────────────────────── */
 
 #bwbr-combat-info {
-  padding: 10px 14px;
-}
-
-.bwbr-no-combat {
-  text-align: center;
-  color: #888;
-  font-size: 13px;
-  padding: 8px 0;
+  padding: 14px 16px 10px;
 }
 
 .bwbr-round-badge {
   text-align: center;
-  font-size: 14px;
+  font-size: 16px;
   color: #e0e0e0;
   font-weight: 700;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
+  letter-spacing: 1px;
 }
 
 .bwbr-fighters {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 16px;
+  gap: 20px;
+  position: relative;
 }
 
 .bwbr-fighter {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  min-width: 80px;
+  gap: 4px;
+  min-width: 90px;
+  transition: transform 0.3s, filter 0.3s;
 }
 
 .bwbr-fighter-icon {
-  font-size: 20px;
+  font-size: 28px;
+  transition: transform 0.3s;
 }
 
 .bwbr-fighter-name {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
   color: #e0e0e0;
-  max-width: 120px;
+  max-width: 130px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .bwbr-fighter-dice {
-  font-size: 26px;
+  font-size: 32px;
   font-weight: 700;
   color: #fff;
   line-height: 1.2;
+  transition: color 0.3s, transform 0.3s, text-shadow 0.3s;
 }
 
 .bwbr-fighter-thresholds {
-  font-size: 11px;
+  font-size: 12px;
   color: #999;
 }
 
 .bwbr-vs {
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 700;
   color: #888;
+  transition: transform 0.3s, color 0.3s;
 }
 
-/* ── 빈 슬롯 (미지정 상태) ───────────────────── */
+/* ── 빈 슬롯 ─────────────────────────────────── */
 
 .bwbr-fighter-name.bwbr-empty {
   color: #666;
   font-style: italic;
 }
 
-/* ── 수동 입력 ────────────────────────────────── */
+/* ── 액션 (일시정지 · 전투 중지) ──────────────── */
+
+#bwbr-actions {
+  padding: 8px 16px 10px;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+#bwbr-btn-pause {
+  background: none;
+  border: 1px solid rgba(255, 152, 0, 0.35);
+  border-radius: 4px;
+  color: #ffb74d;
+  font-size: 14px;
+  padding: 8px 18px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+#bwbr-btn-pause:hover {
+  background: rgba(255, 152, 0, 0.10);
+  border-color: #ff9800;
+}
+
+#bwbr-btn-pause.bwbr-btn-resume {
+  border-color: rgba(76, 175, 80, 0.4);
+  color: #81c784;
+}
+
+#bwbr-btn-pause.bwbr-btn-resume:hover {
+  background: rgba(76, 175, 80, 0.10);
+  border-color: #4caf50;
+}
+
+#bwbr-btn-cancel {
+  background: none;
+  border: 1px solid rgba(244, 67, 54, 0.3);
+  border-radius: 4px;
+  color: #e57373;
+  font-size: 14px;
+  padding: 8px 18px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+#bwbr-btn-cancel:hover {
+  background: rgba(244, 67, 54, 0.10);
+  border-color: #f44336;
+}
+
+/* ── 로그 ─────────────────────────────────────── */
+
+#bwbr-log {
+  max-height: 150px;
+  overflow-y: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#bwbr-log:empty {
+  display: none;
+}
+
+#bwbr-log::-webkit-scrollbar {
+  width: 4px;
+}
+
+#bwbr-log::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+}
+
+.bwbr-log-entry {
+  padding: 5px 16px;
+  font-size: 13px;
+  color: #999;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.bwbr-log-entry.bwbr-log-info    { color: #b0bec5; }
+.bwbr-log-entry.bwbr-log-success { color: #81c784; }
+.bwbr-log-entry.bwbr-log-warning { color: #ffb74d; }
+.bwbr-log-entry.bwbr-log-error   { color: #ef5350; }
+.bwbr-log-entry.bwbr-log-crit    { color: #ffd54f; font-weight: 600; }
+.bwbr-log-entry.bwbr-log-fumble  { color: #ff8a80; font-weight: 600; }
+
+/* ── 수동 입력 (로그 아래) ────────────────────── */
 
 #bwbr-manual-input {
-  padding: 10px 14px;
+  padding: 12px 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 152, 0, 0.06);
 }
 
 .bwbr-manual-label {
-  font-size: 13px;
+  font-size: 14px;
   color: #ff9800;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .bwbr-manual-row {
   display: flex;
-  gap: 8px;
+  gap: 10px;
 }
 
 #bwbr-manual-value {
@@ -207,8 +296,8 @@
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 4px;
   color: #e0e0e0;
-  font-size: 16px;
-  padding: 8px 12px;
+  font-size: 18px;
+  padding: 10px 14px;
   outline: none;
   font-family: inherit;
   -moz-appearance: textfield;
@@ -230,20 +319,14 @@
   animation: bwbr-shake 0.3s;
 }
 
-@keyframes bwbr-shake {
-  0%, 100% { transform: translateX(0); }
-  25%      { transform: translateX(-3px); }
-  75%      { transform: translateX(3px); }
-}
-
 #bwbr-manual-submit {
   background: #ff9800;
   border: none;
   border-radius: 4px;
   color: #fff;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
-  padding: 8px 18px;
+  padding: 10px 22px;
   cursor: pointer;
   transition: background 0.2s;
   font-family: inherit;
@@ -253,62 +336,315 @@
   background: #f57c00;
 }
 
-/* ── 액션 (전투 중지) ─────────────────────────── */
+/* ══════════════════════════════════════════════
+   전투 애니메이션 (대형 · 화려)
+   ══════════════════════════════════════════════ */
 
-#bwbr-actions {
-  padding: 8px 14px;
-  text-align: right;
+/* ── 충돌(Clash) 애니메이션 ────────────────────── */
+
+@keyframes bwbr-clash-left {
+  0%   { transform: translateX(0) rotate(0); }
+  20%  { transform: translateX(35px) rotate(6deg) scale(1.18); }
+  35%  { transform: translateX(-8px) rotate(-2deg) scale(1.05); }
+  50%  { transform: translateX(12px) rotate(2deg) scale(1.08); }
+  100% { transform: translateX(0) rotate(0) scale(1); }
 }
 
-#bwbr-btn-cancel {
-  background: none;
-  border: 1px solid rgba(244, 67, 54, 0.3);
-  border-radius: 4px;
-  color: #e57373;
-  font-size: 13px;
-  padding: 6px 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-  font-family: inherit;
+@keyframes bwbr-clash-right {
+  0%   { transform: translateX(0) rotate(0); }
+  20%  { transform: translateX(-35px) rotate(-6deg) scale(1.18); }
+  35%  { transform: translateX(8px) rotate(2deg) scale(1.05); }
+  50%  { transform: translateX(-12px) rotate(-2deg) scale(1.08); }
+  100% { transform: translateX(0) rotate(0) scale(1); }
 }
 
-#bwbr-btn-cancel:hover {
-  background: rgba(244, 67, 54, 0.10);
-  border-color: #f44336;
+.bwbr-anim-clash .bwbr-fighter:first-child {
+  animation: bwbr-clash-left 0.7s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* ── 로그 ─────────────────────────────────────── */
-
-#bwbr-log {
-  max-height: 120px;
-  overflow-y: auto;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+.bwbr-anim-clash .bwbr-fighter:last-child {
+  animation: bwbr-clash-right 0.7s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-#bwbr-log:empty {
-  display: none;
+.bwbr-anim-clash .bwbr-vs {
+  animation: bwbr-vs-flash 0.7s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-#bwbr-log::-webkit-scrollbar {
-  width: 4px;
+@keyframes bwbr-vs-flash {
+  0%   { transform: scale(1); color: #888; text-shadow: none; }
+  20%  { transform: scale(2.8) rotate(-8deg); color: #fff; text-shadow: 0 0 20px #ff9800, 0 0 40px #ff5722; }
+  40%  { transform: scale(2.2) rotate(4deg); color: #ffd54f; }
+  60%  { transform: scale(1.4); color: #fff; }
+  100% { transform: scale(1); color: #888; text-shadow: none; }
 }
 
-#bwbr-log::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 2px;
+/* ── 충돌 시 화면 진동(Screen Shake) ─────────── */
+
+@keyframes bwbr-screen-shake {
+  0%, 100% { transform: translate(0, 0); }
+  10%  { transform: translate(-6px, 3px); }
+  20%  { transform: translate(5px, -4px); }
+  30%  { transform: translate(-7px, -2px); }
+  40%  { transform: translate(4px, 5px); }
+  50%  { transform: translate(-4px, -3px); }
+  60%  { transform: translate(6px, 2px); }
+  70%  { transform: translate(-3px, 4px); }
+  80%  { transform: translate(2px, -2px); }
+  90%  { transform: translate(-1px, 1px); }
 }
 
-.bwbr-log-entry {
-  padding: 4px 14px;
-  font-size: 12px;
-  color: #999;
-  line-height: 1.5;
-  word-break: break-all;
+.bwbr-anim-screen-shake {
+  animation: bwbr-screen-shake 0.5s ease-out;
 }
 
-.bwbr-log-entry.bwbr-log-info    { color: #b0bec5; }
-.bwbr-log-entry.bwbr-log-success { color: #81c784; }
-.bwbr-log-entry.bwbr-log-warning { color: #ffb74d; }
-.bwbr-log-entry.bwbr-log-error   { color: #ef5350; }
-.bwbr-log-entry.bwbr-log-crit    { color: #ffd54f; font-weight: 600; }
-.bwbr-log-entry.bwbr-log-fumble  { color: #ff8a80; font-weight: 600; }
+/* ── 충격파(Impact Wave) ─────────────────────── */
+
+.bwbr-impact-wave {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 200, 50, 0.9);
+  pointer-events: none;
+  z-index: 3;
+  animation: bwbr-impact-expand 0.8s ease-out forwards;
+}
+
+@keyframes bwbr-impact-expand {
+  0%   { width: 10px; height: 10px; margin: -5px 0 0 -5px; opacity: 1; border-width: 4px; }
+  100% { width: 160px; height: 160px; margin: -80px 0 0 -80px; opacity: 0; border-width: 1px; }
+}
+
+/* ── 흔들림(Shake) 애니메이션 ─────────────────── */
+
+@keyframes bwbr-shake {
+  0%, 100% { transform: translateX(0) rotate(0); }
+  8%   { transform: translateX(-8px) rotate(-3deg); }
+  16%  { transform: translateX(8px) rotate(3deg); }
+  24%  { transform: translateX(-7px) rotate(-2deg); }
+  32%  { transform: translateX(7px) rotate(2deg); }
+  40%  { transform: translateX(-5px) rotate(-1deg); }
+  55%  { transform: translateX(4px) rotate(1deg); }
+  70%  { transform: translateX(-3px); }
+  85%  { transform: translateX(1px); }
+}
+
+.bwbr-anim-shake {
+  animation: bwbr-shake 0.6s ease-out;
+}
+
+/* ── 대성공(Crit) 효과 ────────────────────────── */
+
+@keyframes bwbr-crit-glow {
+  0%   { text-shadow: 0 0 0 transparent; color: #fff; transform: scale(1); }
+  15%  { text-shadow: 0 0 30px #ffd54f, 0 0 60px #ff9800, 0 0 90px #ff5722; color: #ffd54f; transform: scale(1.6); }
+  30%  { text-shadow: 0 0 50px #ffd54f, 0 0 80px #ffab00; color: #ffe082; transform: scale(1.35); }
+  50%  { text-shadow: 0 0 25px #ffd54f, 0 0 50px #ff9800; color: #ffd54f; transform: scale(1.5); }
+  70%  { text-shadow: 0 0 15px #ffd54f; color: #ffd54f; transform: scale(1.15); }
+  100% { text-shadow: none; color: #fff; transform: scale(1); }
+}
+
+@keyframes bwbr-crit-icon-bounce {
+  0%   { transform: scale(1); }
+  20%  { transform: scale(1.5) rotate(-10deg); filter: drop-shadow(0 0 10px #ffd54f); }
+  50%  { transform: scale(1.3) rotate(5deg); filter: drop-shadow(0 0 6px #ff9800); }
+  100% { transform: scale(1) rotate(0); filter: none; }
+}
+
+.bwbr-anim-crit .bwbr-fighter-dice {
+  animation: bwbr-crit-glow 1.2s ease-out;
+}
+
+.bwbr-anim-crit .bwbr-fighter-icon {
+  animation: bwbr-crit-icon-bounce 0.8s ease-out;
+}
+
+.bwbr-anim-crit .bwbr-fighter-name {
+  color: #ffd54f;
+  text-shadow: 0 0 12px rgba(255, 213, 79, 0.5);
+  transition: all 0.4s;
+}
+
+/* ── 대성공 배경 플래시 ──────────────────────── */
+
+.bwbr-flash-crit {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(255, 213, 79, 0.35) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 1;
+  animation: bwbr-flash-fade 1s ease-out forwards;
+}
+
+/* ── 대실패(Fumble) 효과 ─────────────────────── */
+
+@keyframes bwbr-fumble-flash {
+  0%   { text-shadow: 0 0 0 transparent; color: #fff; transform: scale(1); }
+  12%  { text-shadow: 0 0 30px #f44336, 0 0 60px #d32f2f, 0 0 90px #b71c1c; color: #ff1744; transform: scale(0.7) rotate(-8deg); }
+  30%  { color: #ff5252; transform: scale(1.1) rotate(4deg); }
+  50%  { text-shadow: 0 0 20px #f44336, 0 0 40px #d32f2f; color: #ff8a80; transform: scale(0.85) rotate(-2deg); }
+  75%  { color: #ff8a80; transform: scale(1.05); }
+  100% { text-shadow: none; color: #fff; transform: scale(1) rotate(0); }
+}
+
+@keyframes bwbr-fumble-icon-drop {
+  0%   { transform: scale(1) rotate(0); }
+  25%  { transform: scale(0.6) rotate(20deg); filter: drop-shadow(0 0 8px #f44336); opacity: 0.7; }
+  50%  { transform: scale(0.8) rotate(-10deg); }
+  100% { transform: scale(1) rotate(0); filter: none; opacity: 1; }
+}
+
+.bwbr-anim-fumble .bwbr-fighter-dice {
+  animation: bwbr-fumble-flash 1.2s ease-out;
+}
+
+.bwbr-anim-fumble .bwbr-fighter-icon {
+  animation: bwbr-fumble-icon-drop 0.8s ease-out;
+}
+
+.bwbr-anim-fumble .bwbr-fighter-name {
+  color: #ff8a80;
+  text-shadow: 0 0 10px rgba(244, 67, 54, 0.4);
+  transition: all 0.4s;
+}
+
+/* ── 대실패 배경 플래시 ──────────────────────── */
+
+.bwbr-flash-fumble {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(244, 67, 54, 0.3) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 1;
+  animation: bwbr-flash-fade 1s ease-out forwards;
+}
+
+@keyframes bwbr-flash-fade {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* ── 승리(Victory) 효과 ──────────────────────── */
+
+@keyframes bwbr-victory-pop {
+  0%   { transform: scale(1); text-shadow: none; }
+  15%  { transform: scale(1.8); text-shadow: 0 0 40px #81c784, 0 0 80px #4caf50, 0 0 120px #00e676; }
+  30%  { transform: scale(1.3); text-shadow: 0 0 30px #81c784, 0 0 60px #4caf50; }
+  50%  { transform: scale(1.6); text-shadow: 0 0 50px #81c784, 0 0 90px #4caf50; }
+  70%  { transform: scale(1.15); text-shadow: 0 0 15px #81c784; }
+  85%  { transform: scale(1.25); text-shadow: 0 0 10px #81c784; }
+  100% { transform: scale(1); text-shadow: none; }
+}
+
+@keyframes bwbr-victory-icon-spin {
+  0%   { transform: scale(1) rotate(0); }
+  30%  { transform: scale(1.8) rotate(-15deg); filter: drop-shadow(0 0 15px #4caf50); }
+  60%  { transform: scale(1.4) rotate(10deg); }
+  100% { transform: scale(1) rotate(0); filter: none; }
+}
+
+@keyframes bwbr-victory-glow-bg {
+  0%   { box-shadow: inset 0 0 0 transparent; }
+  30%  { box-shadow: inset 0 0 30px rgba(76, 175, 80, 0.2), 0 0 20px rgba(76, 175, 80, 0.15); }
+  100% { box-shadow: inset 0 0 0 transparent; }
+}
+
+.bwbr-anim-victory {
+  animation: bwbr-victory-glow-bg 2s ease-out;
+  border-radius: 8px;
+}
+
+.bwbr-anim-victory .bwbr-fighter-dice {
+  animation: bwbr-victory-pop 1.5s ease-out;
+}
+
+.bwbr-anim-victory .bwbr-fighter-icon {
+  animation: bwbr-victory-icon-spin 1.2s ease-out;
+}
+
+.bwbr-anim-victory .bwbr-fighter-name {
+  color: #69f0ae;
+  text-shadow: 0 0 15px rgba(105, 240, 174, 0.6);
+  transition: all 0.5s;
+}
+
+/* ── 패배(Defeat) 효과 ──────────────────────── */
+
+@keyframes bwbr-defeat-fade {
+  0%   { opacity: 1; filter: none; transform: scale(1); }
+  40%  { opacity: 0.5; filter: grayscale(0.5) blur(1px); transform: scale(0.92); }
+  100% { opacity: 0.25; filter: grayscale(0.8) blur(1.5px); transform: scale(0.88); }
+}
+
+.bwbr-anim-defeat {
+  animation: bwbr-defeat-fade 1.5s ease-out forwards;
+}
+
+/* ── 불꽃 파티클 (크고 화려) ───────────────────── */
+
+.bwbr-sparks {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.bwbr-spark {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background: #ffd54f;
+  border-radius: 50%;
+  box-shadow: 0 0 6px 2px currentColor;
+  animation: bwbr-spark-fly 0.9s ease-out forwards;
+}
+
+.bwbr-spark-trail {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  background: rgba(255, 200, 80, 0.6);
+  border-radius: 50%;
+  animation: bwbr-spark-fly 0.7s ease-out forwards;
+  animation-delay: 0.05s;
+}
+
+@keyframes bwbr-spark-fly {
+  0%   { opacity: 1; transform: translate(0, 0) scale(1.2); }
+  60%  { opacity: 0.8; }
+  100% { opacity: 0; transform: translate(var(--sx), var(--sy)) scale(0); }
+}
+
+/* ── 라운드 배지 펄스 (확대) ──────────────────── */
+
+@keyframes bwbr-badge-pulse {
+  0%   { opacity: 0; transform: scale(0.5); text-shadow: none; }
+  40%  { opacity: 1; transform: scale(1.25); text-shadow: 0 0 12px rgba(255, 255, 255, 0.3); }
+  70%  { transform: scale(0.95); }
+  100% { opacity: 1; transform: scale(1); text-shadow: none; }
+}
+
+.bwbr-round-badge {
+  animation: bwbr-badge-pulse 0.6s ease-out;
+}
+
+/* ── 승리 텍스트 반짝이 ──────────────────────── */
+
+@keyframes bwbr-text-shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.bwbr-anim-victory .bwbr-fighter-name {
+  background: linear-gradient(90deg, #69f0ae 0%, #fff 25%, #69f0ae 50%, #fff 75%, #69f0ae 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: bwbr-text-shimmer 2s linear infinite;
+}

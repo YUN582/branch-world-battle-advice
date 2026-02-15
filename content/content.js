@@ -16,7 +16,8 @@
     WAITING_ATTACKER_RESULT: 'WAITING_ATTACKER_RESULT',
     WAITING_DEFENDER_RESULT: 'WAITING_DEFENDER_RESULT',
     PROCESSING_RESULT: 'PROCESSING_RESULT',
-    COMBAT_END: 'COMBAT_END'
+    COMBAT_END: 'COMBAT_END',
+    PAUSED: 'PAUSED'
   };
 
   let config = null;        // 현재 설정
@@ -26,6 +27,9 @@
   let flowState = STATE.IDLE;
   let enabled = true;
   let resultTimeoutId = null;
+  let paused = false;
+  let _pauseRequested = false;
+  let _stateBeforePause = null;
 
   // ── 초기화 ───────────────────────────────────────────────
 
@@ -44,6 +48,7 @@
 
     // 패널 이벤트
     overlay.onCancel(() => cancelCombat());
+    overlay.onPause(() => togglePause());
     overlay.setStatus(enabled ? 'idle' : 'disabled', enabled ? '대기 중' : '비활성');
 
     // DOM 요소 탐색 (코코포리아 로드 대기)
@@ -148,6 +153,11 @@
         checkForCancel(text);
         break;
 
+      case STATE.PAUSED:
+        // 일시정지 중에도 취소는 가능
+        checkForCancel(text);
+        break;
+
       default:
         // ROUND_HEADER_SENT, PROCESSING_RESULT, COMBAT_END 등은 타이머로 처리
         checkForCancel(text);
@@ -194,11 +204,151 @@
     log('전투 중지');
     clearTimeout(resultTimeoutId);
     overlay.hideManualInput();
+
+    // 일시정지 상태 해제
+    paused = false;
+    _pauseRequested = false;
+    overlay.setPaused(false);
+
     flowState = STATE.IDLE;
+    _stateBeforePause = null;
     engine.reset();
     overlay.addLog('전투가 중지되었습니다.', 'warning');
     overlay.setStatus('idle', '대기 중');
     overlay.updateCombatState(engine.getState());
+  }
+
+  // ── 일시정지/재개 ──────────────────────────────────
+
+  function togglePause() {
+    if (paused || _pauseRequested) {
+      resumeCombat();
+    } else {
+      pauseCombat();
+    }
+  }
+
+  /**
+   * 일시정지 — 주사위 굴림(WAITING) 상태에서만 실제 멈춤.
+   * 합 결과나 라운드 헤더 중이면 예약만 걸고, 굴림까지 진행 후 멈춤.
+   */
+  function pauseCombat() {
+    if (flowState === STATE.IDLE || flowState === STATE.COMBAT_END || paused || _pauseRequested) return;
+
+    // 이미 주사위 대기 상태면 즉시 멈춤
+    if (flowState === STATE.WAITING_ATTACKER_RESULT || flowState === STATE.WAITING_DEFENDER_RESULT) {
+      _applyPause();
+      return;
+    }
+
+    // 그 외 상태(헤더, 결과처리 등)는 예약만 → 굴림까지 진행 후 자동 멈춤
+    _pauseRequested = true;
+    alwaysLog('⏸ 일시정지 예약 (주사위 굴림 후 적용)');
+    overlay.setPaused(true);
+    overlay.setStatus('active', '주사위 굴림 후 일시정지...');
+    overlay.addLog('주사위 굴림 후 일시정지됩니다.', 'warning');
+  }
+
+  /** 실제 일시정지 적용 (내부용) */
+  function _applyPause() {
+    paused = true;
+    _pauseRequested = false;
+    _stateBeforePause = flowState;
+    flowState = STATE.PAUSED;
+    clearTimeout(resultTimeoutId);
+
+    alwaysLog('⏸ 전투 일시정지');
+    overlay.setPaused(true);
+    overlay.setStatus('paused', '일시정지');
+    overlay.addLog('전투가 일시정지되었습니다.', 'warning');
+  }
+
+  /**
+   * 재개 — 즉시 수동 입력창을 띄워서 결과를 받음.
+   * 채팅 인식이 일시정지 후 동작하지 않으므로 수동 입력으로 바로 전환.
+   */
+  function resumeCombat() {
+    // 예약만 걸려있었다면 예약 취소
+    if (_pauseRequested && !paused) {
+      _pauseRequested = false;
+      overlay.setPaused(false);
+      overlay.setStatus('active', '전투 진행 중');
+      overlay.addLog('일시정지가 취소되었습니다.', 'info');
+      return;
+    }
+
+    if (!paused) return;
+
+    paused = false;
+    _pauseRequested = false;
+    const restoreState = _stateBeforePause;
+    _stateBeforePause = null;
+
+    alwaysLog(`▶ 전투 재개 (복원: ${restoreState})`);
+    overlay.setPaused(false);
+    overlay.addLog('전투가 재개되었습니다.', 'success');
+
+    flowState = restoreState;
+
+    // 주사위 대기 상태였으면 → 즉시 수동 입력창 표시
+    if (restoreState === STATE.WAITING_ATTACKER_RESULT || restoreState === STATE.WAITING_DEFENDER_RESULT) {
+      _showManualInputNow(restoreState);
+    } else {
+      overlay.setStatus('active', '전투 진행 중');
+    }
+  }
+
+  /**
+   * 재개 시 즉시 수동 입력창 표시 (타임아웃 없이 바로)
+   */
+  async function _showManualInputNow(waitingState) {
+    const state = engine.getState();
+    if (!state?.combat) return;
+
+    let who, emoji, playerName;
+    if (waitingState === STATE.WAITING_ATTACKER_RESULT) {
+      who = '공격자';
+      emoji = '⚔️';
+      playerName = state.combat.attacker.name;
+    } else {
+      who = '방어자';
+      emoji = '🛡️';
+      playerName = state.combat.defender.name;
+    }
+
+    overlay.setStatus('waiting', `${who} 결과 입력 대기...`);
+    overlay.addLog(`${who} 결과를 입력해주세요.`, 'warning');
+
+    const manualValue = await overlay.showManualInput(who, emoji, playerName);
+    if (manualValue === null) {
+      alwaysLog('수동 입력: 취소됨');
+      return;
+    }
+
+    alwaysLog(`수동 입력 (재개): ${who} = ${manualValue}`);
+    overlay.addLog(`${emoji} ${playerName}: ${manualValue} (수동 입력)`, 'info');
+
+    if (flowState === STATE.WAITING_ATTACKER_RESULT) {
+      flowState = STATE.PROCESSING_RESULT;
+      engine.setAttackerRoll(manualValue);
+      const logType = manualValue >= state.combat.attacker.critThreshold ? 'crit'
+        : manualValue <= state.combat.attacker.fumbleThreshold ? 'fumble' : 'info';
+      overlay.addLog(`⚔️ ${state.combat.attacker.name}: ${manualValue}`, logType);
+      overlay.animateDiceValue('attacker', manualValue);
+      if (logType === 'crit') overlay.playCrit('attacker');
+      else if (logType === 'fumble') overlay.playFumble('attacker');
+      setTimeout(() => rollForDefender(), config.timing.betweenRolls);
+    } else if (flowState === STATE.WAITING_DEFENDER_RESULT) {
+      flowState = STATE.PROCESSING_RESULT;
+      engine.setDefenderRoll(manualValue);
+      const logType = manualValue >= state.combat.defender.critThreshold ? 'crit'
+        : manualValue <= state.combat.defender.fumbleThreshold ? 'fumble' : 'info';
+      overlay.addLog(`🛡️ ${state.combat.defender.name}: ${manualValue}`, logType);
+      overlay.animateDiceValue('defender', manualValue);
+      if (logType === 'crit') overlay.playCrit('defender');
+      else if (logType === 'fumble') overlay.playFumble('defender');
+      setTimeout(() => processRoundResult(), config.timing.beforeRoundResult);
+    }
   }
 
   // ── 라운드 진행 ──────────────────────────────────────────
@@ -207,6 +357,9 @@
     engine.incrementRound();
     const state = engine.getState();
     overlay.updateCombatState(state);
+
+    // 충돌 애니메이션 재생
+    overlay.playClash();
 
     // 라운드 헤더 전송
     const headerMsg = engine.getRoundHeaderMessage();
@@ -229,6 +382,12 @@
     overlay.setStatus('waiting', '공격자 결과 대기 중...');
 
     await chat.sendMessage(rollMsg);
+
+    // 일시정지 예약이 있으면 여기서 멈춤
+    if (_pauseRequested) {
+      _applyPause();
+      return;
+    }
 
     // 타임아웃 설정
     setResultTimeout('공격자');
@@ -288,6 +447,11 @@
     const logType = value >= state.combat.attacker.critThreshold ? 'crit'
       : value <= state.combat.attacker.fumbleThreshold ? 'fumble' : 'info';
     overlay.addLog(`⚔️ ${state.combat.attacker.name}: ${value}`, logType);
+    overlay.animateDiceValue('attacker', value);
+
+    // 크리/펌블 애니메이션
+    if (logType === 'crit') overlay.playCrit('attacker');
+    else if (logType === 'fumble') overlay.playFumble('attacker');
 
     // 대기 후 방어자 굴림
     setTimeout(() => rollForDefender(), config.timing.betweenRolls);
@@ -301,6 +465,12 @@
     overlay.setStatus('waiting', '방어자 결과 대기 중...');
 
     await chat.sendMessage(rollMsg);
+
+    // 일시정지 예약이 있으면 여기서 멈춤
+    if (_pauseRequested) {
+      _applyPause();
+      return;
+    }
 
     // 타임아웃 설정
     setResultTimeout('방어자');
@@ -323,6 +493,11 @@
     const logType = value >= state.combat.defender.critThreshold ? 'crit'
       : value <= state.combat.defender.fumbleThreshold ? 'fumble' : 'info';
     overlay.addLog(`🛡️ ${state.combat.defender.name}: ${value}`, logType);
+    overlay.animateDiceValue('defender', value);
+
+    // 크리/펌블 애니메이션
+    if (logType === 'crit') overlay.playCrit('defender');
+    else if (logType === 'fumble') overlay.playFumble('defender');
 
     // 대기 후 결과 처리
     setTimeout(() => processRoundResult(), config.timing.beforeRoundResult);
@@ -402,6 +577,11 @@
     log(`전투 종료! 승자: ${winner}`);
     await chat.sendMessage(victoryMsg);
 
+    // 승리/패배 애니메이션
+    if (winner === 'attacker' || winner === 'defender') {
+      overlay.playVictory(winner);
+    }
+
     overlay.addLog(victoryMsg, 'success');
     overlay.setStatus('idle', '전투 종료');
 
@@ -454,6 +634,9 @@
         const logType = manualValue >= state.combat.attacker.critThreshold ? 'crit'
           : manualValue <= state.combat.attacker.fumbleThreshold ? 'fumble' : 'info';
         overlay.addLog(`⚔️ ${state.combat.attacker.name}: ${manualValue}`, logType);
+        overlay.animateDiceValue('attacker', manualValue);
+        if (logType === 'crit') overlay.playCrit('attacker');
+        else if (logType === 'fumble') overlay.playFumble('attacker');
         setTimeout(() => rollForDefender(), config.timing.betweenRolls);
       } else if (flowState === STATE.WAITING_DEFENDER_RESULT) {
         flowState = STATE.PROCESSING_RESULT;
@@ -461,6 +644,9 @@
         const logType = manualValue >= state.combat.defender.critThreshold ? 'crit'
           : manualValue <= state.combat.defender.fumbleThreshold ? 'fumble' : 'info';
         overlay.addLog(`🛡️ ${state.combat.defender.name}: ${manualValue}`, logType);
+        overlay.animateDiceValue('defender', manualValue);
+        if (logType === 'crit') overlay.playCrit('defender');
+        else if (logType === 'fumble') overlay.playFumble('defender');
         setTimeout(() => processRoundResult(), config.timing.beforeRoundResult);
       }
     }, config.timing.resultTimeout);
@@ -474,6 +660,7 @@
         sendResponse({
           enabled: enabled,
           state: flowState,
+          paused: paused,
           combat: engine ? engine.getState() : null,
           connected: !!(chat && chat.chatContainer)
         });
@@ -497,6 +684,11 @@
       case 'BWBR_CANCEL_COMBAT':
         cancelCombat();
         sendResponse({ success: true });
+        break;
+
+      case 'BWBR_PAUSE_COMBAT':
+        togglePause();
+        sendResponse({ success: true, paused: paused });
         break;
 
       case 'BWBR_TEST_SEND':

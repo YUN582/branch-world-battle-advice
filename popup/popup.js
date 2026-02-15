@@ -32,8 +32,11 @@
       resultTimeout: 10000
     },
     sounds: {
-      rollSounds: ['챙1', '챙2', '챙3'],
-      victorySounds: ['합']
+      combatStartSound: '합',
+      roundHeaderSounds: ['후웅1', '후웅2', '후웅3', '후웅4'],
+      resultNormalSounds: ['챙1', '챙2', '챙3'],
+      resultSpecialSound: '챙4',
+      victorySound: '합'
     },
     rules: {
       diceType: 20,
@@ -145,8 +148,11 @@
     $('rule-tieRule').value = cfg.rules.tieRule;
 
     // 효과음
-    renderTagList('sound-roll-list', cfg.sounds.rollSounds, 'rollSounds');
-    renderTagList('sound-victory-list', cfg.sounds.victorySounds, 'victorySounds');
+    $('sound-combatStart').value = cfg.sounds.combatStartSound || '';
+    renderTagList('sound-roundHeader-list', cfg.sounds.roundHeaderSounds || [], 'roundHeaderSounds');
+    renderTagList('sound-resultNormal-list', cfg.sounds.resultNormalSounds || [], 'resultNormalSounds');
+    $('sound-resultSpecial').value = cfg.sounds.resultSpecialSound || '';
+    $('sound-victory').value = cfg.sounds.victorySound || '';
 
     // 패턴
     $('pat-triggerRegex').value = cfg.patterns.triggerRegex;
@@ -202,8 +208,11 @@
     cfg.rules.tieRule = $('rule-tieRule').value;
 
     // 효과음
-    cfg.sounds.rollSounds = collectTags('sound-roll-list');
-    cfg.sounds.victorySounds = collectTags('sound-victory-list');
+    cfg.sounds.combatStartSound = $('sound-combatStart').value.trim() || '합';
+    cfg.sounds.roundHeaderSounds = collectTags('sound-roundHeader-list');
+    cfg.sounds.resultNormalSounds = collectTags('sound-resultNormal-list');
+    cfg.sounds.resultSpecialSound = $('sound-resultSpecial').value.trim() || '챙4';
+    cfg.sounds.victorySound = $('sound-victory').value.trim() || '합';
 
     // 패턴
     cfg.patterns.triggerRegex = $('pat-triggerRegex').value;
@@ -249,18 +258,18 @@
     });
 
     // 효과음 추가
-    $('sound-roll-add').addEventListener('click', () => {
-      addTag('sound-roll-list', 'sound-roll-input', 'rollSounds');
+    $('sound-roundHeader-add').addEventListener('click', () => {
+      addTag('sound-roundHeader-list', 'sound-roundHeader-input', 'roundHeaderSounds');
     });
-    $('sound-roll-input').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') addTag('sound-roll-list', 'sound-roll-input', 'rollSounds');
+    $('sound-roundHeader-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') addTag('sound-roundHeader-list', 'sound-roundHeader-input', 'roundHeaderSounds');
     });
 
-    $('sound-victory-add').addEventListener('click', () => {
-      addTag('sound-victory-list', 'sound-victory-input', 'victorySounds');
+    $('sound-resultNormal-add').addEventListener('click', () => {
+      addTag('sound-resultNormal-list', 'sound-resultNormal-input', 'resultNormalSounds');
     });
-    $('sound-victory-input').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') addTag('sound-victory-list', 'sound-victory-input', 'victorySounds');
+    $('sound-resultNormal-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') addTag('sound-resultNormal-list', 'sound-resultNormal-input', 'resultNormalSounds');
     });
 
     // 저장

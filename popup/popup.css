@@ -1,6 +1,7 @@
 /* ============================================================
    Branch World Battle Roll - Popup 스타일시트
-   설정 UI 스타일링
+   설정 UI 스타일링 - 코코포리아 다크 테마
+   주조색: #3a3a3a · 보조색: #212121
    ============================================================ */
 
 /* ── 기본 리셋 ────────────────────────────────── */
@@ -15,7 +16,7 @@ body {
   font-family: 'Segoe UI', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 13px;
   color: #e0e0e0;
-  background: #1a1a2e;
+  background: #212121;
   min-width: 420px;
   max-width: 420px;
 }
@@ -35,8 +36,8 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  background: linear-gradient(135deg, #16213e, #1a1a2e);
-  border-bottom: 1px solid rgba(100, 140, 255, 0.2);
+  background: linear-gradient(135deg, #2d2d2d, #212121);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .header-title {
@@ -52,7 +53,7 @@ body {
 .header-title h1 {
   font-size: 15px;
   font-weight: 700;
-  color: #8ab4ff;
+  color: #ccc;
   line-height: 1.2;
 }
 
@@ -146,7 +147,7 @@ body {
 }
 
 input[type="checkbox"]:checked + .toggle-slider {
-  background: #4a7cff;
+  background: #3a3a3a;
 }
 
 input[type="checkbox"]:checked + .toggle-slider::after {
@@ -187,8 +188,8 @@ input[type="checkbox"]:checked + .toggle-slider.small::after {
 }
 
 .tab-btn.active {
-  color: #8ab4ff;
-  border-bottom-color: #4a7cff;
+  color: #c8c8b8;
+  border-bottom-color: #3a3a3a;
 }
 
 /* ── 탭 콘텐츠 ────────────────────────────────── */
@@ -229,7 +230,7 @@ input[type="checkbox"]:checked + .toggle-slider.small::after {
   padding: 1px 4px;
   border-radius: 3px;
   font-size: 11px;
-  color: #8ab4ff;
+  color: #ccc;
 }
 
 /* ── 필드 스타일 ──────────────────────────────── */
@@ -269,7 +270,7 @@ input[type="checkbox"]:checked + .toggle-slider.small::after {
 
 .field-input:focus {
   outline: none;
-  border-color: #4a7cff;
+  border-color: #3a3a3a;
   background: rgba(255, 255, 255, 0.08);
 }
 
@@ -288,7 +289,7 @@ select.field-input {
 }
 
 select.field-input option {
-  background: #1a1a2e;
+  background: #212121;
   color: #ddd;
 }
 
@@ -316,7 +317,7 @@ select.field-input option {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #4a7cff;
+  background: #3a3a3a;
   cursor: pointer;
 }
 
@@ -333,7 +334,7 @@ select.field-input option {
 
 .field-number:focus {
   outline: none;
-  border-color: #4a7cff;
+  border-color: #3a3a3a;
 }
 
 .field-unit {
@@ -357,11 +358,11 @@ select.field-input option {
   align-items: center;
   gap: 4px;
   padding: 3px 8px;
-  background: rgba(74, 124, 255, 0.15);
-  border: 1px solid rgba(74, 124, 255, 0.3);
+  background: rgba(58, 58, 58, 0.3);
+  border: 1px solid rgba(58, 58, 58, 0.6);
   border-radius: 14px;
   font-size: 11px;
-  color: #8ab4ff;
+  color: #ccc;
 }
 
 .tag-item .tag-remove {
@@ -387,10 +388,10 @@ select.field-input option {
 
 .btn-small {
   padding: 4px 12px;
-  background: rgba(74, 124, 255, 0.2);
-  border: 1px solid rgba(74, 124, 255, 0.3);
+  background: rgba(58, 58, 58, 0.4);
+  border: 1px solid rgba(58, 58, 58, 0.6);
   border-radius: 6px;
-  color: #8ab4ff;
+  color: #ccc;
   font-size: 11px;
   cursor: pointer;
   transition: all 0.2s;
@@ -398,7 +399,7 @@ select.field-input option {
 }
 
 .btn-small:hover {
-  background: rgba(74, 124, 255, 0.3);
+  background: rgba(58, 58, 58, 0.6);
 }
 
 /* ── 고급 설정 (details) ──────────────────────── */
@@ -474,12 +475,12 @@ select.field-input option {
 }
 
 .btn-primary {
-  background: #4a7cff;
-  color: #fff;
+  background: #3a3a3a;
+  color: #e0e0e0;
 }
 
 .btn-primary:hover {
-  background: #3b6de6;
+  background: #484848;
 }
 
 .btn-secondary {
@@ -506,17 +507,17 @@ select.field-input option {
 .btn-full {
   width: 100%;
   padding: 8px;
-  background: rgba(74, 124, 255, 0.15);
-  border: 1px solid rgba(74, 124, 255, 0.3);
+  background: rgba(58, 58, 58, 0.3);
+  border: 1px solid rgba(58, 58, 58, 0.6);
   border-radius: 6px;
-  color: #8ab4ff;
+  color: #ccc;
   font-size: 12px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .btn-full:hover {
-  background: rgba(74, 124, 255, 0.25);
+  background: rgba(58, 58, 58, 0.5);
 }
 
 /* ── 푸터 ─────────────────────────────────────── */
@@ -543,10 +544,10 @@ select.field-input option {
   left: 50%;
   transform: translateX(-50%) translateY(20px);
   padding: 8px 20px;
-  background: rgba(30, 30, 50, 0.95);
-  border: 1px solid rgba(74, 124, 255, 0.5);
+  background: rgba(45, 45, 45, 0.95);
+  border: 1px solid rgba(58, 58, 58, 0.7);
   border-radius: 8px;
-  color: #8ab4ff;
+  color: #ccc;
   font-size: 12px;
   opacity: 0;
   pointer-events: none;
