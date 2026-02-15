@@ -48,14 +48,14 @@ window.BattleRollEngine = class BattleRollEngine {
       attacker: {
         name: match[1].trim(),
         dice: parseInt(match[2], 10),
-        crits: parseInt(match[3], 10),
-        fumbles: parseInt(match[4], 10)
+        critThreshold: parseInt(match[3], 10),
+        fumbleThreshold: parseInt(match[4], 10)
       },
       defender: {
         name: match[5].trim(),
         dice: parseInt(match[6], 10),
-        crits: parseInt(match[7], 10),
-        fumbles: parseInt(match[8], 10)
+        critThreshold: parseInt(match[7], 10),
+        fumbleThreshold: parseInt(match[8], 10)
       }
     };
   }
@@ -74,20 +74,28 @@ window.BattleRollEngine = class BattleRollEngine {
 
   /**
    * 전투 시작
-   * @param {object} attacker - {name, dice, crits, fumbles}
-   * @param {object} defender - {name, dice, crits, fumbles}
+   * @param {object} attacker - {name, dice, critThreshold, fumbleThreshold}
+   * @param {object} defender - {name, dice, critThreshold, fumbleThreshold}
    */
   startCombat(attacker, defender) {
     this.combat = {
-      attacker: { ...attacker },
-      defender: { ...defender }
+      attacker: {
+        ...attacker,
+        critCount: 0,
+        fumbleCount: 0
+      },
+      defender: {
+        ...defender,
+        critCount: 0,
+        fumbleCount: 0
+      }
     };
     this.round = 0;
     this.lastAttackerRoll = null;
     this.lastDefenderRoll = null;
     this.history = [];
 
-    this._log(`전투 시작: ⚔️ ${attacker.name}(${attacker.dice}) vs 🛡️ ${defender.name}(${defender.dice})`);
+    this._log(`전투 시작: ⚔️ ${attacker.name}(주사위${attacker.dice}, 대성공>=${attacker.critThreshold}, 대실패<=${attacker.fumbleThreshold}) vs 🛡️ ${defender.name}(주사위${defender.dice}, 대성공>=${defender.critThreshold}, 대실패<=${defender.fumbleThreshold})`);
   }
 
   /** 라운드 번호 증가 */
@@ -122,10 +130,11 @@ window.BattleRollEngine = class BattleRollEngine {
     const defVal = this.lastDefenderRoll;
     const rules = this.config.rules;
 
-    const atkCrit = (atkVal === rules.criticalValue);
-    const atkFumble = (atkVal === rules.fumbleValue);
-    const defCrit = (defVal === rules.criticalValue);
-    const defFumble = (defVal === rules.fumbleValue);
+    // 캠릭터별 대성공/대실패 수준 사용
+    const atkCrit = (atkVal >= this.combat.attacker.critThreshold);
+    const atkFumble = (atkVal <= this.combat.attacker.fumbleThreshold);
+    const defCrit = (defVal >= this.combat.defender.critThreshold);
+    const defFumble = (defVal <= this.combat.defender.fumbleThreshold);
 
     let result = {
       round: this.round,
@@ -149,8 +158,8 @@ window.BattleRollEngine = class BattleRollEngine {
       result.type = 'bothCrit';
       result.atkDiceChange = +rules.criticalBonus;
       result.defDiceChange = +rules.criticalBonus;
-      this.combat.attacker.crits++;
-      this.combat.defender.crits++;
+      this.combat.attacker.critCount++;
+      this.combat.defender.critCount++;
       result.description = this._formatTemplate(this.config.templates.roundResultBothCrit, {
         atkValue: atkVal,
         defValue: defVal
@@ -161,8 +170,8 @@ window.BattleRollEngine = class BattleRollEngine {
       result.type = 'bothFumble';
       result.atkDiceChange = -(1 + rules.fumblePenalty);  // 파괴(-1) + 페널티(-1) = -2
       result.defDiceChange = -(1 + rules.fumblePenalty);
-      this.combat.attacker.fumbles++;
-      this.combat.defender.fumbles++;
+      this.combat.attacker.fumbleCount++;
+      this.combat.defender.fumbleCount++;
       result.description =
         this._formatTemplate(this.config.templates.roundResultFumble, { name: this.combat.attacker.name, value: atkVal }) +
         '\n' +
@@ -174,8 +183,8 @@ window.BattleRollEngine = class BattleRollEngine {
       result.winner = 'attacker';
       result.atkDiceChange = +rules.criticalBonus;
       result.defDiceChange = -(1 + rules.fumblePenalty);
-      this.combat.attacker.crits++;
-      this.combat.defender.fumbles++;
+      this.combat.attacker.critCount++;
+      this.combat.defender.fumbleCount++;
       result.description =
         this._formatTemplate(this.config.templates.roundResultCrit, { name: this.combat.attacker.name, value: atkVal }) +
         '\n' +
@@ -187,8 +196,8 @@ window.BattleRollEngine = class BattleRollEngine {
       result.winner = 'defender';
       result.defDiceChange = +rules.criticalBonus;
       result.atkDiceChange = -(1 + rules.fumblePenalty);
-      this.combat.defender.crits++;
-      this.combat.attacker.fumbles++;
+      this.combat.defender.critCount++;
+      this.combat.attacker.fumbleCount++;
       result.description =
         this._formatTemplate(this.config.templates.roundResultCrit, { name: this.combat.defender.name, value: defVal }) +
         '\n' +
@@ -200,7 +209,7 @@ window.BattleRollEngine = class BattleRollEngine {
       result.winner = 'attacker';
       result.atkDiceChange = +rules.criticalBonus;
       result.defDiceChange = -1;
-      this.combat.attacker.crits++;
+      this.combat.attacker.critCount++;
       result.description = this._formatTemplate(this.config.templates.roundResultCrit, {
         name: this.combat.attacker.name,
         value: atkVal
@@ -212,7 +221,7 @@ window.BattleRollEngine = class BattleRollEngine {
       result.winner = 'defender';
       result.defDiceChange = +rules.criticalBonus;
       result.atkDiceChange = -1;
-      this.combat.defender.crits++;
+      this.combat.defender.critCount++;
       result.description = this._formatTemplate(this.config.templates.roundResultCrit, {
         name: this.combat.defender.name,
         value: defVal
@@ -223,7 +232,7 @@ window.BattleRollEngine = class BattleRollEngine {
       result.type = 'fumble';
       result.winner = 'defender';
       result.atkDiceChange = -(1 + rules.fumblePenalty);
-      this.combat.attacker.fumbles++;
+      this.combat.attacker.fumbleCount++;
       result.description = this._formatTemplate(this.config.templates.roundResultFumble, {
         name: this.combat.attacker.name,
         value: atkVal
@@ -234,7 +243,7 @@ window.BattleRollEngine = class BattleRollEngine {
       result.type = 'fumble';
       result.winner = 'attacker';
       result.defDiceChange = -(1 + rules.fumblePenalty);
-      this.combat.defender.fumbles++;
+      this.combat.defender.fumbleCount++;
       result.description = this._formatTemplate(this.config.templates.roundResultFumble, {
         name: this.combat.defender.name,
         value: defVal

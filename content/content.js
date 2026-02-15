@@ -223,25 +223,58 @@
     setResultTimeout('공격자');
   }
 
-  function checkForAttackerResult(text) {
-    // 코코포리아 다이스봇 결과만 인식: '1D20' 또는 '(1D20)' 포함 필수
-    if (!text.match(/1[Dd]20/)) return;
+  /**
+   * 주사위 결과 값 추출 (이름 기반 패턴)
+   * 그룹된 메시지(textContent에 다른 메시지도 포함)에서도 정확히 추출
+   * - "이름: 숫자" 패턴을 우선 매칭 (라운드 헤더의 "이름 숫자 :" 패턴과 혼동 방지)
+   */
+  function extractDiceValue(text, playerName, emoji) {
+    const nameEsc = playerName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-    const value = chat.parseDiceResult(text);
-    if (value === null) return;
-
-    // 결과가 공격자 것인지 확인 (⚔️ 또는 공격자 이름 포함 여부)
-    const state = engine.getState();
-    if (!text.includes('⚔️') && !text.includes(state.combat.attacker.name)) {
-      return; // 무관한 주사위 결과 무시
+    // Pattern 1: "이름: 숫자" 또는 "이름： 숫자" (코코포리아 주사위 결과 표시)
+    const p1 = new RegExp(nameEsc + '\\s*[：:]\\s*(\\d{1,2})');
+    const m1 = text.match(p1);
+    if (m1) {
+      const v = parseInt(m1[1], 10);
+      if (v >= 1 && v <= config.rules.diceType) return v;
     }
 
+    // Pattern 2: "1D20 ... → 숫자" (이모지 또는 이름 포함 시)
+    if (text.includes(emoji) || text.includes(playerName)) {
+      const m2 = text.match(/1[Dd]20.*?[→＞>]\s*(\d{1,2})/);
+      if (m2) {
+        const v = parseInt(m2[1], 10);
+        if (v >= 1 && v <= config.rules.diceType) return v;
+      }
+    }
+
+    // Pattern 3: "결과: 숫자" (이모지 또는 이름 포함 시)
+    if (text.includes(emoji) || text.includes(playerName)) {
+      const m3 = text.match(/결과\s*[：:]\s*(\d{1,2})/);
+      if (m3) {
+        const v = parseInt(m3[1], 10);
+        if (v >= 1 && v <= config.rules.diceType) return v;
+      }
+    }
+
+    return null;
+  }
+
+  function checkForAttackerResult(text) {
+    const state = engine.getState();
+    if (!state?.combat) return;
+
+    const value = extractDiceValue(text, state.combat.attacker.name, '⚔');
+    if (value === null) return;
+
+    // 즉시 상태 전환 → 중복 감지 차단 (동일 결과가 다른 DOM 요소에서 여러 번 수집됨)
+    flowState = STATE.PROCESSING_RESULT;
     clearTimeout(resultTimeoutId);
-    log(`공격자 결과: ${value}`);
+    alwaysLog(`공격자 결과: ${value}`);
     engine.setAttackerRoll(value);
 
-    const logType = value === config.rules.criticalValue ? 'crit'
-      : value === config.rules.fumbleValue ? 'fumble' : 'info';
+    const logType = value >= state.combat.attacker.critThreshold ? 'crit'
+      : value <= state.combat.attacker.fumbleThreshold ? 'fumble' : 'info';
     overlay.addLog(`⚔️ ${state.combat.attacker.name}: ${value}`, logType);
 
     // 대기 후 방어자 굴림
@@ -262,24 +295,20 @@
   }
 
   function checkForDefenderResult(text) {
-    // 코코포리아 다이스봇 결과만 인식: '1D20' 또는 '(1D20)' 포함 필수
-    if (!text.match(/1[Dd]20/)) return;
+    const state = engine.getState();
+    if (!state?.combat) return;
 
-    const value = chat.parseDiceResult(text);
+    const value = extractDiceValue(text, state.combat.defender.name, '🛡');
     if (value === null) return;
 
-    // 결과가 방어자 것인지 확인
-    const state = engine.getState();
-    if (!text.includes('🛡️') && !text.includes(state.combat.defender.name)) {
-      return;
-    }
-
+    // 즉시 상태 전환 → 중복 감지 차단
+    flowState = STATE.PROCESSING_RESULT;
     clearTimeout(resultTimeoutId);
-    log(`방어자 결과: ${value}`);
+    alwaysLog(`방어자 결과: ${value}`);
     engine.setDefenderRoll(value);
 
-    const logType = value === config.rules.criticalValue ? 'crit'
-      : value === config.rules.fumbleValue ? 'fumble' : 'info';
+    const logType = value >= state.combat.defender.critThreshold ? 'crit'
+      : value <= state.combat.defender.fumbleThreshold ? 'fumble' : 'info';
     overlay.addLog(`🛡️ ${state.combat.defender.name}: ${value}`, logType);
 
     // 대기 후 결과 처리
@@ -295,8 +324,8 @@
     try {
       const result = engine.processRoundResult();
       if (!result) {
-        alwaysLog('⚠️ processRoundResult가 null 반환 → 재시도 대기');
-        flowState = STATE.IDLE;
+        // 중복 호출로 이미 처리된 경우 → 상태 변경 없이 무시
+        alwaysLog('⚠️ processRoundResult: 이미 처리됨 (중복 호출 무시)');
         return;
       }
 

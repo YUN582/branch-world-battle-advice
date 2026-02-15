@@ -18,10 +18,10 @@ window.BWBR_DEFAULTS = {
       '《{round}합》\n⚔️ {attacker} {atkDice} : 🛡️ {defender} {defDice}',
 
     // 공격자 주사위 굴림 명령
-    attackerRoll: '1D20 ⚔️ {attacker} @{sound}',
+    attackerRoll: '1D20 ⚔️ {attacker}',
 
     // 방어자 주사위 굴림 명령
-    defenderRoll: '1D20 🛡️ {defender} @{sound}',
+    defenderRoll: '1D20 🛡️ {defender}',
 
     // 합 결과 메시지
     roundResultWin:
@@ -36,7 +36,7 @@ window.BWBR_DEFAULTS = {
       '⚖️ 무승부! ⚔️【{atkValue}】 🛡️【{defValue}】 → 재굴림',
 
     // 합 승리 메시지
-    victory: '《합 승리》- {winnerIcon} {winner} @합',
+    victory: '《합 승리》- {winnerIcon} {winner}',
 
     // 합 중지 메시지 (이 패턴 감지 시 전투 중지)
     combatCancel: '《합 중지》'

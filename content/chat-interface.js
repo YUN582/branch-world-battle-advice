@@ -224,23 +224,33 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
 
     if (unseenMessages.length === 0) return;
 
+    // 중복 제거 (중첩된 DOM 요소에서 같은 텍스트가 여러 번 수집될 수 있음)
+    const dedupSet = new Set();
+    const uniqueUnseen = [];
+    for (const msg of unseenMessages) {
+      if (!dedupSet.has(msg.text)) {
+        dedupSet.add(msg.text);
+        uniqueUnseen.push(msg);
+      }
+    }
+
     // 탭 전환 감지: 보이는 메시지의 70% 이상이 unseen이면 탭 전환
-    const unseenRatio = unseenMessages.length / current.length;
+    const unseenRatio = uniqueUnseen.length / current.length;
     if (current.length >= 3 && unseenRatio > 0.7) {
-      this._log(`⚠️ 탭 전환 감지 (${unseenMessages.length}/${current.length} = ${Math.round(unseenRatio*100)}% unseen) → 무시`);
+      this._log(`⚠️ 탭 전환 감지 (${uniqueUnseen.length}/${current.length} = ${Math.round(unseenRatio*100)}% unseen) → 무시`);
       return;
     }
 
     // 대량 신규(8개+) → 로드/탭전환
-    if (unseenMessages.length > 8) {
-      this._log(`⚠️ 대량 신규(${unseenMessages.length}개) → 무시`);
+    if (uniqueUnseen.length > 8) {
+      this._log(`⚠️ 대량 신규(${uniqueUnseen.length}개) → 무시`);
       return;
     }
 
     // 새 메시지 처리
-    this._log(`📨 새 메시지 ${unseenMessages.length}개`);
+    this._log(`📨 새 메시지 ${uniqueUnseen.length}개`);
 
-    for (const { text } of unseenMessages) {
+    for (const { text } of uniqueUnseen) {
       if (this._isOwnMessage(text)) {
         this._log(`  [자체] "${text.substring(0, 40)}"`);
         continue;
@@ -279,10 +289,11 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
   parseDiceResult(text) {
     const patterns = [
       this.config.patterns.diceResultRegex,
-      '1[Dd]20[^0-9]*?[→＞>=]+\\s*(\\d+)',
-      '\\(1[Dd]20\\)[^0-9]*?[→＞>=]+\\s*(\\d+)',
+      '1[Dd]20.*?[→＞>=]+\\s*(\\d+)',
+      '\\(1[Dd]20\\).*?[→＞>=]+\\s*(\\d+)',
       '결과[:\\s]*(\\d+)',
-      '[→＞>]\\s*(\\d+)\\s*$'
+      '[→＞>]\\s*(\\d+)\\s*$',
+      ':\\s*(\\d{1,2})\\s*$'
     ];
     for (const pat of patterns) {
       try {
@@ -328,7 +339,11 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
       this.sendButton = this._findSendButton();
     }
 
-    this._lastSentMessages.push({ text, time: Date.now() });
+    // 주사위 명령이 아닌 경우에만 자체 메시지로 등록
+    // (주사위 결과 메시지가 substring 매칭으로 필터링되는 것을 방지)
+    if (!/^\d+[dD]\d+/.test(text)) {
+      this._lastSentMessages.push({ text, time: Date.now() });
+    }
     // 전송할 메시지를 미리 seen에 등록 (돌아왔을 때 무시)
     this._seenTexts.add(text);
     this._log(`📤 전송: "${text.substring(0, 60)}"`);
@@ -357,7 +372,7 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
         preventDefault() {}, stopPropagation() {},
         nativeEvent: new Event('change'), persist() {}
       });
-      await this._delay(100);
+      await this._delay(400);
 
       if (el.value !== text) {
         this._setNativeValue(el, text);
@@ -366,7 +381,7 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
           preventDefault() {}, stopPropagation() {},
           nativeEvent: new Event('change'), persist() {}
         });
-        await this._delay(80);
+        await this._delay(200);
       }
 
       return await this._submitForm();
@@ -427,64 +442,104 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
   }
 
   /**
-   * 폼 제출 -- 코코포리아 컨티인(@효과음) 지원을 위해
-   * React onKeyDown(Enter) → 네이티브 Enter 이벤트 → 버튼 클릭 순으로 시도.
-   * 컨틴인은 Enter 키로 전송할 때만 작동하므로 Enter를 최우선.
+   * 폼 제출
+   * 네이티브 Enter → form submit 이벤트 → React fiber Enter → 버튼 클릭 순서.
+   * 네이티브 Enter가 React 이벤트 위임을 통해 코코포리아 @효과음을 트리거합니다.
    */
   async _submitForm() {
     const el = this.chatInput;
+    el.focus();
+    await this._delay(30);
 
-    // A) React onKeyDown(Enter) — 컨틴인 지원됨
+    // A) 네이티브 Enter — React 이벤트 위임으로 @효과음 지원
+    this._log('전송(A): 네이티브 Enter (이벤트 위임)');
+    const enterOpts = {
+      key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+      bubbles: true, cancelable: true, composed: true, view: window
+    };
+    el.dispatchEvent(new KeyboardEvent('keydown', enterOpts));
+    await this._delay(50);
+    el.dispatchEvent(new KeyboardEvent('keypress', { ...enterOpts, charCode: 13 }));
+    el.dispatchEvent(new KeyboardEvent('keyup', enterOpts));
+    await this._delay(400);
+    if (!el.value || el.value.trim() === '') {
+      this._log('✅ 전송 성공 (A: 네이티브 Enter)');
+      return true;
+    }
+
+    // B) form submit 이벤트 — React onSubmit 트리거
+    if (this.chatForm) {
+      this._log('전송(B): form submit 이벤트');
+      this.chatForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await this._delay(300);
+      if (!el.value || el.value.trim() === '') {
+        this._log('✅ 전송 성공 (B: form submit)');
+        return true;
+      }
+    }
+
+    // C) React fiber Enter 전파 — 직접 핸들러 호출
     try {
-      const pk = Object.keys(el).find(k => k.startsWith('__reactProps$'));
-      if (pk && el[pk]?.onKeyDown) {
-        this._log('전송: React onKeyDown(Enter)');
-        const prevented = { value: false };
-        el[pk].onKeyDown({
+      const fiberKey = Object.keys(el).find(k =>
+        k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$')
+      );
+      if (fiberKey) {
+        this._log('전송(C): React fiber Enter 전파');
+        const enterEvent = {
           key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
-          shiftKey: false, ctrlKey: false, altKey: false, metaKey: false,
-          target: el, currentTarget: el,
-          preventDefault() { prevented.value = true; },
-          stopPropagation() {},
-          nativeEvent: new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }),
-          persist() {},
-          isDefaultPrevented() { return prevented.value; }
-        });
-        await this._delay(200);
-
-        // Enter 후 입력란이 비어졌으면 성공
-        if (!el.value || el.value.trim() === '') return true;
-        // 비어지지 않았으면 다음 방법 시도
+          charCode: 13, shiftKey: false, ctrlKey: false, altKey: false,
+          metaKey: false, isComposing: false,
+          target: el, currentTarget: el, type: 'keydown',
+          bubbles: true, cancelable: true,
+          isDefaultPrevented: () => false,
+          isPropagationStopped: () => false,
+          preventDefault() {}, stopPropagation() {},
+          nativeEvent: new KeyboardEvent('keydown', {
+            key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+            bubbles: true, cancelable: true
+          }),
+          persist() {}
+        };
+        let fiber = el[fiberKey];
+        let depth = 0;
+        while (fiber && depth < 30) {
+          const props = fiber.memoizedProps || fiber.pendingProps;
+          if (props?.onKeyDown) {
+            try { props.onKeyDown(enterEvent); } catch (e) {}
+          }
+          fiber = fiber.return;
+          depth++;
+        }
+        await this._delay(400);
+        if (!el.value || el.value.trim() === '') {
+          this._log('✅ 전송 성공 (C: fiber Enter)');
+          return true;
+        }
       }
     } catch (e) {
-      this._log(`React Enter 오류: ${e.message}`);
+      this._log(`React fiber Enter 오류: ${e.message}`);
     }
 
-    // B) 네이티브 KeyboardEvent Enter
-    this._log('전송: 네이티브 Enter');
-    for (const type of ['keydown', 'keypress', 'keyup']) {
-      el.dispatchEvent(new KeyboardEvent(type, {
-        key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
-        bubbles: true, cancelable: true, composed: true
-      }));
-    }
-    await this._delay(200);
-    if (!el.value || el.value.trim() === '') return true;
-
-    // C) 전송 버튼 (컨티인 미지원 펴백)
+    // D) 전송 버튼
     if (this.sendButton && this._isVisible(this.sendButton)) {
-      this._log('전송: 버튼 클릭 (펴백)');
+      this._log('전송(D): 버튼 클릭');
       this.sendButton.click();
       await this._delay(200);
       return true;
     }
 
-    // D) form submit (최후 수단)
+    // E) form.requestSubmit()
     if (this.chatForm) {
-      try { this.chatForm.requestSubmit(); await this._delay(200); return true; } catch (e) {}
+      try {
+        this._log('전송(E): form.requestSubmit()');
+        this.chatForm.requestSubmit();
+        await this._delay(200);
+        return true;
+      } catch (e) {}
     }
 
-    return true;
+    this._log('⚠️ 모든 전송 방법 실패');
+    return false;
   }
 
   _setNativeValue(el, text) {
