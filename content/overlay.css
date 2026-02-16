@@ -7,14 +7,12 @@
 /* ── 패널 컨테이너 ───────────────────────────── */
 
 #bwbr-panel {
-  background: #2d2d2d;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+  background: #212121;
   font-family: inherit;
   font-size: 15px;
   color: #e0e0e0;
-  user-select: none;
   position: relative;
-  z-index: 1;
+  z-index: 10;
 }
 
 /* ── 토글 바 (접기/펼치기) ────────────────────── */
@@ -28,6 +26,8 @@
   background: #212121;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   transition: background 0.2s;
+  user-select: none;
+  user-select: none;
 }
 
 #bwbr-toggle:hover {
@@ -96,23 +96,81 @@
 /* ── 패널 본체 (접기/펼치기 대상) ─────────────── */
 
 #bwbr-body {
-  overflow: hidden;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  background: #2d2d2d;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: 50vh;
   transition: max-height 0.3s ease, opacity 0.3s ease;
-  max-height: 800px;
   opacity: 1;
+  z-index: 10;
 }
 
 #bwbr-body.bwbr-collapsed {
   max-height: 0;
   opacity: 0;
   pointer-events: none;
+  overflow: hidden;
+  box-shadow: none;
+}
+
+/* ── 사용 안내 ────────────────────────────────── */
+
+#bwbr-guide {
+  padding: 6px 14px 10px;
+  font-size: 11px;
+  color: #888;
+  line-height: 1.5;
+}
+
+.bwbr-guide-trigger {
+  font-family: monospace;
+  font-size: 12px;
+  color: #ccc;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 4px;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  word-break: break-all;
+  letter-spacing: 0.3px;
+}
+
+.bwbr-guide-traits {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.bwbr-guide-trait {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+  color: #999;
+}
+
+.bwbr-guide-tag {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 0 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.bwbr-guide-example {
+  font-size: 10px;
+  color: #666;
+  margin-top: 4px;
+  font-style: italic;
 }
 
 /* ── 전투 정보 ────────────────────────────────── */
-
-#bwbr-combat-info {
-  padding: 14px 16px 10px;
-}
 
 .bwbr-round-badge {
   text-align: center;
@@ -168,6 +226,79 @@
   color: #999;
 }
 
+/* ── 특성 배지 ────────────────────────────────── */
+
+.bwbr-trait-badges {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+  margin-top: 3px;
+}
+
+.bwbr-trait-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #444;
+  color: #ccc;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.bwbr-trait-h0 {
+  background: #4a2020;
+  color: #ff8a80;
+  border: 1px solid #6a3030;
+}
+
+.bwbr-trait-h00 {
+  background: #3a2020;
+  color: #ff8a80;
+  border: 1px dashed #6a3030;
+  opacity: 0.75;
+}
+
+.bwbr-trait-h4 {
+  background: #2a2a40;
+  color: #82b1ff;
+  border: 1px solid #3a3a5a;
+}
+
+.bwbr-trait-status {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  margin-top: 2px;
+  min-height: 16px;
+}
+
+.bwbr-h4-indicator {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #1a237e;
+  color: #82b1ff;
+  animation: bwbr-h4-pulse 1.5s infinite;
+}
+
+.bwbr-h0-used {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #3e2723;
+  color: #ff8a80;
+  opacity: 0.6;
+}
+
+@keyframes bwbr-h4-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .bwbr-vs {
   font-size: 18px;
   font-weight: 700;
@@ -185,10 +316,33 @@
 /* ── 액션 (일시정지 · 전투 중지) ──────────────── */
 
 #bwbr-actions {
-  padding: 8px 16px 10px;
+  position: absolute;
+  top: 6px;
+  right: 8px;
   display: flex;
-  gap: 8px;
-  justify-content: flex-end;
+  gap: 4px;
+  z-index: 5;
+}
+
+#bwbr-combat-info {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  padding: 0 16px;
+  /* 숨김 전환: 콘텐츠 페이드아웃(0.25s) → 컨테이너 접힘(0.35s, 0.25s 딜레이) */
+  transition: opacity 0.25s ease-in,
+              max-height 0.35s ease-in 0.25s,
+              padding 0.35s ease-in 0.25s;
+}
+
+#bwbr-combat-info.bwbr-combat-visible {
+  max-height: 300px;
+  opacity: 1;
+  padding: 14px 16px 10px;
+  /* 표시 전환: 컨테이너 펼침(0.4s) → 콘텐츠 페이드인(0.3s, 0.2s 딜레이) */
+  transition: max-height 0.4s ease-out,
+              padding 0.4s ease-out,
+              opacity 0.3s ease-out 0.2s;
 }
 
 #bwbr-btn-pause {
@@ -196,11 +350,13 @@
   border: 1px solid rgba(255, 152, 0, 0.35);
   border-radius: 4px;
   color: #ffb74d;
-  font-size: 14px;
-  padding: 8px 18px;
+  font-size: 12px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   cursor: pointer;
   transition: all 0.2s;
-  font-family: inherit;
+  line-height: 1;
 }
 
 #bwbr-btn-pause:hover {
@@ -223,11 +379,13 @@
   border: 1px solid rgba(244, 67, 54, 0.3);
   border-radius: 4px;
   color: #e57373;
-  font-size: 14px;
-  padding: 8px 18px;
+  font-size: 12px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   cursor: pointer;
   transition: all 0.2s;
-  font-family: inherit;
+  line-height: 1;
 }
 
 #bwbr-btn-cancel:hover {
@@ -238,8 +396,9 @@
 /* ── 로그 ─────────────────────────────────────── */
 
 #bwbr-log {
-  max-height: 150px;
+  height: 130px;
   overflow-y: auto;
+  overflow-x: hidden;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 

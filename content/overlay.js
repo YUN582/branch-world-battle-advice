@@ -7,13 +7,14 @@ window.BattleRollOverlay = class BattleRollOverlay {
   constructor(config) {
     this.config = config || window.BWBR_DEFAULTS;
     this.element = null;
-    this.isCollapsed = true;
+    this.isCollapsed = false;
     this.onCancelCallback = null;
     this.onPauseCallback = null;
     this._manualInputResolve = null;
     this._injected = false;
     this._retryTimer = null;
     this._paused = false;
+    this._combatHideTimer = null;
     this._inject();
   }
 
@@ -49,27 +50,31 @@ window.BattleRollOverlay = class BattleRollOverlay {
           <span class="bwbr-dot idle" id="bwbr-dot"></span>
           <span class="bwbr-status-text" id="bwbr-status-text">대기 중</span>
         </div>
-        <button id="bwbr-btn-expand" type="button">▼</button>
+        <button id="bwbr-btn-expand" type="button">▲</button>
       </div>
-      <div id="bwbr-body" class="bwbr-collapsed">
-        <div id="bwbr-combat-info">
-          <div class="bwbr-fighters">
-            <div class="bwbr-fighter">
-              <span class="bwbr-fighter-icon">⚔️</span>
-              <span class="bwbr-fighter-name bwbr-empty">공격자</span>
-              <span class="bwbr-fighter-dice">-</span>
-            </div>
-            <span class="bwbr-vs">VS</span>
-            <div class="bwbr-fighter">
-              <span class="bwbr-fighter-icon">🛡️</span>
-              <span class="bwbr-fighter-name bwbr-empty">방어자</span>
-              <span class="bwbr-fighter-dice">-</span>
-            </div>
-          </div>
-        </div>
+      <div id="bwbr-body">
         <div id="bwbr-actions" style="display:none">
-          <button type="button" id="bwbr-btn-pause">⏸ 일시정지</button>
-          <button type="button" id="bwbr-btn-cancel">전투 중지</button>
+          <button type="button" id="bwbr-btn-pause" title="일시정지">⏸</button>
+          <button type="button" id="bwbr-btn-cancel" title="전투 중지">✖</button>
+        </div>
+        <div id="bwbr-combat-info"></div>
+        <div id="bwbr-guide">
+          <div class="bwbr-guide-trigger">《합 개시》| ⚔️ 공격자 - 주사위/대성공/대실패 | 🛡️ 방어자 - 주사위/대성공/대실패</div>
+          <div class="bwbr-guide-traits">
+            <div class="bwbr-guide-trait">
+              <span class="bwbr-guide-tag bwbr-trait-h0">H0</span>
+              <span>인간 고유 특성 — 주사위 0 시 +1 부활, 대성공 시 초기화</span>
+            </div>
+            <div class="bwbr-guide-trait">
+              <span class="bwbr-guide-tag bwbr-trait-h00">H00</span>
+              <span>인간 고유 특성 (잠재) — 특성 없지만 대성공 시 초기화되어 사용 가능</span>
+            </div>
+            <div class="bwbr-guide-trait">
+              <span class="bwbr-guide-tag bwbr-trait-h4">H4</span>
+              <span>피로 새겨진 역사 — 대성공 시 다음 판정 +2, 최대+5, 비크리 시 초기화</span>
+            </div>
+            <div class="bwbr-guide-example">사용예: ⚔️ 철수 - 5/18/3/H0H4 | 🛡️ 영희 - 5/18/3/H00</div>
+          </div>
         </div>
         <div id="bwbr-log"></div>
         <div id="bwbr-manual-input" style="display:none">
@@ -181,25 +186,30 @@ window.BattleRollOverlay = class BattleRollOverlay {
     if (!info) return;
 
     if (!state.combat) {
-      info.innerHTML = `
-        <div class="bwbr-fighters">
-          <div class="bwbr-fighter">
-            <span class="bwbr-fighter-icon">⚔️</span>
-            <span class="bwbr-fighter-name bwbr-empty">공격자</span>
-            <span class="bwbr-fighter-dice">-</span>
-          </div>
-          <span class="bwbr-vs">VS</span>
-          <div class="bwbr-fighter">
-            <span class="bwbr-fighter-icon">🛡️</span>
-            <span class="bwbr-fighter-name bwbr-empty">방어자</span>
-            <span class="bwbr-fighter-dice">-</span>
-          </div>
-        </div>`;
+      // 부드러운 숨김: 콘텐츠 페이드아웃 → 컨테이너 접힘
+      info.classList.remove('bwbr-combat-visible');
+      clearTimeout(this._combatHideTimer);
+      this._combatHideTimer = setTimeout(() => {
+        if (!info.classList.contains('bwbr-combat-visible')) {
+          info.innerHTML = '';
+        }
+      }, 700);
       return;
     }
 
+    clearTimeout(this._combatHideTimer);
+
     const atk = state.combat.attacker;
     const def = state.combat.defender;
+
+    const atkTraitBadges = this._renderTraitBadges(atk);
+    const defTraitBadges = this._renderTraitBadges(def);
+    const atkH4Info = atk.h4Bonus > 0 ? `<span class="bwbr-h4-indicator" title="피로 새겨진 역사 +${atk.h4Bonus}">역사+${atk.h4Bonus}</span>` : '';
+    const defH4Info = def.h4Bonus > 0 ? `<span class="bwbr-h4-indicator" title="피로 새겨진 역사 +${def.h4Bonus}">역사+${def.h4Bonus}</span>` : '';
+    const atkHasH0 = atk.traits?.includes('H0') || atk.traits?.includes('H00');
+    const defHasH0 = def.traits?.includes('H0') || def.traits?.includes('H00');
+    const atkH0Info = atkHasH0 && atk.h0Used ? `<span class="bwbr-h0-used" title="인간 고유 특성 사용됨">부활✗</span>` : '';
+    const defH0Info = defHasH0 && def.h0Used ? `<span class="bwbr-h0-used" title="인간 고유 특성 사용됨">부활✗</span>` : '';
 
     info.innerHTML = `
       <div class="bwbr-round-badge">제 ${state.round}합</div>
@@ -207,18 +217,29 @@ window.BattleRollOverlay = class BattleRollOverlay {
         <div class="bwbr-fighter" id="bwbr-atk">
           <span class="bwbr-fighter-icon">⚔️</span>
           <span class="bwbr-fighter-name" title="${this._esc(atk.name)}">${this._esc(atk.name)}</span>
+          ${atkTraitBadges}
           <span class="bwbr-fighter-dice" id="bwbr-atk-dice">${atk.dice}</span>
           <span class="bwbr-fighter-thresholds">${atk.critThreshold}+ / ${atk.fumbleThreshold}-</span>
+          <span class="bwbr-trait-status">${atkH4Info}${atkH0Info}</span>
         </div>
         <span class="bwbr-vs">VS</span>
         <div class="bwbr-fighter" id="bwbr-def">
           <span class="bwbr-fighter-icon">🛡️</span>
           <span class="bwbr-fighter-name" title="${this._esc(def.name)}">${this._esc(def.name)}</span>
+          ${defTraitBadges}
           <span class="bwbr-fighter-dice" id="bwbr-def-dice">${def.dice}</span>
           <span class="bwbr-fighter-thresholds">${def.critThreshold}+ / ${def.fumbleThreshold}-</span>
+          <span class="bwbr-trait-status">${defH4Info}${defH0Info}</span>
         </div>
       </div>
     `;
+
+    // 부드러운 표시: 컨테이너 펼침 → 콘텐츠 페이드인
+    if (!info.classList.contains('bwbr-combat-visible')) {
+      requestAnimationFrame(() => {
+        info.classList.add('bwbr-combat-visible');
+      });
+    }
   }
 
   // ── 전투 애니메이션 ──────────────────────────────────
@@ -521,7 +542,18 @@ window.BattleRollOverlay = class BattleRollOverlay {
 
     const entry = document.createElement('div');
     entry.className = `bwbr-log-entry bwbr-log-${type}`;
-    entry.textContent = message;
+
+    // 줄바꿈(\n) 처리
+    const lines = message.split('\n');
+    if (lines.length > 1) {
+      lines.forEach((line, i) => {
+        entry.appendChild(document.createTextNode(line));
+        if (i < lines.length - 1) entry.appendChild(document.createElement('br'));
+      });
+    } else {
+      entry.textContent = message;
+    }
+
     log.appendChild(entry);
     log.scrollTop = log.scrollHeight;
 
@@ -541,7 +573,8 @@ window.BattleRollOverlay = class BattleRollOverlay {
     this._paused = isPaused;
     const btn = this.element?.querySelector('#bwbr-btn-pause');
     if (btn) {
-      btn.textContent = isPaused ? '▶ 재개' : '⏸ 일시정지';
+      btn.textContent = isPaused ? '▶' : '⏸';
+      btn.title = isPaused ? '재개' : '일시정지';
       btn.classList.toggle('bwbr-btn-resume', isPaused);
     }
   }
@@ -557,6 +590,20 @@ window.BattleRollOverlay = class BattleRollOverlay {
   }
 
   // ── 유틸리티 ──────────────────────────────────────────
+
+  /** 특성 태그 배지 HTML 생성 (코드→한글 명칭, 세로 나열) */
+  _renderTraitBadges(fighter) {
+    if (!fighter.traits || fighter.traits.length === 0) return '';
+    const TRAIT_NAMES = {
+      H0: '인간 고유 특성', H00: '인간 고유 특성 (잠재)', H1: '공석', H2: '공석', H3: '공석', H4: '피로 새겨진 역사'
+    };
+    return '<div class="bwbr-trait-badges">' +
+      fighter.traits
+        .filter(t => TRAIT_NAMES[t] && TRAIT_NAMES[t] !== '공석')
+        .map(t => `<span class="bwbr-trait-badge bwbr-trait-${t.toLowerCase()}" title="${t}: ${TRAIT_NAMES[t]}">${TRAIT_NAMES[t]}</span>`)
+        .join('') +
+      '</div>';
+  }
 
   _esc(str) {
     const div = document.createElement('div');

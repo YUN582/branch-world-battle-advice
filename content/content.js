@@ -389,8 +389,10 @@
       return;
     }
 
-    // 타임아웃 설정
-    setResultTimeout('공격자');
+    // 빠른 응답으로 이미 결과가 처리된 경우 타임아웃 설정 불필요
+    if (flowState === STATE.WAITING_ATTACKER_RESULT) {
+      setResultTimeout('공격자');
+    }
   }
 
   /**
@@ -400,6 +402,7 @@
    */
   function extractDiceValue(text, playerName, emoji) {
     const nameEsc = playerName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const emojiEsc = emoji.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
     // Pattern 1: "이름: 숫자" 또는 "이름： 숫자" (코코포리아 주사위 결과 표시)
     const p1 = new RegExp(nameEsc + '\\s*[：:]\\s*(\\d{1,2})');
@@ -409,20 +412,27 @@
       if (v >= 1 && v <= config.rules.diceType) return v;
     }
 
-    // Pattern 2: "1D20 ... → 숫자" (이모지 또는 이름 포함 시)
-    if (text.includes(emoji) || text.includes(playerName)) {
-      const m2 = text.match(/1[Dd]20.*?[→＞>]\s*(\d{1,2})/);
-      if (m2) {
-        const v = parseInt(m2[1], 10);
-        if (v >= 1 && v <= config.rules.diceType) return v;
-      }
+    // Pattern 2: "1D20 [이모지/이름] ... > 숫자" — 이름 또는 이모지가 1D20과 결과값 사이에 있어야 함
+    const p2 = new RegExp('1[Dd]20[^>＞→]*(?:' + emojiEsc + '|' + nameEsc + ')[^>＞→]*[→＞>]\\s*(\\d{1,2})');
+    const m2 = text.match(p2);
+    if (m2) {
+      const v = parseInt(m2[1], 10);
+      if (v >= 1 && v <= config.rules.diceType) return v;
     }
 
-    // Pattern 3: "결과: 숫자" (이모지 또는 이름 포함 시)
+    // Pattern 3: "[이모지/이름]... (1D20) > 숫자" — 이모지/이름이 1D20 앞에 나오는 패턴
+    const p3 = new RegExp('(?:' + emojiEsc + '|' + nameEsc + ')[^>＞→]*\\(1[Dd]20\\)[^>＞→]*[→＞>]\\s*(\\d{1,2})');
+    const m3 = text.match(p3);
+    if (m3) {
+      const v = parseInt(m3[1], 10);
+      if (v >= 1 && v <= config.rules.diceType) return v;
+    }
+
+    // Pattern 4: "결과: 숫자" (이모지 또는 이름 포함 시 — fallback)
     if (text.includes(emoji) || text.includes(playerName)) {
-      const m3 = text.match(/결과\s*[：:]\s*(\d{1,2})/);
-      if (m3) {
-        const v = parseInt(m3[1], 10);
+      const m4 = text.match(/결과\s*[：:]\s*(\d{1,2})/);
+      if (m4) {
+        const v = parseInt(m4[1], 10);
         if (v >= 1 && v <= config.rules.diceType) return v;
       }
     }
@@ -472,8 +482,10 @@
       return;
     }
 
-    // 타임아웃 설정
-    setResultTimeout('방어자');
+    // 빠른 응답으로 이미 결과가 처리된 경우 타임아웃 설정 불필요
+    if (flowState === STATE.WAITING_DEFENDER_RESULT) {
+      setResultTimeout('방어자');
+    }
   }
 
   function checkForDefenderResult(text) {
@@ -523,15 +535,42 @@
         overlay.addLog(result.description, getResultLogType(result));
       }
 
+      // 특성 이벤트 로그 + 채팅 전송
+      if (result.traitEvents && result.traitEvents.length > 0) {
+        for (const te of result.traitEvents) {
+          const icon = te.who === 'attacker' ? '⚔️' : '🛡️';
+          let logMsg = '';
+          let logType = 'info';
+          let chatMsg = '';
+
+          if (te.trait === 'H0' && te.event === 'resurrect') {
+            logMsg = `🔥 ${te.name}: 인간 고유 특성 발동! 주사위 +1 부활`;
+            chatMsg = `🔥 인간 고유 특성 발동! | ${icon} ${te.name} 부활! 주사위 +1`;
+            logType = 'crit';
+          } else if (te.trait === 'H0' && te.event === 'reset') {
+            logMsg = `✨ ${te.name}: 인간 고유 특성 초기화 (재사용 가능)`;
+            chatMsg = `✨ 인간 고유 특성 초기화 | ${icon} ${te.name} 재사용 가능`;
+          } else if (te.trait === 'H4' && te.event === 'stack') {
+            logMsg = `📜 ${te.name}: 피로 새겨진 역사 +${te.bonus} (대성공 ${te.threshold}+)`;
+            chatMsg = `📜 피로 새겨진 역사 | ${icon} ${te.name} 대성공 범위 +${te.bonus} (${te.threshold}+)`;
+            logType = 'warning';
+          } else if (te.trait === 'H4' && te.event === 'reset') {
+            logMsg = `📜 ${te.name}: 피로 새겨진 역사 초기화`;
+            chatMsg = `📜 피로 새겨진 역사 초기화 | ${icon} ${te.name}`;
+          }
+
+          if (logMsg) overlay.addLog(logMsg, logType);
+          if (chatMsg) await chat.sendMessage(chatMsg);
+        }
+      }
+
       // 상태 업데이트
       overlay.updateCombatState(engine.getState());
 
-      // 동점 재굴림 처리
+      // 동점 재굴림 처리 (재굴림도 합 1회로 카운트)
       if (result.needsReroll) {
         overlay.addLog('동점! 재굴림합니다.', 'warning');
         await delay(config.timing.beforeNextRound);
-        // 라운드 번호를 증가시키지 않고 다시 굴림
-        engine.round--; // incrementRound에서 다시 증가할 것이므로
         await startNextRound();
         return;
       }
@@ -599,7 +638,14 @@
 
   function setResultTimeout(who) {
     clearTimeout(resultTimeoutId);
+    const expectedRound = engine.round;
     resultTimeoutId = setTimeout(async () => {
+      // 라운드가 바뀌었으면 무시 (stale timeout)
+      if (engine.round !== expectedRound) {
+        alwaysLog(`${who} 타임아웃 무시 (라운드 변경: ${expectedRound} → ${engine.round})`);
+        return;
+      }
+
       alwaysLog(`${who} 결과 타임아웃 → 수동 입력 요청`);
       overlay.addLog(`${who} 결과를 자동 인식하지 못했습니다. 도우미에 직접 입력해주세요.`, 'warning');
 

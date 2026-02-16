@@ -49,15 +49,28 @@ window.BattleRollEngine = class BattleRollEngine {
         name: match[1].trim(),
         dice: parseInt(match[2], 10),
         critThreshold: parseInt(match[3], 10),
-        fumbleThreshold: parseInt(match[4], 10)
+        fumbleThreshold: parseInt(match[4], 10),
+        traits: this._parseTraits(match[5] || '')
       },
       defender: {
-        name: match[5].trim(),
-        dice: parseInt(match[6], 10),
-        critThreshold: parseInt(match[7], 10),
-        fumbleThreshold: parseInt(match[8], 10)
+        name: match[6].trim(),
+        dice: parseInt(match[7], 10),
+        critThreshold: parseInt(match[8], 10),
+        fumbleThreshold: parseInt(match[9], 10),
+        traits: this._parseTraits(match[10] || '')
       }
     };
+  }
+
+  /**
+   * 특성 태그 문자열을 파싱합니다. ("H0H4" → ['H0', 'H4'], "H00H4" → ['H00', 'H4'])
+   * @param {string} tagStr - 특성 태그 문자열
+   * @returns {string[]} 특성 배열
+   */
+  _parseTraits(tagStr) {
+    if (!tagStr) return [];
+    const matches = tagStr.toUpperCase().match(/[A-Z]\d+/g);
+    return matches || [];
   }
 
   /**
@@ -81,13 +94,24 @@ window.BattleRollEngine = class BattleRollEngine {
     this.combat = {
       attacker: {
         ...attacker,
+        traits: attacker.traits || [],
         critCount: 0,
-        fumbleCount: 0
+        fumbleCount: 0,
+        // H0 특성: 주사위 0 시 부활 횟수 (기본 1회, 크리 시 초기화)
+        // H00 특성: 인간 고유 특성 없지만 대성공 시 초기화되어 사용 가능
+        h0Used: (attacker.traits || []).includes('H00') ? true : false,
+        // H4 특성: 누적 대성공 범위 보너스
+        h4Bonus: 0,
+        baseCritThreshold: attacker.critThreshold
       },
       defender: {
         ...defender,
+        traits: defender.traits || [],
         critCount: 0,
-        fumbleCount: 0
+        fumbleCount: 0,
+        h0Used: (defender.traits || []).includes('H00') ? true : false,
+        h4Bonus: 0,
+        baseCritThreshold: defender.critThreshold
       }
     };
     this.round = 0;
@@ -95,7 +119,7 @@ window.BattleRollEngine = class BattleRollEngine {
     this.lastDefenderRoll = null;
     this.history = [];
 
-    this._log(`전투 시작: ⚔️ ${attacker.name}(주사위${attacker.dice}, 대성공>=${attacker.critThreshold}, 대실패<=${attacker.fumbleThreshold}) vs 🛡️ ${defender.name}(주사위${defender.dice}, 대성공>=${defender.critThreshold}, 대실패<=${defender.fumbleThreshold})`);
+    this._log(`전투 시작: ⚔️ ${attacker.name}(주사위${attacker.dice}, 대성공>=${attacker.critThreshold}, 대실패<=${attacker.fumbleThreshold}, 특성:${(attacker.traits||[]).join(',')}) vs 🛡️ ${defender.name}(주사위${defender.dice}, 대성공>=${defender.critThreshold}, 대실패<=${defender.fumbleThreshold}, 특성:${(defender.traits||[]).join(',')})`);
   }
 
   /** 라운드 번호 증가 */
@@ -130,10 +154,12 @@ window.BattleRollEngine = class BattleRollEngine {
     const defVal = this.lastDefenderRoll;
     const rules = this.config.rules;
 
-    // 캠릭터별 대성공/대실패 수준 사용
-    const atkCrit = (atkVal >= this.combat.attacker.critThreshold);
+    // 캐릭터별 대성공/대실패 수준 사용 (H4 보너스 적용 후 판정)
+    const atkEffectiveCrit = this.combat.attacker.critThreshold;
+    const defEffectiveCrit = this.combat.defender.critThreshold;
+    const atkCrit = (atkVal >= atkEffectiveCrit);
     const atkFumble = (atkVal <= this.combat.attacker.fumbleThreshold);
-    const defCrit = (defVal >= this.combat.defender.critThreshold);
+    const defCrit = (defVal >= defEffectiveCrit);
     const defFumble = (defVal <= this.combat.defender.fumbleThreshold);
 
     let result = {
@@ -302,6 +328,17 @@ window.BattleRollEngine = class BattleRollEngine {
     this.combat.attacker.dice = Math.max(0, this.combat.attacker.dice + result.atkDiceChange);
     this.combat.defender.dice = Math.max(0, this.combat.defender.dice + result.defDiceChange);
 
+    // ── 특성 이벤트 추적 ──
+    result.traitEvents = [];
+
+    // ── H4 특성: 피로 새겨진 역사 ──
+    this._applyH4('attacker', atkCrit, result.traitEvents);
+    this._applyH4('defender', defCrit, result.traitEvents);
+
+    // ── H0 특성: 인간 고유 특성 (주사위 0 시 부활) ──
+    this._applyH0('attacker', atkCrit, result.traitEvents);
+    this._applyH0('defender', defCrit, result.traitEvents);
+
     // 이력 저장
     this.history.push(result);
 
@@ -378,6 +415,61 @@ window.BattleRollEngine = class BattleRollEngine {
   isVictory() {
     if (!this.combat) return false;
     return this.combat.attacker.dice <= 0 || this.combat.defender.dice <= 0;
+  }
+
+  /**
+   * H0/H00 특성 적용 (주사위 0 시 부활)
+   * H0: 처음부터 부활 가능, 크리티컬이면 재사용 가능.
+   * H00: 기본적으로 인간 고유 특성 없음. 대성공 시 초기화되어 부활 가능.
+   */
+  _applyH0(who, wasCrit, traitEvents) {
+    const fighter = this.combat[who];
+    const hasH0 = fighter.traits.includes('H0');
+    const hasH00 = fighter.traits.includes('H00');
+    if (!hasH0 && !hasH00) return;
+
+    const traitLabel = hasH00 ? 'H00' : 'H0';
+
+    // 크리티컬 내면 H0/H00 초기화
+    if (wasCrit && fighter.h0Used) {
+      fighter.h0Used = false;
+      this._log(`[${traitLabel}] ${fighter.name}: 크리티컬로 인간 고유 특성 초기화`);
+      traitEvents.push({ trait: traitLabel, who, name: fighter.name, event: 'reset' });
+    }
+
+    // 주사위 0 & 아직 미사용 → 부활
+    if (fighter.dice <= 0 && !fighter.h0Used) {
+      fighter.dice = 1;
+      fighter.h0Used = true;
+      this._log(`[${traitLabel}] ${fighter.name}: 인간 고유 특성 발동! 주사위 1개 부활`);
+      traitEvents.push({ trait: traitLabel, who, name: fighter.name, event: 'resurrect' });
+    }
+  }
+
+  /**
+   * H4 특성 적용 (피로 새겨진 역사)
+   * 크리티컬 시 다음 굴림의 대성공 범위 +2 (즉, critThreshold -2).
+   * 최대 +5까지 누적. 다음 굴림이 대성공이 아니면 초기화.
+   */
+  _applyH4(who, wasCrit, traitEvents) {
+    const fighter = this.combat[who];
+    if (!fighter.traits.includes('H4')) return;
+
+    if (wasCrit) {
+      // 누적 보너스 +2, 최대 +5
+      fighter.h4Bonus = Math.min(fighter.h4Bonus + 2, 5);
+      fighter.critThreshold = fighter.baseCritThreshold - fighter.h4Bonus;
+      this._log(`[H4] ${fighter.name}: 크리티컬! 대성공 범위 +${fighter.h4Bonus} (판정값 ${fighter.critThreshold}+)`);
+      traitEvents.push({ trait: 'H4', who, name: fighter.name, event: 'stack', bonus: fighter.h4Bonus, threshold: fighter.critThreshold });
+    } else {
+      // 비크리 → 보너스 초기화
+      if (fighter.h4Bonus > 0) {
+        this._log(`[H4] ${fighter.name}: 비크리티컬로 보너스 초기화 (${fighter.h4Bonus} → 0)`);
+        traitEvents.push({ trait: 'H4', who, name: fighter.name, event: 'reset', oldBonus: fighter.h4Bonus });
+        fighter.h4Bonus = 0;
+        fighter.critThreshold = fighter.baseCritThreshold;
+      }
+    }
   }
 
   /** 승자 정보 반환 */
