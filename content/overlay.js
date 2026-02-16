@@ -242,6 +242,111 @@ window.BattleRollOverlay = class BattleRollOverlay {
     }
   }
 
+  // ── 효과음 재생 ──────────────────────────────────────
+
+  /** 합 주사위 굴림 시 무작위 재생할 효과음 목록 { file, ext } */
+  static ROLL_SOUNDS = [
+    { file: 'parry1', ext: 'mp3' }, { file: 'parry2', ext: 'mp3' }, { file: 'parry3', ext: 'mp3' },
+    { file: 'parry4', ext: 'mp3' }, { file: 'parry5', ext: 'mp3' }, { file: 'parry6', ext: 'mp3' },
+    { file: 'hu-ung1', ext: 'wav' }, { file: 'hu-ung2', ext: 'wav' },
+    { file: 'hu-ung3', ext: 'wav' }, { file: 'hu-ung4', ext: 'wav' },
+    { file: 'shield1', ext: 'wav' }, { file: 'shield2', ext: 'wav' }, { file: 'shield3', ext: 'wav' },
+    { file: 'jump', ext: 'wav' }
+  ];
+
+  /** Web Audio API 컨텍스트 (겹침 재생 지원) */
+  _audioCtx = null;
+  /** 프리로드된 사운드 버퍼 캐시 */
+  _soundBuffers = {};
+
+  /** AudioContext lazy init */
+  _getAudioCtx() {
+    if (!this._audioCtx) {
+      this._audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (this._audioCtx.state === 'suspended') {
+      this._audioCtx.resume();
+    }
+    return this._audioCtx;
+  }
+
+  /** 사운드 파일 fetch → AudioBuffer 캐시 */
+  async _loadSoundBuffer(url) {
+    if (this._soundBuffers[url]) return this._soundBuffers[url];
+    try {
+      const resp = await fetch(url);
+      const arrayBuf = await resp.arrayBuffer();
+      const audioBuffer = await this._getAudioCtx().decodeAudioData(arrayBuf);
+      this._soundBuffers[url] = audioBuffer;
+      return audioBuffer;
+    } catch (e) {
+      console.warn('[BWBR] sound decode failed:', url, e);
+      return null;
+    }
+  }
+
+  /** AudioBuffer를 즉시 재생 (겹침 OK) */
+  _playBuffer(buffer, volume) {
+    const ctx = this._getAudioCtx();
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    const gain = ctx.createGain();
+    gain.gain.value = volume;
+    source.connect(gain);
+    gain.connect(ctx.destination);
+    source.start(0);
+  }
+
+  /** 현재 설정의 SFX 볼륨 (0~1) */
+  _getSfxVolume() {
+    return this.config?.general?.sfxVolume ?? 0.45;
+  }
+
+  /** 초기화 시 모든 롤 사운드 프리로드 */
+  preloadRollSounds() {
+    for (const s of BattleRollOverlay.ROLL_SOUNDS) {
+      const url = chrome.runtime.getURL(`sounds/${s.file}.${s.ext}`);
+      this._loadSoundBuffer(url);
+    }
+  }
+
+  /**
+   * 합 주사위 굴림 시 효과음 무작위 재생 (겹침 지원)
+   */
+  playParrySound() {
+    try {
+      const pick = BattleRollOverlay.ROLL_SOUNDS[Math.floor(Math.random() * BattleRollOverlay.ROLL_SOUNDS.length)];
+      const url = chrome.runtime.getURL(`sounds/${pick.file}.${pick.ext}`);
+      const vol = this._getSfxVolume();
+      const cached = this._soundBuffers[url];
+      if (cached) {
+        this._playBuffer(cached, vol);
+      } else {
+        // 아직 프리로드 안 됐으면 로드 후 재생
+        this._loadSoundBuffer(url).then(buf => {
+          if (buf) this._playBuffer(buf, vol);
+        });
+      }
+    } catch (e) {
+      console.warn('[BWBR] roll sound error:', e);
+    }
+  }
+
+  /**
+   * 임의 효과음 재생
+   * @param {string} name - 파일명 (확장자 제외)
+   */
+  playTraitSound(name) {
+    try {
+      const url = chrome.runtime.getURL(`sounds/${name}.mp3`);
+      const audio = new Audio(url);
+      audio.volume = this._getSfxVolume();
+      audio.play().catch(e => console.warn(`[BWBR] ${name} sound play failed:`, e));
+    } catch (e) {
+      console.warn(`[BWBR] ${name} sound error:`, e);
+    }
+  }
+
   // ── 전투 애니메이션 ──────────────────────────────────
 
   /**

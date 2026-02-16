@@ -43,6 +43,7 @@
     engine = new window.BattleRollEngine(config);
     chat = new window.CocoforiaChatInterface(config);
     overlay = new window.BattleRollOverlay(config);
+    overlay.preloadRollSounds();
 
     enabled = config.general.enabled;
 
@@ -381,7 +382,8 @@
     flowState = STATE.WAITING_ATTACKER_RESULT;
     overlay.setStatus('waiting', '공격자 결과 대기 중...');
 
-    await chat.sendMessage(rollMsg);
+    chat.sendMessage(rollMsg);
+    overlay.playParrySound();
 
     // 일시정지 예약이 있으면 여기서 멈춤
     if (_pauseRequested) {
@@ -474,7 +476,8 @@
     flowState = STATE.WAITING_DEFENDER_RESULT;
     overlay.setStatus('waiting', '방어자 결과 대기 중...');
 
-    await chat.sendMessage(rollMsg);
+    chat.sendMessage(rollMsg);
+    overlay.playParrySound();
 
     // 일시정지 예약이 있으면 여기서 멈춤
     if (_pauseRequested) {
@@ -543,16 +546,19 @@
           let logType = 'info';
           let chatMsg = '';
 
-          if (te.trait === 'H0' && te.event === 'resurrect') {
+          if ((te.trait === 'H0' || te.trait === 'H00') && te.event === 'resurrect') {
+            const snd = '발도' + (Math.floor(Math.random() * 3) + 1);
             logMsg = `🔥 ${te.name}: 인간 고유 특성 발동! 주사위 +1 부활`;
-            chatMsg = `🔥 인간 고유 특성 발동! | ${icon} ${te.name} 부활! 주사위 +1`;
+            chatMsg = `🔥 인간 고유 특성 발동! | ${icon} ${te.name} 부활! 주사위 +1 @${snd}`;
             logType = 'crit';
-          } else if (te.trait === 'H0' && te.event === 'reset') {
+          } else if ((te.trait === 'H0' || te.trait === 'H00') && te.event === 'reset') {
+            const snd = '발도' + (Math.floor(Math.random() * 3) + 1);
             logMsg = `✨ ${te.name}: 인간 고유 특성 초기화 (재사용 가능)`;
-            chatMsg = `✨ 인간 고유 특성 초기화 | ${icon} ${te.name} 재사용 가능`;
+            chatMsg = `✨ 인간 고유 특성 초기화 | ${icon} ${te.name} 재사용 가능 @${snd}`;
           } else if (te.trait === 'H4' && te.event === 'stack') {
+            const snd = '위험' + (Math.floor(Math.random() * 3) + 1);
             logMsg = `📜 ${te.name}: 피로 새겨진 역사 +${te.bonus} (대성공 ${te.threshold}+)`;
-            chatMsg = `📜 피로 새겨진 역사 | ${icon} ${te.name} 대성공 범위 +${te.bonus} (${te.threshold}+)`;
+            chatMsg = `📜 피로 새겨진 역사 | ${icon} ${te.name} 대성공 범위 +${te.bonus} (${te.threshold}+) @${snd}`;
             logType = 'warning';
           } else if (te.trait === 'H4' && te.event === 'reset') {
             logMsg = `📜 ${te.name}: 피로 새겨진 역사 초기화`;

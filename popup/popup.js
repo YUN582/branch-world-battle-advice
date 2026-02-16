@@ -63,6 +63,7 @@
       autoScroll: true,
       showOverlay: true,
       debugMode: false,
+      sfxVolume: 0.45,
       language: 'ko'
     }
   };
@@ -170,6 +171,8 @@
     $('gen-autoScroll').checked = cfg.general.autoScroll;
     $('gen-showOverlay').checked = cfg.general.showOverlay;
     $('gen-debugMode').checked = cfg.general.debugMode;
+    $('gen-sfxVolume').value = cfg.general.sfxVolume ?? 0.45;
+    $('gen-sfxVolume-val').textContent = Math.round((cfg.general.sfxVolume ?? 0.45) * 100) + '%';
   }
 
   /** UI 필드에서 설정 데이터를 수집합니다 */
@@ -230,6 +233,7 @@
     cfg.general.autoScroll = $('gen-autoScroll').checked;
     cfg.general.showOverlay = $('gen-showOverlay').checked;
     cfg.general.debugMode = $('gen-debugMode').checked;
+    cfg.general.sfxVolume = parseFloat($('gen-sfxVolume').value) || 0.45;
 
     return cfg;
   }
@@ -250,6 +254,11 @@
         range.addEventListener('input', () => { numInput.value = range.value; });
         numInput.addEventListener('input', () => { range.value = numInput.value; });
       }
+    });
+
+    // 효과음 볼륨 슬라이더 실시간 표시
+    $('gen-sfxVolume').addEventListener('input', (e) => {
+      $('gen-sfxVolume-val').textContent = Math.round(e.target.value * 100) + '%';
     });
 
     // 활성화 토글

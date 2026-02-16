@@ -134,6 +134,7 @@ window.BWBR_DEFAULTS = {
     autoScroll: true,           // 새 메시지 시 자동 스크롤
     showOverlay: true,          // 페이지 내 오버레이 표시
     debugMode: false,           // 디버그 로그 출력
+    sfxVolume: 0.45,            // 확장 프로그램 효과음 볼륨 (0~1)
     language: 'ko'              // UI 언어
   },
 
