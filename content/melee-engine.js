@@ -97,10 +97,10 @@ window.BattleRollEngine = class BattleRollEngine {
         traits: attacker.traits || [],
         critCount: 0,
         fumbleCount: 0,
-        // H0 특성: 주사위 0 시 부활 횟수 (기본 1회, 크리 시 초기화)
-        // H00 특성: 인간 고유 특성 없지만 대성공 시 초기화되어 사용 가능
-        h0Used: (attacker.traits || []).includes('H00') ? true : false,
-        // H4 특성: 누적 대성공 범위 보너스
+        // H0/H40 특성: 주사위 0 시 부활 (기본 1회, 크리 시 초기화)
+        // H00/H400 특성: 인간 특성 없지만 대성공 시 초기화되어 사용 가능
+        h0Used: ((attacker.traits || []).includes('H00') || (attacker.traits || []).includes('H400')) ? true : false,
+        // H4/H40/H400 특성: 누적 대성공 범위 보너스
         h4Bonus: 0,
         baseCritThreshold: attacker.critThreshold
       },
@@ -109,7 +109,7 @@ window.BattleRollEngine = class BattleRollEngine {
         traits: defender.traits || [],
         critCount: 0,
         fumbleCount: 0,
-        h0Used: (defender.traits || []).includes('H00') ? true : false,
+        h0Used: ((defender.traits || []).includes('H00') || (defender.traits || []).includes('H400')) ? true : false,
         h4Bonus: 0,
         baseCritThreshold: defender.critThreshold
       }
@@ -335,7 +335,7 @@ window.BattleRollEngine = class BattleRollEngine {
     this._applyH4('attacker', atkCrit, result.traitEvents);
     this._applyH4('defender', defCrit, result.traitEvents);
 
-    // ── H0 특성: 인간 고유 특성 (주사위 0 시 부활) ──
+    // ── H0 특성: 인간 특성 (주사위 0 시 부활) ──
     this._applyH0('attacker', atkCrit, result.traitEvents);
     this._applyH0('defender', defCrit, result.traitEvents);
 
@@ -418,22 +418,24 @@ window.BattleRollEngine = class BattleRollEngine {
   }
 
   /**
-   * H0/H00 특성 적용 (주사위 0 시 부활)
-   * H0: 처음부터 부활 가능, 크리티컬이면 재사용 가능.
-   * H00: 기본적으로 인간 고유 특성 없음. 대성공 시 초기화되어 부활 가능.
+   * H0/H00/H40/H400 특성 적용 (주사위 0 시 부활)
+   * H0/H40: 처음부터 부활 가능, 크리티컬이면 재사용 가능.
+   * H00/H400: 기본적으로 인간 특성 없음. 대성공 시 초기화되어 부활 가능.
+   * H40/H400은 추가로 H4 초기화 시 발동 기능이 있음 (_applyH4에서 처리).
    */
   _applyH0(who, wasCrit, traitEvents) {
     const fighter = this.combat[who];
-    const hasH0 = fighter.traits.includes('H0');
-    const hasH00 = fighter.traits.includes('H00');
+    const hasH0 = fighter.traits.includes('H0') || fighter.traits.includes('H40');
+    const hasH00 = fighter.traits.includes('H00') || fighter.traits.includes('H400');
     if (!hasH0 && !hasH00) return;
 
-    const traitLabel = hasH00 ? 'H00' : 'H0';
+    const traitLabel = hasH00 ? (fighter.traits.includes('H400') ? 'H400' : 'H00')
+                              : (fighter.traits.includes('H40') ? 'H40' : 'H0');
 
     // 크리티컬 내면 H0/H00 초기화
     if (wasCrit && fighter.h0Used) {
       fighter.h0Used = false;
-      this._log(`[${traitLabel}] ${fighter.name}: 크리티컬로 인간 고유 특성 초기화`);
+      this._log(`[${traitLabel}] ${fighter.name}: 크리티컬로 인간 특성 초기화`);
       traitEvents.push({ trait: traitLabel, who, name: fighter.name, event: 'reset' });
     }
 
@@ -441,19 +443,27 @@ window.BattleRollEngine = class BattleRollEngine {
     if (fighter.dice <= 0 && !fighter.h0Used) {
       fighter.dice = 1;
       fighter.h0Used = true;
-      this._log(`[${traitLabel}] ${fighter.name}: 인간 고유 특성 발동! 주사위 1개 부활`);
+      this._log(`[${traitLabel}] ${fighter.name}: 인간 특성 발동! 주사위 1개 부활`);
       traitEvents.push({ trait: traitLabel, who, name: fighter.name, event: 'resurrect' });
     }
   }
 
   /**
-   * H4 특성 적용 (피로 새겨진 역사)
+   * H4/H40/H400 특성 적용 (피로 새겨진 역사)
    * 크리티컬 시 다음 굴림의 대성공 범위 +2 (즉, critThreshold -2).
    * 최대 +5까지 누적. 다음 굴림이 대성공이 아니면 초기화.
+   *
+   * H40/H400 추가 효과:
+   *   H4 스택이 초기화될 때, 인간 특성이 사용 가능하면
+   *   인간 특성을 발동하여 H4 스택을 유지한 채 추가 합 1회를 진행합니다.
+   *   추가 합에서 대성공이면 H4 계속, 아니면 초기화.
    */
   _applyH4(who, wasCrit, traitEvents) {
     const fighter = this.combat[who];
-    if (!fighter.traits.includes('H4')) return;
+    const hasH4 = fighter.traits.includes('H4');
+    const hasH40 = fighter.traits.includes('H40');
+    const hasH400 = fighter.traits.includes('H400');
+    if (!hasH4 && !hasH40 && !hasH400) return;
 
     if (wasCrit) {
       // 누적 보너스 +2, 최대 +5
@@ -464,6 +474,19 @@ window.BattleRollEngine = class BattleRollEngine {
     } else {
       // 비크리 → 보너스 초기화
       if (fighter.h4Bonus > 0) {
+        // H40/H400 상호작용: 인간 특성 발동 → H4 유지한 채 추가 합 1회
+        if ((hasH40 || hasH400) && !fighter.h0Used) {
+          fighter.h0Used = true;
+          const interactionTrait = hasH400 ? 'H400' : 'H40';
+          this._log(`[${interactionTrait}] ${fighter.name}: 인간 특성 발동! H4 스택(+${fighter.h4Bonus}) 유지, 추가 합 진행`);
+          traitEvents.push({
+            trait: interactionTrait, who, name: fighter.name,
+            event: 'h0_extra_round', bonus: fighter.h4Bonus, threshold: fighter.critThreshold
+          });
+          // H4 스택을 초기화하지 않음! 추가 합에서 판정
+          return;
+        }
+
         this._log(`[H4] ${fighter.name}: 비크리티컬로 보너스 초기화 (${fighter.h4Bonus} → 0)`);
         traitEvents.push({ trait: 'H4', who, name: fighter.name, event: 'reset', oldBonus: fighter.h4Bonus });
         fighter.h4Bonus = 0;

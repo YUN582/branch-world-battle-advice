@@ -266,6 +266,18 @@
   border: 1px solid #3a3a5a;
 }
 
+.bwbr-trait-h40 {
+  background: #2a2a40;
+  color: #82b1ff;
+  border: 1px solid #3a3a5a;
+}
+
+.bwbr-trait-h400 {
+  background: #2a2a40;
+  color: #82b1ff;
+  border: 1px solid #3a3a5a;
+}
+
 .bwbr-trait-status {
   display: flex;
   gap: 4px;

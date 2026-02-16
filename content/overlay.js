@@ -63,17 +63,25 @@ window.BattleRollOverlay = class BattleRollOverlay {
           <div class="bwbr-guide-traits">
             <div class="bwbr-guide-trait">
               <span class="bwbr-guide-tag bwbr-trait-h0">H0</span>
-              <span>인간 고유 특성 — 주사위 0 시 +1 부활, 대성공 시 초기화</span>
+              <span>인간 특성 — 주사위 0 시 +1 부활, 대성공 시 초기화</span>
             </div>
             <div class="bwbr-guide-trait">
               <span class="bwbr-guide-tag bwbr-trait-h00">H00</span>
-              <span>인간 고유 특성 (잠재) — 특성 없지만 대성공 시 초기화되어 사용 가능</span>
+              <span>인간 특성 (잠재) — 특성 없지만 대성공 시 초기화되어 사용 가능</span>
             </div>
             <div class="bwbr-guide-trait">
               <span class="bwbr-guide-tag bwbr-trait-h4">H4</span>
               <span>피로 새겨진 역사 — 대성공 시 다음 판정 +2, 최대+5, 비크리 시 초기화</span>
             </div>
-            <div class="bwbr-guide-example">사용예: ⚔️ 철수 - 5/18/3/H0H4 | 🛡️ 영희 - 5/18/3/H00</div>
+            <div class="bwbr-guide-trait">
+              <span class="bwbr-guide-tag bwbr-trait-h40">H40</span>
+              <span>역사+인간 — H4 스택 초기화 시 인간 특성 발동 → 추가 합 1회</span>
+            </div>
+            <div class="bwbr-guide-trait">
+              <span class="bwbr-guide-tag bwbr-trait-h400">H400</span>
+              <span>역사+인간 — 대성공으로 인간 특성 획득 후, H4 초기화 시 발동 → 추가 합 1회</span>
+            </div>
+            <div class="bwbr-guide-example">사용예: ⚔️ 철수 - 5/18/3/H40 | 🛡️ 영희 - 5/18/3/H400</div>
           </div>
         </div>
         <div id="bwbr-log"></div>
@@ -206,10 +214,10 @@ window.BattleRollOverlay = class BattleRollOverlay {
     const defTraitBadges = this._renderTraitBadges(def);
     const atkH4Info = atk.h4Bonus > 0 ? `<span class="bwbr-h4-indicator" title="피로 새겨진 역사 +${atk.h4Bonus}">역사+${atk.h4Bonus}</span>` : '';
     const defH4Info = def.h4Bonus > 0 ? `<span class="bwbr-h4-indicator" title="피로 새겨진 역사 +${def.h4Bonus}">역사+${def.h4Bonus}</span>` : '';
-    const atkHasH0 = atk.traits?.includes('H0') || atk.traits?.includes('H00');
-    const defHasH0 = def.traits?.includes('H0') || def.traits?.includes('H00');
-    const atkH0Info = atkHasH0 && atk.h0Used ? `<span class="bwbr-h0-used" title="인간 고유 특성 사용됨">부활✗</span>` : '';
-    const defH0Info = defHasH0 && def.h0Used ? `<span class="bwbr-h0-used" title="인간 고유 특성 사용됨">부활✗</span>` : '';
+    const atkHasH0 = atk.traits?.includes('H0') || atk.traits?.includes('H00') || atk.traits?.includes('H40') || atk.traits?.includes('H400');
+    const defHasH0 = def.traits?.includes('H0') || def.traits?.includes('H00') || def.traits?.includes('H40') || def.traits?.includes('H400');
+    const atkH0Info = atkHasH0 && atk.h0Used ? `<span class="bwbr-h0-used" title="인간 특성 사용됨">부활✗</span>` : '';
+    const defH0Info = defHasH0 && def.h0Used ? `<span class="bwbr-h0-used" title="인간 특성 사용됨">부활✗</span>` : '';
 
     info.innerHTML = `
       <div class="bwbr-round-badge">제 ${state.round}합</div>
@@ -700,7 +708,10 @@ window.BattleRollOverlay = class BattleRollOverlay {
   _renderTraitBadges(fighter) {
     if (!fighter.traits || fighter.traits.length === 0) return '';
     const TRAIT_NAMES = {
-      H0: '인간 고유 특성', H00: '인간 고유 특성 (잠재)', H1: '공석', H2: '공석', H3: '공석', H4: '피로 새겨진 역사'
+      H0: '인간 특성', H00: '인간 특성 (잠재)',
+      H1: '공석', H2: '공석', H3: '공석',
+      H4: '피로 새겨진 역사',
+      H40: '역사+인간', H400: '역사+인간'
     };
     return '<div class="bwbr-trait-badges">' +
       fighter.traits

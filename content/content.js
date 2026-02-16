@@ -546,15 +546,15 @@
           let logType = 'info';
           let chatMsg = '';
 
-          if ((te.trait === 'H0' || te.trait === 'H00') && te.event === 'resurrect') {
+          if (['H0', 'H00', 'H40', 'H400'].includes(te.trait) && te.event === 'resurrect') {
             const snd = '발도' + (Math.floor(Math.random() * 3) + 1);
-            logMsg = `🔥 ${te.name}: 인간 고유 특성 발동! 주사위 +1 부활`;
-            chatMsg = `🔥 인간 고유 특성 발동! | ${icon} ${te.name} 부활! 주사위 +1 @${snd}`;
+            logMsg = `🔥 ${te.name}: 인간 특성 발동! 주사위 +1 부활`;
+            chatMsg = `🔥 인간 특성 발동! | ${icon} ${te.name} 부활! 주사위 +1 @${snd}`;
             logType = 'crit';
-          } else if ((te.trait === 'H0' || te.trait === 'H00') && te.event === 'reset') {
+          } else if (['H0', 'H00', 'H40', 'H400'].includes(te.trait) && te.event === 'reset') {
             const snd = '발도' + (Math.floor(Math.random() * 3) + 1);
-            logMsg = `✨ ${te.name}: 인간 고유 특성 초기화 (재사용 가능)`;
-            chatMsg = `✨ 인간 고유 특성 초기화 | ${icon} ${te.name} 재사용 가능 @${snd}`;
+            logMsg = `✨ ${te.name}: 인간 특성 초기화 (재사용 가능)`;
+            chatMsg = `✨ 인간 특성 초기화 | ${icon} ${te.name} 재사용 가능 @${snd}`;
           } else if (te.trait === 'H4' && te.event === 'stack') {
             const snd = '위험' + (Math.floor(Math.random() * 3) + 1);
             logMsg = `📜 ${te.name}: 피로 새겨진 역사 +${te.bonus} (대성공 ${te.threshold}+)`;
@@ -563,6 +563,11 @@
           } else if (te.trait === 'H4' && te.event === 'reset') {
             logMsg = `📜 ${te.name}: 피로 새겨진 역사 초기화`;
             chatMsg = `📜 피로 새겨진 역사 초기화 | ${icon} ${te.name}`;
+          } else if ((te.trait === 'H40' || te.trait === 'H400') && te.event === 'h0_extra_round') {
+            const snd = '발도' + (Math.floor(Math.random() * 3) + 1);
+            logMsg = `🔥📜 ${te.name}: 인간 특성 발동! 역사(+${te.bonus}) 유지, 추가 합 진행`;
+            chatMsg = `🔥📜 인간 특성 발동! | ${icon} ${te.name} 역사(+${te.bonus}) 유지 → 추가 합! @${snd}`;
+            logType = 'crit';
           }
 
           if (logMsg) overlay.addLog(logMsg, logType);
@@ -576,6 +581,14 @@
       // 동점 재굴림 처리 (재굴림도 합 1회로 카운트)
       if (result.needsReroll) {
         overlay.addLog('동점! 재굴림합니다.', 'warning');
+        await delay(config.timing.beforeNextRound);
+        await startNextRound();
+        return;
+      }
+
+      // H40/H400 추가 합 처리 (인간 특성 발동으로 H4 유지, 합 1회 추가)
+      if (result.traitEvents?.some(te => (te.trait === 'H40' || te.trait === 'H400') && te.event === 'h0_extra_round')) {
+        overlay.addLog('인간 특성 발동! 추가 합 진행...', 'crit');
         await delay(config.timing.beforeNextRound);
         await startNextRound();
         return;
