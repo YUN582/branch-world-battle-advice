@@ -67,19 +67,19 @@ window.BattleRollOverlay = class BattleRollOverlay {
             </div>
             <div class="bwbr-guide-trait">
               <span class="bwbr-guide-tag bwbr-trait-h00">H00</span>
-              <span>인간 특성 (잠재) — 특성 없지만 대성공 시 초기화되어 사용 가능</span>
+              <span>인간 특성 (잠재) — 주사위 0 시 +1 부활, 대성공 시 초기화</span>
             </div>
             <div class="bwbr-guide-trait">
               <span class="bwbr-guide-tag bwbr-trait-h4">H4</span>
-              <span>피로 새겨진 역사 — 대성공 시 다음 판정 +2, 최대+5, 비크리 시 초기화</span>
+              <span>피로 새겨진 역사 — 대성공 시 다음 판정 +2, 최대+5, 대성공 아닐 시 초기화</span>
             </div>
             <div class="bwbr-guide-trait">
               <span class="bwbr-guide-tag bwbr-trait-h40">H40</span>
-              <span>역사+인간 — H4 스택 초기화 시 인간 특성 발동 → 추가 합 1회</span>
+              <span>역사+인간 — H4 누적 초기화 시 인간 특성 발동, 주사위 +1</span>
             </div>
             <div class="bwbr-guide-trait">
               <span class="bwbr-guide-tag bwbr-trait-h400">H400</span>
-              <span>역사+인간 — 대성공으로 인간 특성 획득 후, H4 초기화 시 발동 → 추가 합 1회</span>
+              <span>역사+인간 (잠재) — H4 누적 초기화 시 인간 특성 발동, 주사위 +1</span>
             </div>
             <div class="bwbr-guide-example">사용예: ⚔️ 철수 - 5/18/3/H40 | 🛡️ 영희 - 5/18/3/H400</div>
           </div>
@@ -265,8 +265,8 @@ window.BattleRollOverlay = class BattleRollOverlay {
   /** Web Audio API 컨텍스트 (겹침 재생 지원) */
   _audioCtx = null;
   /** 프리로드된 사운드 버퍼 캐시 */
-  _soundBuffers = {};
-
+  _soundBuffers = {};  /** 커스텀 롤 사운드 URL 목록 (chrome.storage.local) */
+  _customRollSoundUrls = [];
   /** AudioContext lazy init */
   _getAudioCtx() {
     if (!this._audioCtx) {
@@ -310,11 +310,23 @@ window.BattleRollOverlay = class BattleRollOverlay {
     return this.config?.general?.sfxVolume ?? 0.45;
   }
 
-  /** 초기화 시 모든 롤 사운드 프리로드 */
-  preloadRollSounds() {
+  /** 초기화 시 모든 롤 사운드 프리로드 (빌트인 + 커스텀) */
+  async preloadRollSounds() {
+    // 빌트인 사운드
     for (const s of BattleRollOverlay.ROLL_SOUNDS) {
       const url = chrome.runtime.getURL(`sounds/${s.file}.${s.ext}`);
       this._loadSoundBuffer(url);
+    }
+    // 커스텀 롤 사운드 (chrome.storage.local)
+    try {
+      const result = await chrome.storage.local.get('bwbr_custom_roll_sounds');
+      const customs = result.bwbr_custom_roll_sounds || [];
+      this._customRollSoundUrls = customs.map(c => c.dataUrl);
+      for (const url of this._customRollSoundUrls) {
+        this._loadSoundBuffer(url);
+      }
+    } catch (e) {
+      console.warn('[BWBR] custom roll sounds load failed:', e);
     }
   }
 
@@ -323,8 +335,11 @@ window.BattleRollOverlay = class BattleRollOverlay {
    */
   playParrySound() {
     try {
-      const pick = BattleRollOverlay.ROLL_SOUNDS[Math.floor(Math.random() * BattleRollOverlay.ROLL_SOUNDS.length)];
-      const url = chrome.runtime.getURL(`sounds/${pick.file}.${pick.ext}`);
+      // 빌트인 + 커스텀 URL 풍 구성
+      const builtInUrls = BattleRollOverlay.ROLL_SOUNDS.map(s => chrome.runtime.getURL(`sounds/${s.file}.${s.ext}`));
+      const allUrls = builtInUrls.concat(this._customRollSoundUrls || []);
+      if (allUrls.length === 0) return;
+      const url = allUrls[Math.floor(Math.random() * allUrls.length)];
       const vol = this._getSfxVolume();
       const cached = this._soundBuffers[url];
       if (cached) {
@@ -594,7 +609,7 @@ window.BattleRollOverlay = class BattleRollOverlay {
 
   // ── 수동 입력 ─────────────────────────────────────────
 
-  showManualInput(who, emoji, playerName) {
+  showManualInput(who, emoji, playerName, h0Available = false) {
     this.ensureInjected();
     if (this.isCollapsed) this.toggleCollapse();
 
@@ -604,9 +619,22 @@ window.BattleRollOverlay = class BattleRollOverlay {
     if (!container || !label || !input) return Promise.resolve(null);
 
     const maxVal = this.config.rules?.diceType || 20;
-    label.textContent = `${emoji} ${playerName} 주사위 결과를 입력하세요 (1~${maxVal})`;
+    this._h0Available = h0Available;
+
+    if (h0Available) {
+      label.textContent = `${emoji} ${playerName} 주사위 결과를 입력하세요 (1~${maxVal} 또는 H0)`;
+      input.type = 'text';
+      input.placeholder = `1~${maxVal} 또는 H0`;
+      input.removeAttribute('min');
+      input.removeAttribute('max');
+    } else {
+      label.textContent = `${emoji} ${playerName} 주사위 결과를 입력하세요 (1~${maxVal})`;
+      input.type = 'number';
+      input.placeholder = `1~${maxVal}`;
+      input.min = 1;
+      input.max = maxVal;
+    }
     input.value = '';
-    input.max = maxVal;
     container.style.display = '';
     input.focus();
 
@@ -629,7 +657,19 @@ window.BattleRollOverlay = class BattleRollOverlay {
     const input = this.element?.querySelector('#bwbr-manual-value');
     if (!input) return;
 
-    const val = parseInt(input.value, 10);
+    // H0 텍스트 입력 처리
+    const rawText = input.value.trim();
+    if (this._h0Available && rawText.toUpperCase() === 'H0') {
+      const container = this.element?.querySelector('#bwbr-manual-input');
+      if (container) container.style.display = 'none';
+      if (this._manualInputResolve) {
+        this._manualInputResolve('H0');
+        this._manualInputResolve = null;
+      }
+      return;
+    }
+
+    const val = parseInt(rawText, 10);
     const max = this.config.rules?.diceType || 20;
     if (isNaN(val) || val < 1 || val > max) {
       input.classList.add('bwbr-input-error');
@@ -646,10 +686,88 @@ window.BattleRollOverlay = class BattleRollOverlay {
     }
   }
 
+  // ── 수동 모드: H0 발동 확인 프롬프트 ─────────────────────
+
+  /**
+   * 수동 모드에서 H0 발동 여부를 사용자에게 확인합니다.
+   * @param {string} who - 'attacker' 또는 'defender'
+   * @param {string} playerName - 플레이어 이름
+   * @param {boolean} isH40 - H40/H400 (역사+인간) 상호작용 여부
+   * @returns {Promise<boolean>} 발동 여부
+   */
+  showH0Prompt(who, playerName, isH40 = false) {
+    this.ensureInjected();
+    if (this.isCollapsed) this.toggleCollapse();
+
+    const container = this.element?.querySelector('#bwbr-manual-input');
+    const label = this.element?.querySelector('#bwbr-manual-label');
+    const inputRow = this.element?.querySelector('.bwbr-manual-row');
+    if (!container || !label || !inputRow) return Promise.resolve(false);
+
+    const emoji = who === 'attacker' ? '⚔️' : '🛡️';
+    if (isH40) {
+      label.textContent = `🔥📜 ${emoji} ${playerName}: 인간 특성을 발동하여 역사를 유지하시겠습니까?`;
+    } else {
+      label.textContent = `🔥 ${emoji} ${playerName}: 인간 특성을 발동하시겠습니까? (주사위 +1 부활)`;
+    }
+
+    // 기존 input/button 숨기고 H0 전용 버튼 표시
+    inputRow.style.display = 'none';
+    let h0Row = container.querySelector('.bwbr-h0-row');
+    if (!h0Row) {
+      h0Row = document.createElement('div');
+      h0Row.className = 'bwbr-h0-row';
+      h0Row.style.cssText = 'display:flex;gap:6px;margin-top:6px;';
+      h0Row.innerHTML = `
+        <button type="button" class="bwbr-h0-yes" style="flex:1;padding:6px 0;background:#4caf50;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:bold;">발동</button>
+        <button type="button" class="bwbr-h0-no" style="flex:1;padding:6px 0;background:#666;color:#fff;border:none;border-radius:4px;cursor:pointer;">넘기기</button>
+      `;
+      container.appendChild(h0Row);
+    }
+    h0Row.style.display = 'flex';
+    container.style.display = '';
+
+    return new Promise((resolve) => {
+      this._h0PromptResolve = resolve;
+      const yesBtn = h0Row.querySelector('.bwbr-h0-yes');
+      const noBtn = h0Row.querySelector('.bwbr-h0-no');
+
+      const cleanup = () => {
+        container.style.display = 'none';
+        h0Row.style.display = 'none';
+        inputRow.style.display = '';
+        this._h0PromptResolve = null;
+        yesBtn.removeEventListener('click', onYes);
+        noBtn.removeEventListener('click', onNo);
+      };
+
+      const onYes = () => { cleanup(); resolve(true); };
+      const onNo = () => { cleanup(); resolve(false); };
+
+      yesBtn.addEventListener('click', onYes);
+      noBtn.addEventListener('click', onNo);
+    });
+  }
+
+  /** H0 프롬프트 취소 (전투 중지 시) */
+  hideH0Prompt() {
+    const container = this.element?.querySelector('#bwbr-manual-input');
+    const h0Row = container?.querySelector('.bwbr-h0-row');
+    const inputRow = this.element?.querySelector('.bwbr-manual-row');
+    if (container) container.style.display = 'none';
+    if (h0Row) h0Row.style.display = 'none';
+    if (inputRow) inputRow.style.display = '';
+    if (this._h0PromptResolve) {
+      this._h0PromptResolve(false);
+      this._h0PromptResolve = null;
+    }
+  }
+
   // ── 로그 ──────────────────────────────────────────────
 
   addLog(message, type = 'info') {
     this.ensureInjected();
+    if (!this.config?.general?.showBattleLog) return;
     const log = this.element?.querySelector('#bwbr-log');
     if (!log) return;
 
@@ -690,6 +808,16 @@ window.BattleRollOverlay = class BattleRollOverlay {
       btn.title = isPaused ? '재개' : '일시정지';
       btn.classList.toggle('bwbr-btn-resume', isPaused);
     }
+  }
+
+  /** 관전 모드 UI 전환 (일시정지 숨김, 취소→관전 종료) */
+  setSpectatorMode(isSpectating) {
+    if (!this.element) return;
+    this.element.classList.toggle('bwbr-spectating', isSpectating);
+    const btnPause = this.element.querySelector('#bwbr-btn-pause');
+    if (btnPause) btnPause.style.display = isSpectating ? 'none' : '';
+    const btnCancel = this.element.querySelector('#bwbr-btn-cancel');
+    if (btnCancel) btnCancel.title = isSpectating ? '관전 종료' : '전투 중지';
   }
 
   // ── 콜백 ──────────────────────────────────────────────

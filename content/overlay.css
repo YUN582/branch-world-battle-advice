@@ -267,15 +267,16 @@
 }
 
 .bwbr-trait-h40 {
-  background: #2a2a40;
-  color: #82b1ff;
-  border: 1px solid #3a3a5a;
+  background: #3a2040;
+  color: #cc88ff;
+  border: 1px solid #5a3060;
 }
 
 .bwbr-trait-h400 {
-  background: #2a2a40;
-  color: #82b1ff;
-  border: 1px solid #3a3a5a;
+  background: #3a2040;
+  color: #cc88ff;
+  border: 1px dashed #5a3060;
+  opacity: 0.75;
 }
 
 .bwbr-trait-status {

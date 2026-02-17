@@ -17,10 +17,20 @@
         "https://ccfolia.com/*"
       ],
       "js": [
+        "content/site-volume.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://ccfolia.com/*"
+      ],
+      "js": [
         "content/config-defaults.js",
         "content/melee-engine.js",
         "content/chat-interface.js",
         "content/overlay.js",
+        "content/auto-complete.js",
         "content/content.js"
       ],
       "css": [
@@ -31,7 +41,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["sounds/*"],
+      "resources": ["sounds/*", "content/site-volume-page.js"],
       "matches": ["https://ccfolia.com/*"]
     }
   ],

@@ -141,9 +141,10 @@ window.BattleRollEngine = class BattleRollEngine {
 
   /**
    * 현재 라운드의 주사위 결과를 처리하고 상태를 업데이트합니다.
+   * @param {boolean} manualMode - 수동 모드 여부 (H0 자동 처리 비활성화)
    * @returns {object} 라운드 결과 정보
    */
-  processRoundResult() {
+  processRoundResult(manualMode = false) {
     if (!this.combat || this.lastAttackerRoll === null || this.lastDefenderRoll === null) {
       this._log('⚠️ processRoundResult 호출 시 상태 부적절 → null 반환');
       this._log(`  combat=${!!this.combat}, atkRoll=${this.lastAttackerRoll}, defRoll=${this.lastDefenderRoll}`);
@@ -180,7 +181,7 @@ window.BattleRollEngine = class BattleRollEngine {
     // ── 결과별 효과음 선택 ──
     const isSpecial = atkCrit || atkFumble || defCrit || defFumble;
     const resultSound = isSpecial
-      ? (this.config.sounds.resultSpecialSound || '챙4')
+      ? this._pickRandom(this.config.sounds.resultSpecialSounds || this.config.sounds.resultSpecialSound || ['챙챙4'])
       : this._pickRandom(this.config.sounds.resultNormalSounds || ['챙1', '챙2', '챙3']);
 
     // ── 특수 케이스 판정 ──
@@ -332,12 +333,12 @@ window.BattleRollEngine = class BattleRollEngine {
     result.traitEvents = [];
 
     // ── H4 특성: 피로 새겨진 역사 ──
-    this._applyH4('attacker', atkCrit, result.traitEvents);
-    this._applyH4('defender', defCrit, result.traitEvents);
+    this._applyH4('attacker', atkCrit, result.traitEvents, manualMode);
+    this._applyH4('defender', defCrit, result.traitEvents, manualMode);
 
     // ── H0 특성: 인간 특성 (주사위 0 시 부활) ──
-    this._applyH0('attacker', atkCrit, result.traitEvents);
-    this._applyH0('defender', defCrit, result.traitEvents);
+    this._applyH0('attacker', atkCrit, result.traitEvents, manualMode);
+    this._applyH0('defender', defCrit, result.traitEvents, manualMode);
 
     // 이력 저장
     this.history.push(result);
@@ -423,7 +424,7 @@ window.BattleRollEngine = class BattleRollEngine {
    * H00/H400: 기본적으로 인간 특성 없음. 대성공 시 초기화되어 부활 가능.
    * H40/H400은 추가로 H4 초기화 시 발동 기능이 있음 (_applyH4에서 처리).
    */
-  _applyH0(who, wasCrit, traitEvents) {
+  _applyH0(who, wasCrit, traitEvents, manualMode = false) {
     const fighter = this.combat[who];
     const hasH0 = fighter.traits.includes('H0') || fighter.traits.includes('H40');
     const hasH00 = fighter.traits.includes('H00') || fighter.traits.includes('H400');
@@ -432,6 +433,9 @@ window.BattleRollEngine = class BattleRollEngine {
     const traitLabel = hasH00 ? (fighter.traits.includes('H400') ? 'H400' : 'H00')
                               : (fighter.traits.includes('H40') ? 'H40' : 'H0');
 
+    // H40/H400이 이미 처리 대기 중이면 H0 중복 처리하지 않음
+    if (traitEvents.some(te => te.who === who && te.event === 'h40_h0_available')) return;
+
     // 크리티컬 내면 H0/H00 초기화
     if (wasCrit && fighter.h0Used) {
       fighter.h0Used = false;
@@ -439,12 +443,17 @@ window.BattleRollEngine = class BattleRollEngine {
       traitEvents.push({ trait: traitLabel, who, name: fighter.name, event: 'reset' });
     }
 
-    // 주사위 0 & 아직 미사용 → 부활
+    // 주사위 0 & 아직 미사용 → 부활 (수동 모드: 사용자 확인 대기)
     if (fighter.dice <= 0 && !fighter.h0Used) {
-      fighter.dice = 1;
-      fighter.h0Used = true;
-      this._log(`[${traitLabel}] ${fighter.name}: 인간 특성 발동! 주사위 1개 부활`);
-      traitEvents.push({ trait: traitLabel, who, name: fighter.name, event: 'resurrect' });
+      if (manualMode) {
+        this._log(`[${traitLabel}] ${fighter.name}: 인간 특성 발동 가능 (수동 모드 - 사용자 확인 대기)`);
+        traitEvents.push({ trait: traitLabel, who, name: fighter.name, event: 'h0_available' });
+      } else {
+        fighter.dice = 1;
+        fighter.h0Used = true;
+        this._log(`[${traitLabel}] ${fighter.name}: 인간 특성 발동! 주사위 1개 부활`);
+        traitEvents.push({ trait: traitLabel, who, name: fighter.name, event: 'resurrect' });
+      }
     }
   }
 
@@ -458,7 +467,7 @@ window.BattleRollEngine = class BattleRollEngine {
    *   인간 특성을 발동하여 H4 스택을 유지한 채 추가 합 1회를 진행합니다.
    *   추가 합에서 대성공이면 H4 계속, 아니면 초기화.
    */
-  _applyH4(who, wasCrit, traitEvents) {
+  _applyH4(who, wasCrit, traitEvents, manualMode = false) {
     const fighter = this.combat[who];
     const hasH4 = fighter.traits.includes('H4');
     const hasH40 = fighter.traits.includes('H40');
@@ -476,8 +485,19 @@ window.BattleRollEngine = class BattleRollEngine {
       if (fighter.h4Bonus > 0) {
         // H40/H400 상호작용: 인간 특성 발동 → H4 유지한 채 추가 합 1회
         if ((hasH40 || hasH400) && !fighter.h0Used) {
-          fighter.h0Used = true;
           const interactionTrait = hasH400 ? 'H400' : 'H40';
+
+          if (manualMode) {
+            // 수동 모드: 자동 발동 안함, 사용자 확인 대기 (H4 스택은 아직 유지)
+            this._log(`[${interactionTrait}] ${fighter.name}: 인간 특성 발동 가능 (수동 모드 - H4 스택 유지 / 사용자 확인 대기)`);
+            traitEvents.push({
+              trait: interactionTrait, who, name: fighter.name,
+              event: 'h40_h0_available', bonus: fighter.h4Bonus, threshold: fighter.critThreshold
+            });
+            return;
+          }
+
+          fighter.h0Used = true;
           this._log(`[${interactionTrait}] ${fighter.name}: 인간 특성 발동! H4 스택(+${fighter.h4Bonus}) 유지, 추가 합 진행`);
           traitEvents.push({
             trait: interactionTrait, who, name: fighter.name,
@@ -493,6 +513,83 @@ window.BattleRollEngine = class BattleRollEngine {
         fighter.critThreshold = fighter.baseCritThreshold;
       }
     }
+  }
+
+  // ── 수동 모드: H0 수동 적용 ──────────────────────────────
+
+  /**
+   * 수동 모드에서 사용자가 H0 발동을 확인했을 때 호출.
+   * 주사위 0인 상태에서 dice=1로 부활시킵니다.
+   */
+  applyManualH0(who) {
+    const fighter = this.combat?.[who];
+    if (!fighter || fighter.dice > 0 || fighter.h0Used) return null;
+
+    fighter.dice = 1;
+    fighter.h0Used = true;
+
+    const hasH00 = fighter.traits.includes('H00') || fighter.traits.includes('H400');
+    const traitLabel = hasH00 ? (fighter.traits.includes('H400') ? 'H400' : 'H00')
+                              : (fighter.traits.includes('H40') ? 'H40' : 'H0');
+
+    this._log(`[${traitLabel}] ${fighter.name}: 수동 인간 특성 발동! 주사위 1개 부활`);
+    return { trait: traitLabel, who, name: fighter.name, event: 'resurrect' };
+  }
+
+  /**
+   * 수동 모드에서 H40/H400의 인간 특성 발동을 확인했을 때 호출.
+   * H0를 소비하고 H4 스택 유지 → 추가 합 진행.
+   */
+  applyManualH40H0(who) {
+    const fighter = this.combat?.[who];
+    if (!fighter || fighter.h0Used) return null;
+
+    fighter.h0Used = true;
+    const hasH400 = fighter.traits.includes('H400');
+    const traitLabel = hasH400 ? 'H400' : 'H40';
+
+    this._log(`[${traitLabel}] ${fighter.name}: 수동 인간 특성 발동! H4 스택(+${fighter.h4Bonus}) 유지, 추가 합`);
+    return {
+      trait: traitLabel, who, name: fighter.name,
+      event: 'h0_extra_round', bonus: fighter.h4Bonus, threshold: fighter.critThreshold
+    };
+  }
+
+  /**
+   * 수동 모드에서 H40/H400의 인간 특성 발동을 거부했을 때 호출.
+   * H4 스택을 초기화합니다.
+   */
+  declineH40H0(who) {
+    const fighter = this.combat?.[who];
+    if (!fighter) return;
+
+    const oldBonus = fighter.h4Bonus;
+    fighter.h4Bonus = 0;
+    fighter.critThreshold = fighter.baseCritThreshold;
+    this._log(`[H4] ${fighter.name}: 인간 특성 미발동 → H4 보너스 초기화 (${oldBonus} → 0)`);
+  }
+
+  /**
+   * 수동 모드에서 자유 H0 발동 (주사위 0이 아니어도 사용 가능).
+   * dice += 1, h0Used = true.
+   */
+  activateH0Free(who) {
+    const fighter = this.combat?.[who];
+    if (!fighter || fighter.h0Used) return null;
+
+    const hasH0Trait = fighter.traits.some(t => ['H0', 'H00', 'H40', 'H400'].includes(t));
+    if (!hasH0Trait) return null;
+
+    const prevDice = fighter.dice;
+    fighter.dice += 1;
+    fighter.h0Used = true;
+
+    const hasH00 = fighter.traits.includes('H00') || fighter.traits.includes('H400');
+    const traitLabel = hasH00 ? (fighter.traits.includes('H400') ? 'H400' : 'H00')
+                              : (fighter.traits.includes('H40') ? 'H40' : 'H0');
+
+    this._log(`[${traitLabel}] ${fighter.name}: 수동 인간 특성 자유 발동! 주사위 +1 (${prevDice} → ${fighter.dice})`);
+    return { trait: traitLabel, who, name: fighter.name, event: 'resurrect' };
   }
 
   /** 승자 정보 반환 */
@@ -512,12 +609,12 @@ window.BattleRollEngine = class BattleRollEngine {
     if (!winner) return '';
 
     if (winner === 'draw') {
-      return '《합 종료》 | 무승부 @' + (this.config.sounds.victorySound || '합');
+      return '《합 종료》 | 무승부 @' + this._pickRandom(this.config.sounds.victorySounds || this.config.sounds.victorySound || ['합']);
     }
 
     const winnerData = winner === 'attacker' ? this.combat.attacker : this.combat.defender;
     const winnerIcon = winner === 'attacker' ? '⚔️' : '🛡️';
-    const sound = this.config.sounds.victorySound || '합';
+    const sound = this._pickRandom(this.config.sounds.victorySounds || this.config.sounds.victorySound || ['합']);
 
     return this._formatTemplate(this.config.templates.victory, {
       winnerIcon: winnerIcon,
@@ -575,9 +672,11 @@ window.BattleRollEngine = class BattleRollEngine {
 
   // ── 유틸리티 ─────────────────────────────────────────────
 
-  /** 배열에서 무작위 선택 */
+  /** 배열에서 무작위 선택 (문자열 입력 시 그대로 반환) */
   _pickRandom(arr) {
-    if (!arr || arr.length === 0) return '';
+    if (!arr) return '';
+    if (typeof arr === 'string') return arr;
+    if (arr.length === 0) return '';
     return arr[Math.floor(Math.random() * arr.length)];
   }
 

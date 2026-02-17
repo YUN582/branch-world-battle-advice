@@ -44,21 +44,21 @@ window.BWBR_DEFAULTS = {
 
   // ── 타이밍 설정 (밀리초) ─────────────────────────────────
   timing: {
-    beforeFirstRoll: 400,     // 합 헤더 출력 후 → 첫 번째 굴림까지 대기
-    betweenRolls: 400,        // 공격자 결과 확인 후 → 방어자 굴림까지 대기
-    beforeRoundResult: 400,   // 방어자 결과 확인 후 → 결과 출력까지 대기
-    beforeNextRound: 600,     // 결과 출력 후 → 다음 합까지 대기
-    beforeVictory: 600,       // 마지막 합 결과 후 → 승리 선언까지 대기
-    resultTimeout: 8000       // 주사위 결과 대기 타임아웃 (초과 시 재시도)
+    beforeFirstRoll: 700,     // 합 헤더 출력 후 → 첫 번째 굴림까지 대기
+    betweenRolls: 700,        // 공격자 결과 확인 후 → 방어자 굴림까지 대기
+    beforeRoundResult: 700,   // 방어자 결과 확인 후 → 결과 출력까지 대기
+    beforeNextRound: 700,     // 결과 출력 후 → 다음 합까지 대기
+    beforeVictory: 700,       // 마지막 합 결과 후 → 승리 선언까지 대기
+    resultTimeout: 3000       // 주사위 결과 대기 타임아웃 (초과 시 재시도)
   },
 
   // ── 효과음 설정 ───────────────────────────────────────
   sounds: {
-    combatStartSound: '합',                          // 합 개시 시 효과음
-    roundHeaderSounds: ['챙1', '챙2', '챙3'],          // 합 헤더 시 무작위
-    resultNormalSounds: ['챙1', '챙2', '챙3'],      // 일반 결과 시 무작위
-    resultSpecialSound: '챙4',                       // 대성공/대실패 시 효과음
-    victorySound: '합'                               // 승리 시 효과음
+    combatStartSounds: ['합'],                        // 합 개시 시 효과음
+    roundHeaderSounds: ['챙챙1', '챙챙2', '챙챙3'],          // 합 헤더 시 무작위
+    resultNormalSounds: ['챙챙1', '챙챙2', '챙챙3'],      // 일반 결과 시 무작위
+    resultSpecialSounds: ['챙챙4'],                   // 대성공/대실패 시 무작위
+    victorySounds: ['합']                              // 승리 시 무작위
   },
 
   // ── 전투 규칙 ──────────────────────────────────────────
@@ -131,10 +131,14 @@ window.BWBR_DEFAULTS = {
   // ── 일반 설정 ──────────────────────────────────────────
   general: {
     enabled: true,              // 확장 프로그램 활성화
+    manualMode: false,          // 수동 모드 (주사위 결과를 사용자가 직접 입력)
+    showBattleLog: false,       // 전투 로그 표시 (UI 로그 영역 표시 여부)
+    autoComplete: true,         // 채팅 자동완성 (괄호/따옴표 자동 닫기 + Tab 순환)
     autoScroll: true,           // 새 메시지 시 자동 스크롤
     showOverlay: true,          // 페이지 내 오버레이 표시
     debugMode: false,           // 디버그 로그 출력
     sfxVolume: 0.45,            // 확장 프로그램 효과음 볼륨 (0~1)
+    siteVolume: 1.0,            // 코코포리아 사이트 음량 (0~1)
     language: 'ko'              // UI 언어
   },
 

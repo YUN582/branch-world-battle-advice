@@ -24,108 +24,128 @@
       </div>
     </header>
 
-    <!-- ── 활성화 토글 ─────────────────────────── -->
-    <div class="toggle-section">
-      <label class="toggle-label">
-        <span>확장 프로그램 활성화</span>
-        <input type="checkbox" id="toggle-enabled" checked>
-        <span class="toggle-slider"></span>
-      </label>
-    </div>
-
     <!-- ── 탭 네비게이션 ───────────────────────── -->
     <nav class="tab-nav">
-      <button class="tab-btn active" data-tab="templates">메시지</button>
+      <button class="tab-btn active" data-tab="general">일반</button>
+      <button class="tab-btn" data-tab="sounds">사운드</button>
       <button class="tab-btn" data-tab="timing">타이밍</button>
-      <button class="tab-btn" data-tab="rules">규칙</button>
-      <button class="tab-btn" data-tab="sounds">효과음</button>
       <button class="tab-btn" data-tab="advanced">고급</button>
     </nav>
 
     <!-- ── 탭 콘텐츠 ──────────────────────────── -->
     <div class="tab-content">
 
-      <!-- 메시지 템플릿 탭 -->
-      <div class="tab-panel active" id="tab-templates">
-        <div class="section-desc">전투 중 출력할 메시지 형식을 편집합니다. <code>{변수명}</code> 형태로 동적 값을 삽입합니다.</div>
-
+      <!-- 일반 설정 탭 -->
+      <div class="tab-panel active" id="tab-general">
         <div class="field-group">
-          <label class="field-label">
-            합 헤더
-            <span class="field-hint">변수: {round}, {attacker}, {atkDice}, {defender}, {defDice}</span>
+          <label class="toggle-label inline">
+            <span>확장 프로그램 활성화</span>
+            <input type="checkbox" id="toggle-enabled" checked>
+            <span class="toggle-slider small"></span>
           </label>
-          <textarea class="field-input" id="tpl-roundHeader" rows="2"></textarea>
         </div>
 
         <div class="field-group">
-          <label class="field-label">
-            공격자 굴림 명령
-            <span class="field-hint">변수: {attacker}, {sound}</span>
+          <label class="toggle-label inline">
+            <span>수동 모드</span>
+            <input type="checkbox" id="toggle-manualMode">
+            <span class="toggle-slider small"></span>
           </label>
-          <input type="text" class="field-input" id="tpl-attackerRoll">
+          <div class="toggle-hint" id="manual-mode-hint" style="display:none;font-size:11px;color:#82b1ff;padding:2px 0 4px;">주사위 결과를 사용자가 직접 입력합니다. H0는 수동 발동만 가능합니다.</div>
         </div>
 
         <div class="field-group">
-          <label class="field-label">
-            방어자 굴림 명령
-            <span class="field-hint">변수: {defender}, {sound}</span>
+          <label class="toggle-label inline">
+            <span>전투 로그 표시</span>
+            <input type="checkbox" id="toggle-showBattleLog">
+            <span class="toggle-slider small"></span>
           </label>
-          <input type="text" class="field-input" id="tpl-defenderRoll">
         </div>
 
         <div class="field-group">
-          <label class="field-label">
-            일반 승리 결과
-            <span class="field-hint">변수: {attacker}, {defender}, {atkValue}, {defValue}, {winner}</span>
+          <label class="toggle-label inline">
+            <span>채팅 자동완성</span>
+            <input type="checkbox" id="toggle-autoComplete" checked>
+            <span class="toggle-slider small"></span>
           </label>
-          <textarea class="field-input" id="tpl-roundResultWin" rows="2"></textarea>
+          <div class="toggle-hint" style="font-size:11px;color:#888;padding:2px 0 4px;">"" '' () 「」 『』 【】 《》 자동 닫기 + Tab 순환 / Shift+Tab 역순환</div>
+        </div>      </div>
+      <!-- 사운드 설정 탭 -->
+      <div class="tab-panel" id="tab-sounds">
+
+        <!-- 코코포리아 컷인 사운드 -->
+        <div class="section-desc" style="font-weight:700;color:#ffab40;">코코포리아 컷인 사운드</div>
+        <div class="section-desc">코코포리아 세션에 등록된 컷인 사운드 이름을 입력합니다. 여러 개 등록 시 무작위 재생됩니다.</div>
+
+        <div class="field-group">
+          <label class="field-label">코코포리아 음량 <span id="gen-siteVolume-val" style="color:#ffab40;font-weight:700">100%</span></label>
+          <input type="range" class="field-range" id="gen-siteVolume" min="0" max="1" step="0.05" value="1.0">
         </div>
 
         <div class="field-group">
-          <label class="field-label">
-            대성공 결과
-            <span class="field-hint">변수: {name}, {value}</span>
-          </label>
-          <textarea class="field-input" id="tpl-roundResultCrit" rows="2"></textarea>
+          <label class="field-label">합 개시 사운드</label>
+          <div id="sound-combatStart-list" class="tag-list"></div>
+          <div class="tag-add-row">
+            <input type="text" class="field-input tag-input" id="sound-combatStart-input" placeholder="사운드 이름 입력">
+            <button class="btn-small" id="sound-combatStart-add">추가</button>
+          </div>
         </div>
 
         <div class="field-group">
-          <label class="field-label">
-            대실패 결과
-            <span class="field-hint">변수: {name}, {value}</span>
-          </label>
-          <textarea class="field-input" id="tpl-roundResultFumble" rows="2"></textarea>
+          <label class="field-label">합 헤더 사운드</label>
+          <div id="sound-roundHeader-list" class="tag-list"></div>
+          <div class="tag-add-row">
+            <input type="text" class="field-input tag-input" id="sound-roundHeader-input" placeholder="사운드 이름 입력">
+            <button class="btn-small" id="sound-roundHeader-add">추가</button>
+          </div>
         </div>
 
         <div class="field-group">
-          <label class="field-label">
-            쌍방 대성공
-            <span class="field-hint">변수: {atkValue}, {defValue}</span>
-          </label>
-          <textarea class="field-input" id="tpl-roundResultBothCrit" rows="2"></textarea>
+          <label class="field-label">합 결과 사운드</label>
+          <div id="sound-resultNormal-list" class="tag-list"></div>
+          <div class="tag-add-row">
+            <input type="text" class="field-input tag-input" id="sound-resultNormal-input" placeholder="사운드 이름 입력">
+            <button class="btn-small" id="sound-resultNormal-add">추가</button>
+          </div>
         </div>
 
         <div class="field-group">
-          <label class="field-label">
-            무승부 (동점)
-            <span class="field-hint">변수: {atkValue}, {defValue}</span>
-          </label>
-          <textarea class="field-input" id="tpl-roundResultTie" rows="2"></textarea>
+          <label class="field-label">대성공/대실패 사운드</label>
+          <div id="sound-resultSpecial-list" class="tag-list"></div>
+          <div class="tag-add-row">
+            <input type="text" class="field-input tag-input" id="sound-resultSpecial-input" placeholder="사운드 이름 입력">
+            <button class="btn-small" id="sound-resultSpecial-add">추가</button>
+          </div>
         </div>
 
         <div class="field-group">
-          <label class="field-label">
-            합 승리 선언
-            <span class="field-hint">변수: {winnerIcon}, {winner}, {sound}</span>
-          </label>
-          <input type="text" class="field-input" id="tpl-victory">
+          <label class="field-label">승리 사운드</label>
+          <div id="sound-victory-list" class="tag-list"></div>
+          <div class="tag-add-row">
+            <input type="text" class="field-input tag-input" id="sound-victory-input" placeholder="사운드 이름 입력">
+            <button class="btn-small" id="sound-victory-add">추가</button>
+          </div>
+        </div>
+
+        <hr style="border:0;border-top:1px solid #333;margin:16px 0">
+
+        <!-- 로컬 사운드 -->
+        <div class="section-desc" style="font-weight:700;color:#82b1ff;">로컬 사운드</div>
+        <div class="section-desc">확장 프로그램에서 직접 재생하는 로컬 사운드입니다.</div>
+
+        <div class="field-group">
+          <label class="field-label">로컬 사운드 볼륨 <span id="gen-sfxVolume-val" style="color:#82b1ff;font-weight:700">45%</span></label>
+          <input type="range" class="field-range" id="gen-sfxVolume" min="0" max="1" step="0.05" value="0.45">
         </div>
 
         <div class="field-group">
-          <label class="field-label">
-            합 중지 트리거 문구
-          </label>
-          <input type="text" class="field-input" id="tpl-combatCancel">
+          <label class="field-label">합 주사위 굴림 사운드</label>
+          <div id="local-roll-sounds-list" class="tag-list"></div>
+          <div class="tag-add-row">
+            <button class="btn-small" id="btn-add-roll-sound" title="오디오 파일을 선택하여 추가합니다">+ 파일 추가</button>
+          </div>
+          <div class="section-desc" style="font-size:10px;color:#888;margin-top:4px;">sounds/ 폴더의 기본 사운드가 포함됩니다. 위 버튼으로 커스텀 오디오 파일을 추가할 수 있습니다.</div>
+          <input type="file" id="roll-sound-file" accept="audio/*" style="display:none;">
         </div>
       </div>
 
@@ -185,98 +205,6 @@
             <input type="number" class="field-number" id="time-resultTimeout-num" min="1000" max="60000" step="1000">
             <span class="field-unit">ms</span>
           </div>
-        </div>
-      </div>
-
-      <!-- 규칙 설정 탭 -->
-      <div class="tab-panel" id="tab-rules">
-        <div class="section-desc">근접전 합 처리의 규칙을 설정합니다.</div>
-
-        <div class="field-group">
-          <label class="field-label">주사위 면 수</label>
-          <input type="number" class="field-input" id="rule-diceType" min="2" max="100">
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">대성공 값</label>
-          <input type="number" class="field-input" id="rule-criticalValue" min="1" max="100">
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">대실패 값</label>
-          <input type="number" class="field-input" id="rule-fumbleValue" min="1" max="100">
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">대성공 보너스 (추가 주사위)</label>
-          <input type="number" class="field-input" id="rule-criticalBonus" min="0" max="10">
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">대실패 패널티 (추가 감소)</label>
-          <input type="number" class="field-input" id="rule-fumblePenalty" min="0" max="10">
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">동점 처리 규칙</label>
-          <select class="field-input" id="rule-tieRule">
-            <option value="reroll">재굴림</option>
-            <option value="bothLose">양쪽 모두 주사위 파괴</option>
-            <option value="nothing">아무 일도 없음 (다음 합)</option>
-            <option value="attackerWins">공격자 우위</option>
-            <option value="defenderWins">방어자 우위</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- 효과음 설정 탭 -->
-      <div class="tab-panel" id="tab-sounds">
-        <div class="section-desc">코코포리아 세션에 등록된 효과음 이름을 입력합니다. (@효과음명 형태로 사용됩니다)</div>
-
-        <div class="field-group">
-          <label class="field-label">합 개시 효과음</label>
-          <div class="tag-add-row">
-            <input type="text" class="field-input" id="sound-combatStart" placeholder="효과음 이름">
-          </div>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">합 헤더 효과음 (무작위 선택)</label>
-          <div id="sound-roundHeader-list" class="tag-list"></div>
-          <div class="tag-add-row">
-            <input type="text" class="field-input tag-input" id="sound-roundHeader-input" placeholder="효과음 이름 입력">
-            <button class="btn-small" id="sound-roundHeader-add">추가</button>
-          </div>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">결과 효과음 (무작위 선택)</label>
-          <div id="sound-resultNormal-list" class="tag-list"></div>
-          <div class="tag-add-row">
-            <input type="text" class="field-input tag-input" id="sound-resultNormal-input" placeholder="효과음 이름 입력">
-            <button class="btn-small" id="sound-resultNormal-add">추가</button>
-          </div>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">대성공/대실패 효과음</label>
-          <div class="tag-add-row">
-            <input type="text" class="field-input" id="sound-resultSpecial" placeholder="효과음 이름">
-          </div>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">승리 효과음</label>
-          <div class="tag-add-row">
-            <input type="text" class="field-input" id="sound-victory" placeholder="효과음 이름">
-          </div>
-        </div>
-
-        <hr style="border:0;border-top:1px solid #333;margin:16px 0">
-        <div class="section-desc">확장 프로그램이 직접 재생하는 로컬 효과음 볼륨을 조절합니다.</div>
-        <div class="field-group">
-          <label class="field-label">로컬 효과음 볼륨 <span id="gen-sfxVolume-val" style="color:#82b1ff;font-weight:700">45%</span></label>
-          <input type="range" class="field-range" id="gen-sfxVolume" min="0" max="1" step="0.05" value="0.45">
         </div>
       </div>
 

@@ -89,9 +89,12 @@ body {
 /* ── 활성화 토글 ──────────────────────────────── */
 
 .toggle-section {
-  padding: 8px 16px;
+  padding: 10px 16px;
   background: rgba(255, 255, 255, 0.03);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .toggle-label {
@@ -375,6 +378,13 @@ select.field-input option {
 
 .tag-item .tag-remove:hover {
   color: #f44336;
+}
+
+.tag-item.tag-builtin {
+  background: rgba(130, 177, 255, 0.1);
+  border-color: rgba(130, 177, 255, 0.25);
+  color: #8899aa;
+  font-size: 10px;
 }
 
 .tag-add-row {

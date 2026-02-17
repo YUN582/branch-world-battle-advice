@@ -24,19 +24,19 @@
       combatCancel: '《합 중지》'
     },
     timing: {
-      beforeFirstRoll: 1000,
-      betweenRolls: 600,
-      beforeRoundResult: 600,
-      beforeNextRound: 1000,
-      beforeVictory: 1000,
-      resultTimeout: 10000
+      beforeFirstRoll: 700,
+      betweenRolls: 700,
+      beforeRoundResult: 700,
+      beforeNextRound: 700,
+      beforeVictory: 700,
+      resultTimeout: 3000
     },
     sounds: {
-      combatStartSound: '합',
+      combatStartSounds: ['합'],
       roundHeaderSounds: ['후웅1', '후웅2', '후웅3', '후웅4'],
       resultNormalSounds: ['챙1', '챙2', '챙3'],
-      resultSpecialSound: '챙4',
-      victorySound: '합'
+      resultSpecialSounds: ['챙4'],
+      victorySounds: ['합']
     },
     rules: {
       diceType: 20,
@@ -60,10 +60,14 @@
     },
     general: {
       enabled: true,
+      manualMode: false,
+      showBattleLog: false,
+      autoComplete: true,
       autoScroll: true,
       showOverlay: true,
       debugMode: false,
       sfxVolume: 0.45,
+      siteVolume: 1.0,
       language: 'ko'
     }
   };
@@ -81,11 +85,29 @@
 
   // ── 설정 로드/저장 ───────────────────────────────────────
 
+  function migrateSounds(sounds) {
+    if (!sounds) return;
+    if (typeof sounds.combatStartSound === 'string') {
+      sounds.combatStartSounds = [sounds.combatStartSound];
+      delete sounds.combatStartSound;
+    }
+    if (typeof sounds.resultSpecialSound === 'string') {
+      sounds.resultSpecialSounds = [sounds.resultSpecialSound];
+      delete sounds.resultSpecialSound;
+    }
+    if (typeof sounds.victorySound === 'string') {
+      sounds.victorySounds = [sounds.victorySound];
+      delete sounds.victorySound;
+    }
+  }
+
   function loadConfig() {
     return new Promise((resolve) => {
       chrome.storage.sync.get('bwbr_config', (result) => {
         if (result.bwbr_config) {
-          resolve(deepMerge(DEFAULTS, result.bwbr_config));
+          const merged = deepMerge(DEFAULTS, result.bwbr_config);
+          migrateSounds(merged.sounds);
+          resolve(merged);
         } else {
           resolve(JSON.parse(JSON.stringify(DEFAULTS)));
         }
@@ -120,17 +142,16 @@
     // 활성화
     $('toggle-enabled').checked = cfg.general.enabled;
 
-    // 메시지 템플릿
-    $('tpl-roundHeader').value = cfg.templates.roundHeader;
-    $('tpl-attackerRoll').value = cfg.templates.attackerRoll;
-    $('tpl-defenderRoll').value = cfg.templates.defenderRoll;
-    $('tpl-roundResultWin').value = cfg.templates.roundResultWin;
-    $('tpl-roundResultCrit').value = cfg.templates.roundResultCrit;
-    $('tpl-roundResultFumble').value = cfg.templates.roundResultFumble;
-    $('tpl-roundResultBothCrit').value = cfg.templates.roundResultBothCrit;
-    $('tpl-roundResultTie').value = cfg.templates.roundResultTie;
-    $('tpl-victory').value = cfg.templates.victory;
-    $('tpl-combatCancel').value = cfg.templates.combatCancel;
+    // 수동 모드
+    $('toggle-manualMode').checked = cfg.general.manualMode || false;
+    const hint = document.getElementById('manual-mode-hint');
+    if (hint) hint.style.display = cfg.general.manualMode ? '' : 'none';
+
+    // 전투 로그
+    $('toggle-showBattleLog').checked = cfg.general.showBattleLog || false;
+
+    // 자동완성
+    $('toggle-autoComplete').checked = cfg.general.autoComplete !== false;
 
     // 타이밍
     setTimingField('time-beforeFirstRoll', cfg.timing.beforeFirstRoll);
@@ -140,20 +161,15 @@
     setTimingField('time-beforeVictory', cfg.timing.beforeVictory);
     setTimingField('time-resultTimeout', cfg.timing.resultTimeout);
 
-    // 규칙
-    $('rule-diceType').value = cfg.rules.diceType;
-    $('rule-criticalValue').value = cfg.rules.criticalValue;
-    $('rule-fumbleValue').value = cfg.rules.fumbleValue;
-    $('rule-criticalBonus').value = cfg.rules.criticalBonus;
-    $('rule-fumblePenalty').value = cfg.rules.fumblePenalty;
-    $('rule-tieRule').value = cfg.rules.tieRule;
-
-    // 효과음
-    $('sound-combatStart').value = cfg.sounds.combatStartSound || '';
+    // 효과음 (코코포리아 컷인)
+    renderTagList('sound-combatStart-list', cfg.sounds.combatStartSounds || ['합'], 'combatStartSounds');
     renderTagList('sound-roundHeader-list', cfg.sounds.roundHeaderSounds || [], 'roundHeaderSounds');
     renderTagList('sound-resultNormal-list', cfg.sounds.resultNormalSounds || [], 'resultNormalSounds');
-    $('sound-resultSpecial').value = cfg.sounds.resultSpecialSound || '';
-    $('sound-victory').value = cfg.sounds.victorySound || '';
+    renderTagList('sound-resultSpecial-list', cfg.sounds.resultSpecialSounds || ['챙4'], 'resultSpecialSounds');
+    renderTagList('sound-victory-list', cfg.sounds.victorySounds || ['합'], 'victorySounds');
+
+    // 로컬 효과음 (커스텀 롤 사운드)
+    loadCustomRollSounds();
 
     // 패턴
     $('pat-triggerRegex').value = cfg.patterns.triggerRegex;
@@ -173,6 +189,8 @@
     $('gen-debugMode').checked = cfg.general.debugMode;
     $('gen-sfxVolume').value = cfg.general.sfxVolume ?? 0.45;
     $('gen-sfxVolume-val').textContent = Math.round((cfg.general.sfxVolume ?? 0.45) * 100) + '%';
+    $('gen-siteVolume').value = cfg.general.siteVolume ?? 1.0;
+    $('gen-siteVolume-val').textContent = Math.round((cfg.general.siteVolume ?? 1.0) * 100) + '%';
   }
 
   /** UI 필드에서 설정 데이터를 수집합니다 */
@@ -182,17 +200,14 @@
     // 활성화
     cfg.general.enabled = $('toggle-enabled').checked;
 
-    // 메시지 템플릿
-    cfg.templates.roundHeader = $('tpl-roundHeader').value;
-    cfg.templates.attackerRoll = $('tpl-attackerRoll').value;
-    cfg.templates.defenderRoll = $('tpl-defenderRoll').value;
-    cfg.templates.roundResultWin = $('tpl-roundResultWin').value;
-    cfg.templates.roundResultCrit = $('tpl-roundResultCrit').value;
-    cfg.templates.roundResultFumble = $('tpl-roundResultFumble').value;
-    cfg.templates.roundResultBothCrit = $('tpl-roundResultBothCrit').value;
-    cfg.templates.roundResultTie = $('tpl-roundResultTie').value;
-    cfg.templates.victory = $('tpl-victory').value;
-    cfg.templates.combatCancel = $('tpl-combatCancel').value;
+    // 수동 모드
+    cfg.general.manualMode = $('toggle-manualMode').checked;
+
+    // 전투 로그
+    cfg.general.showBattleLog = $('toggle-showBattleLog').checked;
+
+    // 자동완성
+    cfg.general.autoComplete = $('toggle-autoComplete').checked;
 
     // 타이밍
     cfg.timing.beforeFirstRoll = getTimingValue('time-beforeFirstRoll');
@@ -202,20 +217,12 @@
     cfg.timing.beforeVictory = getTimingValue('time-beforeVictory');
     cfg.timing.resultTimeout = getTimingValue('time-resultTimeout');
 
-    // 규칙
-    cfg.rules.diceType = parseInt($('rule-diceType').value) || 20;
-    cfg.rules.criticalValue = parseInt($('rule-criticalValue').value) || 20;
-    cfg.rules.fumbleValue = parseInt($('rule-fumbleValue').value) || 1;
-    cfg.rules.criticalBonus = parseInt($('rule-criticalBonus').value) || 1;
-    cfg.rules.fumblePenalty = parseInt($('rule-fumblePenalty').value) || 1;
-    cfg.rules.tieRule = $('rule-tieRule').value;
-
-    // 효과음
-    cfg.sounds.combatStartSound = $('sound-combatStart').value.trim() || '합';
+    // 효과음 (코코포리아 컷인)
+    cfg.sounds.combatStartSounds = collectTags('sound-combatStart-list');
     cfg.sounds.roundHeaderSounds = collectTags('sound-roundHeader-list');
     cfg.sounds.resultNormalSounds = collectTags('sound-resultNormal-list');
-    cfg.sounds.resultSpecialSound = $('sound-resultSpecial').value.trim() || '챙4';
-    cfg.sounds.victorySound = $('sound-victory').value.trim() || '합';
+    cfg.sounds.resultSpecialSounds = collectTags('sound-resultSpecial-list');
+    cfg.sounds.victorySounds = collectTags('sound-victory-list');
 
     // 패턴
     cfg.patterns.triggerRegex = $('pat-triggerRegex').value;
@@ -234,6 +241,7 @@
     cfg.general.showOverlay = $('gen-showOverlay').checked;
     cfg.general.debugMode = $('gen-debugMode').checked;
     cfg.general.sfxVolume = parseFloat($('gen-sfxVolume').value) || 0.45;
+    cfg.general.siteVolume = parseFloat($('gen-siteVolume').value) ?? 1.0;
 
     return cfg;
   }
@@ -261,24 +269,74 @@
       $('gen-sfxVolume-val').textContent = Math.round(e.target.value * 100) + '%';
     });
 
+    // 코코포리아 음량 슬라이더 실시간 표시 + 즉시 적용
+    $('gen-siteVolume').addEventListener('input', (e) => {
+      $('gen-siteVolume-val').textContent = Math.round(e.target.value * 100) + '%';
+      sendToContent({ type: 'BWBR_SET_SITE_VOLUME', volume: parseFloat(e.target.value) });
+    });
+
     // 활성화 토글
     $('toggle-enabled').addEventListener('change', (e) => {
       sendToContent({ type: 'BWBR_SET_ENABLED', enabled: e.target.checked });
     });
 
-    // 효과음 추가
-    $('sound-roundHeader-add').addEventListener('click', () => {
-      addTag('sound-roundHeader-list', 'sound-roundHeader-input', 'roundHeaderSounds');
-    });
-    $('sound-roundHeader-input').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') addTag('sound-roundHeader-list', 'sound-roundHeader-input', 'roundHeaderSounds');
+    // 수동 모드 토글
+    $('toggle-manualMode').addEventListener('change', (e) => {
+      const hint = document.getElementById('manual-mode-hint');
+      if (hint) hint.style.display = e.target.checked ? '' : 'none';
+      sendToContent({ type: 'BWBR_SET_MANUAL_MODE', manualMode: e.target.checked });
     });
 
-    $('sound-resultNormal-add').addEventListener('click', () => {
-      addTag('sound-resultNormal-list', 'sound-resultNormal-input', 'resultNormalSounds');
+    // 전투 로그 표시 토글 (즉시 적용)
+    $('toggle-showBattleLog').addEventListener('change', (e) => {
+      sendToContent({ type: 'BWBR_SET_SHOW_BATTLE_LOG', showBattleLog: e.target.checked });
     });
-    $('sound-resultNormal-input').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') addTag('sound-resultNormal-list', 'sound-resultNormal-input', 'resultNormalSounds');
+
+    // 자동완성 토글 (즉시 적용)
+    $('toggle-autoComplete').addEventListener('change', (e) => {
+      sendToContent({ type: 'BWBR_SET_AUTO_COMPLETE', autoComplete: e.target.checked });
+    });
+
+    // 코코포리아 컷인 효과음 태그 추가
+    const soundTagConfigs = [
+      { list: 'sound-combatStart-list', input: 'sound-combatStart-input', add: 'sound-combatStart-add', key: 'combatStartSounds' },
+      { list: 'sound-roundHeader-list', input: 'sound-roundHeader-input', add: 'sound-roundHeader-add', key: 'roundHeaderSounds' },
+      { list: 'sound-resultNormal-list', input: 'sound-resultNormal-input', add: 'sound-resultNormal-add', key: 'resultNormalSounds' },
+      { list: 'sound-resultSpecial-list', input: 'sound-resultSpecial-input', add: 'sound-resultSpecial-add', key: 'resultSpecialSounds' },
+      { list: 'sound-victory-list', input: 'sound-victory-input', add: 'sound-victory-add', key: 'victorySounds' }
+    ];
+    soundTagConfigs.forEach(({ list, input, add, key }) => {
+      $(add).addEventListener('click', () => addTag(list, input, key));
+      $(input).addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') addTag(list, input, key);
+      });
+    });
+
+    // 로컬 효과음 파일 추가
+    $('btn-add-roll-sound').addEventListener('click', () => {
+      $('roll-sound-file').click();
+    });
+    $('roll-sound-file').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        const dataUrl = await readFileAsDataUrl(file);
+        const name = file.name.replace(/\.[^.]+$/, '');
+        const result = await chrome.storage.local.get('bwbr_custom_roll_sounds');
+        const sounds = result.bwbr_custom_roll_sounds || [];
+        if (sounds.some(s => s.name === name)) {
+          showToast('같은 이름의 사운드가 이미 있습니다.', 'error');
+          e.target.value = '';
+          return;
+        }
+        sounds.push({ name, dataUrl, fileName: file.name });
+        await chrome.storage.local.set({ bwbr_custom_roll_sounds: sounds });
+        renderCustomRollSounds(sounds);
+        showToast(`"${name}" 사운드가 추가되었습니다.`, 'success');
+      } catch (err) {
+        showToast('파일 읽기 오류: ' + err.message, 'error');
+      }
+      e.target.value = '';
     });
 
     // 저장
@@ -430,7 +488,7 @@
     // 현재 태그 수집
     const tags = collectTags(listId);
     if (tags.includes(value)) {
-      showToast('이미 추가된 효과음입니다.', 'error');
+      showToast('이미 추가된 사운드입니다.', 'error');
       return;
     }
     tags.push(value);
@@ -486,6 +544,58 @@
     setTimeout(() => {
       toast.className = 'toast';
     }, 2500);
+  }
+
+  // ── 로컬 사운드 관리 ──────────────────────────────────────
+
+  /** sounds/ 폴더의 기본 내장 사운드 파일 목록 */
+  const BUILTIN_ROLL_SOUNDS = [
+    'parry1', 'parry2', 'parry3', 'parry4', 'parry5', 'parry6',
+    'hu-ung1', 'hu-ung2', 'hu-ung3', 'hu-ung4',
+    'shield1', 'shield2', 'shield3',
+    'jump'
+  ];
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function loadCustomRollSounds() {
+    const result = await chrome.storage.local.get('bwbr_custom_roll_sounds');
+    renderCustomRollSounds(result.bwbr_custom_roll_sounds || []);
+  }
+
+  function renderCustomRollSounds(customs) {
+    const list = $('local-roll-sounds-list');
+    if (!list) return;
+    list.innerHTML = '';
+
+    // 기본 내장 사운드 (삭제 불가)
+    BUILTIN_ROLL_SOUNDS.forEach(name => {
+      const item = document.createElement('span');
+      item.className = 'tag-item tag-builtin';
+      item.textContent = name;
+      list.appendChild(item);
+    });
+
+    // 커스텀 사운드 (삭제 가능)
+    customs.forEach((s, i) => {
+      const item = document.createElement('span');
+      item.className = 'tag-item';
+      item.innerHTML = `${escapeHtml(s.name)}<span class="tag-remove" data-index="${i}">×</span>`;
+      item.querySelector('.tag-remove').addEventListener('click', async (e) => {
+        customs.splice(parseInt(e.target.dataset.index), 1);
+        await chrome.storage.local.set({ bwbr_custom_roll_sounds: customs });
+        renderCustomRollSounds(customs);
+        showToast('사운드가 삭제되었습니다.', 'success');
+      });
+      list.appendChild(item);
+    });
   }
 
 })();

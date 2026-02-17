@@ -17,7 +17,8 @@
     WAITING_DEFENDER_RESULT: 'WAITING_DEFENDER_RESULT',
     PROCESSING_RESULT: 'PROCESSING_RESULT',
     COMBAT_END: 'COMBAT_END',
-    PAUSED: 'PAUSED'
+    PAUSED: 'PAUSED',
+    SPECTATING: 'SPECTATING'
   };
 
   let config = null;        // 현재 설정
@@ -30,6 +31,9 @@
   let paused = false;
   let _pauseRequested = false;
   let _stateBeforePause = null;
+  let _spectatorAtkRollSeen = false;
+  let _spectatorDefRollSeen = false;
+  let _spectatorDedup = new Map();  // key → timestamp (중복 메시지 방지)
 
   // ── 초기화 ───────────────────────────────────────────────
 
@@ -46,6 +50,11 @@
     overlay.preloadRollSounds();
 
     enabled = config.general.enabled;
+
+    // 자동완성 초기화
+    if (window.BWBR_AutoComplete) {
+      window.BWBR_AutoComplete.setEnabled(config.general.autoComplete !== false);
+    }
 
     // 패널 이벤트
     overlay.onCancel(() => cancelCombat());
@@ -74,6 +83,9 @@
     // 메시지 리스너 (popup ↔ content 통신)
     chrome.runtime.onMessage.addListener(onExtensionMessage);
 
+    // 사이트 음량 적용 (site-volume.js에서 이미 API 패치 완료)
+    applySiteVolume(config.general.siteVolume ?? 1.0);
+
     alwaysLog('초기화 완료! 트리거 대기 중...');
     alwaysLog(`트리거 정규식: ${config.patterns.triggerRegex}`);
   }
@@ -86,11 +98,12 @@
         if (result.bwbr_config) {
           // 저장된 설정과 기본값 병합 (새 키 추가 대응)
           const merged = deepMerge(window.BWBR_DEFAULTS, result.bwbr_config);
-          // 정규식, 템플릿, 효과음은 항상 최신 기본값을 사용 (이전 버전 호환)
+          // 정규식, 템플릿은 항상 최신 기본값을 사용 (이전 버전 호환)
           merged.patterns = JSON.parse(JSON.stringify(window.BWBR_DEFAULTS.patterns));
           merged.templates = JSON.parse(JSON.stringify(window.BWBR_DEFAULTS.templates));
-          merged.sounds = JSON.parse(JSON.stringify(window.BWBR_DEFAULTS.sounds));
-          alwaysLog('저장된 설정 로드 (패턴/템플릿/효과음은 기본값 사용)');
+          // 효과음: 구 형식(single) → 신 형식(array) 마이그레이션
+          migrateSounds(merged.sounds);
+          alwaysLog('저장된 설정 로드 (패턴/템플릿은 기본값 사용)');
           resolve(merged);
         } else {
           alwaysLog('기본 설정 사용');
@@ -141,7 +154,13 @@
     switch (flowState) {
       case STATE.IDLE:
         // 합 개시 트리거는 입력 훅(onInputSubmit)에서 감지
+        // 다른 사용자가 전송한 합 개시 메시지 → 관전 모드
+        checkForSpectatorTrigger(text);
         checkForCancel(text);
+        break;
+
+      case STATE.SPECTATING:
+        processSpectatorMessage(text);
         break;
 
       case STATE.WAITING_ATTACKER_RESULT:
@@ -202,9 +221,15 @@
   function cancelCombat() {
     if (flowState === STATE.IDLE) return;
 
+    if (flowState === STATE.SPECTATING) {
+      endSpectating();
+      return;
+    }
+
     log('전투 중지');
     clearTimeout(resultTimeoutId);
     overlay.hideManualInput();
+    overlay.hideH0Prompt();
 
     // 일시정지 상태 해제
     paused = false;
@@ -217,6 +242,180 @@
     overlay.addLog('전투가 중지되었습니다.', 'warning');
     overlay.setStatus('idle', '대기 중');
     overlay.updateCombatState(engine.getState());
+  }
+
+  // ── 관전 모드 ────────────────────────────────────────────
+
+  function checkForSpectatorTrigger(text) {
+    const triggerData = engine.parseTrigger(text);
+    if (!triggerData) return;
+    startSpectating(triggerData);
+  }
+
+  function startSpectating(triggerData) {
+    alwaysLog(`👁️ 관전 모드 시작! ⚔️${triggerData.attacker.name}(${triggerData.attacker.dice}) vs 🛡️${triggerData.defender.name}(${triggerData.defender.dice})`);
+
+    engine.startCombat(triggerData.attacker, triggerData.defender);
+    engine.round = 1;
+    flowState = STATE.SPECTATING;
+    _spectatorAtkRollSeen = false;
+    _spectatorDefRollSeen = false;
+
+    overlay.show();
+    overlay.clearLog();
+    overlay.addLog('👁️ 관전 모드 — 합 진행을 감지합니다.', 'success');
+    overlay.updateCombatState(engine.getState());
+    overlay.setStatus('active', '👁 관전 중');
+    overlay.setSpectatorMode(true);
+  }
+
+  /**
+   * 관전 모드에서 채팅 메시지를 분석하여 오버레이에 반영합니다.
+   * GM의 확장 프로그램이 보내는 메시지 패턴을 감지해 애니메이션을 재생합니다.
+   */
+  function processSpectatorMessage(text) {
+    const state = engine.getState();
+    if (!state?.combat) { endSpectating(); return; }
+
+    // 중복 메시지 방지 (2초 내 같은 텍스트 무시)
+    const now = Date.now();
+    const dedupKey = text.substring(0, 80);
+    if (_spectatorDedup.has(dedupKey) && now - _spectatorDedup.get(dedupKey) < 2000) return;
+    _spectatorDedup.set(dedupKey, now);
+    if (_spectatorDedup.size > 50) {
+      for (const [k, t] of _spectatorDedup) { if (now - t > 5000) _spectatorDedup.delete(k); }
+    }
+
+    // 1. 합 중지
+    if (engine.parseCancelTrigger(text)) {
+      overlay.addLog('전투가 중지되었습니다.', 'warning');
+      endSpectating();
+      return;
+    }
+
+    // 2. 합 승리 / 종료
+    if (text.includes('《합 승리》') || text.includes('《합 종료》')) {
+      const cleanText = text.replace(/@\S+/g, '').trim();
+      if (text.includes('⚔')) overlay.playVictory('attacker');
+      else if (text.includes('🛡')) overlay.playVictory('defender');
+      overlay.addLog(cleanText, 'success');
+      overlay.setStatus('idle', '전투 종료');
+      setTimeout(() => endSpectating(), 5000);
+      return;
+    }
+
+    // 3. 라운드 헤더: 《N합》| ⚔️ name dice : 🛡️ name dice @sound
+    const roundMatch = text.match(/《(\d+)합》/);
+    if (roundMatch) {
+      const roundNum = parseInt(roundMatch[1], 10);
+      engine.round = roundNum;
+
+      // 헤더에서 양측 주사위 수를 파싱하여 상태 동기화
+      const atkNameEsc = state.combat.attacker.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const defNameEsc = state.combat.defender.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const diceRegex = new RegExp(atkNameEsc + '\\s+(\\d+)\\s*:.*?' + defNameEsc + '\\s+(\\d+)');
+      const diceMatch = text.match(diceRegex);
+      if (diceMatch && engine.combat) {
+        engine.combat.attacker.dice = parseInt(diceMatch[1], 10);
+        engine.combat.defender.dice = parseInt(diceMatch[2], 10);
+      }
+
+      _spectatorAtkRollSeen = false;
+      _spectatorDefRollSeen = false;
+
+      overlay.updateCombatState(engine.getState());
+      overlay.playClash();
+      overlay.addLog(`── 제 ${roundNum}합 ──`, 'info');
+      return;
+    }
+
+    // 4. 주사위 결과 (공격자)
+    if (!_spectatorAtkRollSeen) {
+      const atkValue = extractDiceValue(text, state.combat.attacker.name, '⚔');
+      if (atkValue !== null) {
+        _spectatorAtkRollSeen = true;
+        const logType = atkValue >= state.combat.attacker.critThreshold ? 'crit'
+          : atkValue <= state.combat.attacker.fumbleThreshold ? 'fumble' : 'info';
+        overlay.addLog(`⚔️ ${state.combat.attacker.name}: ${atkValue}`, logType);
+        overlay.animateDiceValue('attacker', atkValue);
+        if (logType === 'crit') overlay.playCrit('attacker');
+        else if (logType === 'fumble') overlay.playFumble('attacker');
+        overlay.playParrySound();
+        return;
+      }
+    }
+
+    // 5. 주사위 결과 (방어자)
+    if (!_spectatorDefRollSeen) {
+      const defValue = extractDiceValue(text, state.combat.defender.name, '🛡');
+      if (defValue !== null) {
+        _spectatorDefRollSeen = true;
+        const logType = defValue >= state.combat.defender.critThreshold ? 'crit'
+          : defValue <= state.combat.defender.fumbleThreshold ? 'fumble' : 'info';
+        overlay.addLog(`🛡️ ${state.combat.defender.name}: ${defValue}`, logType);
+        overlay.animateDiceValue('defender', defValue);
+        if (logType === 'crit') overlay.playCrit('defender');
+        else if (logType === 'fumble') overlay.playFumble('defender');
+        overlay.playParrySound();
+        return;
+      }
+    }
+
+    // 6. 특성 / 결과 메시지 (로그에 표시)
+    const cleanText = text.replace(/@\S+/g, '').trim();
+
+    if (text.includes('인간 특성 발동')) {
+      overlay.addLog(cleanText, 'crit');
+      return;
+    }
+    if (text.includes('피로 새겨진 역사') && text.includes('초기화')) {
+      overlay.addLog(cleanText, 'info');
+      return;
+    }
+    if (text.includes('피로 새겨진 역사')) {
+      overlay.addLog(cleanText, 'warning');
+      return;
+    }
+    if (text.includes('인간 특성 초기화')) {
+      overlay.addLog(cleanText, 'info');
+      return;
+    }
+    // 대성공
+    if (text.includes('대성공') && (text.includes('→') || text.includes('파괴'))) {
+      overlay.addLog(cleanText, 'crit');
+      return;
+    }
+    // 대실패
+    if (text.includes('대실패') && (text.includes('→') || text.includes('파괴'))) {
+      overlay.addLog(cleanText, 'fumble');
+      return;
+    }
+    // 쌍방
+    if (text.includes('쌍방')) {
+      overlay.addLog(cleanText, text.includes('대성공') ? 'crit' : 'fumble');
+      return;
+    }
+    // 무승부 / 재굴림
+    if (text.includes('무승부') || text.includes('재굴림')) {
+      overlay.addLog(cleanText, 'warning');
+      return;
+    }
+    // 일반 승리
+    if (text.includes('→') && text.includes('승리')) {
+      overlay.addLog(cleanText, 'info');
+      return;
+    }
+  }
+
+  function endSpectating() {
+    alwaysLog('👁️ 관전 모드 종료');
+    flowState = STATE.IDLE;
+    engine.reset();
+    _spectatorDedup.clear();
+    overlay.setSpectatorMode(false);
+    overlay.addLog('관전 종료', 'info');
+    overlay.setStatus('idle', '대기 중');
+    setTimeout(() => overlay.updateCombatState(engine.getState()), 5000);
   }
 
   // ── 일시정지/재개 ──────────────────────────────────
@@ -234,7 +433,7 @@
    * 합 결과나 라운드 헤더 중이면 예약만 걸고, 굴림까지 진행 후 멈춤.
    */
   function pauseCombat() {
-    if (flowState === STATE.IDLE || flowState === STATE.COMBAT_END || paused || _pauseRequested) return;
+    if (flowState === STATE.IDLE || flowState === STATE.COMBAT_END || flowState === STATE.SPECTATING || paused || _pauseRequested) return;
 
     // 이미 주사위 대기 상태면 즉시 멈춤
     if (flowState === STATE.WAITING_ATTACKER_RESULT || flowState === STATE.WAITING_DEFENDER_RESULT) {
@@ -371,29 +570,36 @@
     await chat.sendMessage(headerMsg);
 
     // 대기 후 공격자 굴림
-    await delay(config.timing.beforeFirstRoll);
+    await delay(config.general.manualMode ? 0 : config.timing.beforeFirstRoll);
     rollForAttacker();
   }
 
   async function rollForAttacker() {
-    const rollMsg = engine.getAttackerRollMessage();
-    log(`공격자 주사위 굴림: ${rollMsg}`);
-
     flowState = STATE.WAITING_ATTACKER_RESULT;
     overlay.setStatus('waiting', '공격자 결과 대기 중...');
 
-    chat.sendMessage(rollMsg);
-    overlay.playParrySound();
+    if (config.general.manualMode) {
+      // 수동 모드: 채팅에 굴림 메시지를 보내지 않고 바로 수동 입력
+      log('수동 모드: 공격자 주사위 결과 입력 대기');
+      overlay.playParrySound();
+      await processManualDiceInput('공격자');
+    } else {
+      const rollMsg = engine.getAttackerRollMessage();
+      log(`공격자 주사위 굴림: ${rollMsg}`);
 
-    // 일시정지 예약이 있으면 여기서 멈춤
-    if (_pauseRequested) {
-      _applyPause();
-      return;
-    }
+      chat.sendMessage(rollMsg);
+      overlay.playParrySound();
 
-    // 빠른 응답으로 이미 결과가 처리된 경우 타임아웃 설정 불필요
-    if (flowState === STATE.WAITING_ATTACKER_RESULT) {
-      setResultTimeout('공격자');
+      // 일시정지 예약이 있으면 여기서 멈춤
+      if (_pauseRequested) {
+        _applyPause();
+        return;
+      }
+
+      // 빠른 응답으로 이미 결과가 처리된 경우 타임아웃 설정 불필요
+      if (flowState === STATE.WAITING_ATTACKER_RESULT) {
+        setResultTimeout('공격자');
+      }
     }
   }
 
@@ -470,24 +676,31 @@
   }
 
   async function rollForDefender() {
-    const rollMsg = engine.getDefenderRollMessage();
-    log(`방어자 주사위 굴림: ${rollMsg}`);
-
     flowState = STATE.WAITING_DEFENDER_RESULT;
     overlay.setStatus('waiting', '방어자 결과 대기 중...');
 
-    chat.sendMessage(rollMsg);
-    overlay.playParrySound();
+    if (config.general.manualMode) {
+      // 수동 모드: 채팅에 굴림 메시지를 보내지 않고 바로 수동 입력
+      log('수동 모드: 방어자 주사위 결과 입력 대기');
+      overlay.playParrySound();
+      await processManualDiceInput('방어자');
+    } else {
+      const rollMsg = engine.getDefenderRollMessage();
+      log(`방어자 주사위 굴림: ${rollMsg}`);
 
-    // 일시정지 예약이 있으면 여기서 멈춤
-    if (_pauseRequested) {
-      _applyPause();
-      return;
-    }
+      chat.sendMessage(rollMsg);
+      overlay.playParrySound();
 
-    // 빠른 응답으로 이미 결과가 처리된 경우 타임아웃 설정 불필요
-    if (flowState === STATE.WAITING_DEFENDER_RESULT) {
-      setResultTimeout('방어자');
+      // 일시정지 예약이 있으면 여기서 멈춤
+      if (_pauseRequested) {
+        _applyPause();
+        return;
+      }
+
+      // 빠른 응답으로 이미 결과가 처리된 경우 타임아웃 설정 불필요
+      if (flowState === STATE.WAITING_DEFENDER_RESULT) {
+        setResultTimeout('방어자');
+      }
     }
   }
 
@@ -525,7 +738,7 @@
     overlay.setStatus('active', '결과 처리 중...');
 
     try {
-      const result = engine.processRoundResult();
+      const result = engine.processRoundResult(config.general.manualMode);
       if (!result) {
         // 중복 호출로 이미 처리된 경우 → 상태 변경 없이 무시
         alwaysLog('⚠️ processRoundResult: 이미 처리됨 (중복 호출 무시)');
@@ -539,6 +752,7 @@
       }
 
       // 특성 이벤트 로그 + 채팅 전송
+      let manualH0ExtraRound = false;  // 수동 모드 H40/H400 추가 합 플래그
       if (result.traitEvents && result.traitEvents.length > 0) {
         for (const te of result.traitEvents) {
           const icon = te.who === 'attacker' ? '⚔️' : '🛡️';
@@ -569,6 +783,41 @@
             chatMsg = `🔥📜 인간 특성 발동! | ${icon} ${te.name} 역사(+${te.bonus}) 유지 → 추가 합! @${snd}`;
             logType = 'crit';
           }
+          // ── 수동 모드: H0 발동 사용자 확인 ──
+          else if (te.event === 'h0_available') {
+            overlay.addLog(`❓ ${te.name}: 인간 특성 발동 가능 — 확인 대기 중`, 'warning');
+            const confirmed = await overlay.showH0Prompt(te.who, te.name);
+            if (confirmed) {
+              const h0Result = engine.applyManualH0(te.who);
+              if (h0Result) {
+                const snd = '발도' + (Math.floor(Math.random() * 3) + 1);
+                logMsg = `🔥 ${te.name}: 인간 특성 발동! 주사위 +1 부활`;
+                chatMsg = `🔥 인간 특성 발동! | ${icon} ${te.name} 부활! 주사위 +1 @${snd}`;
+                logType = 'crit';
+              }
+            } else {
+              logMsg = `⚫ ${te.name}: 인간 특성 미발동`;
+            }
+          }
+          // ── 수동 모드: H40/H400 발동 사용자 확인 ──
+          else if (te.event === 'h40_h0_available') {
+            overlay.addLog(`❓ ${te.name}: 인간 특성 발동 가능 (역사+${te.bonus} 유지) — 확인 대기 중`, 'warning');
+            const confirmed = await overlay.showH0Prompt(te.who, te.name, true);
+            if (confirmed) {
+              const h40Result = engine.applyManualH40H0(te.who);
+              if (h40Result) {
+                const snd = '발도' + (Math.floor(Math.random() * 3) + 1);
+                logMsg = `🔥📜 ${te.name}: 인간 특성 발동! 역사(+${te.bonus}) 유지, 추가 합 진행`;
+                chatMsg = `🔥📜 인간 특성 발동! | ${icon} ${te.name} 역사(+${te.bonus}) 유지 → 추가 합! @${snd}`;
+                logType = 'crit';
+                manualH0ExtraRound = true;
+              }
+            } else {
+              engine.declineH40H0(te.who);
+              logMsg = `📜 ${te.name}: 피로 새겨진 역사 초기화 (인간 특성 미발동)`;
+              chatMsg = `📜 피로 새겨진 역사 초기화 | ${icon} ${te.name}`;
+            }
+          }
 
           if (logMsg) overlay.addLog(logMsg, logType);
           if (chatMsg) await chat.sendMessage(chatMsg);
@@ -581,28 +830,28 @@
       // 동점 재굴림 처리 (재굴림도 합 1회로 카운트)
       if (result.needsReroll) {
         overlay.addLog('동점! 재굴림합니다.', 'warning');
-        await delay(config.timing.beforeNextRound);
+        await delay(config.general.manualMode ? 0 : config.timing.beforeNextRound);
         await startNextRound();
         return;
       }
 
       // H40/H400 추가 합 처리 (인간 특성 발동으로 H4 유지, 합 1회 추가)
-      if (result.traitEvents?.some(te => (te.trait === 'H40' || te.trait === 'H400') && te.event === 'h0_extra_round')) {
+      if (manualH0ExtraRound || result.traitEvents?.some(te => (te.trait === 'H40' || te.trait === 'H400') && te.event === 'h0_extra_round')) {
         overlay.addLog('인간 특성 발동! 추가 합 진행...', 'crit');
-        await delay(config.timing.beforeNextRound);
+        await delay(config.general.manualMode ? 0 : config.timing.beforeNextRound);
         await startNextRound();
         return;
       }
 
       // 승리 확인
       if (engine.isVictory()) {
-        await delay(config.timing.beforeVictory);
+        await delay(config.general.manualMode ? 0 : config.timing.beforeVictory);
         await announceVictory();
         return;
       }
 
       // 다음 라운드
-      await delay(config.timing.beforeNextRound);
+      await delay(config.general.manualMode ? 0 : config.timing.beforeNextRound);
       await startNextRound();
 
     } catch (e) {
@@ -651,6 +900,80 @@
     setTimeout(() => {
       overlay.updateCombatState(engine.getState());
     }, 5000);
+  }
+
+  // ── 수동 모드: 주사위 결과 직접 입력 ──────────────────
+
+  async function processManualDiceInput(who) {
+    const state = engine.getState();
+    if (!state?.combat) return;
+
+    let emoji, playerName, whoKey;
+    if (flowState === STATE.WAITING_ATTACKER_RESULT) {
+      emoji = '⚔️';
+      playerName = state.combat.attacker.name;
+      whoKey = 'attacker';
+    } else if (flowState === STATE.WAITING_DEFENDER_RESULT) {
+      emoji = '🛡️';
+      playerName = state.combat.defender.name;
+      whoKey = 'defender';
+    } else {
+      return;
+    }
+
+    // H0 자유 발동 루프: 사용자가 H0을 입력하면 발동 후 재프롬프트
+    let manualValue;
+    while (true) {
+      const currentFighter = engine.getState().combat[whoKey];
+      const h0Available = currentFighter.traits &&
+        currentFighter.traits.some(t => ['H0', 'H00', 'H40', 'H400'].includes(t)) &&
+        !currentFighter.h0Used;
+
+      manualValue = await overlay.showManualInput(who, emoji, playerName, h0Available);
+
+      if (manualValue === 'H0') {
+        const h0Result = engine.activateH0Free(whoKey);
+        if (h0Result) {
+          const icon = whoKey === 'attacker' ? '⚔️' : '🛡️';
+          const snd = '발도' + (Math.floor(Math.random() * 3) + 1);
+          overlay.addLog(`🔥 ${playerName}: 인간 특성 발동! 주사위 +1`, 'crit');
+          await chat.sendMessage(`🔥 인간 특성 발동! | ${icon} ${playerName} 주사위 +1 @${snd}`);
+          overlay.updateCombatState(engine.getState());
+        }
+        continue; // 다시 주사위 값 입력 대기
+      }
+      break; // 숫자 입력 또는 취소
+    }
+
+    if (manualValue === null) {
+      alwaysLog('수동 입력: 취소됨 (전투 중지)');
+      return;
+    }
+
+    alwaysLog(`수동 입력: ${who} = ${manualValue}`);
+    overlay.addLog(`${emoji} ${playerName}: ${manualValue} (수동 입력)`, 'info');
+
+    if (flowState === STATE.WAITING_ATTACKER_RESULT) {
+      flowState = STATE.PROCESSING_RESULT;
+      engine.setAttackerRoll(manualValue);
+      const logType = manualValue >= state.combat.attacker.critThreshold ? 'crit'
+        : manualValue <= state.combat.attacker.fumbleThreshold ? 'fumble' : 'info';
+      overlay.addLog(`⚔️ ${state.combat.attacker.name}: ${manualValue}`, logType);
+      overlay.animateDiceValue('attacker', manualValue);
+      if (logType === 'crit') overlay.playCrit('attacker');
+      else if (logType === 'fumble') overlay.playFumble('attacker');
+      setTimeout(() => rollForDefender(), 0);
+    } else if (flowState === STATE.WAITING_DEFENDER_RESULT) {
+      flowState = STATE.PROCESSING_RESULT;
+      engine.setDefenderRoll(manualValue);
+      const logType = manualValue >= state.combat.defender.critThreshold ? 'crit'
+        : manualValue <= state.combat.defender.fumbleThreshold ? 'fumble' : 'info';
+      overlay.addLog(`🛡️ ${state.combat.defender.name}: ${manualValue}`, logType);
+      overlay.animateDiceValue('defender', manualValue);
+      if (logType === 'crit') overlay.playCrit('defender');
+      else if (logType === 'fumble') overlay.playFumble('defender');
+      setTimeout(() => processRoundResult(), 0);
+    }
   }
 
   // ── 타임아웃 → 수동 입력 요청 ──────────────────────
@@ -743,6 +1066,36 @@
         engine.updateConfig(config);
         chat.updateConfig(config);
         overlay.updateConfig(config);
+        applySiteVolume(config.general.siteVolume ?? 1.0);
+        sendResponse({ success: true });
+        break;
+
+      case 'BWBR_SET_SITE_VOLUME':
+        config.general.siteVolume = message.volume;
+        applySiteVolume(message.volume);
+        sendResponse({ success: true });
+        break;
+
+      case 'BWBR_SET_MANUAL_MODE':
+        config.general.manualMode = message.manualMode;
+        alwaysLog(`수동 모드 ${message.manualMode ? '활성화' : '비활성화'}`);
+        overlay.addLog(`수동 모드 ${message.manualMode ? 'ON' : 'OFF'}`, 'info');
+        sendResponse({ success: true });
+        break;
+
+      case 'BWBR_SET_SHOW_BATTLE_LOG':
+        config.general.showBattleLog = message.showBattleLog;
+        overlay.updateConfig(config);
+        alwaysLog(`전투 로그 ${message.showBattleLog ? '표시' : '숨김'}`);
+        sendResponse({ success: true });
+        break;
+
+      case 'BWBR_SET_AUTO_COMPLETE':
+        config.general.autoComplete = message.autoComplete;
+        if (window.BWBR_AutoComplete) {
+          window.BWBR_AutoComplete.setEnabled(message.autoComplete);
+        }
+        alwaysLog(`자동완성 ${message.autoComplete ? '활성화' : '비활성화'}`);
         sendResponse({ success: true });
         break;
 
@@ -784,6 +1137,23 @@
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
+  /** 구 효과음 형식(single string) → 신 형식(array) 마이그레이션 */
+  function migrateSounds(sounds) {
+    if (!sounds) return;
+    if (typeof sounds.combatStartSound === 'string') {
+      sounds.combatStartSounds = [sounds.combatStartSound];
+      delete sounds.combatStartSound;
+    }
+    if (typeof sounds.resultSpecialSound === 'string') {
+      sounds.resultSpecialSounds = [sounds.resultSpecialSound];
+      delete sounds.resultSpecialSound;
+    }
+    if (typeof sounds.victorySound === 'string') {
+      sounds.victorySounds = [sounds.victorySound];
+      delete sounds.victorySound;
+    }
+  }
+
   /** 항상 출력되는 핵심 로그 */
   function alwaysLog(msg) {
     console.log(`%c[BWBR]%c ${msg}`, 'color: #ff9800; font-weight: bold;', 'color: inherit;');
@@ -794,6 +1164,15 @@
     if (config && config.general && config.general.debugMode) {
       console.log(`[BWBR] ${msg}`);
     }
+  }
+
+  // ── 사이트 음량 컨트롤러 ─────────────────────────────────
+
+  /** 사이트 음량을 변경합니다. (site-volume.js의 페이지 스크립트로 전달) */
+  function applySiteVolume(volume) {
+    const v = Math.max(0, Math.min(1, volume));
+    window.dispatchEvent(new CustomEvent('bwbr-set-site-volume', { detail: { volume: v } }));
+    alwaysLog(`사이트 음량: ${Math.round(v * 100)}%`);
   }
 
   // ── 시작 ─────────────────────────────────────────────────
