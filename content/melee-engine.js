@@ -698,7 +698,30 @@ window.BattleRollEngine = class BattleRollEngine {
     };
   }
 
-  // ── 유틸리티 ─────────────────────────────────────────────
+
+    /**
+     * N0 특성: 연격
+     * - 응수(방어자) 주사위 2개 감소(하한 3)는 startCombat에서 적용
+     * - 승리 시 다음 판정에 +1 누적 보너스, 패배 시 0으로 초기화
+     * - 보너스는 processRoundResult에서 판정값에 적용
+     */
+    _applyN0(who, winner, traitEvents) {
+      const fighter = this.combat[who];
+      if (!fighter.traits.includes('N0')) return;
+      if (!('n0Bonus' in fighter)) fighter.n0Bonus = 0;
+      // 승리 시 +1 누적, 패배 시 0으로 초기화
+      if (winner === who) {
+        fighter.n0Bonus = (fighter.n0Bonus || 0) + 1;
+        this._log(`[N0] ${fighter.name}: 연격 승리! 다음 판정 보너스 +${fighter.n0Bonus}`);
+        traitEvents.push({ trait: 'N0', who, name: fighter.name, event: 'stack', bonus: fighter.n0Bonus });
+      } else if (winner && winner !== who) {
+        if (fighter.n0Bonus > 0) {
+          this._log(`[N0] ${fighter.name}: 연격 패배, 보너스 초기화 (${fighter.n0Bonus} → 0)`);
+          traitEvents.push({ trait: 'N0', who, name: fighter.name, event: 'reset', oldBonus: fighter.n0Bonus });
+        }
+        fighter.n0Bonus = 0;
+      }
+    }
 
   /** 배열에서 무작위 선택 (문자열 입력 시 그대로 반환) */
   _pickRandom(arr) {
