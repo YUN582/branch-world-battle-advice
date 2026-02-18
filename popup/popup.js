@@ -12,15 +12,15 @@
   const DEFAULTS = {
     templates: {
       combatStart: '《합 개시》| ⚔️ {attacker} - {atkDice}/{atkCrit}/{atkFumble} | 🛡️ {defender} - {defDice}/{defCrit}/{defFumble}',
-      roundHeader: '《{round}합》\n⚔️ {attacker} {atkDice} : 🛡️ {defender} {defDice}',
-      attackerRoll: '1D20 ⚔️ {attacker} @{sound}',
-      defenderRoll: '1D20 🛡️ {defender} @{sound}',
+      roundHeader: '《{round}합》| ⚔️ {attacker} {atkDice} : 🛡️ {defender} {defDice} @{sound}',
+      attackerRoll: '1D20 ⚔️ {attacker}',
+      defenderRoll: '1D20 🛡️ {defender}',
       roundResultWin: '⚔️ {attacker}【{atkValue}】 vs 🛡️ {defender}【{defValue}】 → {winner} 승리!',
       roundResultCrit: '💥 {name} 대성공! 【{value}】 → 상대 주사위 파괴 & 주사위 +1',
       roundResultFumble: '💀 {name} 대실패! 【{value}】 → 자신 주사위 파괴 & 주사위 -1',
       roundResultBothCrit: '⚡ 쌍방 대성공! ⚔️【{atkValue}】 🛡️【{defValue}】 → 각자 주사위 +1',
       roundResultTie: '⚖️ 무승부! ⚔️【{atkValue}】 🛡️【{defValue}】 → 재굴림',
-      victory: '《합 승리》- {winnerIcon} {winner} @합',
+      victory: '《합 승리》 | {winnerIcon} {winner} @{sound}',
       combatCancel: '《합 중지》'
     },
     timing: {
@@ -47,7 +47,7 @@
       tieRule: 'reroll'
     },
     patterns: {
-      triggerRegex: '《합\\s*개시》\\s*\\|?\\s*⚔\\uFE0F?\\s*(.+?)\\s*-\\s*(\\d+)\\s*/\\s*(\\d+)\\s*/\\s*(\\d+)\\s*\\|?\\s*🛡\\uFE0F?\\s*(.+?)\\s*-\\s*(\\d+)\\s*/\\s*(\\d+)\\s*/\\s*(\\d+)',
+      triggerRegex: '《합\\s*개시》\\s*\\|?\\s*⚔\\uFE0F?\\s*(.+?)\\s*-\\s*(\\d+)\\s*/\\s*(\\d+)\\s*/\\s*(\\d+)(?:\\s*/\\s*([A-Za-z0-9]+))?\\s*\\|?\\s*🛡\\uFE0F?\\s*(.+?)\\s*-\\s*(\\d+)\\s*/\\s*(\\d+)\\s*/\\s*(\\d+)(?:\\s*/\\s*([A-Za-z0-9]+))?',
       diceResultRegex: '1[Dd]20[^0-9]*?[→＞>]\\s*(\\d+)',
       cancelRegex: '《합\\s*중지》'
     },

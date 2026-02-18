@@ -103,8 +103,7 @@
   background: #2d2d2d;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   max-height: 50vh;
   transition: max-height 0.3s ease, opacity 0.3s ease;
   opacity: 1;
@@ -126,6 +125,16 @@
   font-size: 11px;
   color: #888;
   line-height: 1.5;
+  overflow: hidden;
+  max-height: 500px;
+  transition: max-height 0.35s ease, opacity 0.3s ease, padding 0.3s ease;
+}
+
+#bwbr-guide.bwbr-guide-hidden {
+  max-height: 0;
+  opacity: 0;
+  padding: 0 14px;
+  pointer-events: none;
 }
 
 .bwbr-guide-trigger {
@@ -170,6 +179,12 @@
   font-style: italic;
 }
 
+.bwbr-trait-n0 {
+  background: #1a2a1a;
+  color: #b2ff59;
+  border: 1px solid #33691e;
+}
+
 /* ── 전투 정보 ────────────────────────────────── */
 
 .bwbr-round-badge {
@@ -195,6 +210,8 @@
   align-items: center;
   gap: 4px;
   min-width: 90px;
+  padding-top: 22px;
+  position: relative;
   transition: transform 0.3s, filter 0.3s;
 }
 
@@ -241,7 +258,7 @@
   font-weight: 600;
   padding: 1px 6px;
   border-radius: 4px;
-  background: #444;
+  background: #e0ffe0;
   color: #ccc;
   white-space: nowrap;
   line-height: 1.4;
@@ -349,9 +366,9 @@
 }
 
 #bwbr-combat-info.bwbr-combat-visible {
-  max-height: 300px;
+  max-height: 400px;
   opacity: 1;
-  padding: 14px 16px 10px;
+  padding: 18px 16px 14px;
   /* 표시 전환: 컨테이너 펼침(0.4s) → 콘텐츠 페이드인(0.3s, 0.2s 딜레이) */
   transition: max-height 0.4s ease-out,
               padding 0.4s ease-out,
@@ -530,11 +547,11 @@
   100% { transform: translateX(0) rotate(0) scale(1); }
 }
 
-.bwbr-anim-clash .bwbr-fighter:first-child {
+.bwbr-anim-clash #bwbr-atk {
   animation: bwbr-clash-left 0.7s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.bwbr-anim-clash .bwbr-fighter:last-child {
+.bwbr-anim-clash #bwbr-def {
   animation: bwbr-clash-right 0.7s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -819,4 +836,398 @@
   background-clip: text;
   -webkit-text-fill-color: transparent;
   animation: bwbr-text-shimmer 2s linear infinite;
+}
+
+/* ══════════════════════════════════════════════
+   공격 모션 애니메이션 (3종 — 돌진/내려찍기/찌르기)
+   ══════════════════════════════════════════════ */
+
+/* ── 돌진(Lunge) ─────────────────────────────── */
+@keyframes bwbr-atk-lunge-r {
+  0%   { transform: translateX(0) scale(1); }
+  25%  { transform: translateX(50px) scale(1.15) rotate(4deg); }
+  40%  { transform: translateX(38px) scale(1.1) rotate(2deg); }
+  100% { transform: translateX(0) scale(1) rotate(0); }
+}
+@keyframes bwbr-atk-lunge-l {
+  0%   { transform: translateX(0) scale(1); }
+  25%  { transform: translateX(-50px) scale(1.15) rotate(-4deg); }
+  40%  { transform: translateX(-38px) scale(1.1) rotate(-2deg); }
+  100% { transform: translateX(0) scale(1) rotate(0); }
+}
+
+/* ── 내려찍기(Overhead) ──────────────────────── */
+@keyframes bwbr-atk-overhead-r {
+  0%   { transform: translate(0, 0) scale(1) rotate(0); }
+  15%  { transform: translate(20px, -18px) scale(1.2) rotate(-12deg); }
+  35%  { transform: translate(45px, 8px) scale(1.15) rotate(6deg); }
+  50%  { transform: translate(35px, 2px) scale(1.08); }
+  100% { transform: translate(0, 0) scale(1) rotate(0); }
+}
+@keyframes bwbr-atk-overhead-l {
+  0%   { transform: translate(0, 0) scale(1) rotate(0); }
+  15%  { transform: translate(-20px, -18px) scale(1.2) rotate(12deg); }
+  35%  { transform: translate(-45px, 8px) scale(1.15) rotate(-6deg); }
+  50%  { transform: translate(-35px, 2px) scale(1.08); }
+  100% { transform: translate(0, 0) scale(1) rotate(0); }
+}
+
+/* ── 찌르기(Thrust) ──────────────────────────── */
+@keyframes bwbr-atk-thrust-r {
+  0%   { transform: translateX(0) scaleX(1) scaleY(1); }
+  15%  { transform: translateX(-12px) scaleX(0.9) scaleY(1.08); }
+  35%  { transform: translateX(55px) scaleX(1.15) scaleY(0.92); }
+  50%  { transform: translateX(40px) scaleX(1.05) scaleY(0.98); }
+  100% { transform: translateX(0) scaleX(1) scaleY(1); }
+}
+@keyframes bwbr-atk-thrust-l {
+  0%   { transform: translateX(0) scaleX(1) scaleY(1); }
+  15%  { transform: translateX(12px) scaleX(0.9) scaleY(1.08); }
+  35%  { transform: translateX(-55px) scaleX(1.15) scaleY(0.92); }
+  50%  { transform: translateX(-40px) scaleX(1.05) scaleY(0.98); }
+  100% { transform: translateX(0) scaleX(1) scaleY(1); }
+}
+
+/* 공격 모션 클래스 (JS에서 동적 적용) */
+.bwbr-atk-lunge-r  { animation: bwbr-atk-lunge-r   0.6s cubic-bezier(0.22, 1, 0.36, 1); }
+.bwbr-atk-lunge-l  { animation: bwbr-atk-lunge-l   0.6s cubic-bezier(0.22, 1, 0.36, 1); }
+.bwbr-atk-overhead-r { animation: bwbr-atk-overhead-r 0.65s cubic-bezier(0.22, 1, 0.36, 1); }
+.bwbr-atk-overhead-l { animation: bwbr-atk-overhead-l 0.65s cubic-bezier(0.22, 1, 0.36, 1); }
+.bwbr-atk-thrust-r { animation: bwbr-atk-thrust-r  0.55s cubic-bezier(0.25, 1, 0.5, 1); }
+.bwbr-atk-thrust-l { animation: bwbr-atk-thrust-l  0.55s cubic-bezier(0.25, 1, 0.5, 1); }
+
+/* 피격 리코일 (맞는 쪽) */
+@keyframes bwbr-hit-recoil-r {
+  0%   { transform: translateX(0) scale(1); filter: brightness(1); }
+  20%  { transform: translateX(12px) scale(0.92); filter: brightness(1.8); }
+  40%  { transform: translateX(8px) scale(0.95); filter: brightness(1.2); }
+  100% { transform: translateX(0) scale(1); filter: brightness(1); }
+}
+@keyframes bwbr-hit-recoil-l {
+  0%   { transform: translateX(0) scale(1); filter: brightness(1); }
+  20%  { transform: translateX(-12px) scale(0.92); filter: brightness(1.8); }
+  40%  { transform: translateX(-8px) scale(0.95); filter: brightness(1.2); }
+  100% { transform: translateX(0) scale(1); filter: brightness(1); }
+}
+.bwbr-hit-recoil-r { animation: bwbr-hit-recoil-r 0.5s ease-out; }
+.bwbr-hit-recoil-l { animation: bwbr-hit-recoil-l 0.5s ease-out; }
+
+/* ══════════════════════════════════════════════
+   공격 이펙트 (참격/타격/관통 — SVG 오버레이)
+   ══════════════════════════════════════════════ */
+
+.bwbr-effect-container {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 5;
+  width: 120px;
+  height: 120px;
+}
+
+/* ── 참격(Slash) ─────────────────────────────── */
+@keyframes bwbr-fx-slash {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.3) rotate(-60deg); }
+  15%  { opacity: 1; transform: translate(-50%, -50%) scale(1.3) rotate(-15deg); }
+  40%  { opacity: 0.9; transform: translate(-50%, -50%) scale(1.1) rotate(0deg); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.4) rotate(10deg); }
+}
+
+.bwbr-fx-slash {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 100px; height: 100px;
+  pointer-events: none;
+  z-index: 5;
+  animation: bwbr-fx-slash 0.5s ease-out forwards;
+}
+.bwbr-fx-slash::before,
+.bwbr-fx-slash::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 2px;
+}
+.bwbr-fx-slash::before {
+  width: 90px; height: 4px;
+  background: linear-gradient(90deg, transparent 0%, #fff 20%, #ffd54f 50%, #fff 80%, transparent 100%);
+  transform: translate(-50%, -50%) rotate(-35deg);
+  box-shadow: 0 0 12px 4px rgba(255, 213, 79, 0.6), 0 0 30px 8px rgba(255, 152, 0, 0.3);
+}
+.bwbr-fx-slash::after {
+  width: 70px; height: 2px;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.8) 30%, rgba(255,255,255,0.8) 70%, transparent 100%);
+  transform: translate(-50%, -50%) rotate(-35deg) translateY(-6px);
+  box-shadow: 0 0 8px 2px rgba(255, 255, 255, 0.4);
+}
+
+/* ── 타격(Strike) ────────────────────────────── */
+@keyframes bwbr-fx-strike {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.2); }
+  20%  { opacity: 1; transform: translate(-50%, -50%) scale(1.4); }
+  40%  { opacity: 0.8; transform: translate(-50%, -50%) scale(1.0); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.8); }
+}
+
+.bwbr-fx-strike {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 80px; height: 80px;
+  pointer-events: none;
+  z-index: 5;
+  animation: bwbr-fx-strike 0.45s ease-out forwards;
+}
+/* 십자 충격파 */
+.bwbr-fx-strike::before,
+.bwbr-fx-strike::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, #fff 0%, #ff9800 40%, transparent 70%);
+  border-radius: 50%;
+}
+.bwbr-fx-strike::before {
+  width: 70px; height: 70px;
+  box-shadow: 0 0 20px 8px rgba(255, 152, 0, 0.5), 0 0 40px 16px rgba(255, 87, 34, 0.2);
+}
+.bwbr-fx-strike::after {
+  width: 30px; height: 30px;
+  background: radial-gradient(circle, #fff 0%, #ffd54f 60%, transparent 100%);
+  box-shadow: 0 0 15px 6px rgba(255, 255, 255, 0.6);
+}
+
+/* 타격 + 파편 (JS에서 추가) */
+.bwbr-strike-line {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 50px; height: 3px;
+  transform-origin: left center;
+  background: linear-gradient(90deg, #fff 0%, #ff9800 50%, transparent 100%);
+  border-radius: 2px;
+  pointer-events: none;
+  opacity: 0;
+  animation: bwbr-strike-line-fly 0.4s ease-out forwards;
+}
+@keyframes bwbr-strike-line-fly {
+  0%   { opacity: 1; width: 10px; }
+  50%  { opacity: 0.8; width: 50px; }
+  100% { opacity: 0; width: 60px; }
+}
+
+/* ── 관통(Pierce) ────────────────────────────── */
+@keyframes bwbr-fx-pierce {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scaleX(0.1) scaleY(0.6); }
+  20%  { opacity: 1; transform: translate(-50%, -50%) scaleX(1.5) scaleY(1.2); }
+  50%  { opacity: 0.7; transform: translate(-50%, -50%) scaleX(1.2) scaleY(1.0); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scaleX(2.0) scaleY(0.8); }
+}
+
+.bwbr-fx-pierce {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 110px; height: 40px;
+  pointer-events: none;
+  z-index: 5;
+  animation: bwbr-fx-pierce 0.5s ease-out forwards;
+}
+.bwbr-fx-pierce::before {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%; height: 6px;
+  background: linear-gradient(90deg, transparent 0%, #82b1ff 15%, #fff 50%, #82b1ff 85%, transparent 100%);
+  box-shadow: 0 0 12px 4px rgba(130, 177, 255, 0.6), 0 0 30px 10px rgba(68, 138, 255, 0.3);
+  border-radius: 3px;
+}
+.bwbr-fx-pierce::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 20px; height: 20px;
+  background: radial-gradient(circle, #fff 0%, #82b1ff 50%, transparent 70%);
+  border-radius: 50%;
+  box-shadow: 0 0 10px 4px rgba(255, 255, 255, 0.5);
+}
+
+/* ══════════════════════════════════════════════
+   합 승리 밀어내기 (Round Win Push-back)
+   ══════════════════════════════════════════════ */
+
+/* 승리자: 돌진 → 밀어냄 */
+@keyframes bwbr-roundwin-push-r {
+  0%   { transform: translateX(0) scale(1); }
+  20%  { transform: translateX(40px) scale(1.15); filter: brightness(1.3); }
+  40%  { transform: translateX(30px) scale(1.1); }
+  100% { transform: translateX(0) scale(1); filter: brightness(1); }
+}
+@keyframes bwbr-roundwin-push-l {
+  0%   { transform: translateX(0) scale(1); }
+  20%  { transform: translateX(-40px) scale(1.15); filter: brightness(1.3); }
+  40%  { transform: translateX(-30px) scale(1.1); }
+  100% { transform: translateX(0) scale(1); filter: brightness(1); }
+}
+
+/* 패배자: 밀려남 + 흔들림 + 희미해짐 */
+@keyframes bwbr-roundlose-pushed-r {
+  0%   { transform: translateX(0) scale(1); opacity: 1; filter: none; }
+  25%  { transform: translateX(25px) scale(0.88) rotate(5deg); opacity: 0.7; filter: brightness(1.4); }
+  50%  { transform: translateX(18px) scale(0.92) rotate(-2deg); opacity: 0.8; }
+  100% { transform: translateX(0) scale(1) rotate(0); opacity: 1; filter: none; }
+}
+@keyframes bwbr-roundlose-pushed-l {
+  0%   { transform: translateX(0) scale(1); opacity: 1; filter: none; }
+  25%  { transform: translateX(-25px) scale(0.88) rotate(-5deg); opacity: 0.7; filter: brightness(1.4); }
+  50%  { transform: translateX(-18px) scale(0.92) rotate(2deg); opacity: 0.8; }
+  100% { transform: translateX(0) scale(1) rotate(0); opacity: 1; filter: none; }
+}
+
+.bwbr-roundwin-push-r  { animation: bwbr-roundwin-push-r  0.7s cubic-bezier(0.22, 1, 0.36, 1); }
+.bwbr-roundwin-push-l  { animation: bwbr-roundwin-push-l  0.7s cubic-bezier(0.22, 1, 0.36, 1); }
+.bwbr-roundlose-pushed-r { animation: bwbr-roundlose-pushed-r 0.8s ease-out; }
+.bwbr-roundlose-pushed-l { animation: bwbr-roundlose-pushed-l 0.8s ease-out; }
+
+/* ── 승자 패널 글로우 ── */
+.bwbr-round-winner {
+  animation: bwbr-winner-glow 1.5s ease-out forwards;
+  z-index: 2;
+}
+@keyframes bwbr-winner-glow {
+  0%   { filter: brightness(1); }
+  12%  { filter: brightness(1.7) drop-shadow(0 0 16px rgba(105, 240, 174, 0.9)); }
+  35%  { filter: brightness(1.35) drop-shadow(0 0 10px rgba(105, 240, 174, 0.6)); }
+  100% { filter: brightness(1) drop-shadow(0 0 0 transparent); }
+}
+
+/* ── 패자 패널 디밍 ── */
+.bwbr-round-loser {
+  animation: bwbr-loser-dim 1.5s ease-out forwards;
+}
+@keyframes bwbr-loser-dim {
+  0%   { opacity: 1; filter: none; }
+  15%  { opacity: 0.35; filter: grayscale(0.6) brightness(0.6); }
+  50%  { opacity: 0.5; filter: grayscale(0.3) brightness(0.8); }
+  100% { opacity: 1; filter: none; }
+}
+
+/* 합 승리 이름 하이라이트 (펄스 강조) */
+.bwbr-roundwin-name {
+  color: #69f0ae !important;
+  font-size: 120% !important;
+  text-shadow: 0 0 14px rgba(105, 240, 174, 0.8), 0 0 28px rgba(105, 240, 174, 0.4);
+  animation: bwbr-winname-pulse 0.5s ease-in-out 3;
+}
+@keyframes bwbr-winname-pulse {
+  0%, 100% { text-shadow: 0 0 14px rgba(105, 240, 174, 0.8), 0 0 28px rgba(105, 240, 174, 0.4); }
+  50%      { text-shadow: 0 0 22px rgba(105, 240, 174, 1), 0 0 44px rgba(105, 240, 174, 0.7); }
+}
+
+.bwbr-roundlose-name {
+  color: #ff8a80 !important;
+  text-shadow: 0 0 8px rgba(244, 67, 54, 0.4);
+  opacity: 0.6;
+}
+
+/* ── 합 승리 레이블 ("WIN" 배너) ── */
+.bwbr-round-win-label {
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  transform: translateX(-50%) scale(0);
+  font-size: 18px;
+  font-weight: 900;
+  color: #69f0ae;
+  text-shadow: 0 0 10px rgba(105, 240, 174, 0.8), 0 2px 6px rgba(0,0,0,0.6);
+  letter-spacing: 3px;
+  pointer-events: none;
+  animation: bwbr-win-label-pop 1.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  z-index: 10;
+  white-space: nowrap;
+}
+@keyframes bwbr-win-label-pop {
+  0%   { transform: translateX(-50%) scale(0) translateY(8px); opacity: 0; }
+  15%  { transform: translateX(-50%) scale(1.4) translateY(-4px); opacity: 1; }
+  30%  { transform: translateX(-50%) scale(1.0) translateY(0); opacity: 1; }
+  75%  { transform: translateX(-50%) scale(1.0) translateY(0); opacity: 1; }
+  100% { transform: translateX(-50%) scale(0.8) translateY(-6px); opacity: 0; }
+}
+
+/* ── 합 패배 레이블 ── */
+.bwbr-round-lose-label {
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  transform: translateX(-50%) scale(0);
+  font-size: 14px;
+  font-weight: 700;
+  color: #ff8a80;
+  text-shadow: 0 0 8px rgba(244, 67, 54, 0.6), 0 2px 4px rgba(0,0,0,0.5);
+  letter-spacing: 2px;
+  pointer-events: none;
+  opacity: 0.8;
+  animation: bwbr-lose-label-pop 1.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  z-index: 10;
+  white-space: nowrap;
+}
+@keyframes bwbr-lose-label-pop {
+  0%   { transform: translateX(-50%) scale(0); opacity: 0; }
+  15%  { transform: translateX(-50%) scale(1.1); opacity: 0.8; }
+  30%  { transform: translateX(-50%) scale(1.0); opacity: 0.7; }
+  75%  { transform: translateX(-50%) scale(1.0); opacity: 0.7; }
+  100% { transform: translateX(-50%) scale(0.8) translateY(-4px); opacity: 0; }
+}
+
+/* VS 방향 화살표 전환 */
+.bwbr-vs-arrow {
+  animation: bwbr-vs-arrow-flash 0.8s ease-out;
+  font-size: 130%;
+}
+@keyframes bwbr-vs-arrow-flash {
+  0%   { transform: scale(1); color: #888; }
+  20%  { transform: scale(2.2); color: #69f0ae; text-shadow: 0 0 14px rgba(105, 240, 174, 0.8); }
+  50%  { transform: scale(1.6); color: #69f0ae; }
+  100% { transform: scale(1); color: #888; text-shadow: none; }
+}
+
+/* ══════════════════════════════════════════════
+   동점 충돌 + 반발 (Tie Repel)
+   ══════════════════════════════════════════════ */
+
+@keyframes bwbr-tie-repel-l {
+  0%   { transform: translateX(0) scale(1); }
+  20%  { transform: translateX(30px) scale(1.12); }
+  35%  { transform: translateX(-20px) scale(0.95); filter: brightness(1.3); }
+  55%  { transform: translateX(-12px) scale(0.98); }
+  100% { transform: translateX(0) scale(1); filter: brightness(1); }
+}
+@keyframes bwbr-tie-repel-r {
+  0%   { transform: translateX(0) scale(1); }
+  20%  { transform: translateX(-30px) scale(1.12); }
+  35%  { transform: translateX(20px) scale(0.95); filter: brightness(1.3); }
+  55%  { transform: translateX(12px) scale(0.98); }
+  100% { transform: translateX(0) scale(1); filter: brightness(1); }
+}
+
+.bwbr-tie-repel-l { animation: bwbr-tie-repel-l 0.8s cubic-bezier(0.22, 1, 0.36, 1); }
+.bwbr-tie-repel-r { animation: bwbr-tie-repel-r 0.8s cubic-bezier(0.22, 1, 0.36, 1); }
+
+/* 동점 VS 텍스트 플래시 */
+@keyframes bwbr-tie-vs-flash {
+  0%   { transform: scale(1); color: #888; }
+  20%  { transform: scale(2.5); color: #fff; text-shadow: 0 0 20px #ff9800, 0 0 40px #ff5722; }
+  50%  { transform: scale(1.8); color: #ffd54f; }
+  100% { transform: scale(1); color: #888; text-shadow: none; }
+}
+.bwbr-tie-vs-flash { animation: bwbr-tie-vs-flash 0.7s ease-out; }
+
+/* 동점 이름 하이라이트 */
+.bwbr-tie-name {
+  color: #ffd54f !important;
+  text-shadow: 0 0 8px rgba(255, 213, 79, 0.4);
+  transition: color 0.3s, text-shadow 0.3s;
 }

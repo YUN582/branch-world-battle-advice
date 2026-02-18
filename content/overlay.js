@@ -63,25 +63,29 @@ window.BattleRollOverlay = class BattleRollOverlay {
           <div class="bwbr-guide-traits">
             <div class="bwbr-guide-trait">
               <span class="bwbr-guide-tag bwbr-trait-h0">H0</span>
-              <span>인간 특성 — 주사위 0 시 +1 부활, 대성공 시 초기화</span>
+              <span>인간 특성: 주사위 0 시 +1 부활, 대성공 시 초기화</span>
             </div>
             <div class="bwbr-guide-trait">
               <span class="bwbr-guide-tag bwbr-trait-h00">H00</span>
-              <span>인간 특성 (잠재) — 주사위 0 시 +1 부활, 대성공 시 초기화</span>
+              <span>인간 특성 (잠재): 주사위 0 시 +1 부활, 대성공 시 초기화</span>
             </div>
             <div class="bwbr-guide-trait">
               <span class="bwbr-guide-tag bwbr-trait-h4">H4</span>
-              <span>피로 새겨진 역사 — 대성공 시 다음 판정 +2, 최대+5, 대성공 아닐 시 초기화</span>
+              <span>피로 새겨진 역사: 대성공 시 다음 판정의 치명타 범위 +2, 누적. (최대 +6). 대성공 아닐 시 초기화.</span>
             </div>
             <div class="bwbr-guide-trait">
               <span class="bwbr-guide-tag bwbr-trait-h40">H40</span>
-              <span>역사+인간 — H4 누적 초기화 시 인간 특성 발동, 주사위 +1</span>
+              <span>역사+인간: H4 누적 초기화 시 인간 특성 발동, 주사위 +1</span>
             </div>
             <div class="bwbr-guide-trait">
               <span class="bwbr-guide-tag bwbr-trait-h400">H400</span>
-              <span>역사+인간 (잠재) — H4 누적 초기화 시 인간 특성 발동, 주사위 +1</span>
+              <span>역사+인간 (잠재): H4 누적 초기화 시 인간 특성 발동, 주사위 +1</span>
             </div>
-            <div class="bwbr-guide-example">사용예: ⚔️ 철수 - 5/18/3/H40 | 🛡️ 영희 - 5/18/3/H400</div>
+            <div class="bwbr-guide-trait">
+              <span class="bwbr-guide-tag bwbr-trait-n0">N0</span>
+              <span>연격: 주사위 -2 (하한 3). 합 승리 시 합 굴림에 +1, 누적. 합 패배 시 초기화.</span>
+            </div>
+            <div class="bwbr-guide-example">사용예: 《합 개시》| ⚔️ 철수 - 5/18/3/N0 | 🛡️ 영희 - 5/18/3/H400</div>
           </div>
         </div>
         <div id="bwbr-log"></div>
@@ -196,6 +200,9 @@ window.BattleRollOverlay = class BattleRollOverlay {
     if (!state.combat) {
       // 부드러운 숨김: 콘텐츠 페이드아웃 → 컨테이너 접힘
       info.classList.remove('bwbr-combat-visible');
+      // 도움말 다시 표시
+      const guide = this.element?.querySelector('#bwbr-guide');
+      if (guide) guide.classList.remove('bwbr-guide-hidden');
       clearTimeout(this._combatHideTimer);
       this._combatHideTimer = setTimeout(() => {
         if (!info.classList.contains('bwbr-combat-visible')) {
@@ -244,6 +251,9 @@ window.BattleRollOverlay = class BattleRollOverlay {
 
     // 부드러운 표시: 컨테이너 펼침 → 콘텐츠 페이드인
     if (!info.classList.contains('bwbr-combat-visible')) {
+      // 도움말 숨김
+      const guide = this.element?.querySelector('#bwbr-guide');
+      if (guide) guide.classList.add('bwbr-guide-hidden');
       requestAnimationFrame(() => {
         info.classList.add('bwbr-combat-visible');
       });
@@ -334,6 +344,7 @@ window.BattleRollOverlay = class BattleRollOverlay {
    * 합 주사위 굴림 시 효과음 무작위 재생 (겹침 지원)
    */
   playParrySound() {
+    if (!chrome.runtime?.id) return;  // 확장 컨텍스트 무효화 방어
     try {
       // 빌트인 + 커스텀 URL 풍 구성
       const builtInUrls = BattleRollOverlay.ROLL_SOUNDS.map(s => chrome.runtime.getURL(`sounds/${s.file}.${s.ext}`));
@@ -360,6 +371,7 @@ window.BattleRollOverlay = class BattleRollOverlay {
    * @param {string} name - 파일명 (확장자 제외)
    */
   playTraitSound(name) {
+    if (!chrome.runtime?.id) return;  // 확장 컨텍스트 무효화 방어
     try {
       const url = chrome.runtime.getURL(`sounds/${name}.mp3`);
       const audio = new Audio(url);
@@ -386,12 +398,6 @@ window.BattleRollOverlay = class BattleRollOverlay {
 
     // 충격파 링
     this._spawnImpactWave(fighters);
-
-    // 화면 진동
-    if (combatInfo) {
-      combatInfo.classList.add('bwbr-anim-screen-shake');
-      setTimeout(() => combatInfo.classList.remove('bwbr-anim-screen-shake'), 600);
-    }
 
     fighters.classList.add('bwbr-anim-clash');
     setTimeout(() => fighters.classList.remove('bwbr-anim-clash'), 900);
@@ -557,6 +563,250 @@ window.BattleRollOverlay = class BattleRollOverlay {
       loseEl.classList.add('bwbr-anim-defeat');
       setTimeout(() => loseEl.classList.remove('bwbr-anim-defeat'), 4000);
     }
+  }
+
+  // ── 공격 모션 + 이펙트 ───────────────────────────────
+
+  /** 공격 모션 종류 (돌진/내려찍기/찌르기) */
+  static ATK_MOTIONS = ['lunge', 'overhead', 'thrust'];
+  /** 공격 이펙트 종류 (참격/타격/관통) */
+  static ATK_EFFECTS = ['slash', 'strike', 'pierce'];
+
+  /**
+   * 주사위 굴림 시 공격 모션 재생
+   * - 공격 측이 상대 쪽으로 돌진/내려찍기/찌르기 중 무작위
+   * - 이펙트(참격/타격/관통) 무작위
+   * - 피격 측은 밀려나는 리코일
+   * @param {string} who - 'attacker' | 'defender' (주사위 굴린 쪽)
+   */
+  playAttack(who) {
+    const atkEl = this.element?.querySelector(who === 'attacker' ? '#bwbr-atk' : '#bwbr-def');
+    const defEl = this.element?.querySelector(who === 'attacker' ? '#bwbr-def' : '#bwbr-atk');
+    const fighters = this.element?.querySelector('.bwbr-fighters');
+    if (!atkEl || !defEl) return;
+
+    // 방향: attacker는 왼쪽(→ 오른쪽 공격), defender는 오른쪽(← 왼쪽 공격)
+    const dir = who === 'attacker' ? 'r' : 'l';
+    const defDir = who === 'attacker' ? 'r' : 'l'; // 피격 밀려나는 방향도 같은 쪽
+
+    // 무작위 모션 선택
+    const motion = BattleRollOverlay.ATK_MOTIONS[Math.floor(Math.random() * BattleRollOverlay.ATK_MOTIONS.length)];
+    const motionClass = `bwbr-atk-${motion}-${dir}`;
+    const recoilClass = `bwbr-hit-recoil-${defDir}`;
+
+    // 이전 애니메이션 초기화
+    atkEl.classList.remove(...['lunge', 'overhead', 'thrust'].flatMap(m => [`bwbr-atk-${m}-r`, `bwbr-atk-${m}-l`]));
+    defEl.classList.remove('bwbr-hit-recoil-r', 'bwbr-hit-recoil-l');
+    // force reflow
+    void atkEl.offsetWidth;
+
+    // 공격 모션 적용
+    atkEl.classList.add(motionClass);
+    setTimeout(() => atkEl.classList.remove(motionClass), 700);
+
+    // 피격 리코일 (약간 딜레이)
+    setTimeout(() => {
+      defEl.classList.add(recoilClass);
+      setTimeout(() => defEl.classList.remove(recoilClass), 600);
+    }, 180);
+
+    // 이펙트 생성 (피격 위치에)
+    if (fighters) {
+      setTimeout(() => this._spawnAttackEffect(fighters), 150);
+    }
+  }
+
+  /**
+   * 공격 이펙트 (참격/타격/관통) 생성
+   * @param {HTMLElement} container - fighters 컨테이너
+   */
+  _spawnAttackEffect(container) {
+    const effect = BattleRollOverlay.ATK_EFFECTS[Math.floor(Math.random() * BattleRollOverlay.ATK_EFFECTS.length)];
+    const el = document.createElement('div');
+    el.className = `bwbr-fx-${effect}`;
+
+    // 참격은 랜덤 각도 변형
+    if (effect === 'slash') {
+      const angle = -35 + (Math.random() * 70 - 35);
+      el.style.setProperty('--slash-angle', `${angle}deg`);
+      if (el.style.setProperty) {
+        // CSS 회전 오버라이드
+        el.style.transform = `translate(-50%, -50%) rotate(${Math.random() * 40 - 20}deg)`;
+      }
+    }
+
+    // 타격 이펙트는 방사형 라인 추가
+    if (effect === 'strike') {
+      for (let i = 0; i < 6; i++) {
+        const line = document.createElement('div');
+        line.className = 'bwbr-strike-line';
+        const angle = (360 / 6) * i + (Math.random() * 20 - 10);
+        line.style.transform = `translate(-50%, -50%) rotate(${angle}deg)`;
+        line.style.animationDelay = `${Math.random() * 0.1}s`;
+        el.appendChild(line);
+      }
+    }
+
+    // 관통 이펙트는 랜덤 회전
+    if (effect === 'pierce') {
+      el.style.transform = `translate(-50%, -50%) rotate(${Math.random() * 30 - 15}deg)`;
+    }
+
+    container.style.position = 'relative';
+    container.appendChild(el);
+    setTimeout(() => el.remove(), 700);
+  }
+
+  // ── 합 승리 (라운드 승리) 밀어내기 ──────────────────
+
+  /**
+   * 합(라운드) 승리 연출: 승자가 패자를 때려서 밀어냄
+   * @param {string} winner - 'attacker' | 'defender'
+   */
+  playRoundWin(winner) {
+    const winEl = this.element?.querySelector(winner === 'attacker' ? '#bwbr-atk' : '#bwbr-def');
+    const loseEl = this.element?.querySelector(winner === 'attacker' ? '#bwbr-def' : '#bwbr-atk');
+    const fighters = this.element?.querySelector('.bwbr-fighters');
+    const vsEl = this.element?.querySelector('.bwbr-vs');
+    if (!winEl || !loseEl) return;
+
+    // 방향: 승자가 오른쪽으로 밀어냄(attacker) / 왼쪽으로 밀어냄(defender)
+    const pushDir = winner === 'attacker' ? 'r' : 'l';
+    const pushedDir = winner === 'attacker' ? 'r' : 'l';
+
+    // 이전 클래스 초기화
+    const allRoundClasses = [
+      'bwbr-roundwin-push-r', 'bwbr-roundwin-push-l',
+      'bwbr-roundlose-pushed-r', 'bwbr-roundlose-pushed-l',
+      'bwbr-roundwin-name', 'bwbr-roundlose-name',
+      'bwbr-round-winner', 'bwbr-round-loser'
+    ];
+    winEl.classList.remove(...allRoundClasses);
+    loseEl.classList.remove(...allRoundClasses);
+    void winEl.offsetWidth;
+
+    // 승자 패널 글로우 + 돌진
+    winEl.classList.add('bwbr-round-winner');
+    winEl.classList.add(`bwbr-roundwin-push-${pushDir}`);
+    const winName = winEl.querySelector('.bwbr-fighter-name');
+    if (winName) winName.classList.add('bwbr-roundwin-name');
+
+    // 패자 패널 디밍 + 밀려남
+    setTimeout(() => {
+      loseEl.classList.add('bwbr-round-loser');
+      loseEl.classList.add(`bwbr-roundlose-pushed-${pushedDir}`);
+      const loseName = loseEl.querySelector('.bwbr-fighter-name');
+      if (loseName) loseName.classList.add('bwbr-roundlose-name');
+    }, 150);
+
+    // WIN/LOSE 라벨 생성
+    winEl.style.position = 'relative';
+    loseEl.style.position = 'relative';
+    const winLabel = document.createElement('span');
+    winLabel.className = 'bwbr-round-win-label';
+    winLabel.textContent = 'WIN';
+    winEl.appendChild(winLabel);
+
+    const loseLabel = document.createElement('span');
+    loseLabel.className = 'bwbr-round-lose-label';
+    loseLabel.textContent = 'LOSE';
+    setTimeout(() => loseEl.appendChild(loseLabel), 150);
+
+    // VS → 방향 화살표 전환
+    if (vsEl) {
+      const origText = vsEl.textContent;
+      vsEl.textContent = winner === 'attacker' ? '▶' : '◀';
+      vsEl.classList.add('bwbr-vs-arrow');
+      setTimeout(() => {
+        vsEl.textContent = origText;
+        vsEl.classList.remove('bwbr-vs-arrow');
+      }, 1400);
+    }
+
+    // 이펙트 + 불꽃
+    if (fighters) {
+      setTimeout(() => {
+        this._spawnAttackEffect(fighters);
+        this._spawnSparks(fighters, 10);
+      }, 180);
+    }
+
+    // 화면 진동 (가볍게)
+    const combatInfo = this.element?.querySelector('#bwbr-combat-info');
+    if (combatInfo) {
+      setTimeout(() => {
+        combatInfo.classList.add('bwbr-anim-screen-shake');
+        setTimeout(() => combatInfo.classList.remove('bwbr-anim-screen-shake'), 600);
+      }, 200);
+    }
+
+    // 정리
+    setTimeout(() => {
+      winEl.classList.remove(`bwbr-roundwin-push-${pushDir}`, 'bwbr-round-winner');
+      loseEl.classList.remove(`bwbr-roundlose-pushed-${pushedDir}`, 'bwbr-round-loser');
+      if (winName) winName.classList.remove('bwbr-roundwin-name');
+      const loseName = loseEl.querySelector('.bwbr-fighter-name');
+      if (loseName) loseName.classList.remove('bwbr-roundlose-name');
+      winLabel.remove();
+      loseLabel.remove();
+    }, 1500);
+  }
+
+  // ── 동점 (충돌 + 반발) ───────────────────────────────
+
+  /**
+   * 동점 연출: 양측이 부딪친 후 서로 밀려남
+   */
+  playTie() {
+    const atkEl = this.element?.querySelector('#bwbr-atk');
+    const defEl = this.element?.querySelector('#bwbr-def');
+    const fighters = this.element?.querySelector('.bwbr-fighters');
+    const vsEl = this.element?.querySelector('.bwbr-vs');
+    if (!atkEl || !defEl) return;
+
+    // 이전 클래스 초기화
+    atkEl.classList.remove('bwbr-tie-repel-l', 'bwbr-tie-repel-r');
+    defEl.classList.remove('bwbr-tie-repel-l', 'bwbr-tie-repel-r');
+    void atkEl.offsetWidth;
+
+    // 양측 충돌 후 반발
+    atkEl.classList.add('bwbr-tie-repel-l');
+    defEl.classList.add('bwbr-tie-repel-r');
+
+    // VS 텍스트 플래시
+    if (vsEl) {
+      vsEl.classList.add('bwbr-tie-vs-flash');
+      setTimeout(() => vsEl.classList.remove('bwbr-tie-vs-flash'), 800);
+    }
+
+    // 이름 하이라이트
+    const atkName = atkEl.querySelector('.bwbr-fighter-name');
+    const defName = defEl.querySelector('.bwbr-fighter-name');
+    if (atkName) atkName.classList.add('bwbr-tie-name');
+    if (defName) defName.classList.add('bwbr-tie-name');
+
+    // 불꽃 + 충격파
+    if (fighters) {
+      fighters.style.position = 'relative';
+      this._spawnSparks(fighters, 12);
+      setTimeout(() => this._spawnSparks(fighters, 8), 200);
+      this._spawnImpactWave(fighters);
+    }
+
+    // 화면 진동
+    const combatInfo = this.element?.querySelector('#bwbr-combat-info');
+    if (combatInfo) {
+      combatInfo.classList.add('bwbr-anim-screen-shake');
+      setTimeout(() => combatInfo.classList.remove('bwbr-anim-screen-shake'), 600);
+    }
+
+    // 정리
+    setTimeout(() => {
+      atkEl.classList.remove('bwbr-tie-repel-l');
+      defEl.classList.remove('bwbr-tie-repel-r');
+      if (atkName) atkName.classList.remove('bwbr-tie-name');
+      if (defName) defName.classList.remove('bwbr-tie-name');
+    }, 1200);
   }
 
   /**

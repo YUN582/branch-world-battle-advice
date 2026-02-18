@@ -81,7 +81,9 @@
     chat.hookInputSubmit(onInputSubmit);
 
     // 메시지 리스너 (popup ↔ content 통신)
-    chrome.runtime.onMessage.addListener(onExtensionMessage);
+    if (chrome.runtime?.id) {
+      chrome.runtime.onMessage.addListener(onExtensionMessage);
+    }
 
     // 사이트 음량 적용 (site-volume.js에서 이미 API 패치 완료)
     applySiteVolume(config.general.siteVolume ?? 1.0);
@@ -136,7 +138,9 @@
 
   function onInputSubmit(text) {
     if (!enabled) return;
-    alwaysLog(`[입력 감지] "${text.substring(0, 80)}"`);
+    // @ 컷인 명령은 무시 (절대 전투 트리거가 아님)
+    if (text.startsWith('@')) return;
+    log(`[입력 감지] "${text.substring(0, 80)}"`);  // 디버그 모드에서만
 
     if (flowState === STATE.IDLE) {
       checkForTrigger(text);
@@ -188,12 +192,8 @@
   // ── 합 개시 트리거 감지 ──────────────────────────────────
 
   function checkForTrigger(text) {
-    alwaysLog(`트리거 체크: "${text.substring(0, 80)}"`);
     const triggerData = engine.parseTrigger(text);
-    if (!triggerData) {
-      alwaysLog('트리거 매칭 실패 (정규식 불일치)');
-      return;
-    }
+    if (!triggerData) return;
 
     alwaysLog(`✅ 합 개시 감지! ⚔️${triggerData.attacker.name}(${triggerData.attacker.dice}) vs 🛡️${triggerData.defender.name}(${triggerData.defender.dice})`);
 
@@ -338,6 +338,7 @@
           : atkValue <= state.combat.attacker.fumbleThreshold ? 'fumble' : 'info';
         overlay.addLog(`⚔️ ${state.combat.attacker.name}: ${atkValue}`, logType);
         overlay.animateDiceValue('attacker', atkValue);
+        overlay.playAttack('attacker');
         if (logType === 'crit') overlay.playCrit('attacker');
         else if (logType === 'fumble') overlay.playFumble('attacker');
         overlay.playParrySound();
@@ -354,6 +355,7 @@
           : defValue <= state.combat.defender.fumbleThreshold ? 'fumble' : 'info';
         overlay.addLog(`🛡️ ${state.combat.defender.name}: ${defValue}`, logType);
         overlay.animateDiceValue('defender', defValue);
+        overlay.playAttack('defender');
         if (logType === 'crit') overlay.playCrit('defender');
         else if (logType === 'fumble') overlay.playFumble('defender');
         overlay.playParrySound();
@@ -397,11 +399,15 @@
     }
     // 무승부 / 재굴림
     if (text.includes('무승부') || text.includes('재굴림')) {
+      overlay.playTie();
       overlay.addLog(cleanText, 'warning');
       return;
     }
     // 일반 승리
     if (text.includes('→') && text.includes('승리')) {
+      // 승자 파악
+      if (text.includes('⚔')) overlay.playRoundWin('attacker');
+      else if (text.includes('🛡')) overlay.playRoundWin('defender');
       overlay.addLog(cleanText, 'info');
       return;
     }
@@ -535,6 +541,7 @@
         : manualValue <= state.combat.attacker.fumbleThreshold ? 'fumble' : 'info';
       overlay.addLog(`⚔️ ${state.combat.attacker.name}: ${manualValue}`, logType);
       overlay.animateDiceValue('attacker', manualValue);
+      overlay.playAttack('attacker');
       if (logType === 'crit') overlay.playCrit('attacker');
       else if (logType === 'fumble') overlay.playFumble('attacker');
       setTimeout(() => rollForDefender(), config.timing.betweenRolls);
@@ -545,6 +552,7 @@
         : manualValue <= state.combat.defender.fumbleThreshold ? 'fumble' : 'info';
       overlay.addLog(`🛡️ ${state.combat.defender.name}: ${manualValue}`, logType);
       overlay.animateDiceValue('defender', manualValue);
+      overlay.playAttack('defender');
       if (logType === 'crit') overlay.playCrit('defender');
       else if (logType === 'fumble') overlay.playFumble('defender');
       setTimeout(() => processRoundResult(), config.timing.beforeRoundResult);
@@ -667,6 +675,9 @@
     overlay.addLog(`⚔️ ${state.combat.attacker.name}: ${value}`, logType);
     overlay.animateDiceValue('attacker', value);
 
+    // 공격 모션 + 이펙트
+    overlay.playAttack('attacker');
+
     // 크리/펌블 애니메이션
     if (logType === 'crit') overlay.playCrit('attacker');
     else if (logType === 'fumble') overlay.playFumble('attacker');
@@ -722,6 +733,9 @@
       : value <= state.combat.defender.fumbleThreshold ? 'fumble' : 'info';
     overlay.addLog(`🛡️ ${state.combat.defender.name}: ${value}`, logType);
     overlay.animateDiceValue('defender', value);
+
+    // 공격 모션 + 이펙트
+    overlay.playAttack('defender');
 
     // 크리/펌블 애니메이션
     if (logType === 'crit') overlay.playCrit('defender');
@@ -824,8 +838,15 @@
         }
       }
 
-      // 상태 업데이트
+      // 상태 업데이트 (DOM 갱신 먼저, 애니메이션은 그 다음)
       overlay.updateCombatState(engine.getState());
+
+      // 합 결과 애니메이션: 승리/동점 (DOM 갱신 후 재생해야 클래스가 유지됨)
+      if (result.type === 'tie') {
+        overlay.playTie();
+      } else if (result.winner) {
+        overlay.playRoundWin(result.winner);
+      }
 
       // 동점 재굴림 처리 (재굴림도 합 1회로 카운트)
       if (result.needsReroll) {
@@ -1063,6 +1084,9 @@
 
       case 'BWBR_UPDATE_CONFIG':
         config = deepMerge(window.BWBR_DEFAULTS, message.config);
+        // 패턴/템플릿은 항상 최신 기본값 사용 (팝업 측 구버전 호환)
+        config.patterns = JSON.parse(JSON.stringify(window.BWBR_DEFAULTS.patterns));
+        config.templates = JSON.parse(JSON.stringify(window.BWBR_DEFAULTS.templates));
         engine.updateConfig(config);
         chat.updateConfig(config);
         overlay.updateConfig(config);

@@ -32,8 +32,6 @@ window.BattleRollEngine = class BattleRollEngine {
    */
   parseTrigger(text) {
     const regexStr = this.config.patterns.triggerRegex;
-    this._log(`parseTrigger 입력: "${text.substring(0, 100)}"`);
-    this._log(`parseTrigger 정규식: ${regexStr}`);
     try {
       var pattern = new RegExp(regexStr);
     } catch (e) {
@@ -41,7 +39,7 @@ window.BattleRollEngine = class BattleRollEngine {
       return null;
     }
     const match = text.match(pattern);
-    this._log(`parseTrigger 매칭 결과: ${match ? 'O (' + match.length + '그룹)' : 'X'}`);
+    if (match) this._log(`parseTrigger 매칭 성공! (${match.length}그룹)`);
     if (!match) return null;
 
     return {
@@ -91,27 +89,38 @@ window.BattleRollEngine = class BattleRollEngine {
    * @param {object} defender - {name, dice, critThreshold, fumbleThreshold}
    */
   startCombat(attacker, defender) {
+    // N0: 연격 특성 적용 - 응수(방어자) 주사위 2개 감소, 하한 3
+    let defenderDice = defender.dice;
+    let defenderN0Bonus = 0;
+    if ((defender.traits || []).includes('N0')) {
+      defenderDice = Math.max(3, defenderDice - 2);
+      defenderN0Bonus = 0;
+    }
+    let attackerN0Bonus = 0;
+    if ((attacker.traits || []).includes('N0')) {
+      attackerN0Bonus = 0;
+    }
     this.combat = {
       attacker: {
         ...attacker,
         traits: attacker.traits || [],
         critCount: 0,
         fumbleCount: 0,
-        // H0/H40 특성: 주사위 0 시 부활 (기본 1회, 크리 시 초기화)
-        // H00/H400 특성: 인간 특성 없지만 대성공 시 초기화되어 사용 가능
         h0Used: ((attacker.traits || []).includes('H00') || (attacker.traits || []).includes('H400')) ? true : false,
-        // H4/H40/H400 특성: 누적 대성공 범위 보너스
         h4Bonus: 0,
-        baseCritThreshold: attacker.critThreshold
+        baseCritThreshold: attacker.critThreshold,
+        n0Bonus: attackerN0Bonus
       },
       defender: {
         ...defender,
+        dice: defenderDice,
         traits: defender.traits || [],
         critCount: 0,
         fumbleCount: 0,
         h0Used: ((defender.traits || []).includes('H00') || (defender.traits || []).includes('H400')) ? true : false,
         h4Bonus: 0,
-        baseCritThreshold: defender.critThreshold
+        baseCritThreshold: defender.critThreshold,
+        n0Bonus: defenderN0Bonus
       }
     };
     this.round = 0;
@@ -119,7 +128,7 @@ window.BattleRollEngine = class BattleRollEngine {
     this.lastDefenderRoll = null;
     this.history = [];
 
-    this._log(`전투 시작: ⚔️ ${attacker.name}(주사위${attacker.dice}, 대성공>=${attacker.critThreshold}, 대실패<=${attacker.fumbleThreshold}, 특성:${(attacker.traits||[]).join(',')}) vs 🛡️ ${defender.name}(주사위${defender.dice}, 대성공>=${defender.critThreshold}, 대실패<=${defender.fumbleThreshold}, 특성:${(defender.traits||[]).join(',')})`);
+    this._log(`전투 시작: ⚔️ ${attacker.name}(주사위${attacker.dice}, 대성공>=${attacker.critThreshold}, 대실패<=${attacker.fumbleThreshold}, 특성:${(attacker.traits||[]).join(',')}) vs 🛡️ ${defender.name}(주사위${defenderDice}, 대성공>=${defender.critThreshold}, 대실패<=${defender.fumbleThreshold}, 특성:${(defender.traits||[]).join(',')})`);
   }
 
   /** 라운드 번호 증가 */
@@ -151,8 +160,17 @@ window.BattleRollEngine = class BattleRollEngine {
       return null;
     }
 
-    const atkVal = this.lastAttackerRoll;
-    const defVal = this.lastDefenderRoll;
+    // N0: 연격 특성 보너스 적용
+    let atkVal = this.lastAttackerRoll;
+    let defVal = this.lastDefenderRoll;
+    if (this.combat.attacker.traits.includes('N0')) {
+      atkVal += this.combat.attacker.n0Bonus || 0;
+      this._log(`[N0] ${this.combat.attacker.name}: 연격 보너스 +${this.combat.attacker.n0Bonus || 0} 적용 → ${atkVal}`);
+    }
+    if (this.combat.defender.traits.includes('N0')) {
+      defVal += this.combat.defender.n0Bonus || 0;
+      this._log(`[N0] ${this.combat.defender.name}: 연격 보너스 +${this.combat.defender.n0Bonus || 0} 적용 → ${defVal}`);
+    }
     const rules = this.config.rules;
 
     // 캐릭터별 대성공/대실패 수준 사용 (H4 보너스 적용 후 판정)
@@ -332,6 +350,10 @@ window.BattleRollEngine = class BattleRollEngine {
     // ── 특성 이벤트 추적 ──
     result.traitEvents = [];
 
+    // ── N0 특성: 연격 ──
+    this._applyN0('attacker', result.winner, result.traitEvents);
+    this._applyN0('defender', result.winner, result.traitEvents);
+
     // ── H4 특성: 피로 새겨진 역사 ──
     this._applyH4('attacker', atkCrit, result.traitEvents, manualMode);
     this._applyH4('defender', defCrit, result.traitEvents, manualMode);
@@ -339,6 +361,12 @@ window.BattleRollEngine = class BattleRollEngine {
     // ── H0 특성: 인간 특성 (주사위 0 시 부활) ──
     this._applyH0('attacker', atkCrit, result.traitEvents, manualMode);
     this._applyH0('defender', defCrit, result.traitEvents, manualMode);
+  /**
+   * N0 특성: 연격
+   * - 응수(방어자) 주사위 2개 감소(하한 3)는 startCombat에서 적용
+   * - 승리 시 다음 판정에 +1 누적 보너스, 패배 시 0으로 초기화
+   * - 보너스는 processRoundResult에서 판정값에 적용
+   */
 
     // 이력 저장
     this.history.push(result);
