@@ -112,6 +112,15 @@
     if (e.key === 'Backspace' && !e.ctrlKey && !e.altKey && !e.metaKey) {
       const pos = el.selectionStart;
       const val = el.value;
+
+      /* ── @ 컷인 트릭 중 Backspace: @ 지우면 원래 텍스트 복원 ── */
+      if (_atPrefix !== null && val.startsWith('@') && pos === 1 && el.selectionStart === el.selectionEnd) {
+        e.preventDefault();
+        e.stopPropagation();
+        cancelAtTrick(el);
+        return;
+      }
+
       if (pos > 0 && pos < val.length && el.selectionStart === el.selectionEnd) {
         const open = val[pos - 1];
         const close = val[pos];

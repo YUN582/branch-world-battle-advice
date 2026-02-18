@@ -50,7 +50,7 @@ window.BattleRollOverlay = class BattleRollOverlay {
           <span class="bwbr-dot idle" id="bwbr-dot"></span>
           <span class="bwbr-status-text" id="bwbr-status-text">대기 중</span>
         </div>
-        <button id="bwbr-btn-expand" type="button">▲</button>
+        <button id="bwbr-btn-help" type="button" title="도움말">?</button>
       </div>
       <div id="bwbr-body">
         <div id="bwbr-actions" style="display:none">
@@ -58,7 +58,7 @@ window.BattleRollOverlay = class BattleRollOverlay {
           <button type="button" id="bwbr-btn-cancel" title="전투 중지">✖</button>
         </div>
         <div id="bwbr-combat-info"></div>
-        <div id="bwbr-guide">
+        <div id="bwbr-guide" class="bwbr-guide-hidden">
           <div class="bwbr-guide-trigger">《합 개시》| ⚔️ 공격자 - 주사위/대성공/대실패 | 🛡️ 방어자 - 주사위/대성공/대실패</div>
           <div class="bwbr-guide-traits">
             <div class="bwbr-guide-trait">
@@ -111,13 +111,22 @@ window.BattleRollOverlay = class BattleRollOverlay {
   }
 
   _bindEvents() {
+    // 토글 바 클릭 시 접기 (펼침 상태에서만 동작, 닫힌 상태에서는 무시)
     const toggleBar = this.element.querySelector('#bwbr-toggle');
     toggleBar.addEventListener('click', (e) => {
-      if (e.target.tagName !== 'BUTTON') this.toggleCollapse();
+      if (e.target.tagName !== 'BUTTON' && !this.isCollapsed) {
+        this.toggleCollapse();
+      }
     });
 
-    const btnExpand = this.element.querySelector('#bwbr-btn-expand');
-    btnExpand.addEventListener('click', () => this.toggleCollapse());
+    const btnHelp = this.element.querySelector('#bwbr-btn-help');
+    btnHelp.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleGuide();
+    });
+
+    // 입력창 감지: 트리거 문구 입력 시 가이드 표시
+    this._setupInputWatcher();
 
     const btnPause = this.element.querySelector('#bwbr-btn-pause');
     btnPause.addEventListener('click', () => {
@@ -142,14 +151,63 @@ window.BattleRollOverlay = class BattleRollOverlay {
     });
   }
 
-  // ── 접기/펼치기 ───────────────────────────────────────
+  // ── 접기/펼치기 + 가이드 토글 ───────────────────────────
 
   toggleCollapse() {
     this.isCollapsed = !this.isCollapsed;
     const body = this.element?.querySelector('#bwbr-body');
-    const btn = this.element?.querySelector('#bwbr-btn-expand');
     if (body) body.classList.toggle('bwbr-collapsed', this.isCollapsed);
-    if (btn) btn.textContent = this.isCollapsed ? '▼' : '▲';
+  }
+
+  toggleGuide() {
+    const guide = this.element?.querySelector('#bwbr-guide');
+    if (!guide) return;
+    const isHidden = guide.classList.contains('bwbr-guide-hidden');
+    guide.classList.toggle('bwbr-guide-hidden');
+    // 수동으로 열었으면 자동 닫히지 않도록
+    this._guideManuallyOpened = isHidden;
+  }
+
+  showGuide() {
+    const guide = this.element?.querySelector('#bwbr-guide');
+    if (guide) guide.classList.remove('bwbr-guide-hidden');
+  }
+
+  hideGuide() {
+    const guide = this.element?.querySelector('#bwbr-guide');
+    if (guide) guide.classList.add('bwbr-guide-hidden');
+  }
+
+  // ── 입력창 감지: 트리거 문구 입력 시 가이드 표시 ───────
+
+  _setupInputWatcher() {
+    // 트리거 패턴 정의 (확장 가능)
+    this._triggerPatterns = [
+      { pattern: /《합/, guideType: 'melee' }
+      // 나중에 추가: { pattern: /《연사/, guideType: 'rapid' }
+    ];
+
+    // 입력창 감지 인터벌
+    this._inputWatcherTimer = setInterval(() => {
+      const input = document.querySelector('textarea[name="text"]');
+      if (!input) return;
+
+      const val = input.value;
+      let shouldShow = false;
+
+      for (const { pattern } of this._triggerPatterns) {
+        if (pattern.test(val)) {
+          shouldShow = true;
+          break;
+        }
+      }
+
+      if (shouldShow) {
+        this.showGuide();
+      } else if (!this._guideManuallyOpened) {
+        this.hideGuide();
+      }
+    }, 300);
   }
 
   show() {
@@ -170,6 +228,7 @@ window.BattleRollOverlay = class BattleRollOverlay {
       this.element = null;
     }
     if (this._retryTimer) clearTimeout(this._retryTimer);
+    if (this._inputWatcherTimer) clearInterval(this._inputWatcherTimer);
   }
 
   ensureInjected() {

@@ -66,6 +66,34 @@
   color: #ccc;
 }
 
+.bwbr-toggle-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+#bwbr-btn-help {
+  background: none;
+  border: 1px solid #555;
+  color: #888;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#bwbr-btn-help:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: #777;
+  color: #ccc;
+}
+
 /* ── 상태 점(dot) ─────────────────────────────── */
 
 .bwbr-dot {
