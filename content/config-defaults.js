@@ -36,7 +36,7 @@ window.BWBR_DEFAULTS = {
       '⚖️ 무승부! ⚔️【{atkValue}】 🛡️【{defValue}】 → 재굴림',
 
     // 합 승리 메시지
-    victory: '《합 승리》 | {winnerIcon} {winner} @{sound}',
+    victory: '《합 승리》\n{winnerIcon} {winner} @{sound}',
 
     // 합 중지 메시지 (이 패턴 감지 시 전투 중지)
     combatCancel: '《합 중지》'
@@ -136,6 +136,7 @@ window.BWBR_DEFAULTS = {
     autoComplete: true,         // 채팅 자동완성 (괄호/따옴표 자동 닫기 + Tab 순환)
     autoScroll: true,           // 새 메시지 시 자동 스크롤
     showOverlay: true,          // 페이지 내 오버레이 표시
+    autoConsumeActions: true,   // 주/보조 행동 자동 소모 (《...》【...】 패턴 감지 시)
     debugMode: false,           // 디버그 로그 출력
     sfxVolume: 0.45,            // 확장 프로그램 효과음 볼륨 (0~1)
     siteVolume: 1.0,            // 코코포리아 사이트 음량 (0~1)

@@ -1,15 +1,18 @@
 // ============================================================
-// Branch World Battle Roll - 코코포리아 채팅 인터페이스 v6
+// Branch World Battle Roll - 코코포리아 채팅 인터페이스 v8
 //
-// === 핵심 설계 ===
-// 1) Set 기반 메시지 추적: 이미 본 텍스트를 Set에 저장
-// 2) "맨 아래 N개"만 검사: 스크롤로 위에 로드된 메시지 무시
-// 3) 탭 전환 감지: 모든 최하단 메시지가 미확인이면 탭 전환
+// === 핵심 설계 (Redux 기반) ===
+// 1) Redux store.subscribe()로 roomMessages 변화를 실시간 감지
+// 2) 탭 전환, DOM 갱신에 영향받지 않아 100% 메시지 감지율
+// 3) 페이지 컨텍스트(redux-injector.js)에서 CustomEvent로 전달
 //
-// === 코코포리아 DOM ===
-// textarea[name="text"]  — 채팅 입력
-// button[type="submit"]  — "전송" 버튼 (같은 <form>)
-// __reactProps$xxx.onChange — React state 갱신
+// === 메시지 전송 ===
+// 텍스트 메시지 → Firestore 직접 전송 (유저 입력 차단 없음)
+// 주사위 명령    → React fiber + form submit (코코포리아 주사위 처리)
+// Firestore 실패 → textarea 자동 폴백
+//
+// === 유지되는 DOM 기능 ===
+// hookInputSubmit — Enter 키 감지 (사용자 입력)
 // ============================================================
 
 window.CocoforiaChatInterface = class CocoforiaChatInterface {
@@ -183,6 +186,102 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
     if (this.pollingTimer) { clearInterval(this.pollingTimer); this.pollingTimer = null; }
     if (this._pollDebounceTimer) { clearTimeout(this._pollDebounceTimer); this._pollDebounceTimer = null; }
     this._ready = false;
+  }
+
+  // ================================================================
+  //  Redux 기반 채팅 관찰  ──  store.subscribe() → CustomEvent
+  // ================================================================
+
+  /**
+   * Redux Store의 roomMessages를 구독하여 새 메시지를 실시간으로 감지합니다.
+   * DOM 기반 observeChat()과 달리 탭 전환, DOM 갱신에 영향을 받지 않습니다.
+   *
+   * 페이지 컨텍스트(redux-injector.js)에서 store.subscribe()로 감지 후
+   * CustomEvent('bwbr-new-chat-message')로 전달받습니다.
+   *
+   * @param {function} callback - 새 메시지 텍스트를 전달받는 콜백 (text, null)
+   */
+  observeReduxMessages(callback) {
+    this.messageCallback = callback;
+    this._reduxReady = false;
+
+    // 기존 DOM 관찰 중지 (혹시 실행 중이면)
+    this.stopObserving();
+
+    // Redux 메시지 이벤트 수신 핸들러
+    this._reduxMessageHandler = (e) => {
+      if (!this._reduxReady) return;
+      const detail = e.detail;
+      if (!detail?.text) return;
+
+      const text = detail.text.trim();
+      if (text.length < 2) return;
+
+      // 자체 전송 메시지 필터링
+      if (this._isOwnMessage(text)) {
+        this._log(`  [자체 Redux] "${text.substring(0, 40)}"`);
+        return;
+      }
+
+      this._log(`\ud83d\udce8 [Redux] "${text.substring(0, 100)}" (${detail.name || '?'})`);
+
+      if (this.messageCallback) {
+        try {
+          this.messageCallback(text, null, detail.name || '');
+        } catch (err) {
+          console.error('[BWBR Chat]', err);
+        }
+      }
+    };
+
+    window.addEventListener('bwbr-new-chat-message', this._reduxMessageHandler);
+
+    // 페이지 컨텍스트에 메시지 관찰 시작 요청 + 재시도
+    let retries = 0;
+    const maxRetries = 5;
+
+    const requestStart = () => {
+      window.dispatchEvent(new CustomEvent('bwbr-start-message-observer'));
+    };
+
+    const statusHandler = (e) => {
+      if (e.detail?.active) {
+        window.removeEventListener('bwbr-message-observer-status', statusHandler);
+        this._log('✅ Redux 메시지 관찰자 활성화 확인');
+      } else if (retries < maxRetries) {
+        retries++;
+        this._log(`⚠️ 관찰자 활성화 실패 → 재시도 ${retries}/${maxRetries}`);
+        setTimeout(requestStart, 1000);
+      } else {
+        window.removeEventListener('bwbr-message-observer-status', statusHandler);
+        this._log('❌ Redux 메시지 관찰자 활성화 최종 실패');
+      }
+    };
+
+    window.addEventListener('bwbr-message-observer-status', statusHandler);
+    requestStart();
+
+    // 2초 유예 후 활성화 (초기 메시지 무시 — 기존 observeChat과 동일)
+    setTimeout(() => {
+      this._reduxReady = true;
+      this._log('✅ Redux 메시지 수신 활성화');
+    }, 2000);
+
+    this._log('Redux 메시지 관찰 준비 중 (2초 유예)...');
+    return true;
+  }
+
+  /**
+   * Redux 기반 채팅 관찰을 중지합니다.
+   */
+  stopReduxObserving() {
+    if (this._reduxMessageHandler) {
+      window.removeEventListener('bwbr-new-chat-message', this._reduxMessageHandler);
+      this._reduxMessageHandler = null;
+    }
+    this._reduxReady = false;
+    window.dispatchEvent(new CustomEvent('bwbr-stop-message-observer'));
+    this._log('Redux 메시지 관찰 중지');
   }
 
   // ================================================================
@@ -388,10 +487,77 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
   }
 
   // ================================================================
-  //  메시지 전송  ──  React fiber + form submit
+  //  메시지 전송  ──  Firestore 직접 전송 + React fiber 폴백
+  //
+  //  ★ 주사위 명령 (1D20 등) → textarea 경유 (코코포리아 주사위 처리 필요)
+  //  ★ 텍스트 메시지        → Firestore 직접 전송 (유저 입력 차단 없음)
+  //                            실패 시 textarea 폴백
   // ================================================================
 
   async sendMessage(text) {
+    // 주사위 명령이 아닌 경우에만 자체 메시지로 등록
+    // (주사위 결과 메시지가 substring 매칭으로 필터링되는 것을 방지)
+    if (!/^\d+[dD]\d+/.test(text)) {
+      this._lastSentMessages.push({ text, time: Date.now() });
+    }
+    // 전송할 메시지를 미리 seen에 등록 (돌아왔을 때 무시)
+    this._seenTexts.add(text);
+
+    // ★ 주사위 명령은 반드시 textarea 경유 (코코포리아가 주사위를 처리해야 함)
+    if (/^\d+[dD]\d+/.test(text.trim())) {
+      this._log(`📤 전송(주사위): "${text.substring(0, 60)}"`);
+      return this._sendViaTextarea(text);
+    }
+
+    // ★ 텍스트 메시지 → Firestore 직접 전송 시도
+    this._log(`📤 전송(직접): "${text.substring(0, 60)}"`);
+    const directResult = await this._sendViaFirestoreDirect(text);
+    if (directResult) return true;
+
+    // Firestore 실패 → textarea 폴백
+    this._log('⚠️ Firestore 직접 전송 실패 → textarea 폴백');
+    return this._sendViaTextarea(text);
+  }
+
+  /**
+   * Firestore에 직접 메시지를 작성합니다.
+   * 페이지 컨텍스트(redux-injector.js)에 CustomEvent로 요청 → 결과 수신.
+   * 유저의 textarea 입력을 전혀 건드리지 않습니다.
+   */
+  _sendViaFirestoreDirect(text) {
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        window.removeEventListener('bwbr-send-message-result', handler);
+        this._log('⏱️ Firestore 직접 전송 타임아웃');
+        resolve(false);
+      }, 5000);
+
+      const handler = (e) => {
+        if (e.detail?.text !== text) return;  // 다른 메시지의 결과 무시
+        clearTimeout(timeout);
+        window.removeEventListener('bwbr-send-message-result', handler);
+        if (e.detail.success) {
+          this._log('✅ Firestore 직접 전송 성공');
+        } else {
+          this._log(`⚠️ Firestore 직접 전송 실패: ${e.detail.error || 'unknown'}`);
+        }
+        resolve(!!e.detail.success);
+      };
+
+      window.addEventListener('bwbr-send-message-result', handler);
+
+      // ★ ISOLATED→MAIN에서는 CustomEvent.detail이 전달되지 않으므로
+      //    DOM attribute를 통해 텍스트를 전달합니다.
+      document.documentElement.setAttribute('data-bwbr-send-text', text);
+      window.dispatchEvent(new Event('bwbr-send-message-direct'));
+    });
+  }
+
+  /**
+   * textarea + React fiber를 통한 메시지 전송 (기존 방식).
+   * 주사위 명령 또는 Firestore 실패 시 폴백으로 사용됩니다.
+   */
+  async _sendViaTextarea(text) {
     if (!this.chatInput || !this._isVisible(this.chatInput)) {
       this.findElements();
     }
@@ -404,14 +570,7 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
       this.sendButton = this._findSendButton();
     }
 
-    // 주사위 명령이 아닌 경우에만 자체 메시지로 등록
-    // (주사위 결과 메시지가 substring 매칭으로 필터링되는 것을 방지)
-    if (!/^\d+[dD]\d+/.test(text)) {
-      this._lastSentMessages.push({ text, time: Date.now() });
-    }
-    // 전송할 메시지를 미리 seen에 등록 (돌아왔을 때 무시)
-    this._seenTexts.add(text);
-    this._log(`📤 전송: "${text.substring(0, 60)}"`);
+    this._log(`📤 전송(textarea): "${text.substring(0, 60)}"`);
 
     if (await this._sendViaReactFiber(text)) return true;
     if (await this._sendViaNativeSetter(text)) return true;

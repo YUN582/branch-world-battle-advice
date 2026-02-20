@@ -56,6 +56,15 @@
 
         <div class="field-group">
           <label class="toggle-label inline">
+            <span>행동 자동 소모</span>
+            <input type="checkbox" id="toggle-autoConsumeActions" checked>
+            <span class="toggle-slider small"></span>
+          </label>
+          <div class="toggle-hint" style="font-size:11px;color:#888;padding:2px 0 4px;">전투 보조 중 《...》 【...】 채팅 감지 시 주/보조 행동 자동 소모</div>
+        </div>
+
+        <div class="field-group">
+          <label class="toggle-label inline">
             <span>전투 로그 표시</span>
             <input type="checkbox" id="toggle-showBattleLog">
             <span class="toggle-slider small"></span>
@@ -69,7 +78,9 @@
             <span class="toggle-slider small"></span>
           </label>
           <div class="toggle-hint" style="font-size:11px;color:#888;padding:2px 0 4px;">"" '' () 「」 『』 【】 《》 자동 닫기 + Tab 순환 / Shift+Tab 역순환</div>
-        </div>      </div>
+        </div>
+
+      </div>
       <!-- 사운드 설정 탭 -->
       <div class="tab-panel" id="tab-sounds">
 
@@ -210,7 +221,7 @@
 
       <!-- 고급 설정 탭 -->
       <div class="tab-panel" id="tab-advanced">
-        <div class="section-desc">DOM 선택자와 정규식 패턴을 설정합니다. 코코포리아 업데이트로 인해 동작하지 않을 경우 수정하세요.</div>
+        <div class="section-desc">정규식 패턴을 설정합니다. 코코포리아 업데이트로 인해 동작하지 않을 경우 수정하세요.</div>
 
         <details class="advanced-section">
           <summary>정규식 패턴</summary>
@@ -237,34 +248,7 @@
           </div>
         </details>
 
-        <details class="advanced-section">
-          <summary>DOM 선택자 (쉼표 구분)</summary>
 
-          <div class="field-group">
-            <label class="field-label">채팅 컨테이너</label>
-            <textarea class="field-input field-mono" id="sel-chatContainer" rows="2"></textarea>
-          </div>
-
-          <div class="field-group">
-            <label class="field-label">채팅 메시지</label>
-            <textarea class="field-input field-mono" id="sel-chatMessage" rows="2"></textarea>
-          </div>
-
-          <div class="field-group">
-            <label class="field-label">메시지 텍스트</label>
-            <textarea class="field-input field-mono" id="sel-messageText" rows="2"></textarea>
-          </div>
-
-          <div class="field-group">
-            <label class="field-label">채팅 입력 필드</label>
-            <textarea class="field-input field-mono" id="sel-chatInput" rows="2"></textarea>
-          </div>
-
-          <div class="field-group">
-            <label class="field-label">전송 버튼</label>
-            <textarea class="field-input field-mono" id="sel-sendButton" rows="2"></textarea>
-          </div>
-        </details>
 
         <details class="advanced-section">
           <summary>기타 설정</summary>
@@ -294,20 +278,7 @@
           </div>
         </details>
 
-        <details class="advanced-section">
-          <summary>DOM 연결 확인</summary>
-          <div class="field-group">
-            <button class="btn-full" id="btn-refresh-dom">DOM 재탐색</button>
-            <div id="dom-status" class="dom-status"></div>
-          </div>
-          <div class="field-group">
-            <label class="field-label">테스트 메시지 전송</label>
-            <div class="tag-add-row">
-              <input type="text" class="field-input" id="test-message" placeholder="테스트 메시지">
-              <button class="btn-small" id="btn-test-send">전송</button>
-            </div>
-          </div>
-        </details>
+
       </div>
 
     </div>

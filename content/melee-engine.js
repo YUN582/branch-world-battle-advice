@@ -163,23 +163,26 @@ window.BattleRollEngine = class BattleRollEngine {
     // N0: 연격 특성 보너스 적용
     let atkVal = this.lastAttackerRoll;
     let defVal = this.lastDefenderRoll;
-    if (this.combat.attacker.traits.includes('N0')) {
-      atkVal += this.combat.attacker.n0Bonus || 0;
-      this._log(`[N0] ${this.combat.attacker.name}: 연격 보너스 +${this.combat.attacker.n0Bonus || 0} 적용 → ${atkVal}`);
+    const atkRaw = this.lastAttackerRoll;  // 크리/펌블 판정용 원본
+    const defRaw = this.lastDefenderRoll;
+    if (this.combat.attacker.traits.includes('N0') && (this.combat.attacker.n0Bonus || 0) > 0) {
+      atkVal += this.combat.attacker.n0Bonus;
+      this._log(`[N0] ${this.combat.attacker.name}: 연격 보너스 +${this.combat.attacker.n0Bonus} 적용 (${atkRaw}→${atkVal})`);
     }
-    if (this.combat.defender.traits.includes('N0')) {
-      defVal += this.combat.defender.n0Bonus || 0;
-      this._log(`[N0] ${this.combat.defender.name}: 연격 보너스 +${this.combat.defender.n0Bonus || 0} 적용 → ${defVal}`);
+    if (this.combat.defender.traits.includes('N0') && (this.combat.defender.n0Bonus || 0) > 0) {
+      defVal += this.combat.defender.n0Bonus;
+      this._log(`[N0] ${this.combat.defender.name}: 연격 보너스 +${this.combat.defender.n0Bonus} 적용 (${defRaw}→${defVal})`);
     }
     const rules = this.config.rules;
 
     // 캐릭터별 대성공/대실패 수준 사용 (H4 보너스 적용 후 판정)
+    // 크리/펌블은 원본 주사위 값(N0 보정 전)으로 판정
     const atkEffectiveCrit = this.combat.attacker.critThreshold;
     const defEffectiveCrit = this.combat.defender.critThreshold;
-    const atkCrit = (atkVal >= atkEffectiveCrit);
-    const atkFumble = (atkVal <= this.combat.attacker.fumbleThreshold);
-    const defCrit = (defVal >= defEffectiveCrit);
-    const defFumble = (defVal <= this.combat.defender.fumbleThreshold);
+    const atkCrit = (atkRaw >= atkEffectiveCrit);
+    const atkFumble = (atkRaw <= this.combat.attacker.fumbleThreshold);
+    const defCrit = (defRaw >= defEffectiveCrit);
+    const defFumble = (defRaw <= this.combat.defender.fumbleThreshold);
 
     let result = {
       round: this.round,
@@ -637,7 +640,7 @@ window.BattleRollEngine = class BattleRollEngine {
     if (!winner) return '';
 
     if (winner === 'draw') {
-      return '《합 종료》 | 무승부 @' + this._pickRandom(this.config.sounds.victorySounds || this.config.sounds.victorySound || ['합']);
+      return '《합 종료》\n무승부 @' + this._pickRandom(this.config.sounds.victorySounds || this.config.sounds.victorySound || ['합']);
     }
 
     const winnerData = winner === 'attacker' ? this.combat.attacker : this.combat.defender;

@@ -10,11 +10,15 @@ window.BattleRollOverlay = class BattleRollOverlay {
     this.isCollapsed = false;
     this.onCancelCallback = null;
     this.onPauseCallback = null;
+    this.onActionClickCallback = null;  // 행동 슬롯 클릭 콜백
     this._manualInputResolve = null;
     this._injected = false;
     this._retryTimer = null;
     this._paused = false;
     this._combatHideTimer = null;
+    this._currentTurnData = null;  // 현재 턴 데이터 저장
+    this._isSpectatorMode = false;  // 관전 모드 (합 관전)
+    this._isTurnTrackingMode = false;  // 턴 추적 모드 (관전자 턴 UI)
     this._inject();
   }
 
@@ -50,13 +54,12 @@ window.BattleRollOverlay = class BattleRollOverlay {
           <span class="bwbr-dot idle" id="bwbr-dot"></span>
           <span class="bwbr-status-text" id="bwbr-status-text">대기 중</span>
         </div>
-        <button id="bwbr-btn-help" type="button" title="도움말">?</button>
+        <div id="bwbr-toggle-actions">
+          <button type="button" id="bwbr-btn-pause" title="일시정지" style="display:none">⏸</button>
+          <button type="button" id="bwbr-btn-cancel" title="전투 중지" style="display:none">✖</button>
+        </div>
       </div>
       <div id="bwbr-body">
-        <div id="bwbr-actions" style="display:none">
-          <button type="button" id="bwbr-btn-pause" title="일시정지">⏸</button>
-          <button type="button" id="bwbr-btn-cancel" title="전투 중지">✖</button>
-        </div>
         <div id="bwbr-combat-info"></div>
         <div id="bwbr-guide" class="bwbr-guide-hidden">
           <div class="bwbr-guide-trigger">《합 개시》| ⚔️ 공격자 - 주사위/대성공/대실패 | 🛡️ 방어자 - 주사위/대성공/대실패</div>
@@ -111,18 +114,16 @@ window.BattleRollOverlay = class BattleRollOverlay {
   }
 
   _bindEvents() {
-    // 토글 바 클릭 시 접기 (펼침 상태에서만 동작, 닫힌 상태에서는 무시)
+    // 토글 바 클릭 시 접기/펼치기 (컨텐츠가 있을 때만 동작)
     const toggleBar = this.element.querySelector('#bwbr-toggle');
     toggleBar.addEventListener('click', (e) => {
-      if (e.target.tagName !== 'BUTTON' && !this.isCollapsed) {
-        this.toggleCollapse();
-      }
-    });
-
-    const btnHelp = this.element.querySelector('#bwbr-btn-help');
-    btnHelp.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.toggleGuide();
+      // 버튼 클릭은 무시
+      if (e.target.tagName === 'BUTTON') return;
+      // 보이는 컨텐츠가 없으면 무시 (기본 상태에서 클릭 방지)
+      if (!this._hasVisibleContent()) return;
+      
+      // 컨텐츠가 있으면 토글 허용 (접기/펼치기 둘 다)
+      this.toggleCollapse();
     });
 
     // 입력창 감지: 트리거 문구 입력 시 가이드 표시
@@ -168,6 +169,50 @@ window.BattleRollOverlay = class BattleRollOverlay {
     this._guideManuallyOpened = isHidden;
   }
 
+  /**
+   * 실제로 보이는 컨텐츠가 있는지 체크
+   * - 가이드가 표시 중
+   * - 로그에 내용이 있음
+   * - 전투 정보가 있음
+   * - 수동 입력창이 표시 중
+   * - 액션 버튼이 표시 중
+   */
+  _hasVisibleContent() {
+    if (!this.element) return false;
+
+    // 가이드가 표시 중인지
+    const guide = this.element.querySelector('#bwbr-guide');
+    if (guide && !guide.classList.contains('bwbr-guide-hidden')) {
+      return true;
+    }
+
+    // 로그에 내용이 있는지
+    const log = this.element.querySelector('#bwbr-log');
+    if (log && log.children.length > 0) {
+      return true;
+    }
+
+    // 전투 정보가 있는지
+    const combatInfo = this.element.querySelector('#bwbr-combat-info');
+    if (combatInfo && combatInfo.innerHTML.trim() !== '') {
+      return true;
+    }
+
+    // 수동 입력창이 표시 중인지
+    const manualInput = this.element.querySelector('#bwbr-manual-input');
+    if (manualInput && manualInput.style.display !== 'none') {
+      return true;
+    }
+
+    // 일시정지/취소 버튼이 표시 중인지 (전투 중)
+    const btnPause = this.element.querySelector('#bwbr-btn-pause');
+    if (btnPause && btnPause.style.display !== 'none') {
+      return true;
+    }
+
+    return false;
+  }
+
   showGuide() {
     const guide = this.element?.querySelector('#bwbr-guide');
     if (guide) guide.classList.remove('bwbr-guide-hidden');
@@ -211,11 +256,21 @@ window.BattleRollOverlay = class BattleRollOverlay {
   }
 
   show() {
-    if (this.isCollapsed) this.toggleCollapse();
+    // 토글이 아닌 명시적 펼치기
+    if (this.isCollapsed) {
+      this.isCollapsed = false;
+      const body = this.element?.querySelector('#bwbr-body');
+      if (body) body.classList.remove('bwbr-collapsed');
+    }
   }
 
   hide() {
-    if (!this.isCollapsed) this.toggleCollapse();
+    // 토글이 아닌 명시적 접기
+    if (!this.isCollapsed) {
+      this.isCollapsed = true;
+      const body = this.element?.querySelector('#bwbr-body');
+      if (body) body.classList.add('bwbr-collapsed');
+    }
   }
 
   toggleMinimize() {
@@ -245,10 +300,213 @@ window.BattleRollOverlay = class BattleRollOverlay {
     if (dot) dot.className = 'bwbr-dot ' + status;
     if (text) text.textContent = statusText || status;
 
-    const actions = this.element?.querySelector('#bwbr-actions');
-    if (actions) {
-      actions.style.display = (status === 'active' || status === 'waiting' || status === 'paused') ? '' : 'none';
+    // 일시정지/취소 버튼 표시 (전투 중일 때만)
+    const btnPause = this.element?.querySelector('#bwbr-btn-pause');
+    const btnCancel = this.element?.querySelector('#bwbr-btn-cancel');
+    const showButtons = (status === 'active' || status === 'waiting' || status === 'paused');
+    if (btnPause) btnPause.style.display = showButtons ? '' : 'none';
+    if (btnCancel) btnCancel.style.display = showButtons ? '' : 'none';
+  }
+
+  /**
+   * 전투 보조 - 현재 턴 정보 표시
+   * @param {object|null} turnData - { name, iconUrl, will, willMax, mainActions, subActions } 또는 null (숨김)
+   */
+  updateTurnInfo(turnData) {
+    this.ensureInjected();
+    const info = this.element?.querySelector('#bwbr-combat-info');
+    if (!info) return;
+
+    if (!turnData) {
+      // 전투 종료 - 패널 숨김
+      info.classList.remove('bwbr-combat-visible');
+      const guide = this.element?.querySelector('#bwbr-guide');
+      if (guide) guide.classList.remove('bwbr-guide-hidden');
+      clearTimeout(this._combatHideTimer);
+      this._combatHideTimer = setTimeout(() => {
+        if (!info.classList.contains('bwbr-combat-visible')) {
+          info.innerHTML = '';
+        }
+      }, 700);
+      return;
     }
+
+    clearTimeout(this._combatHideTimer);
+
+    // 이미지 (없으면 기본 아이콘)
+    const iconHtml = turnData.iconUrl 
+      ? `<img class="bwbr-portrait-img" src="${this._esc(turnData.iconUrl)}" alt="" />`
+      : `<div class="bwbr-portrait-img bwbr-portrait-placeholder">👤</div>`;
+
+    // 의지 바
+    let willBarHtml = '';
+    if (turnData.will !== null && turnData.will !== undefined) {
+      const current = parseInt(turnData.will) || 0;
+      const max = turnData.willMax || current;
+      const percent = max > 0 ? Math.min(100, Math.max(0, (current / max) * 100)) : 100;
+      
+      const armorHtml = turnData.armor !== null && turnData.armor !== undefined
+        ? `<div class="bwbr-armor-display">🛡️ ${turnData.armor}</div>`
+        : '';
+      
+      willBarHtml = `
+        <div class="bwbr-bar-container">
+          ${armorHtml}
+          <div class="bwbr-will-bar">
+            <div class="bwbr-will-bar-fill" style="width: ${percent}%"></div>
+            <span class="bwbr-will-bar-text">💚 ${current} / ${max}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    // 행동 평행사변형 생성
+    const mainMax = turnData.mainActionsMax || turnData.mainActions;
+    const subMax = turnData.subActionsMax || turnData.subActions;
+    const mainCurrent = turnData.mainActions;
+    const subCurrent = turnData.subActions;
+
+    let mainCells = '';
+    for (let i = 0; i < mainMax; i++) {
+      const spent = i >= mainCurrent ? ' bwbr-action-spent' : '';
+      mainCells += `<div class="bwbr-action-cell bwbr-action-main${spent}" data-action-type="main" data-action-index="${i}"></div>`;
+    }
+    // 🔺주 행동 + 버튼
+    mainCells += `<div class="bwbr-action-add-btn" data-action-type="main" title="🔺주 행동 슬롯 추가">+</div>`;
+
+    let subCells = '';
+    for (let i = 0; i < subMax; i++) {
+      const spent = i >= subCurrent ? ' bwbr-action-spent' : '';
+      subCells += `<div class="bwbr-action-cell bwbr-action-sub${spent}" data-action-type="sub" data-action-index="${i}"></div>`;
+    }
+    // 🔹보조 행동 + 버튼
+    subCells += `<div class="bwbr-action-add-btn" data-action-type="sub" title="🔹보조 행동 슬롯 추가">+</div>`;
+
+    // 이명 표시
+    const aliasHtml = turnData.alias 
+      ? `<span class="bwbr-turn-alias">${this._esc(turnData.alias)}</span>` 
+      : '';
+
+    info.innerHTML = `
+      <div class="bwbr-turn-card">
+        <div class="bwbr-portrait">
+          ${iconHtml}
+        </div>
+        <div class="bwbr-turn-content">
+          <div class="bwbr-turn-header">
+            <span class="bwbr-turn-name">${this._esc(turnData.name)}</span>
+            ${aliasHtml}
+          </div>
+          ${willBarHtml}
+          <div class="bwbr-turn-actions">
+            <div class="bwbr-action-row">${mainCells}</div>
+            <div class="bwbr-action-row">${subCells}</div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // 현재 턴 데이터 저장
+    this._currentTurnData = turnData;
+
+    // 행동 슬롯 클릭 이벤트 바인딩
+    this._bindActionClickEvents(info);
+
+    // 표시
+    if (!info.classList.contains('bwbr-combat-visible')) {
+      const guide = this.element?.querySelector('#bwbr-guide');
+      if (guide) guide.classList.add('bwbr-guide-hidden');
+      requestAnimationFrame(() => {
+        info.classList.add('bwbr-combat-visible');
+      });
+    }
+  }
+
+  /**
+   * 행동 슬롯 클릭 이벤트 바인딩
+   */
+  _bindActionClickEvents(container) {
+    // 관전 모드 또는 턴 추적 모드이면 클릭 비활성화
+    const isReadOnly = this._isSpectatorMode || this._isTurnTrackingMode;
+
+    // 슬롯 클릭 이벤트
+    const cells = container.querySelectorAll('.bwbr-action-cell');
+    cells.forEach(cell => {
+      cell.style.cursor = isReadOnly ? 'not-allowed' : 'pointer';
+      cell.addEventListener('click', (e) => {
+        if (isReadOnly) return;  // 읽기 전용 모드면 무시
+
+        const type = cell.dataset.actionType;  // 'main' or 'sub'
+        const index = parseInt(cell.dataset.actionIndex);
+        const isSpent = cell.classList.contains('bwbr-action-spent');
+        
+        // 콜백 호출
+        if (this.onActionClickCallback) {
+          const action = isSpent ? 'restore' : 'use';
+          this.onActionClickCallback(type, index, action);
+        }
+      });
+    });
+
+    // + 버튼 클릭 이벤트
+    const addBtns = container.querySelectorAll('.bwbr-action-add-btn');
+    addBtns.forEach(btn => {
+      // 관전/추적 모드면 + 버튼 숨김
+      btn.style.display = isReadOnly ? 'none' : '';
+      btn.addEventListener('click', (e) => {
+        if (isReadOnly) return;
+        
+        const type = btn.dataset.actionType;  // 'main' or 'sub'
+        
+        if (this.onActionClickCallback) {
+          this.onActionClickCallback(type, -1, 'add');
+        }
+      });
+    });
+  }
+
+  /**
+   * 행동 클릭 콜백 설정
+   * @param {function} callback - (type: 'main'|'sub', index: number, action: 'use'|'restore'|'add') => void
+   */
+  setActionClickCallback(callback) {
+    this.onActionClickCallback = callback;
+  }
+
+  /**
+   * 컴뱃 패널 → 턴 패널 전환 시 부드러운 접힘/펼침 애니메이션.
+   * 현재 전투 정보를 접은 후, fn()으로 새 콘텐츠를 설정하고 펼침.
+   * @param {function} fn - 새 콘텐츠를 설정하는 콜백 (updateTurnInfo 등)
+   */
+  smoothTransition(fn) {
+    const info = this.element?.querySelector('#bwbr-combat-info');
+    if (!info || !info.classList.contains('bwbr-combat-visible')) {
+      fn();
+      return;
+    }
+    // 가이드가 전환 중 나타나지 않도록 억제
+    const guide = this.element?.querySelector('#bwbr-guide');
+    if (guide) guide.classList.add('bwbr-guide-hidden');
+    // 접기
+    info.classList.remove('bwbr-combat-visible');
+    clearTimeout(this._transitionTimer);
+    this._transitionTimer = setTimeout(() => {
+      fn();  // updateTurnInfo → innerHTML 교체 + bwbr-combat-visible 추가
+      if (guide) guide.classList.add('bwbr-guide-hidden');
+    }, 400);
+  }
+
+  /**
+   * 턴 추적 모드 설정 (관전자 턴 UI용)
+   */
+  setTurnTrackingMode(isTracking) {
+    this._isTurnTrackingMode = isTracking;
+    if (!this.element) return;
+    // 관전자는 일시정지 불필요, 취소 버튼은 관전 종료로 표시
+    const btnPause = this.element.querySelector('#bwbr-btn-pause');
+    if (btnPause) btnPause.style.display = isTracking ? 'none' : '';
+    const btnCancel = this.element.querySelector('#bwbr-btn-cancel');
+    if (btnCancel) btnCancel.title = isTracking ? '관전 종료' : '전투 중지';
   }
 
   updateCombatState(state) {
@@ -1121,6 +1379,7 @@ window.BattleRollOverlay = class BattleRollOverlay {
 
   /** 관전 모드 UI 전환 (일시정지 숨김, 취소→관전 종료) */
   setSpectatorMode(isSpectating) {
+    this._isSpectatorMode = isSpectating;  // 플래그 설정
     if (!this.element) return;
     this.element.classList.toggle('bwbr-spectating', isSpectating);
     const btnPause = this.element.querySelector('#bwbr-btn-pause');

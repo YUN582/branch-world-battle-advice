@@ -20,7 +20,7 @@
       roundResultFumble: '💀 {name} 대실패! 【{value}】 → 자신 주사위 파괴 & 주사위 -1',
       roundResultBothCrit: '⚡ 쌍방 대성공! ⚔️【{atkValue}】 🛡️【{defValue}】 → 각자 주사위 +1',
       roundResultTie: '⚖️ 무승부! ⚔️【{atkValue}】 🛡️【{defValue}】 → 재굴림',
-      victory: '《합 승리》 | {winnerIcon} {winner} @{sound}',
+      victory: '《합 승리》\n{winnerIcon} {winner} @{sound}',
       combatCancel: '《합 중지》'
     },
     timing: {
@@ -63,6 +63,7 @@
       manualMode: false,
       showBattleLog: false,
       autoComplete: true,
+      autoConsumeActions: true,
       autoScroll: true,
       showOverlay: true,
       debugMode: false,
@@ -153,6 +154,9 @@
     // 자동완성
     $('toggle-autoComplete').checked = cfg.general.autoComplete !== false;
 
+    // 행동 자동 소모
+    $('toggle-autoConsumeActions').checked = cfg.general.autoConsumeActions !== false;
+
     // 타이밍
     setTimingField('time-beforeFirstRoll', cfg.timing.beforeFirstRoll);
     setTimingField('time-betweenRolls', cfg.timing.betweenRolls);
@@ -175,13 +179,6 @@
     $('pat-triggerRegex').value = cfg.patterns.triggerRegex;
     $('pat-diceResultRegex').value = cfg.patterns.diceResultRegex;
     $('pat-cancelRegex').value = cfg.patterns.cancelRegex;
-
-    // 선택자
-    $('sel-chatContainer').value = arrayToString(cfg.selectors.chatContainer);
-    $('sel-chatMessage').value = arrayToString(cfg.selectors.chatMessage);
-    $('sel-messageText').value = arrayToString(cfg.selectors.messageText);
-    $('sel-chatInput').value = arrayToString(cfg.selectors.chatInput);
-    $('sel-sendButton').value = arrayToString(cfg.selectors.sendButton);
 
     // 기타
     $('gen-autoScroll').checked = cfg.general.autoScroll;
@@ -209,6 +206,9 @@
     // 자동완성
     cfg.general.autoComplete = $('toggle-autoComplete').checked;
 
+    // 행동 자동 소모
+    cfg.general.autoConsumeActions = $('toggle-autoConsumeActions').checked;
+
     // 타이밍
     cfg.timing.beforeFirstRoll = getTimingValue('time-beforeFirstRoll');
     cfg.timing.betweenRolls = getTimingValue('time-betweenRolls');
@@ -228,13 +228,6 @@
     cfg.patterns.triggerRegex = $('pat-triggerRegex').value;
     cfg.patterns.diceResultRegex = $('pat-diceResultRegex').value;
     cfg.patterns.cancelRegex = $('pat-cancelRegex').value;
-
-    // 선택자
-    cfg.selectors.chatContainer = stringToArray($('sel-chatContainer').value);
-    cfg.selectors.chatMessage = stringToArray($('sel-chatMessage').value);
-    cfg.selectors.messageText = stringToArray($('sel-messageText').value);
-    cfg.selectors.chatInput = stringToArray($('sel-chatInput').value);
-    cfg.selectors.sendButton = stringToArray($('sel-sendButton').value);
 
     // 기타
     cfg.general.autoScroll = $('gen-autoScroll').checked;
@@ -295,6 +288,11 @@
     // 자동완성 토글 (즉시 적용)
     $('toggle-autoComplete').addEventListener('change', (e) => {
       sendToContent({ type: 'BWBR_SET_AUTO_COMPLETE', autoComplete: e.target.checked });
+    });
+
+    // 행동 자동 소모 토글 (즉시 적용)
+    $('toggle-autoConsumeActions').addEventListener('change', (e) => {
+      sendToContent({ type: 'BWBR_SET_AUTO_CONSUME_ACTIONS', autoConsumeActions: e.target.checked });
     });
 
     // 코코포리아 컷인 효과음 태그 추가
@@ -389,33 +387,6 @@
         showToast('파일 파싱 오류: ' + err.message, 'error');
       }
       e.target.value = '';
-    });
-
-    // DOM 재탐색
-    $('btn-refresh-dom').addEventListener('click', () => {
-      sendToContent({ type: 'BWBR_REFRESH_DOM' }, (response) => {
-        const statusEl = $('dom-status');
-        if (response && response.success) {
-          statusEl.className = 'dom-status success';
-          statusEl.textContent = `✓ 연결 성공! 컨테이너: ${response.container ? '발견' : '미발견'}, 입력필드: ${response.input ? '발견' : '미발견'}`;
-        } else {
-          statusEl.className = 'dom-status error';
-          statusEl.textContent = `✕ 연결 실패. 코코포리아 페이지가 열려 있는지 확인하세요.`;
-        }
-      });
-    });
-
-    // 테스트 메시지 전송
-    $('btn-test-send').addEventListener('click', () => {
-      const text = $('test-message').value;
-      if (!text) return;
-      sendToContent({ type: 'BWBR_TEST_SEND', text: text }, (response) => {
-        if (response && response.success) {
-          showToast('메시지 전송 완료!', 'success');
-        } else {
-          showToast('메시지 전송 실패', 'error');
-        }
-      });
     });
   }
 

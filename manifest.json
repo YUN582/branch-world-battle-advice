@@ -28,6 +28,7 @@
       "js": [
         "content/config-defaults.js",
         "content/melee-engine.js",
+        "content/combat-engine.js",
         "content/chat-interface.js",
         "content/overlay.js",
         "content/auto-complete.js",
@@ -41,7 +42,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["sounds/*", "content/site-volume-page.js"],
+      "resources": ["sounds/*", "content/site-volume-page.js", "content/redux-injector.js"],
       "matches": ["https://ccfolia.com/*"]
     }
   ],

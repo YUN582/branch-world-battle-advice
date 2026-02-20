@@ -19,6 +19,7 @@
 5. [Redux Store 획득 코드](#5-redux-store-획득-방법)
 6. [캐릭터 셀렉터 함수](#6-캐릭터-셀렉터-함수-모듈-88464)
 7. [주의사항 & 트러블슈팅](#주의사항--트러블슈팅)
+8. [업데이트 대응 가이드](#8-업데이트-대응-가이드)
 
 ---
 
@@ -73,7 +74,7 @@ store.getState() = {
     roomDecks:        { ids: [], entities: {} },
     roomItems:        { ids: [], entities: {} },
     roomMembers:      { ids: [], entities: {} },
-    roomMessages:     { ids: [], entities: {} },
+    roomMessages:     { ids: [...], entities: {...} },  // ★ 채팅 메시지
     roomNotes:        { ids: [], entities: {} },
     roomSavedatas:    { ids: [], entities: {} },
     roomScenes:       { ids: [], entities: {} },
@@ -90,7 +91,122 @@ store.getState() = {
 
 ---
 
-## 2. 캐릭터 데이터 구조 (roomCharacters)
+## 2. 채팅 메시지 데이터 구조 (roomMessages)
+
+### 접근 방법
+
+```js
+const state = store.getState();
+const rm = state.entities.roomMessages;
+
+// 모든 메시지 ID
+rm.ids  // ['wS3hS6uX8p8sDKmHNzw9', '2Ms7YLSavtjcuSR9Q0M2', ...]
+
+// 특정 메시지
+rm.entities['메시지ID']
+
+// 새 메시지 감지 (store.subscribe)
+let prevIds = new Set(rm.ids);
+store.subscribe(() => {
+  const currentIds = store.getState().entities.roomMessages.ids;
+  for (const id of currentIds) {
+    if (!prevIds.has(id)) { /* 새 메시지 */ }
+  }
+});
+```
+
+### 메시지 엔티티 객체 키 (16개)
+
+```js
+{
+  _id: "wuBPrG6K9cb6xXux0Z3j",      // Firestore 문서 ID
+  type: "text",                       // 메시지 타입 ("text" 등)
+  text: "《🔺주 행동 소비》| ...",    // ★ 메시지 본문 텍스트
+  name: "아델하이트 엘 레온하츠",       // 발신 캐릭터 이름
+  channel: "RleEHkuPK",               // ★ 채널 ID (탭 구분용)
+  channelName: "주사위 굴림 연습",      // 채널 표시 이름
+  from: "Az1rUAx4twV0X4HydDH...",     // 발신 사용자 UID
+  to: null,                            // 수신자 (null = 전체, 귓속말 시 UID)
+  toName: "",                          // 수신자 이름
+  color: "#e0e0e0",                    // 메시지 색상
+  iconUrl: "https://storage...",       // 캐릭터 아이콘 URL
+  imageUrl: null,                      // 첨부 이미지 URL (없으면 null)
+  extend: { roll: { ... } },            // ★ 확장 데이터 (주사위 결과 — 아래 참조)
+  createdAt: { seconds: ..., ... },    // 생성 시각 (Firestore Timestamp)
+  updatedAt: { seconds: ..., ... },    // 수정 시각
+  edited: false                        // 편집 여부
+}
+```
+
+### extend 필드 (주사위 결과)
+
+주사위 명령(`1D20`, `2D6` 등)의 결과는 `text`가 아닌 `extend` 객체에 저장됩니다.
+DOM에서는 text + extend가 함께 렌더링되지만, Redux에서는 별도 추출이 필요합니다.
+
+```js
+// 주사위 메시지 예시
+{
+  text: "1D20 ⚔️ 스칼라",     // 명령어만 (결과 없음)
+  extend: {
+    roll: {
+      critical: false,         // 대성공 여부
+      dices: [{...}],           // 개별 주사위 결과 배열
+      failure: false,           // 실패 여부
+      fumble: false,            // 대실패 여부
+      result: "(1D20) > 15",   // ★ 결과 문자열 (이것을 추출)
+      secret: false,            // 비밀 굴림 여부
+      skin: {d4: 'basic', d6: 'basic', d8: 'basic', d10: 'basic', d12: 'basic', ...},
+      success: false            // 성공 여부
+    }
+  }
+}
+
+// 일반 텍스트 메시지
+{
+  text: "《 전투개시 》",
+  extend: {}                   // 비어있음
+}
+```
+
+**추출 방법**: `extend.roll.result` 문자열을 직접 읽어 `text + "\n" + result` 형태로 합쳐서 content.js에 전달합니다.
+
+```js
+// redux-injector.js의 extractDiceFromExtend()
+if (entity.extend?.roll?.result) {
+  text = text + '\n' + entity.extend.roll.result;  // "1D20 ⚔️ 스칼라\n(1D20) > 15"
+}
+// content.js의 parseDiceResult()가 "→|＞|>=|>" + 숫자 패턴으로 결과값을 추출
+```
+```
+
+### 핵심 필드 용도
+
+| 필드 | 용도 | 비고 |
+|------|------|------|
+| `text` | 메시지 본문 파싱 | 전투 트리거, 턴 추적, 주사위 결과 등 |
+| `name` | 캐릭터 식별 | 발신자 표시, 관전 UI |
+| `channel` | 채널 필터링 | 같은 채널의 메시지만 처리할 때 사용 |
+| `from` | 사용자 식별 | 자신이 보낸 메시지 판별 |
+| `to` | 귓속말 판별 | null이면 전체 메시지 |
+| `extend` | 주사위 데이터 | `extend.roll` 안에 `→ 숫자` 패턴으로 결과 저장 |
+
+### Redux 기반 메시지 관찰 구현 (redux-injector.js)
+
+확장 프로그램은 `store.subscribe()`를 사용하여 `roomMessages.ids` 배열의 변화를 감지합니다.
+이 방식은 DOM 기반 관찰과 달리 **탭 전환, DOM 갱신에 영향을 받지 않아 100% 메시지 감지율**을 보장합니다.
+
+```
+Redux Store (roomMessages 변경)
+  → store.subscribe()          [redux-injector.js, MAIN world]
+  → CustomEvent 'bwbr-new-chat-message'
+  → observeReduxMessages()     [chat-interface.js, isolated world]
+  → _isOwnMessage() 에코 필터
+  → onNewMessage(text, null)   [content.js]
+```
+
+---
+
+## 3. 캐릭터 데이터 구조 (roomCharacters)
 
 ### 접근 방법
 
@@ -193,7 +309,7 @@ const strValue = parseInt(str.value, 10);  // 14 (number)
 
 ---
 
-## 3. Firestore 직접 접근 (읽기 + 쓰기)
+## 4. Firestore 직접 접근 (읽기 + 쓰기)
 
 ### webpack 모듈 ID (2026-02-16 기준, 변경될 수 있음!)
 
@@ -279,7 +395,7 @@ rooms/{roomId}/characters/{characterId}
 
 ---
 
-## 4. webpack require 획득 방법
+## 5. webpack require 획득 방법
 
 cocofolio 내부의 webpack 모듈에 접근하려면, webpack의 chunk loading 메커니즘을 이용해
 `require` 함수를 탈취합니다.
@@ -300,7 +416,7 @@ chunks.push([[999999], {}, (require) => {
 
 ---
 
-## 5. Redux Store 획득 방법
+## 6. Redux Store 획득 방법
 
 React Fiber 트리를 순회하여 Redux `<Provider>`의 context에서 store를 추출합니다.
 
@@ -337,7 +453,7 @@ if (store) {
 
 ---
 
-## 6. 캐릭터 셀렉터 함수 (모듈 88464)
+## 7. 캐릭터 셀렉터 함수 (모듈 88464)
 
 코코포리아가 내부적으로 사용하는 셀렉터 함수들입니다.
 Redux store의 state를 인자로 전달하면 캐릭터 데이터를 편리하게 조회할 수 있습니다.
@@ -419,3 +535,171 @@ document.head.appendChild(script);
 - **Firebase 프로젝트**: `ccfolia-160aa` (Firestore URL에서 확인됨)
 - `store.subscribe(callback)`으로 상태 변경을 실시간 감시 가능
 - Firestore에 쓰면 Redux store는 **자동 동기화**됨 (코코포리아 내부 리스너)
+
+---
+
+## 8. 업데이트 대응 가이드
+
+코코포리아가 업데이트되면 webpack 모듈 ID, minified 프로퍼티명 등이 변경될 수 있습니다.
+확장 프로그램이 작동하지 않을 때 아래 순서대로 진단하세요.
+
+### 8.1 빠른 진단 명령어 (내장)
+
+확장 프로그램에 내장된 진단 이벤트를 콘솔에서 실행하세요:
+
+```js
+// 1) Firestore SDK 자동 탐색 + 결과 출력
+window.dispatchEvent(new CustomEvent('bwbr-discover-firestore'));
+
+// 2) 최근 채팅 메시지 구조 덤프
+window.dispatchEvent(new CustomEvent('bwbr-dump-messages'));
+```
+
+`bwbr-discover-firestore`는 현재 코코포리아의 webpack 모듈을 자동 스캔하여
+Firestore SDK 함수(`collection`, `doc`, `setDoc`)와 DB 인스턴스의 위치를 출력합니다.
+
+### 8.2 수집해야 할 데이터 목록
+
+| # | 항목 | 현재 값 (2026-02-16) | 변경 위험도 | 영향 |
+|---|------|---------------------|------------|------|
+| 1 | Firestore SDK 모듈 ID | `49631` | ★★★ 높음 | 메시지 직접 전송, 캐릭터 수정 |
+| 2 | DB 인스턴스 모듈 ID | `5156` | ★★★ 높음 | 모든 Firestore 접근 |
+| 3 | `setDoc` 프로퍼티 키 | `pl` | ★★★ 높음 | 데이터 쓰기 |
+| 4 | `doc` 프로퍼티 키 | `JU` | ★★★ 높음 | 문서 참조 생성 |
+| 5 | `collection` 프로퍼티 키 | `hJ` | ★★★ 높음 | 컬렉션 참조 생성 |
+| 6 | DB 인스턴스 프로퍼티 키 | `db` | ★★☆ 중간 | Firestore 인스턴스 |
+| 7 | 셀렉터 모듈 ID | `88464` | ★☆☆ 낮음 | 캐릭터 셀렉터 (현재 미사용) |
+| 8 | roomMessages 엔티티 키 | 16개 (섹션 2 참조) | ★☆☆ 낮음 | 메시지 파싱 |
+| 9 | Redux Store 경로 | `entities.roomMessages` | ★☆☆ 낮음 | 메시지 관찰 |
+
+### 8.3 수동 재수집 명령어
+
+코코포리아 방에 접속한 상태에서 **브라우저 콘솔(F12)**에 다음을 입력하세요.
+
+#### Step 1: webpack require 획득
+
+```js
+const chunks = window.webpackChunkccfolia;
+let wpReq;
+chunks.push([[Date.now()], {}, r => { wpReq = r; }]);
+console.log('✅ webpack require 획득:', typeof wpReq);
+```
+
+#### Step 2: Firestore SDK 모듈 찾기
+
+```js
+// collection, doc, setDoc 등이 포함된 모듈 탐색
+// 3개 이상의 Firestore 함수가 있는 모듈을 찾습니다.
+const candidates = [];
+for (const id of Object.keys(wpReq.m)) {
+  try {
+    const mod = wpReq(id);
+    if (!mod || typeof mod !== 'object') continue;
+    let fsCount = 0;
+    for (const [k, v] of Object.entries(mod)) {
+      if (typeof v !== 'function') continue;
+      const s = v.toString().substring(0, 1000);
+      if (s.includes('merge') || s.includes('DocumentReference') ||
+          s.includes('CollectionReference') || s.includes('firestore')) {
+        fsCount++;
+      }
+    }
+    if (fsCount >= 3) candidates.push({ id, keys: Object.keys(mod).length, fsCount });
+  } catch (e) {}
+}
+console.table(candidates);
+// → 가장 fsCount가 높은 모듈 ID = Firestore SDK 모듈
+```
+
+#### Step 3: Firestore 함수 프로퍼티 키 확인
+
+```js
+// Step 2에서 찾은 모듈 ID를 입력 (예: 49631)
+const FS_MOD_ID = 49631; // ← 여기에 Step 2 결과 입력
+const fsMod = wpReq(FS_MOD_ID);
+
+// db 인스턴스를 가진 모듈 찾기
+let dbModId, dbKey;
+for (const id of Object.keys(wpReq.m)) {
+  try {
+    const mod = wpReq(id);
+    if (!mod || typeof mod !== 'object') continue;
+    for (const [k, v] of Object.entries(mod)) {
+      if (v && typeof v === 'object' && v.type === 'firestore' && typeof v.toJSON === 'function') {
+        dbModId = id; dbKey = k;
+        break;
+      }
+    }
+    if (dbModId) break;
+  } catch (e) {}
+}
+console.log('DB 모듈:', dbModId, '키:', dbKey);
+const db = wpReq(dbModId)[dbKey];
+
+// collection, doc, setDoc 키 찾기
+for (const [key, fn] of Object.entries(fsMod)) {
+  if (typeof fn !== 'function') continue;
+  try {
+    // collection 테스트 (안전: 네트워크 요청 없음)
+    const ref = fn(db, '__test__');
+    if (ref && ref.type === 'collection' && ref.path === '__test__') {
+      console.log(`✅ collection = fsMod.${key}`);
+      continue;
+    }
+  } catch (e) {}
+  try {
+    // doc 테스트 (안전: 네트워크 요청 없음)
+    // collection을 먼저 찾아야 함
+    const fn2 = fn;
+    const s = fn2.toString().substring(0, 500);
+    if (s.includes('merge')) {
+      console.log(`✅ setDoc 후보 = fsMod.${key} (toString에 'merge' 포함)`);
+    }
+  } catch (e) {}
+}
+
+// 수동 확인: 각 함수를 직접 테스트
+// collection 확인:
+// fsMod.hJ(db, 'test') → { type: 'collection', path: 'test' } 이면 정답
+// doc 확인:
+// fsMod.JU(fsMod.hJ(db, 'test'), 'id') → { type: 'document', path: 'test/id' } 이면 정답
+```
+
+#### Step 4: roomMessages 구조 확인
+
+```js
+// Redux store에서 직접 확인 (redux-injector가 로드된 상태)
+window.dispatchEvent(new CustomEvent('bwbr-dump-messages'));
+// → 콘솔에서 메시지 엔티티 키 목록과 전체 구조 확인
+```
+
+### 8.4 값 업데이트 방법
+
+발견한 새 값을 `redux-injector.js`의 `_FS_CONFIG` 상수에 반영하세요:
+
+```js
+// redux-injector.js 상단
+const _FS_CONFIG = {
+  firestoreModId: 49631,  // ← Step 2에서 찾은 모듈 ID
+  dbModId: 5156,          // ← Step 3에서 찾은 DB 모듈 ID
+  fsKeys: {               // ← Step 3에서 찾은 프로퍼티 키
+    setDoc: 'pl',
+    doc: 'JU',
+    collection: 'hJ'
+  },
+  dbKey: 'db'             // ← Step 3에서 찾은 DB 프로퍼티 키
+};
+```
+
+### 8.5 자동 탐색 (코드 내장)
+
+`redux-injector.js`에는 자동 탐색 로직이 내장되어 있습니다:
+
+1. **알려진 ID/키**로 먼저 시도 (빠름)
+2. 실패 시 **collection/doc 자동 탐색** (안전한 테스트로 발견)
+3. 실패 시 **setDoc 휴리스틱 탐색** (`toString()`에 'merge' 포함 검사)
+4. 모두 실패 시 **에러 로그 + `bwbr-discover-firestore` 실행 안내**
+
+자동 탐색은 확장 프로그램이 처음 메시지를 Firestore로 전송할 때 실행됩니다.
+프로퍼티 키가 바뀌어도 대부분 자동으로 복구됩니다.
+모듈 ID가 바뀐 경우에만 수동 개입이 필요합니다.
