@@ -3,7 +3,7 @@
 // 확장 프로그램 설치, 설정 초기화, 메시지 라우팅, 업데이트 확인
 // ============================================================
 
-const UPDATE_CHECK_URL = 'https://raw.githubusercontent.com/YUN582/branch-world-battle-advice/master/manifest.json';
+const UPDATE_CHECK_URL = 'https://api.github.com/repos/YUN582/branch-world-battle-advice/contents/manifest.json';
 const GITHUB_REPO_URL = 'https://github.com/YUN582/branch-world-battle-advice';
 const UPDATE_CHECK_INTERVAL = 4 * 60 * 60 * 1000; // 4시간
 
@@ -49,11 +49,17 @@ async function checkForUpdate() {
     const localVersion = chrome.runtime.getManifest().version;
     
     const response = await fetch(UPDATE_CHECK_URL + '?t=' + Date.now(), {
-      cache: 'no-store'
+      cache: 'no-store',
+      headers: {
+        'Accept': 'application/vnd.github.v3+json'
+      }
     });
     if (!response.ok) throw new Error('HTTP ' + response.status);
     
-    const remoteManifest = await response.json();
+    const data = await response.json();
+    // GitHub API는 파일 내용을 base64로 인코딩해서 반환함
+    const content = atob(data.content);
+    const remoteManifest = JSON.parse(content);
     const remoteVersion = remoteManifest.version;
     
     if (isNewerVersion(remoteVersion, localVersion)) {
