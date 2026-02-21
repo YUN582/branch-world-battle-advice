@@ -77,13 +77,16 @@ async function checkForUpdate() {
       chrome.action.setBadgeBackgroundColor({ color: '#ffab40' });
       
       console.log('[BWBR] 업데이트 가능: v' + localVersion + ' → v' + remoteVersion);
+      return updateInfo;
     } else {
       // 최신 버전이면 알림 제거
       await chrome.storage.local.remove('bwbr_update');
       chrome.action.setBadgeText({ text: '' });
+      return { available: false, isLatest: true };
     }
   } catch (err) {
     console.warn('[BWBR] 업데이트 확인 실패:', err.message);
+    return { available: false, error: err.message };
   }
 }
 
@@ -108,10 +111,12 @@ function isNewerVersion(remote, local) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // 업데이트 확인 요청 (popup → background)
   if (message.type === 'BWBR_CHECK_UPDATE') {
-    checkForUpdate().then(() => {
-      chrome.storage.local.get('bwbr_update', (result) => {
-        sendResponse(result.bwbr_update || { available: false });
-      });
+    checkForUpdate().then((result) => {
+      if (result && result.available) {
+        sendResponse(result);
+      } else {
+        sendResponse({ available: false, isLatest: true });
+      }
     });
     return true;
   }
