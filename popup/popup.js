@@ -591,36 +591,10 @@
       if (response && response.available) {
         showUpdateBanner(response);
       } else if (response && response.isLatest) {
-        showLatestVersionBanner();
+        const badge = $('header-latest-badge');
+        if (badge) badge.style.display = 'inline';
       }
     });
-  }
-
-  function showLatestVersionBanner() {
-    const banner = $('update-banner');
-    const text = $('update-banner-text');
-    if (!banner || !text) return;
-
-    text.textContent = '최신 버전입니다.';
-    banner.style.display = '';
-    banner.style.backgroundColor = '#4caf50'; // 초록색 배경
-    
-    // 업데이트 버튼 숨기기
-    const btnUpdate = $('btn-update');
-    if (btnUpdate) btnUpdate.style.display = 'none';
-
-    // 닫기 버튼
-    const btnDismiss = $('btn-update-dismiss');
-    if (btnDismiss) {
-      btnDismiss.onclick = () => {
-        banner.style.display = 'none';
-      };
-    }
-
-    // 3초 후 자동 숨김
-    setTimeout(() => {
-      banner.style.display = 'none';
-    }, 3000);
   }
 
   function showUpdateBanner(updateInfo) {
