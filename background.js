@@ -1,26 +1,122 @@
 // ============================================================
 // Branch World Battle Roll - Background Service Worker
-// 확장 프로그램 설치, 설정 초기화, 메시지 라우팅
+// 확장 프로그램 설치, 설정 초기화, 메시지 라우팅, 업데이트 확인
 // ============================================================
+
+const UPDATE_CHECK_URL = 'https://raw.githubusercontent.com/YUN582/branch-world-battle-advice/master/manifest.json';
+const GITHUB_REPO_URL = 'https://github.com/YUN582/branch-world-battle-advice';
+const UPDATE_CHECK_INTERVAL = 4 * 60 * 60 * 1000; // 4시간
 
 // ── 설치 / 업데이트 ───────────────────────────────────────
 
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
     console.log('[BWBR] 확장 프로그램 설치 완료');
-
-    // 기본 설정 저장
-    chrome.storage.sync.set({
-      bwbr_config: null  // null = 기본값 사용
-    });
+    chrome.storage.sync.set({ bwbr_config: null });
+    // 설치 직후 업데이트 확인
+    checkForUpdate();
   } else if (details.reason === 'update') {
     console.log('[BWBR] 확장 프로그램 업데이트: ' + details.previousVersion + ' → ' + chrome.runtime.getManifest().version);
+    // 업데이트 후 이전 알림 초기화
+    chrome.storage.local.remove('bwbr_update');
+    chrome.action.setBadgeText({ text: '' });
   }
 });
+
+// ── 브라우저 시작 시 업데이트 확인 ─────────────────────────
+
+chrome.runtime.onStartup.addListener(() => {
+  checkForUpdate();
+});
+
+// ── 주기적 업데이트 확인 (알람) ────────────────────────────
+
+chrome.alarms.create('bwbr-update-check', {
+  delayInMinutes: 5,          // 시작 5분 후 첫 체크
+  periodInMinutes: 4 * 60     // 4시간마다
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'bwbr-update-check') {
+    checkForUpdate();
+  }
+});
+
+// ── 업데이트 확인 로직 ─────────────────────────────────────
+
+async function checkForUpdate() {
+  try {
+    const localVersion = chrome.runtime.getManifest().version;
+    
+    const response = await fetch(UPDATE_CHECK_URL + '?t=' + Date.now(), {
+      cache: 'no-store'
+    });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    
+    const remoteManifest = await response.json();
+    const remoteVersion = remoteManifest.version;
+    
+    if (isNewerVersion(remoteVersion, localVersion)) {
+      const updateInfo = {
+        available: true,
+        remoteVersion: remoteVersion,
+        localVersion: localVersion,
+        checkedAt: Date.now(),
+        repoUrl: GITHUB_REPO_URL
+      };
+      await chrome.storage.local.set({ bwbr_update: updateInfo });
+      
+      // 배지 표시
+      chrome.action.setBadgeText({ text: '!' });
+      chrome.action.setBadgeBackgroundColor({ color: '#ffab40' });
+      
+      console.log('[BWBR] 업데이트 가능: v' + localVersion + ' → v' + remoteVersion);
+    } else {
+      // 최신 버전이면 알림 제거
+      await chrome.storage.local.remove('bwbr_update');
+      chrome.action.setBadgeText({ text: '' });
+    }
+  } catch (err) {
+    console.warn('[BWBR] 업데이트 확인 실패:', err.message);
+  }
+}
+
+/**
+ * 버전 비교: remoteVersion > localVersion 이면 true
+ * 예: "0.9.1" > "0.9.0" → true
+ */
+function isNewerVersion(remote, local) {
+  const r = remote.split('.').map(Number);
+  const l = local.split('.').map(Number);
+  for (let i = 0; i < Math.max(r.length, l.length); i++) {
+    const rv = r[i] || 0;
+    const lv = l[i] || 0;
+    if (rv > lv) return true;
+    if (rv < lv) return false;
+  }
+  return false;
+}
 
 // ── 메시지 라우팅 (popup ↔ content) ───────────────────────
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // 업데이트 확인 요청 (popup → background)
+  if (message.type === 'BWBR_CHECK_UPDATE') {
+    checkForUpdate().then(() => {
+      chrome.storage.local.get('bwbr_update', (result) => {
+        sendResponse(result.bwbr_update || { available: false });
+      });
+    });
+    return true;
+  }
+
+  // 업데이트 알림 해제
+  if (message.type === 'BWBR_DISMISS_UPDATE') {
+    chrome.action.setBadgeText({ text: '' });
+    sendResponse({ ok: true });
+    return;
+  }
+
   // popup → content 메시지 전달
   if (message.target === 'content') {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {

@@ -8,7 +8,7 @@
 ## 프로젝트 개요
 
 - **이름**: 가지세계 도우미 (Branch World Battle Roll, BWBR)
-- **버전**: 0.6 (manifest.json 기준)
+- **버전**: manifest.json 기준 (커밋 메시지 `bwad-X.Y.Z` 형식으로 자동 갱신)
 - **유형**: Chrome Extension (Manifest V3)
 - **목적**: 코코포리아(ccfolia.com) GM 보조 확장 프로그램 — 근접전 합 처리 자동화
 - **대상 사이트**: `https://ccfolia.com/*`
@@ -100,6 +100,7 @@ IDLE → COMBAT_STARTED → ROUND_HEADER_SENT → WAITING_ATTACKER_RESULT → WA
 
 ## 참고사항
 
-- 현재 버전은 `0.6` (manifest.json, popup.html 모두 동일)
+- 버전은 manifest.json의 `version` 필드가 유일한 출처 (popup.html은 JS로 자동 표시)
+- git commit 메시지에 `bwad-X.Y.Z` 형식으로 쓰면 post-commit hook이 manifest.json을 자동 업데이트
 - content script 로드 순서: config-defaults → melee-engine → chat-interface → overlay → content
 - popup.js에 DEFAULTS가 별도로 정의되어 있음 (content script 접근 불가하므로)

@@ -78,10 +78,16 @@
   // ── 초기화 ───────────────────────────────────────────────
 
   document.addEventListener('DOMContentLoaded', async () => {
+    // 버전 표시 (manifest.json에서 자동으로 읽어옴)
+    const manifest = chrome.runtime.getManifest();
+    const versionEl = document.getElementById('header-version');
+    if (versionEl) versionEl.textContent = 'v' + manifest.version;
+
     currentConfig = await loadConfig();
     populateUI(currentConfig);
     bindEvents();
     checkConnection();
+    checkForUpdateUI();
   });
 
   // ── 설정 로드/저장 ───────────────────────────────────────
@@ -566,6 +572,80 @@
         showToast('사운드가 삭제되었습니다.', 'success');
       });
       list.appendChild(item);
+    });
+  }
+
+  // ── 업데이트 확인 UI ──────────────────────────────────────
+
+  function checkForUpdateUI() {
+    // 먼저 저장된 업데이트 정보 확인
+    chrome.storage.local.get('bwbr_update', (result) => {
+      if (result.bwbr_update && result.bwbr_update.available) {
+        showUpdateBanner(result.bwbr_update);
+      }
+    });
+
+    // background에 최신 확인 요청
+    chrome.runtime.sendMessage({ type: 'BWBR_CHECK_UPDATE' }, (response) => {
+      if (chrome.runtime.lastError) return;
+      if (response && response.available) {
+        showUpdateBanner(response);
+      }
+    });
+  }
+
+  function showUpdateBanner(updateInfo) {
+    const banner = $('update-banner');
+    const text = $('update-banner-text');
+    if (!banner || !text) return;
+
+    text.textContent = 'v' + updateInfo.remoteVersion + ' 업데이트 가능!';
+    banner.style.display = '';
+
+    // 업데이트 버튼
+    const btnUpdate = $('btn-update');
+    if (btnUpdate) {
+      btnUpdate.onclick = () => showUpdateModal(updateInfo);
+    }
+
+    // 닫기 버튼
+    const btnDismiss = $('btn-update-dismiss');
+    if (btnDismiss) {
+      btnDismiss.onclick = () => {
+        banner.style.display = 'none';
+        chrome.runtime.sendMessage({ type: 'BWBR_DISMISS_UPDATE' });
+      };
+    }
+  }
+
+  function showUpdateModal(updateInfo) {
+    const modal = $('update-modal');
+    const versionInfo = $('update-version-info');
+    if (!modal) return;
+
+    if (versionInfo) {
+      versionInfo.textContent = '현재 v' + updateInfo.localVersion + ' → 최신 v' + updateInfo.remoteVersion;
+    }
+
+    modal.style.display = '';
+
+    // GitHub 페이지 열기
+    const btnGithub = $('btn-open-github');
+    if (btnGithub) {
+      btnGithub.onclick = () => {
+        chrome.tabs.create({ url: updateInfo.repoUrl || 'https://github.com/YUN582/branch-world-battle-advice' });
+      };
+    }
+
+    // 모달 닫기
+    const btnClose = $('btn-close-update-modal');
+    if (btnClose) {
+      btnClose.onclick = () => { modal.style.display = 'none'; };
+    }
+
+    // 오버레이 클릭으로도 닫기
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) modal.style.display = 'none';
     });
   }
 

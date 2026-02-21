@@ -15,7 +15,7 @@
         <span class="header-icon">⚔️</span>
         <div>
           <h1>가지세계 도우미</h1>
-          <span class="header-version">v0.6</span>
+          <span class="header-version" id="header-version"></span>
         </div>
       </div>
       <div class="header-status" id="connection-status">
@@ -23,6 +23,50 @@
         <span id="status-text">연결 확인 중...</span>
       </div>
     </header>
+
+    <!-- ── 업데이트 배너 ───────────────────────── -->
+    <div class="update-banner" id="update-banner" style="display:none;">
+      <div class="update-banner-content">
+        <span class="update-banner-icon">📦</span>
+        <span class="update-banner-text" id="update-banner-text">새 버전이 있습니다!</span>
+      </div>
+      <div class="update-banner-actions">
+        <button class="btn-update" id="btn-update">업데이트</button>
+        <button class="btn-update-dismiss" id="btn-update-dismiss">✕</button>
+      </div>
+    </div>
+
+    <!-- ── 업데이트 모달 ───────────────────────── -->
+    <div class="update-modal-overlay" id="update-modal" style="display:none;">
+      <div class="update-modal">
+        <h3>📦 업데이트 방법</h3>
+        <div class="update-modal-body">
+          <p class="update-version-info" id="update-version-info"></p>
+          <div class="update-method">
+            <strong>방법 1: Git Pull (추천)</strong>
+            <ol>
+              <li>확장 프로그램 폴더를 파일 탐색기에서 엽니다</li>
+              <li>주소창에 <code>cmd</code> 를 입력하고 Enter</li>
+              <li><code>git pull</code> 입력 후 Enter</li>
+              <li>크롬 주소창에 <code>chrome://extensions</code> 입력</li>
+              <li>이 확장 프로그램의 🔄 새로고침 버튼 클릭</li>
+            </ol>
+          </div>
+          <div class="update-method">
+            <strong>방법 2: 자동 스크립트</strong>
+            <ol>
+              <li>확장 프로그램 폴더의 <code>update.bat</code> 파일을 더블클릭</li>
+              <li>크롬 주소창에 <code>chrome://extensions</code> 입력</li>
+              <li>이 확장 프로그램의 🔄 새로고침 버튼 클릭</li>
+            </ol>
+          </div>
+        </div>
+        <div class="update-modal-footer">
+          <button class="btn btn-secondary" id="btn-open-github">GitHub 페이지 열기</button>
+          <button class="btn btn-primary" id="btn-close-update-modal">닫기</button>
+        </div>
+      </div>
+    </div>
 
     <!-- ── 탭 네비게이션 ───────────────────────── -->
     <nav class="tab-nav">

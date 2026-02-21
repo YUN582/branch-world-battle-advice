@@ -579,3 +579,149 @@ select.field-input option {
   border-color: rgba(76, 175, 80, 0.5);
   color: #4caf50;
 }
+
+/* ── 업데이트 배너 ────────────────────────────── */
+
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: linear-gradient(135deg, #3d2e00 0%, #2e2200 100%);
+  border-bottom: 1px solid rgba(255, 171, 64, 0.3);
+  gap: 8px;
+}
+
+.update-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #ffab40;
+  font-weight: 600;
+}
+
+.update-banner-icon {
+  font-size: 14px;
+}
+
+.update-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-update {
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #212121;
+  background: #ffab40;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-update:hover {
+  background: #ffc107;
+}
+
+.btn-update-dismiss {
+  padding: 2px 6px;
+  font-size: 13px;
+  color: #888;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.btn-update-dismiss:hover {
+  color: #ccc;
+}
+
+/* ── 업데이트 모달 ────────────────────────────── */
+
+.update-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+
+.update-modal {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 10px;
+  padding: 20px;
+  width: 360px;
+  max-height: 460px;
+  overflow-y: auto;
+}
+
+.update-modal h3 {
+  font-size: 15px;
+  color: #ffab40;
+  margin-bottom: 14px;
+}
+
+.update-modal-body {
+  font-size: 12px;
+  color: #ccc;
+}
+
+.update-version-info {
+  font-size: 13px;
+  color: #82b1ff;
+  font-weight: 600;
+  margin-bottom: 14px;
+  padding: 8px 10px;
+  background: rgba(130, 177, 255, 0.08);
+  border-radius: 6px;
+  text-align: center;
+}
+
+.update-method {
+  margin-bottom: 14px;
+  padding: 10px;
+  background: #1e1e1e;
+  border-radius: 6px;
+  border: 1px solid #333;
+}
+
+.update-method strong {
+  display: block;
+  color: #e0e0e0;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.update-method ol {
+  padding-left: 18px;
+  color: #aaa;
+  font-size: 11px;
+  line-height: 1.8;
+}
+
+.update-method code {
+  background: #333;
+  color: #ffab40;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 11px;
+}
+
+.update-modal-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
