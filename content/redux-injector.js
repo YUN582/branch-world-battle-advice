@@ -246,6 +246,9 @@
     _prevMessageIdSet = new Set(rm.ids || []);
     _messageObserverActive = true;
 
+    // ★ 관찰 시작 시각 — 스크롤업으로 로드된 과거 메시지 필터용
+    const _observerStartTime = Date.now();
+
     _storeUnsubscribe = reduxStore.subscribe(() => {
       if (!_messageObserverActive) return;
 
@@ -275,6 +278,27 @@
         for (const id of newIds) {
           const entity = currentRm.entities?.[id];
           if (!entity) continue;
+
+          // ★ 스크롤업 방지: 관찰 시작 전에 생성된 과거 메시지 무시
+          // 채팅 로그를 위로 올리면 Firestore에서 과거 메시지가 로드되어
+          // Redux store에 추가됨 → 이전 합/차례 메시지가 잘못 처리되는 것을 방지
+          const createdAt = entity.createdAt;
+          if (createdAt) {
+            let msgTime = 0;
+            if (typeof createdAt.toMillis === 'function') {
+              msgTime = createdAt.toMillis();
+            } else if (typeof createdAt.seconds === 'number') {
+              msgTime = createdAt.seconds * 1000;
+            } else if (createdAt instanceof Date) {
+              msgTime = createdAt.getTime();
+            } else if (typeof createdAt === 'number') {
+              msgTime = createdAt;
+            }
+            if (msgTime > 0 && msgTime < _observerStartTime - 10000) {
+              // 관찰 시작 10초 전보다 오래된 메시지 → 히스토리 로드로 간주, 스킵
+              continue;
+            }
+          }
 
           // 첫 번째 메시지 구조 로깅 (디버깅용)
           if (!_messageStructureLogged) {
@@ -567,13 +591,98 @@
   }
 
   /**
+   * @태그 컷인 이펙트를 재생합니다.
+   * roomEffects에서 태그 이름과 일치하는 이펙트를 찾아 playTime을 업데이트합니다.
+   * playTime 변경 시 코코포리아가 자동으로 해당 이펙트를 모든 클라이언트에서 재생합니다.
+   *
+   * @param {string} tag - 이펙트 태그명 (@ 제외)
+   */
+  async function triggerCutin(tag) {
+    const sdk = acquireFirestoreSDK();
+    if (!sdk || !reduxStore) return;
+
+    const state = reduxStore.getState();
+    const roomId = state.app?.state?.roomId
+      || window.location.pathname.match(/rooms\/([^/]+)/)?.[1];
+    if (!roomId) return;
+
+    const re = state.entities?.roomEffects;
+    if (!re?.ids) return;
+
+    // 이펙트 이름으로 찾기 (태그 또는 @태그 형태)
+    let effectId = null;
+    for (const id of re.ids) {
+      const effect = re.entities?.[id];
+      if (!effect) continue;
+      const name = (effect.name || '').trim();
+      if (name === tag || name === '@' + tag || name === tag.replace(/^@/, '')) {
+        effectId = effect._id || id;
+        break;
+      }
+    }
+
+    if (!effectId) {
+      console.log(`%c[BWBR]%c ⚠️ 컷인 이펙트 없음: "${tag}"`,
+        'color: #ff9800; font-weight: bold;', 'color: inherit;');
+      return;
+    }
+
+    try {
+      const effectsCol = sdk.collection(sdk.db, 'rooms', roomId, 'effects');
+      const effectRef = sdk.doc(effectsCol, effectId);
+      await sdk.setDoc(effectRef, { playTime: Date.now() }, { merge: true });
+      console.log(`%c[BWBR]%c 🔊 컷인 재생: "${tag}" (${effectId})`,
+        'color: #4caf50; font-weight: bold;', 'color: inherit;');
+    } catch (e) {
+      console.error('[BWBR] 컷인 재생 실패:', e);
+    }
+  }
+
+  /**
+   * 메시지 텍스트에서 @태그 컷인을 추출합니다.
+   * roomEffects에 존재하는 이펙트만 추출하고 텍스트에서 제거합니다.
+   *
+   * @param {string} text - 원본 메시지 텍스트
+   * @returns {{ cleanText: string, cutinTags: string[] }}
+   */
+  function extractCutinTags(text) {
+    const cutinTags = [];
+    if (!reduxStore) return { cleanText: text, cutinTags };
+
+    const re = reduxStore.getState().entities?.roomEffects;
+    if (!re?.ids) return { cleanText: text, cutinTags };
+
+    // roomEffects 이름 세트 생성
+    const effectNames = new Set();
+    for (const id of re.ids) {
+      const effect = re.entities?.[id];
+      if (effect?.name) {
+        const name = effect.name.trim();
+        effectNames.add(name);
+        if (name.startsWith('@')) effectNames.add(name.slice(1));
+      }
+    }
+
+    const cleanText = text.replace(/@([^\s@]+)/g, (match, tag) => {
+      if (effectNames.has(tag) || effectNames.has('@' + tag)) {
+        cutinTags.push(tag);
+        return '';
+      }
+      return match;
+    }).replace(/\s{2,}/g, ' ').trim();
+
+    return { cleanText, cutinTags };
+  }
+
+  /**
    * Firestore에 직접 메시지를 작성합니다.
    * 코코포리아의 textarea를 경유하지 않으므로 유저 입력을 차단하지 않습니다.
    *
    * @param {string} text - 전송할 메시지 텍스트
+   * @param {object} [overrides] - 메시지 필드 오버라이드 (name, color 등)
    * @returns {Promise<boolean>} 성공 여부
    */
-  async function sendDirectMessage(text) {
+  async function sendDirectMessage(text, overrides) {
     const sdk = acquireFirestoreSDK();
     if (!sdk) return false;
 
@@ -595,7 +704,7 @@
       const messagesCol = sdk.collection(sdk.db, 'rooms', roomId, 'messages');
       const newRef = sdk.doc(messagesCol, generateFirestoreId());
 
-      await sdk.setDoc(newRef, {
+      const msg = {
         text: text,
         type: 'text',
         name: ctx.name,
@@ -611,7 +720,10 @@
         edited: false,
         createdAt: new Date(),
         updatedAt: new Date()
-      });
+      };
+      if (overrides) Object.assign(msg, overrides);
+
+      await sdk.setDoc(newRef, msg);
 
       return true;
     } catch (e) {
@@ -637,7 +749,9 @@
   window.addEventListener('bwbr-send-message-direct', async () => {
     const el = document.documentElement;
     const text = el.getAttribute('data-bwbr-send-text');
+    const sendType = el.getAttribute('data-bwbr-send-type') || 'normal';
     el.removeAttribute('data-bwbr-send-text');
+    el.removeAttribute('data-bwbr-send-type');
     if (!text) {
       console.warn('[BWBR] bwbr-send-message-direct: 텍스트 없음 (data-bwbr-send-text 비어있음)');
       window.dispatchEvent(new CustomEvent('bwbr-send-message-result', {
@@ -646,8 +760,26 @@
       return;
     }
 
+    // 시스템 메시지 모드
+    const overrides = sendType === 'system'
+      ? { name: 'system', type: 'system', color: '#888888', iconUrl: null }
+      : null;
+
+    // @태그 컷인 추출 및 텍스트 분리
+    const { cleanText, cutinTags } = extractCutinTags(text);
+
     try {
-      const success = await sendDirectMessage(text);
+      let success = true;
+      // 텍스트가 남아있으면 메시지 전송
+      if (cleanText) {
+        success = await sendDirectMessage(cleanText, overrides);
+      }
+      // 컷인 트리거 (메시지 전송 성공 또는 텍스트 없이 컷인만 있는 경우)
+      if (success && cutinTags.length > 0) {
+        for (const tag of cutinTags) {
+          triggerCutin(tag);
+        }
+      }
       // MAIN→ISOLATED: detail 전달 가능
       window.dispatchEvent(new CustomEvent('bwbr-send-message-result', {
         detail: { success, text }
@@ -720,6 +852,78 @@
     window.dispatchEvent(new CustomEvent('bwbr-redux-ready', {
       detail: { success: !!reduxStore }
     }));
+  });
+
+  // ================================================================
+  //  :# 스테이터스 변경 명령 처리
+  //  Content Script에서 bwbr-modify-status 이벤트로 요청
+  // ================================================================
+  window.addEventListener('bwbr-modify-status', async (e) => {
+    const { targetName, statusLabel, operation, value } = e.detail || {};
+    const respond = (detail) => window.dispatchEvent(
+      new CustomEvent('bwbr-modify-status-result', { detail })
+    );
+
+    try {
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) throw new Error('Firestore SDK 없음');
+      if (!reduxStore) throw new Error('Redux Store 없음');
+
+      const state = reduxStore.getState();
+      const roomId = state.app?.state?.roomId
+        || window.location.pathname.match(/rooms\/([^/]+)/)?.[1];
+      if (!roomId) throw new Error('방 ID를 찾을 수 없음');
+
+      const rc = state.entities?.roomCharacters;
+      if (!rc) throw new Error('캐릭터 데이터 없음');
+
+      // 대상 캐릭터 찾기
+      let target = null, targetId = null;
+      for (const id of (rc.ids || [])) {
+        const c = rc.entities?.[id];
+        if (c && c.name === targetName) { target = c; targetId = c._id || id; break; }
+      }
+      if (!target) throw new Error(`캐릭터 "${targetName}" 없음`);
+
+      // 스테이터스 찾기
+      const statusArr = target.status || [];
+      const idx = statusArr.findIndex(s => s.label === statusLabel);
+      if (idx < 0) throw new Error(`스테이터스 "${statusLabel}" 없음`);
+
+      const oldVal = parseInt(statusArr[idx].value, 10) || 0;
+      let newVal;
+      switch (operation) {
+        case '+': newVal = oldVal + value; break;
+        case '-': newVal = oldVal - value; break;
+        case '=': newVal = value; break;
+        default: throw new Error(`잘못된 연산: ${operation}`);
+      }
+
+      // 새 status 배열 생성
+      const newStatus = statusArr.map((s, i) => {
+        if (i === idx) return { ...s, value: newVal };
+        return { ...s };
+      });
+
+      // Firestore에 쓰기
+      const charsCol = sdk.collection(sdk.db, 'rooms', roomId, 'characters');
+      const targetRef = sdk.doc(charsCol, targetId);
+      await sdk.setDoc(targetRef, { status: newStatus, updatedAt: Date.now() }, { merge: true });
+
+      console.log(`%c[BWBR]%c ✅ ${targetName} ${statusLabel}: ${oldVal} → ${newVal}`,
+        'color: #4caf50; font-weight: bold;', 'color: inherit;');
+      respond({ success: true, target: targetName, status: statusLabel, oldVal, newVal });
+
+      // 코코포리아 시스템 메시지 형식으로 변경 내역 전송
+      sendDirectMessage(
+        `[ ${targetName} ] ${statusLabel} : ${oldVal} → ${newVal}`,
+        { name: 'system', type: 'system', color: '#888888', iconUrl: null }
+      ).catch(() => {});
+
+    } catch (err) {
+      console.error('[BWBR] 스테이터스 변경 실패:', err.message);
+      respond({ success: false, error: err.message });
+    }
   });
 
   // ================================================================

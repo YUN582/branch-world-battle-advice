@@ -184,11 +184,47 @@ if (entity.extend?.roll?.result) {
 | 필드 | 용도 | 비고 |
 |------|------|------|
 | `text` | 메시지 본문 파싱 | 전투 트리거, 턴 추적, 주사위 결과 등 |
-| `name` | 캐릭터 식별 | 발신자 표시, 관전 UI |
+| `type` | 메시지 종류 | `"text"` = 일반, `"system"` = 시스템 메시지 |
+| `name` | 캐릭터 식별 | `"system"` 시 아이콘/역할명 없이 표시 |
 | `channel` | 채널 필터링 | 같은 채널의 메시지만 처리할 때 사용 |
 | `from` | 사용자 식별 | 자신이 보낸 메시지 판별 |
 | `to` | 귓속말 판별 | null이면 전체 메시지 |
 | `extend` | 주사위 데이터 | `extend.roll` 안에 `→ 숫자` 패턴으로 결과 저장 |
+
+### 시스템 메시지 (type: "system")
+
+코코포리아는 `:HP-10` 같은 네이티브 명령어 실행 시 시스템 메시지를 생성합니다.
+역할명/아이콘 없이 회색 텍스트로 표시되며, Firestore에 직접 쓸 수도 있습니다.
+
+```js
+// 시스템 메시지 예시 (네이티브 `:HP-10` 실행 시 생성되는 형식)
+{
+  _id: "FWTB86TC0q08DSJcPE1t",
+  type: "system",             // ★ "text"가 아닌 "system"
+  text: "[ 스칼라 ] 의지💚 : 7 → 6",  // 본문
+  name: "system",             // ★ "system" → 역할명/아이콘 없이 표시
+  color: "#888888",           // ★ 회색 텍스트
+  iconUrl: null,              // 아이콘 없음
+  from: "Az1rUAx4...",        // 보낸 유저 UID
+  channel: "...",             // 채널 ID
+  extend: {},                 // 비어있음
+  // ... 나머지 필드는 일반 메시지와 동일
+}
+```
+
+**시스템 메시지 전송 방법** (BWBR 확장 프로그램):
+```js
+// sendDirectMessage의 두 번째 인자로 overrides 전달
+sendDirectMessage(
+  '[ 캐릭이름 ] HP : 50 → 40',
+  { name: 'system', type: 'system', color: '#888888', iconUrl: null }
+);
+```
+
+**제약사항**:
+- 텍스트는 plain text만 지원 (마크다운/HTML 불가)
+- 색상(`color`)과 텍스트 내용은 자유롭게 변경 가능
+- CSS/레이아웃(중앙정렬, 이탤릭 등)은 코코포리아 렌더링에 의존하므로 수정 불가
 
 ### Redux 기반 메시지 관찰 구현 (redux-injector.js)
 
