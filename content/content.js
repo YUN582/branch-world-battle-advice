@@ -480,7 +480,7 @@
 
     const emoji = actionType === '주' ? '🔺' : '🔹';
     const msg = `《${emoji}${actionType} 행동 소비》\n${current.name} | 🔺주 행동 ${current.mainActions}, 🔹보조 행동 ${current.subActions} | 이동거리 ${current.movement} @발도1`;
-    chat.sendMessage(msg);
+    chat.sendSystemMessage(msg);
   }
 
   /** 주 행동 추가 처리 (슬롯 복구 또는 신규 추가) */
@@ -514,7 +514,7 @@
 
     const emoji = actionType === '주' ? '🔺' : '🔹';
     const msg = `《${emoji}${actionType} 행동 추가》\n${current.name} | 🔺주 행동 ${current.mainActions}, 🔹보조 행동 ${current.subActions} | 이동거리 ${current.movement} @발도2`;
-    chat.sendMessage(msg);
+    chat.sendSystemMessage(msg);
   }
 
   /** 턴 정보 UI 갱신 */
@@ -625,7 +625,7 @@
     });
 
     // 채팅으로 전송
-    chat.sendMessage(turnMsg);
+    chat.sendSystemMessage(turnMsg);
   }
 
   /** 전투 보조 모드 종료 */
@@ -1335,7 +1335,7 @@
     overlay.addLog(`── 제 ${state.round}합 ──`, 'info');
 
     flowState = STATE.ROUND_HEADER_SENT;
-    await chat.sendMessage(headerMsg);
+    await chat.sendSystemMessage(headerMsg);
 
     // 대기 후 공격자 굴림
     await delay(config.general.manualMode ? 0 : config.timing.beforeFirstRoll);
@@ -1380,28 +1380,31 @@
     const nameEsc = playerName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const emojiEsc = emoji.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+    // N0 연격 보너스로 인해 결과가 diceType을 초과할 수 있음
+    const maxDiceVal = config.rules.diceType + 10;
+
     // Pattern 1: "이름: 숫자" 또는 "이름： 숫자" (코코포리아 주사위 결과 표시)
     const p1 = new RegExp(nameEsc + '\\s*[：:]\\s*(\\d{1,2})');
     const m1 = text.match(p1);
     if (m1) {
       const v = parseInt(m1[1], 10);
-      if (v >= 1 && v <= config.rules.diceType) return v;
+      if (v >= 1 && v <= maxDiceVal) return v;
     }
 
-    // Pattern 2: "1D20 [이모지/이름] ... > 숫자" — 이름 또는 이모지가 1D20과 결과값 사이에 있어야 함
-    const p2 = new RegExp('1[Dd]20[^>＞→]*(?:' + emojiEsc + '|' + nameEsc + ')[^>＞→]*[→＞>]\\s*(\\d{1,2})');
+    // Pattern 2: "1D20[+N] [이모지/이름] ... > 숫자" — 이름 또는 이모지가 1D20과 결과값 사이에 있어야 함
+    const p2 = new RegExp('1[Dd]20(?:\\+\\d+)?[^>＞→]*(?:' + emojiEsc + '|' + nameEsc + ')[^>＞→]*[→＞>]\\s*(\\d{1,2})');
     const m2 = text.match(p2);
     if (m2) {
       const v = parseInt(m2[1], 10);
-      if (v >= 1 && v <= config.rules.diceType) return v;
+      if (v >= 1 && v <= maxDiceVal) return v;
     }
 
-    // Pattern 3: "[이모지/이름]... (1D20) > 숫자" — 이모지/이름이 1D20 앞에 나오는 패턴
-    const p3 = new RegExp('(?:' + emojiEsc + '|' + nameEsc + ')[^>＞→]*\\(1[Dd]20\\)[^>＞→]*[→＞>]\\s*(\\d{1,2})');
+    // Pattern 3: "[이모지/이름]... (1D20[+N]) > 숫자" — 이모지/이름이 1D20 앞에 나오는 패턴
+    const p3 = new RegExp('(?:' + emojiEsc + '|' + nameEsc + ')[^>＞→]*\\(1[Dd]20(?:\\+\\d+)?\\)[^>＞→]*[→＞>]\\s*(\\d{1,2})');
     const m3 = text.match(p3);
     if (m3) {
       const v = parseInt(m3[1], 10);
-      if (v >= 1 && v <= config.rules.diceType) return v;
+      if (v >= 1 && v <= maxDiceVal) return v;
     }
 
     // Pattern 4: "결과: 숫자" (이모지 또는 이름 포함 시 — fallback)
@@ -1409,7 +1412,7 @@
       const m4 = text.match(/결과\s*[：:]\s*(\d{1,2})/);
       if (m4) {
         const v = parseInt(m4[1], 10);
-        if (v >= 1 && v <= config.rules.diceType) return v;
+        if (v >= 1 && v <= maxDiceVal) return v;
       }
     }
 
@@ -1430,9 +1433,12 @@
     alwaysLog(`공격자 결과: ${value}`);
     engine.setAttackerRoll(value);
 
-    const logType = value >= state.combat.attacker.critThreshold ? 'crit'
-      : value <= state.combat.attacker.fumbleThreshold ? 'fumble' : 'info';
-    overlay.addLog(`⚔️ ${state.combat.attacker.name}: ${value}`, logType);
+    // N0 연격 보너스 포함된 결과 → 원본 주사위 값으로 크리/펌블 판정
+    const atkN0 = state.combat.attacker.n0Bonus || 0;
+    const atkRaw = value - atkN0;
+    const logType = atkRaw >= state.combat.attacker.critThreshold ? 'crit'
+      : atkRaw <= state.combat.attacker.fumbleThreshold ? 'fumble' : 'info';
+    overlay.addLog(`⚔️ ${state.combat.attacker.name}: ${value}${atkN0 > 0 ? ` (${atkRaw}+${atkN0})` : ''}`, logType);
     overlay.animateDiceValue('attacker', value);
 
     // 공격 모션 + 이펙트
@@ -1489,9 +1495,12 @@
     alwaysLog(`방어자 결과: ${value}`);
     engine.setDefenderRoll(value);
 
-    const logType = value >= state.combat.defender.critThreshold ? 'crit'
-      : value <= state.combat.defender.fumbleThreshold ? 'fumble' : 'info';
-    overlay.addLog(`🛡️ ${state.combat.defender.name}: ${value}`, logType);
+    // N0 연격 보너스 포함된 결과 → 원본 주사위 값으로 크리/펌블 판정
+    const defN0 = state.combat.defender.n0Bonus || 0;
+    const defRaw = value - defN0;
+    const logType = defRaw >= state.combat.defender.critThreshold ? 'crit'
+      : defRaw <= state.combat.defender.fumbleThreshold ? 'fumble' : 'info';
+    overlay.addLog(`🛡️ ${state.combat.defender.name}: ${value}${defN0 > 0 ? ` (${defRaw}+${defN0})` : ''}`, logType);
     overlay.animateDiceValue('defender', value);
 
     // 공격 모션 + 이펙트
@@ -1519,10 +1528,41 @@
         return;
       }
 
-      // 결과 메시지 전송
+      // 결과 메시지 전송 (승자/패자 색상 분리)
       if (result.description) {
-        await chat.sendMessage(result.description);
         overlay.addLog(result.description, getResultLogType(result));
+
+        if (result.winner) {
+          // 승자(RED) / 패자(BLUE) 분리 전송
+          const st = engine.getState();
+          const wKey = result.winner;
+          const lKey = wKey === 'attacker' ? 'defender' : 'attacker';
+          const wIcon = wKey === 'attacker' ? '⚔️' : '🛡️';
+          const lIcon = lKey === 'attacker' ? '⚔️' : '🛡️';
+          const wName = st.combat[wKey].name;
+          const lName = st.combat[lKey].name;
+          const wVal = wKey === 'attacker' ? result.attackerRoll : result.defenderRoll;
+          const lVal = lKey === 'attacker' ? result.attackerRoll : result.defenderRoll;
+          const wCrit = wKey === 'attacker' ? result.attackerCrit : result.defenderCrit;
+          const lFumble = lKey === 'attacker' ? result.attackerFumble : result.defenderFumble;
+          const wDice = wKey === 'attacker' ? result.atkDiceChange : result.defDiceChange;
+          const lDice = lKey === 'attacker' ? result.atkDiceChange : result.defDiceChange;
+
+          let winMsg = `${wIcon} ${wName}【${wVal}】`;
+          if (wCrit) winMsg += ' 💥 대성공!';
+          if (wDice > 0) winMsg += ` 주사위 +${wDice}`;
+          winMsg += ' → 승리!';
+
+          let loseMsg = `${lIcon} ${lName}【${lVal}】`;
+          if (lFumble) loseMsg += ' 💀 대실패!';
+          if (lDice < 0) loseMsg += ` 주사위 ${lDice}`;
+
+          await chat.sendSystemMessage(winMsg);
+          await chat.sendSystemMessage(loseMsg);
+        } else {
+          // 동점 / 쌍방 대성공/대실패 → 기본 색상
+          await chat.sendSystemMessage(result.description);
+        }
       }
 
       // 특성 이벤트 로그 + 채팅 전송
@@ -1603,7 +1643,7 @@
           }
 
           if (logMsg) overlay.addLog(logMsg, logType);
-          if (chatMsg) await chat.sendMessage(chatMsg);
+          if (chatMsg) await chat.sendSystemMessage(chatMsg);
         }
       }
 
@@ -1672,7 +1712,7 @@
     const winner = engine.getWinner();
 
     log(`전투 종료! 승자: ${winner}`);
-    await chat.sendMessage(victoryMsg);
+    await chat.sendSystemMessage(victoryMsg);
 
     // 승리/패배 애니메이션
     if (winner === 'attacker' || winner === 'defender') {
@@ -1752,7 +1792,7 @@
           const icon = whoKey === 'attacker' ? '⚔️' : '🛡️';
           const snd = '발도' + (Math.floor(Math.random() * 3) + 1);
           overlay.addLog(`🔥 ${playerName}: 인간 특성 발동! 주사위 +1`, 'crit');
-          await chat.sendMessage(`🔥 인간 특성 발동! | ${icon} ${playerName} 주사위 +1 @${snd}`);
+          await chat.sendSystemMessage(`🔥 인간 특성 발동! | ${icon} ${playerName} 주사위 +1 @${snd}`);
           overlay.updateCombatState(engine.getState());
         }
         continue; // 다시 주사위 값 입력 대기

@@ -311,6 +311,11 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
       if (e.key !== 'Enter' || e.shiftKey || composing || e.isComposing) return;
       if (!this._isChatInput(e.target)) return;
 
+      // 자동완성 드롭다운이 열려 있으면 입력 감지하지 않음
+      // (Enter가 드롭다운 항목 선택에 사용되므로 채팅 전송 아님)
+      const ac = window.BWBR_AutoComplete;
+      if (ac && (ac.isHashActive() || ac.isBangActive() || ac.isAtActive())) return;
+
       const text = e.target.value?.trim();
       if (text && this._inputSubmitCallback) {
         this._log(`🔑 입력 감지: "${text.substring(0, 80)}"`);
@@ -520,11 +525,32 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
   }
 
   /**
+   * 시스템 메시지로 전송 (type: 'system', name: 'system').
+   * 주사위 명령은 시스템 메시지로 보낼 수 없습니다 — textarea 경유 필요.
+   * @param {string} text - 전송할 텍스트 (@ 컷인 태그 포함 가능)
+   */
+  async sendSystemMessage(text) {
+    // 자체 메시지로 등록 (에코 필터링)
+    this._lastSentMessages.push({ text, time: Date.now() });
+    this._seenTexts.add(text);
+
+    this._log(`📤 전송(시스템): "${text.substring(0, 60)}"`);
+    const directResult = await this._sendViaFirestoreDirect(text, 'system');
+    if (directResult) return true;
+
+    // 시스템 메시지는 textarea 폴백 불가 (type 지정 불가)
+    this._log('⚠️ 시스템 메시지 Firestore 전송 실패 (폴백 없음)');
+    return false;
+  }
+
+  /**
    * Firestore에 직접 메시지를 작성합니다.
    * 페이지 컨텍스트(redux-injector.js)에 CustomEvent로 요청 → 결과 수신.
    * 유저의 textarea 입력을 전혀 건드리지 않습니다.
+   * @param {string} text
+   * @param {string} [sendType='normal'] - 'normal' 또는 'system'
    */
-  _sendViaFirestoreDirect(text) {
+  _sendViaFirestoreDirect(text, sendType = 'normal') {
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
         window.removeEventListener('bwbr-send-message-result', handler);
@@ -549,6 +575,9 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
       // ★ ISOLATED→MAIN에서는 CustomEvent.detail이 전달되지 않으므로
       //    DOM attribute를 통해 텍스트를 전달합니다.
       document.documentElement.setAttribute('data-bwbr-send-text', text);
+      if (sendType !== 'normal') {
+        document.documentElement.setAttribute('data-bwbr-send-type', sendType);
+      }
       window.dispatchEvent(new Event('bwbr-send-message-direct'));
     });
   }

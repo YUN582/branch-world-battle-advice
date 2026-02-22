@@ -761,9 +761,12 @@
     }
 
     // 시스템 메시지 모드
-    const overrides = sendType === 'system'
-      ? { name: 'system', type: 'system', color: '#888888', iconUrl: null }
-      : null;
+    let overrides;
+    if (sendType === 'system') {
+      overrides = { name: 'system', type: 'system', color: '#888888', iconUrl: null };
+    } else {
+      overrides = null;
+    }
 
     // @태그 컷인 추출 및 텍스트 분리
     const { cleanText, cutinTags } = extractCutinTags(text);
@@ -842,6 +845,43 @@
         detail: { success: !!chars, characters: chars }
       }));
     }
+  });
+
+  // Content Script에서 현재 발화(speaking) 캐릭터 요청
+  window.addEventListener('bwbr-request-speaking-character', () => {
+    let name = null;
+    if (reduxStore) {
+      const state = reduxStore.getState();
+      const rc = state.entities?.roomCharacters;
+      if (rc?.ids) {
+        for (const id of rc.ids) {
+          const char = rc.entities?.[id];
+          if (char?.speaking) { name = char.name; break; }
+        }
+      }
+    }
+    window.dispatchEvent(new CustomEvent('bwbr-speaking-character-data', {
+      detail: { name }
+    }));
+  });
+
+  // Content Script에서 컷인(이펙트) 목록 요청
+  window.addEventListener('bwbr-request-cutins', () => {
+    const cutins = [];
+    if (reduxStore) {
+      const re = reduxStore.getState().entities?.roomEffects;
+      if (re?.ids) {
+        for (const id of re.ids) {
+          const effect = re.entities?.[id];
+          if (effect?.name) {
+            cutins.push({ name: effect.name.trim() });
+          }
+        }
+      }
+    }
+    window.dispatchEvent(new CustomEvent('bwbr-cutins-data', {
+      detail: { success: cutins.length > 0, cutins }
+    }));
   });
 
   // Content Script에서 Redux 재시도 요청 시 처리

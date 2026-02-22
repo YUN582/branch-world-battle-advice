@@ -161,17 +161,28 @@ window.BattleRollEngine = class BattleRollEngine {
     }
 
     // N0: 연격 특성 보너스 적용
-    let atkVal = this.lastAttackerRoll;
-    let defVal = this.lastDefenderRoll;
-    const atkRaw = this.lastAttackerRoll;  // 크리/펌블 판정용 원본
-    const defRaw = this.lastDefenderRoll;
-    if (this.combat.attacker.traits.includes('N0') && (this.combat.attacker.n0Bonus || 0) > 0) {
-      atkVal += this.combat.attacker.n0Bonus;
-      this._log(`[N0] ${this.combat.attacker.name}: 연격 보너스 +${this.combat.attacker.n0Bonus} 적용 (${atkRaw}→${atkVal})`);
-    }
-    if (this.combat.defender.traits.includes('N0') && (this.combat.defender.n0Bonus || 0) > 0) {
-      defVal += this.combat.defender.n0Bonus;
-      this._log(`[N0] ${this.combat.defender.name}: 연격 보너스 +${this.combat.defender.n0Bonus} 적용 (${defRaw}→${defVal})`);
+    // 자동 모드: 코코포리아가 1D20+N을 처리 → 결과에 이미 보너스 포함
+    // 수동 모드: 유저가 원본 주사위 값 입력 → 여기서 보너스 합산
+    const atkN0 = this.combat.attacker.traits.includes('N0') ? (this.combat.attacker.n0Bonus || 0) : 0;
+    const defN0 = this.combat.defender.traits.includes('N0') ? (this.combat.defender.n0Bonus || 0) : 0;
+    let atkVal, defVal, atkRaw, defRaw;
+
+    if (manualMode) {
+      // 수동 모드: 입력값 = 원본, 보너스를 여기서 추가
+      atkRaw = this.lastAttackerRoll;
+      defRaw = this.lastDefenderRoll;
+      atkVal = this.lastAttackerRoll + atkN0;
+      defVal = this.lastDefenderRoll + defN0;
+      if (atkN0 > 0) this._log(`[N0] ${this.combat.attacker.name}: 연격 보너스 +${atkN0} 적용 (${atkRaw}→${atkVal})`);
+      if (defN0 > 0) this._log(`[N0] ${this.combat.defender.name}: 연격 보너스 +${defN0} 적용 (${defRaw}→${defVal})`);
+    } else {
+      // 자동 모드: 코코포리아 결과에 보너스 포함됨, 원본 복원
+      atkVal = this.lastAttackerRoll;
+      defVal = this.lastDefenderRoll;
+      atkRaw = this.lastAttackerRoll - atkN0;  // 크리/펌블 판정용 원본
+      defRaw = this.lastDefenderRoll - defN0;
+      if (atkN0 > 0) this._log(`[N0] ${this.combat.attacker.name}: 연격 보너스 +${atkN0} (코코포리아 적용됨, 원본 ${atkRaw})`);
+      if (defN0 > 0) this._log(`[N0] ${this.combat.defender.name}: 연격 보너스 +${defN0} (코코포리아 적용됨, 원본 ${defRaw})`);
     }
     const rules = this.config.rules;
 
@@ -671,18 +682,28 @@ window.BattleRollEngine = class BattleRollEngine {
     });
   }
 
-  /** 공격자 굴림 메시지 생성 */
+  /** 공격자 굴림 메시지 생성 (N0 연격 보너스 반영) */
   getAttackerRollMessage() {
     if (!this.combat) return '';
-    return this._formatTemplate(this.config.templates.attackerRoll, {
+    const bonus = this.combat.attacker.n0Bonus || 0;
+    let template = this.config.templates.attackerRoll;
+    if (bonus > 0) {
+      template = template.replace(/1[Dd]20/, `1D20+${bonus}`);
+    }
+    return this._formatTemplate(template, {
       attacker: this.combat.attacker.name
     });
   }
 
-  /** 방어자 굴림 메시지 생성 */
+  /** 방어자 굴림 메시지 생성 (N0 연격 보너스 반영) */
   getDefenderRollMessage() {
     if (!this.combat) return '';
-    return this._formatTemplate(this.config.templates.defenderRoll, {
+    const bonus = this.combat.defender.n0Bonus || 0;
+    let template = this.config.templates.defenderRoll;
+    if (bonus > 0) {
+      template = template.replace(/1[Dd]20/, `1D20+${bonus}`);
+    }
+    return this._formatTemplate(template, {
       defender: this.combat.defender.name
     });
   }
@@ -706,7 +727,8 @@ window.BattleRollEngine = class BattleRollEngine {
      * N0 특성: 연격
      * - 응수(방어자) 주사위 2개 감소(하한 3)는 startCombat에서 적용
      * - 승리 시 다음 판정에 +1 누적 보너스, 패배 시 0으로 초기화
-     * - 보너스는 processRoundResult에서 판정값에 적용
+     * - 자동 모드: 주사위 명령에 1D20+N으로 반영 (코코포리아가 처리)
+     * - 수동 모드: processRoundResult에서 판정값에 보너스 합산
      */
     _applyN0(who, winner, traitEvents) {
       const fighter = this.combat[who];
