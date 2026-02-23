@@ -65,6 +65,7 @@
       autoComplete: true,
       autoConsumeActions: true,
       showVisitHistory: true,
+      charShortcuts: true,
       autoScroll: true,
       showOverlay: true,
       debugMode: false,
@@ -167,6 +168,9 @@
     // 방문 기록
     $('toggle-showVisitHistory').checked = cfg.general.showVisitHistory !== false;
 
+    // 캐릭터 단축키
+    $('toggle-charShortcuts').checked = cfg.general.charShortcuts !== false;
+
     // 타이밍
     setTimingField('time-beforeFirstRoll', cfg.timing.beforeFirstRoll);
     setTimingField('time-betweenRolls', cfg.timing.betweenRolls);
@@ -221,6 +225,9 @@
 
     // 방문 기록
     cfg.general.showVisitHistory = $('toggle-showVisitHistory').checked;
+
+    // 캐릭터 단축키
+    cfg.general.charShortcuts = $('toggle-charShortcuts').checked;
 
     // 타이밍
     cfg.timing.beforeFirstRoll = getTimingValue('time-beforeFirstRoll');

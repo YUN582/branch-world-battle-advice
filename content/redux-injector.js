@@ -992,6 +992,110 @@
     }
   });
 
+  // ================================================================
+  //  캐릭터 단축키: 전체 캐릭터 목록 (숨김 포함)
+  // ================================================================
+  window.addEventListener('bwbr-request-all-characters', () => {
+    const characters = [];
+    if (reduxStore) {
+      const state = reduxStore.getState();
+      const rc = state.entities?.roomCharacters;
+      if (rc?.ids) {
+        for (const id of rc.ids) {
+          const char = rc.entities?.[id];
+          if (!char) continue;
+          characters.push({
+            _id: char._id || id,
+            name: char.name || '',
+            iconUrl: char.iconUrl || '',
+            active: char.active,
+            speaking: !!char.speaking,
+            color: char.color || ''
+          });
+        }
+      }
+    }
+    window.dispatchEvent(new CustomEvent('bwbr-all-characters-data', {
+      detail: { characters }
+    }));
+  });
+
+  // ================================================================
+  //  캐릭터 단축키: 이미지 URL로 캐릭터 식별
+  // ================================================================
+  window.addEventListener('bwbr-identify-character-by-image', (e) => {
+    const targetUrl = e.detail?.imageUrl;
+    if (!targetUrl || !reduxStore) {
+      window.dispatchEvent(new CustomEvent('bwbr-character-identified', { detail: null }));
+      return;
+    }
+
+    const state = reduxStore.getState();
+    const rc = state.entities?.roomCharacters;
+    let found = null;
+
+    if (rc?.ids) {
+      for (const id of rc.ids) {
+        const char = rc.entities?.[id];
+        if (!char?.iconUrl) continue;
+        // URL 부분 일치로 매칭 (이미지 프록시/리사이즈 대응)
+        if (targetUrl.includes(char.iconUrl) || char.iconUrl.includes(targetUrl)
+          || extractStoragePath(targetUrl) === extractStoragePath(char.iconUrl)) {
+          found = { name: char.name, iconUrl: char.iconUrl, _id: char._id || id };
+          break;
+        }
+      }
+    }
+
+    window.dispatchEvent(new CustomEvent('bwbr-character-identified', { detail: found }));
+  });
+
+  /** Firebase Storage URL에서 경로 부분 추출 (비교용) */
+  function extractStoragePath(url) {
+    if (!url) return '';
+    try {
+      // /o/path%2Fto%2Ffile 형태 추출
+      const match = url.match(/\/o\/([^?]+)/);
+      return match ? decodeURIComponent(match[1]) : url;
+    } catch { return url; }
+  }
+
+  // ================================================================
+  //  캐릭터 단축키: 발화 캐릭터 변경
+  // ================================================================
+  window.addEventListener('bwbr-switch-character', (e) => {
+    const name = e.detail?.name;
+    if (!name) return;
+
+    // 코코포리아의 캐릭터 이름 입력 필드 찾기
+    const input = document.querySelector(
+      '#root > div > div.MuiDrawer-root.MuiDrawer-docked > div > div > form > div:nth-child(2) > div > div > input'
+    );
+
+    if (!input) {
+      console.warn('[BWBR] 캐릭터 이름 입력 필드를 찾을 수 없습니다');
+      return;
+    }
+
+    // React controlled input 값 변경
+    const nativeSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype, 'value'
+    )?.set;
+
+    if (nativeSetter) {
+      nativeSetter.call(input, name);
+    } else {
+      input.value = name;
+    }
+
+    // React가 변경을 감지하도록 이벤트 디스패치
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+
+    console.log(`%c[BWBR]%c 🔄 발화 캐릭터 변경: ${name}`,
+      'color: #82b1ff; font-weight: bold;', 'color: inherit;');
+  });
+
   // Content Script에서 현재 발화(speaking) 캐릭터 요청
   window.addEventListener('bwbr-request-speaking-character', () => {
     let name = null;
@@ -1399,6 +1503,690 @@
     } catch (e) {
       console.error('[BWBR] 로그 추출 실패:', e);
       respond({ success: false, error: e.message });
+    }
+  });
+
+  // ================================================================
+  //  캐릭터 단축키: 캐릭터 조작 (편집 / 집어넣기 / 복사 / 삭제)
+  // ================================================================
+
+  const respondAction = (msg) => {
+    window.dispatchEvent(new CustomEvent('bwbr-char-action-result', {
+      detail: { message: msg }
+    }));
+  };
+
+  /** Redux 상태에서 이름으로 캐릭터 조회 */
+  function getCharacterByName(name) {
+    if (!reduxStore) return null;
+    const rc = reduxStore.getState().entities?.roomCharacters;
+    if (!rc) return null;
+    for (const id of (rc.ids || [])) {
+      const c = rc.entities?.[id];
+      if (c && c.name === name) return { ...c, __id: id };
+    }
+    return null;
+  }
+
+  /** 캐릭터 목록을 ISOLATED world로 재전송 (캐시 갱신) */
+  function broadcastCharacterList() {
+    if (!reduxStore) return;
+    const rc = reduxStore.getState().entities?.roomCharacters;
+    if (!rc) return;
+    const characters = [];
+    for (const id of (rc.ids || [])) {
+      const c = rc.entities?.[id];
+      if (c) characters.push({ id, name: c.name || '', iconUrl: c.iconUrl || '', active: c.active, speaking: !!c.speaking, color: c.color || '' });
+    }
+    window.dispatchEvent(new CustomEvent('bwbr-all-characters-data', { detail: { characters } }));
+  }
+
+  /** roomId 획득 */
+  function getRoomId() {
+    if (!reduxStore) return null;
+    return reduxStore.getState().app?.state?.roomId
+      || window.location.pathname.match(/rooms\/([^/]+)/)?.[1] || null;
+  }
+
+  /** 보드 위 캐릭터 토큰 엘리먼트 찾기 (이미지 URL 매칭) */
+  function findCharTokenOnBoard(charName) {
+    const char = getCharacterByName(charName);
+    if (!char?.iconUrl) return null;
+    const targetPath = extractStoragePath(char.iconUrl);
+    const allImgs = document.querySelectorAll('#root img');
+    for (const img of allImgs) {
+      if (!img.src) continue;
+      const imgPath = extractStoragePath(img.src);
+      if ((targetPath && imgPath && targetPath === imgPath)
+        || img.src.includes(char.iconUrl) || char.iconUrl.includes(img.src)) {
+        let el = img;
+        for (let i = 0; i < 20 && el; i++, el = el.parentElement) {
+          if (el.className && typeof el.className === 'string'
+            && el.className.includes('movable')) return el;
+        }
+      }
+    }
+    return null;
+  }
+
+  // ── 편집: Redux state에서 openRoomCharacterId 설정 → 네이티브 편집 다이얼로그 ──
+  window.addEventListener('bwbr-character-edit', (e) => {
+    const name = e.detail?.name;
+    if (!name) return respondAction('캐릭터를 특정할 수 없습니다');
+
+    const char = getCharacterByName(name);
+    if (!char) {
+      respondAction(name + ': 캐릭터를 찾을 수 없습니다');
+      return;
+    }
+
+    try {
+      const creator = findSetedActionCreator();
+      if (!creator) {
+        respondAction(name + ': Redux action type 미발견 — 잠시 후 다시 시도해주세요');
+        return;
+      }
+
+      const appState = reduxStore.getState().app?.state;
+      const newState = { ...appState, openRoomCharacter: true, openRoomCharacterId: char.__id };
+      reduxStore.dispatch({ type: creator.type, payload: newState });
+
+      const check = reduxStore.getState().app?.state;
+      if (check?.openRoomCharacter === true && check?.openRoomCharacterId === char.__id) {
+        console.log(`%c[BWBR]%c ✅ ${name} 편집 다이얼로그 열림 (ID: ${char.__id})`,
+          'color: #4caf50; font-weight: bold;', 'color: inherit;');
+      } else {
+        respondAction(name + ': 편집 다이얼로그 열기 실패');
+      }
+    } catch (err) {
+      console.error('[BWBR] 편집 실패:', err);
+      respondAction('편집 실패: ' + err.message);
+    }
+  });
+
+  // ── 집어넣기: 보드 토큰 컨텍스트 메뉴 → "집어넣기" 클릭, 또는 Firestore active 토글 ──
+  window.addEventListener('bwbr-character-store', async (e) => {
+    const name = e.detail?.name;
+    if (!name) return respondAction('캐릭터를 특정할 수 없습니다');
+
+    // 1차: 보드 토큰 컨텍스트 메뉴 → "집어넣기" 클릭
+    const token = findCharTokenOnBoard(name);
+    if (token) {
+      const rect = token.getBoundingClientRect();
+      token.dispatchEvent(new MouseEvent('contextmenu', {
+        bubbles: true, cancelable: true, view: window,
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2,
+        button: 2
+      }));
+      let attempts = 0;
+      const tryClick = () => {
+        const pops = document.querySelectorAll('.MuiPopover-root');
+        if (pops.length) {
+          const pop = pops[pops.length - 1];
+          const items = pop.querySelectorAll('li[role="menuitem"]');
+          for (const item of items) {
+            const t = (item.textContent || '').trim();
+            if (t.indexOf('집어넣기') === 0 || t.indexOf('しまう') === 0) {
+              item.click();
+              respondAction(name + ' → 집어넣음');
+              return;
+            }
+          }
+          // 메뉴는 떴지만 집어넣기가 없으면 메뉴 닫기
+          const bd = pop.querySelector('.MuiBackdrop-root');
+          if (bd) bd.click(); else document.body.click();
+          respondAction(name + ': 집어넣기 메뉴를 찾을 수 없습니다');
+          return;
+        }
+        if (++attempts < 15) setTimeout(tryClick, 50);
+        else fallbackFirestore();
+      };
+      setTimeout(tryClick, 60);
+      return;
+    }
+
+    // 2차: 보드에 토큰 없음 → Firestore로 직접 active 토글
+    fallbackFirestore();
+
+    async function fallbackFirestore() {
+      try {
+        const sdk = acquireFirestoreSDK();
+        if (!sdk) throw new Error('Firestore SDK 없음');
+
+        const roomId = getRoomId();
+        if (!roomId) throw new Error('방 ID를 찾을 수 없음');
+
+        const char = getCharacterByName(name);
+        if (!char) throw new Error('캐릭터 "' + name + '" 없음');
+
+        console.log(`%c[BWBR]%c 집어넣기 Firestore: id=${char.__id}, active=${char.active}`,
+          'color: #ff9800; font-weight: bold;', 'color: inherit;');
+
+        const charsCol = sdk.collection(sdk.db, 'rooms', roomId, 'characters');
+        const charRef = sdk.doc(charsCol, char.__id);
+        const newActive = !char.active;
+        await sdk.setDoc(charRef, { active: newActive, updatedAt: Date.now() }, { merge: true });
+
+        respondAction(name + (newActive ? ' → 보드에 꺼냄' : ' → 집어넣음'));
+        console.log(`%c[BWBR]%c ${name} active: ${char.active} → ${newActive}`,
+          'color: #4caf50; font-weight: bold;', 'color: inherit;');
+      } catch (err) {
+        console.error('[BWBR] 집어넣기 실패:', err);
+        respondAction('집어넣기 실패: ' + err.message);
+      }
+    }
+  });
+
+  // ── 복제 (네이티브 토큰 메뉴 우선, Firestore 폴백) ──
+  window.addEventListener('bwbr-character-copy', async (e) => {
+    const name = e.detail?.name;
+    if (!name) return respondAction('캐릭터를 특정할 수 없습니다');
+
+    // 1차: 보드 토큰 컨텍스트 메뉴 → "복제" 클릭 (네이티브)
+    const token = findCharTokenOnBoard(name);
+    if (token) {
+      const rect = token.getBoundingClientRect();
+      token.dispatchEvent(new MouseEvent('contextmenu', {
+        bubbles: true, cancelable: true, view: window,
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2,
+        button: 2
+      }));
+      let attempts = 0;
+      const tryClick = () => {
+        const pops = document.querySelectorAll('.MuiPopover-root');
+        if (pops.length) {
+          const pop = pops[pops.length - 1];
+          const items = pop.querySelectorAll('li[role="menuitem"]');
+          for (const item of items) {
+            const t = (item.textContent || '').trim();
+            if (t.indexOf('복제') === 0 || t.indexOf('複製') === 0) {
+              item.click();
+              respondAction(name + ' → 복제됨');
+              console.log(`%c[BWBR]%c ${name} 네이티브 복제`,
+                'color: #4caf50; font-weight: bold;', 'color: inherit;');
+              setTimeout(broadcastCharacterList, 800);
+              return;
+            }
+          }
+          // "복제" 항목이 없으면 메뉴 닫고 Firestore 폴백
+          const bd = pop.querySelector('.MuiBackdrop-root');
+          if (bd) bd.click(); else document.body.click();
+          fallbackFirestoreCopy();
+          return;
+        }
+        if (++attempts < 15) setTimeout(tryClick, 50);
+        else fallbackFirestoreCopy();
+      };
+      setTimeout(tryClick, 60);
+      return;
+    }
+
+    // 2차: 보드에 토큰 없음 → Firestore 수동 복사
+    fallbackFirestoreCopy();
+
+    async function fallbackFirestoreCopy() {
+      try {
+        const sdk = acquireFirestoreSDK();
+        if (!sdk) throw new Error('Firestore SDK 없음');
+        const roomId = getRoomId();
+        if (!roomId) throw new Error('방 ID를 찾을 수 없음');
+        const char = getCharacterByName(name);
+        if (!char) throw new Error('캐릭터 "' + name + '" 없음');
+
+        const copyData = {};
+        const skipKeys = ['__id', '_id', 'speaking', 'createdAt'];
+        for (const [k, v] of Object.entries(char)) {
+          if (!skipKeys.includes(k)) copyData[k] = v;
+        }
+        // 복사 이름: 원본 (1), 원본 (2), ... 형식
+        const baseName = name.replace(/\s*\(\d+\)$/, '');
+        let copyNum = 1;
+        const rc = reduxStore.getState().entities?.roomCharacters;
+        if (rc) {
+          for (const cid of (rc.ids || [])) {
+            const cc = rc.entities?.[cid];
+            if (!cc?.name) continue;
+            const m = cc.name.match(/^(.+?)\s*\((\d+)\)$/);
+            if (m && m[1] === baseName) {
+              copyNum = Math.max(copyNum, parseInt(m[2], 10) + 1);
+            }
+          }
+        }
+        copyData.name = baseName + ' (' + copyNum + ')';
+        copyData.active = false;
+        copyData.updatedAt = Date.now();
+
+        const charsCol = sdk.collection(sdk.db, 'rooms', roomId, 'characters');
+        let newRef;
+        try {
+          newRef = sdk.doc(charsCol);
+          if (!newRef || !newRef.id) throw 0;
+        } catch {
+          const newId = Date.now().toString(36) + Math.random().toString(36).substring(2, 10);
+          newRef = sdk.doc(charsCol, newId);
+        }
+        await sdk.setDoc(newRef, copyData);
+
+        respondAction(copyData.name + ' 복사 완료 (Firestore)');
+        console.log(`%c[BWBR]%c ${copyData.name} Firestore 복사 (ID: ${newRef.id})`,
+          'color: #ff9800; font-weight: bold;', 'color: inherit;');
+        setTimeout(broadcastCharacterList, 500);
+      } catch (err) {
+        console.error('[BWBR] 복사 실패:', err);
+        respondAction('복사 실패: ' + err.message);
+      }
+    }
+  });
+
+  // ── 삭제 (네이티브 토큰 메뉴 우선, Firestore 폴백) ──
+  window.addEventListener('bwbr-character-delete', async (e) => {
+    const name = e.detail?.name;
+    if (!name) return respondAction('캐릭터를 특정할 수 없습니다');
+
+    // 1차: 보드 토큰 컨텍스트 메뉴 → "삭제" 클릭 (네이티브)
+    const token = findCharTokenOnBoard(name);
+    if (token) {
+      const rect = token.getBoundingClientRect();
+      token.dispatchEvent(new MouseEvent('contextmenu', {
+        bubbles: true, cancelable: true, view: window,
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2,
+        button: 2
+      }));
+      let attempts = 0;
+      const tryClick = () => {
+        const pops = document.querySelectorAll('.MuiPopover-root');
+        if (pops.length) {
+          const pop = pops[pops.length - 1];
+          const items = pop.querySelectorAll('li[role="menuitem"]');
+          for (const item of items) {
+            const t = (item.textContent || '').trim();
+            if (t.indexOf('삭제') === 0 || t.indexOf('削除') === 0) {
+              item.click();
+              respondAction(name + ' 삭제됨');
+              console.log(`%c[BWBR]%c ${name} 네이티브 삭제`,
+                'color: #f44336; font-weight: bold;', 'color: inherit;');
+              setTimeout(broadcastCharacterList, 500);
+              return;
+            }
+          }
+          const bd = pop.querySelector('.MuiBackdrop-root');
+          if (bd) bd.click(); else document.body.click();
+          fallbackFirestoreDelete();
+          return;
+        }
+        if (++attempts < 15) setTimeout(tryClick, 50);
+        else fallbackFirestoreDelete();
+      };
+      setTimeout(tryClick, 60);
+      return;
+    }
+
+    // 2차: 보드에 없음 → Firestore 직접 삭제
+    fallbackFirestoreDelete();
+
+    async function fallbackFirestoreDelete() {
+      try {
+        const sdk = acquireFirestoreSDK();
+        if (!sdk) throw new Error('Firestore SDK 없음');
+        const roomId = getRoomId();
+        if (!roomId) throw new Error('방 ID를 찾을 수 없음');
+        const char = getCharacterByName(name);
+        if (!char) throw new Error('캐릭터 "' + name + '" 없음');
+
+        const charsCol = sdk.collection(sdk.db, 'rooms', roomId, 'characters');
+        const charRef = sdk.doc(charsCol, char.__id);
+
+        // deleteDoc 탐색 시도
+        let deleted = false;
+        const req = acquireWebpackRequire();
+        if (req) {
+          try {
+            const fsMod = req(_FS_CONFIG.firestoreModId);
+            const knownKeys = new Set([
+              _FS_CONFIG.fsKeys.setDoc, _FS_CONFIG.fsKeys.doc,
+              _FS_CONFIG.fsKeys.collection, _FS_CONFIG.fsKeys.getDocs
+            ]);
+            for (const [k, v] of Object.entries(fsMod)) {
+              if (typeof v !== 'function' || knownKeys.has(k)) continue;
+              if (v.length === 1 || v.length === 0) {
+                try {
+                  const result = v(charRef);
+                  if (result && typeof result.then === 'function') {
+                    await result;
+                    deleted = true;
+                    break;
+                  }
+                } catch { /* not deleteDoc, continue */ }
+              }
+            }
+          } catch { /* fallback to soft delete */ }
+        }
+
+        if (!deleted) {
+          await sdk.setDoc(charRef, {
+            active: false, hideStatus: true, updatedAt: Date.now()
+          }, { merge: true });
+        }
+
+        respondAction(name + ' 삭제됨 (Firestore)');
+        console.log(`%c[BWBR]%c ${name} Firestore 삭제${deleted ? '' : ' (soft)'}`,
+          'color: #f44336; font-weight: bold;', 'color: inherit;');
+        setTimeout(broadcastCharacterList, 500);
+      } catch (err) {
+        console.error('[BWBR] 삭제 실패:', err);
+        respondAction('삭제 실패: ' + err.message);
+      }
+    }
+  });
+
+  // ================================================================
+  //  진단: Redux 상태 구조 덤프
+  //  콘솔: window.dispatchEvent(new CustomEvent('bwbr-dump-redux-keys'))
+  // ================================================================
+  window.addEventListener('bwbr-dump-redux-keys', () => {
+    if (!reduxStore) {
+      console.error('[BWBR 진단] Redux Store 없음');
+      return;
+    }
+    const state = reduxStore.getState();
+    console.log('%c[BWBR 진단]%c ===== Redux 상태 구조 =====',
+      'color: #2196f3; font-weight: bold;', 'color: inherit;');
+    console.log('Top-level keys:', Object.keys(state));
+    console.log('app keys:', Object.keys(state.app || {}));
+    console.log('entities keys:', Object.keys(state.entities || {}));
+
+    // entities 하위 구조
+    for (const key of Object.keys(state.entities || {})) {
+      const ent = state.entities[key];
+      if (ent?.ids) {
+        console.log(`  entities.${key}: ${ent.ids.length}건`);
+        if (ent.ids.length > 0) {
+          const sample = ent.entities[ent.ids[0]];
+          console.log(`    샘플 키:`, Object.keys(sample || {}));
+          console.log(`    샘플 데이터:`, JSON.parse(JSON.stringify(sample)));
+        }
+      }
+    }
+
+    // app 하위 구조
+    for (const key of Object.keys(state.app || {})) {
+      const val = state.app[key];
+      if (val && typeof val === 'object') {
+        console.log(`  app.${key}:`, Object.keys(val));
+      } else {
+        console.log(`  app.${key}:`, val);
+      }
+    }
+    console.log('%c[BWBR 진단]%c ===========================',
+      'color: #2196f3; font-weight: bold;', 'color: inherit;');
+  });
+
+  // ================================================================
+  //  진단: Redux Action 로깅 시작/중지
+  //  시작: window.dispatchEvent(new CustomEvent('bwbr-log-actions'))
+  //  중지: window.dispatchEvent(new CustomEvent('bwbr-stop-log-actions'))
+  // ================================================================
+  let _origDispatch = null;
+
+  window.addEventListener('bwbr-log-actions', () => {
+    if (!reduxStore) {
+      console.error('[BWBR] Redux Store 없음');
+      return;
+    }
+    if (_origDispatch) {
+      console.log('[BWBR] 이미 Action 로깅 중');
+      return;
+    }
+    _origDispatch = reduxStore.dispatch;
+    reduxStore.dispatch = function (action) {
+      if (typeof action === 'function') {
+        // thunk — inner dispatch도 인터셉트
+        return action(function innerDispatch(innerAction) {
+          if (typeof innerAction === 'function') {
+            return innerAction(innerDispatch, reduxStore.getState);
+          }
+          console.log('%c[ACTION inner]%c', 'color:#ff9800;font-weight:bold', 'color:inherit',
+            innerAction?.type || '(no type)', innerAction);
+          return _origDispatch.call(reduxStore, innerAction);
+        }, reduxStore.getState);
+      }
+      console.log('%c[ACTION]%c', 'color:#ff9800;font-weight:bold', 'color:inherit',
+        action?.type || '(no type)', action);
+      return _origDispatch.call(this, action);
+    };
+    console.log('%c[BWBR]%c ✅ Action 로깅 시작 (thunk 내부 포함) — 조작 후 콘솔을 확인하세요',
+      'color: #4caf50; font-weight: bold;', 'color: inherit;');
+  });
+
+  window.addEventListener('bwbr-stop-log-actions', () => {
+    if (_origDispatch) {
+      reduxStore.dispatch = _origDispatch;
+      _origDispatch = null;
+      console.log('%c[BWBR]%c Action 로깅 해제',
+        'color: #4caf50; font-weight: bold;', 'color: inherit;');
+    } else {
+      console.log('[BWBR] 로깅 중이 아닙니다');
+    }
+  });
+
+  // ================================================================
+  //  진단: app.state 변화 스냅샷 (before/after diff)
+  //  1) bwbr-snapshot-before → 스냅샷 저장
+  //  2) 코코포리아에서 확대 보기 등 조작
+  //  3) bwbr-snapshot-after → diff 출력
+  // ================================================================
+  let _stateSnapshot = null;
+
+  window.addEventListener('bwbr-snapshot-before', () => {
+    if (!reduxStore) return console.error('[BWBR] Redux Store 없음');
+    _stateSnapshot = JSON.parse(JSON.stringify(reduxStore.getState().app?.state || {}));
+    console.log('%c[BWBR]%c 📸 app.state 스냅샷 저장 완료 — 이제 조작하세요',
+      'color: #2196f3; font-weight: bold;', 'color: inherit;');
+  });
+
+  window.addEventListener('bwbr-snapshot-after', () => {
+    if (!reduxStore) return console.error('[BWBR] Redux Store 없음');
+    if (!_stateSnapshot) return console.error('[BWBR] 먼저 bwbr-snapshot-before 실행하세요');
+
+    const after = JSON.parse(JSON.stringify(reduxStore.getState().app?.state || {}));
+    const allKeys = new Set([...Object.keys(_stateSnapshot), ...Object.keys(after)]);
+    const changes = {};
+    for (const key of allKeys) {
+      const b = JSON.stringify(_stateSnapshot[key]);
+      const a = JSON.stringify(after[key]);
+      if (b !== a) changes[key] = { before: _stateSnapshot[key], after: after[key] };
+    }
+
+    console.log('%c[BWBR]%c 📸 app.state 변화:', 'color: #2196f3; font-weight: bold;', 'color: inherit;');
+    if (Object.keys(changes).length === 0) {
+      console.log('  (변화 없음)');
+    } else {
+      for (const [k, v] of Object.entries(changes)) {
+        console.log(`  ${k}:`, v.before, '→', v.after);
+      }
+    }
+    _stateSnapshot = null;
+  });
+
+  // ================================================================
+  //  캐릭터 단축키: 네이티브 확대 보기 (inspectImageUrl 방식)
+  //  ISOLATED → bwbr-native-zoom { imageUrl }
+  // ================================================================
+
+  /** 캐시된 seted action creator (한 번 발견하면 재사용) */
+  let _setedActionCreator = null;
+
+  /**
+   * app.state 수정용 action creator를 자동 탐색.
+   * 방법 1: webpack 모듈에서 .seted action creator 검색 (RTK 패턴)
+   * 방법 2: dispatch 인터셉터로 자연 상호작용에서 캡처
+   * 방법 3: 확장된 type 문자열 브루트포스
+   */
+  function findSetedActionCreator() {
+    if (_setedActionCreator) return _setedActionCreator;
+
+    // ── 방법 1: webpack 모듈에서 RTK action creator 검색 ──
+    const req = acquireWebpackRequire();
+    if (req) {
+      const ids = Object.keys(req.m);
+      for (let mi = 0; mi < ids.length; mi++) {
+        try {
+          const mod = req(ids[mi]);
+          if (!mod || typeof mod !== 'object') continue;
+          for (const key of Object.keys(mod)) {
+            const val = mod[key];
+            if (!val || typeof val !== 'object') continue;
+            // RTK slice.actions 또는 직접 export된 action creator 객체
+            if (typeof val.seted === 'function' && typeof val.seted.type === 'string') {
+              // 검증: 이 action type이 실제로 app.state를 변경하는지 확인
+              const testType = val.seted.type;
+              const appState = reduxStore.getState().app?.state;
+              if (appState) {
+                const origX = appState.roomPointerX;
+                try {
+                  reduxStore.dispatch({ type: testType, payload: { ...appState, roomPointerX: -99999 } });
+                  if (reduxStore.getState().app?.state?.roomPointerX === -99999) {
+                    reduxStore.dispatch({ type: testType, payload: { ...reduxStore.getState().app.state, roomPointerX: origX } });
+                    _setedActionCreator = val.seted;
+                    console.log(`%c[BWBR]%c ✅ seted action creator 발견: type="${testType}" (module ${ids[mi]}, key "${key}")`,
+                      'color: #4caf50; font-weight: bold;', 'color: inherit;');
+                    return _setedActionCreator;
+                  }
+                } catch { /* not the right one */ }
+              }
+            }
+          }
+        } catch { /* skip module */ }
+      }
+      console.log('[BWBR] webpack 모듈 검색 완료, seted 미발견 → 인터셉터 대기');
+    }
+
+    // ── 방법 2: 확장된 type 문자열 브루트포스 ──
+    const state = reduxStore.getState();
+    const appState = state.app?.state;
+    if (appState && typeof appState === 'object') {
+      const origX = appState.roomPointerX;
+      // 가능한 slice name 조합
+      const sliceNames = [
+        'state', 'appState', 'app', 'ui', 'page', 'view', 'layout',
+        'global', 'root', 'main', 'setting', 'settings', 'config',
+        'store', 'reducer', 'slice', 'room', 'workspace', 'session'
+      ];
+      const actionNames = ['seted', 'set', 'setState', 'update', 'replace', 'patch', 'merge', 'assign', 'reset'];
+
+      for (const sn of sliceNames) {
+        for (const an of actionNames) {
+          const type = `${sn}/${an}`;
+          try {
+            reduxStore.dispatch({ type, payload: { ...appState, roomPointerX: -99999 } });
+            if (reduxStore.getState().app?.state?.roomPointerX === -99999) {
+              reduxStore.dispatch({ type, payload: { ...reduxStore.getState().app.state, roomPointerX: origX } });
+              _setedActionCreator = { type, __synthetic: true };
+              console.log(`%c[BWBR]%c ✅ app.state type 발견 (브루트포스): "${type}"`,
+                'color: #4caf50; font-weight: bold;', 'color: inherit;');
+              return _setedActionCreator;
+            }
+          } catch { /* try next */ }
+        }
+      }
+    }
+
+    console.warn('[BWBR] app.state action type 탐색 실패 — 인터셉터로 캡처 대기 중');
+    return null;
+  }
+
+  // ── 방법 3: 패시브 인터셉터 — 코코포리아 일반 상호작용에서 type 캡처 ──
+  (function installPassiveInterceptor() {
+    if (!reduxStore) return;
+    const orig = reduxStore.dispatch;
+    reduxStore.dispatch = function (action) {
+      if (typeof action === 'function') {
+        // thunk — inner dispatch 인터셉트
+        return action(function innerDispatch(innerAction) {
+          if (typeof innerAction !== 'function' && innerAction?.type && innerAction?.payload) {
+            const p = innerAction.payload;
+            if (!_setedActionCreator && p && typeof p === 'object'
+              && 'openInspector' in p && 'roomPointerX' in p) {
+              _setedActionCreator = { type: innerAction.type, __intercepted: true };
+              console.log(`%c[BWBR]%c ✅ seted action type 캡처됨: "${innerAction.type}"`,
+                'color: #4caf50; font-weight: bold;', 'color: inherit;');
+              // 캡처 완료 → 원래 dispatch 복원
+              reduxStore.dispatch = orig;
+            }
+          }
+          return orig.call(reduxStore, innerAction);
+        }, reduxStore.getState);
+      }
+      return orig.call(this, action);
+    };
+  })();
+
+  /** Inspector 이미지 오버플로 수정 — 렌더링 후 img 요소에 max 제한 */
+  function constrainInspectorImage(imageUrl) {
+    let attempts = 0;
+    const tryConstrain = () => {
+      // Inspector 오버레이 안의 이미지 탐색
+      const allImgs = document.querySelectorAll('#root img');
+      for (const img of allImgs) {
+        if (!img.src) continue;
+        // 같은 이미지 URL인지 확인 (부분 매칭)
+        if (img.src === imageUrl || img.src.includes(imageUrl) || imageUrl.includes(img.src)
+            || (extractStoragePath(img.src) && extractStoragePath(img.src) === extractStoragePath(imageUrl))) {
+          // Inspector 내부 이미지인지 확인: 부모가 전체화면 오버레이여야 함
+          const rect = img.getBoundingClientRect();
+          if (rect.width > window.innerWidth * 0.9 || rect.height > window.innerHeight * 0.9
+              || rect.right > window.innerWidth || rect.bottom > window.innerHeight) {
+            img.style.maxWidth = '90vw';
+            img.style.maxHeight = '90vh';
+            img.style.objectFit = 'contain';
+            img.style.width = 'auto';
+            img.style.height = 'auto';
+            console.log('%c[BWBR]%c Inspector 이미지 크기 제한 적용',
+              'color: #4caf50; font-weight: bold;', 'color: inherit;');
+            return;
+          }
+        }
+      }
+      if (++attempts < 20) requestAnimationFrame(tryConstrain);
+    };
+    requestAnimationFrame(tryConstrain);
+  }
+
+  window.addEventListener('bwbr-native-zoom', (e) => {
+    const imageUrl = e.detail?.imageUrl;
+    if (!imageUrl || !reduxStore) {
+      window.dispatchEvent(new CustomEvent('bwbr-native-zoom-result', { detail: { success: false } }));
+      return;
+    }
+
+    try {
+      const creator = findSetedActionCreator();
+      if (!creator) {
+        window.dispatchEvent(new CustomEvent('bwbr-native-zoom-result', { detail: { success: false } }));
+        return;
+      }
+
+      const appState = reduxStore.getState().app?.state;
+      const newState = { ...appState, openInspector: true, inspectImageUrl: imageUrl, inspectText: '' };
+      const actionType = typeof creator === 'function' ? creator.type : creator.type;
+      reduxStore.dispatch({ type: actionType, payload: newState });
+
+      const check = reduxStore.getState().app?.state;
+      if (check?.openInspector === true && check?.inspectImageUrl === imageUrl) {
+        console.log('%c[BWBR]%c ✅ 네이티브 확대 보기 열림',
+          'color: #4caf50; font-weight: bold;', 'color: inherit;');
+        window.dispatchEvent(new CustomEvent('bwbr-native-zoom-result', { detail: { success: true } }));
+        // 이미지 오버플로 수정: Inspector 렌더링 후 이미지 크기 제한
+        constrainInspectorImage(imageUrl);
+      } else {
+        window.dispatchEvent(new CustomEvent('bwbr-native-zoom-result', { detail: { success: false } }));
+      }
+    } catch (err) {
+      console.error('[BWBR] 네이티브 확대 보기 실패:', err);
+      window.dispatchEvent(new CustomEvent('bwbr-native-zoom-result', { detail: { success: false } }));
     }
   });
 

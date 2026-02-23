@@ -13,13 +13,15 @@
 ## 목차
 
 1. [Redux Store 획득](#1-기본-접근-redux-store)
-2. [캐릭터 데이터 구조](#2-캐릭터-데이터-구조-roomcharacters)
+2. [채팅 메시지 데이터 구조](#2-채팅-메시지-데이터-구조-roommessages)
 3. [Firestore 직접 접근 (읽기 + 쓰기)](#3-firestore-직접-접근-읽기--쓰기)
 4. [webpack require 획득 방법](#4-webpack-require-획득-방법)
 5. [Redux Store 획득 코드](#5-redux-store-획득-방법)
 6. [캐릭터 셀렉터 함수](#6-캐릭터-셀렉터-함수-모듈-88464)
 7. [주의사항 & 트러블슈팅](#주의사항--트러블슈팅)
 8. [업데이트 대응 가이드](#8-업데이트-대응-가이드)
+9. [app.state 상세 구조 및 UI 제어](#9-appstate-상세-구조-및-ui-제어)
+10. [Redux Action Type 탐색 기법](#10-redux-action-type-탐색-기법)
 
 ---
 
@@ -56,7 +58,17 @@ store.getState() = {
       role: null,
       uid: "...",             // 현재 유저 UID
       loading: false,
-      ...
+      openInspector: false,        // ★ 확대 보기 다이얼로그 열림 여부
+      inspectImageUrl: null,       // ★ 확대 보기 이미지 URL
+      inspectText: "",             // ★ 확대 보기 텍스트
+      openRoomCharacter: false,    // ★ 캐릭터 편집 다이얼로그 열림 여부
+      openRoomCharacterId: null,   // ★ 편집 중인 캐릭터 ID
+      openRoomCharacterMenu: false,
+      openRoomCharacterMenuId: null,
+      openRoomCharacterSelect: false,
+      roomPointerX: 0,            // 마우스 포인터 위치 (state 변경 테스트용)
+      roomPointerY: 0,
+      ...  // 총 174개 이상의 키
     },
     chat: { inputText: "" },
     user: { ... },
@@ -66,28 +78,11 @@ store.getState() = {
       members: { ids: [...], entities: {...} }
     }
   },
-  entities: {
-    rooms:            { ids: [], entities: {} },
-    roomCharacters:   { ids: [...], entities: {...}, idsGroupBy: {...} },  // ★ 핵심
-    roomEffects:      { ids: [], entities: {} },
-    roomDices:        { ids: [], entities: {} },
-    roomDecks:        { ids: [], entities: {} },
-    roomItems:        { ids: [], entities: {} },
-    roomMembers:      { ids: [], entities: {} },
-    roomMessages:     { ids: [...], entities: {...} },  // ★ 채팅 메시지
-    roomNotes:        { ids: [], entities: {} },
-    roomSavedatas:    { ids: [], entities: {} },
-    roomScenes:       { ids: [], entities: {} },
-    userFiles:        { ids: [], entities: {} },
-    userMedia:        { ids: [], entities: {} },
-    userMediumDirectories: { ids: [], entities: {} },
-    userHistories:    { ids: [], entities: {} },
-    userSetting:      { ... },
-    roomHistories:    { ids: [], entities: {} },
-    turboRooms:       {}
-  }
+  entities: { ... }  // 섹션 2-3 참조
 }
 ```
+
+> **`app.state` 상세 키 목록**: [섹션 9](#9-appstate-상세-구조-및-ui-제어) 참조
 
 ---
 
@@ -780,3 +775,166 @@ const _FS_CONFIG = {
 자동 탐색은 확장 프로그램이 처음 메시지를 Firestore로 전송할 때 실행됩니다.
 프로퍼티 키가 바뀌어도 대부분 자동으로 복구됩니다.
 모듈 ID가 바뀐 경우에만 수동 개입이 필요합니다.
+
+---
+
+## 9. app.state 상세 구조 및 UI 제어
+
+> `store.getState().app.state` 는 코코포리아의 전역 UI 상태를 관리합니다.
+> 174개 이상의 키가 있으며, 여기서는 확장 프로그램에서 활용 가능한 핵심 키만 정리합니다.
+>
+> **기준**: 2026-02-23
+
+### 확대 보기 (Inspector)
+
+| 키 | 타입 | 기본값 | 설명 |
+|----|------|--------|------|
+| `openInspector` | boolean | `false` | 확대 보기 다이얼로그 열림 여부 |
+| `inspectImageUrl` | string \| null | `null` | 확대 보기에 표시할 이미지 URL |
+| `inspectText` | string | `""` | 확대 보기 텍스트 (메모 등) |
+
+```js
+// 네이티브 확대 보기 열기
+const appState = store.getState().app.state;
+store.dispatch({
+  type: actionType,  // 섹션 10에서 발견한 action type
+  payload: { ...appState, openInspector: true, inspectImageUrl: imageUrl, inspectText: '' }
+});
+```
+
+### 캐릭터 편집 다이얼로그
+
+| 키 | 타입 | 기본값 | 설명 |
+|----|------|--------|------|
+| `openRoomCharacter` | boolean | `false` | 캐릭터 편집 다이얼로그 열림 여부 |
+| `openRoomCharacterId` | string \| null | `null` | 편집 대상 캐릭터의 Firestore 문서 ID |
+| `openRoomCharacterMenu` | boolean | `false` | 캐릭터 컨텍스트 메뉴 열림 |
+| `openRoomCharacterMenuId` | string \| null | `null` | 메뉴 대상 캐릭터 ID |
+| `openRoomCharacterSelect` | boolean | `false` | 캐릭터 선택 드롭다운 열림 |
+
+```js
+// 캐릭터 편집 다이얼로그 열기
+const charId = '...';  // entities.roomCharacters.ids 에서 검색
+store.dispatch({
+  type: actionType,
+  payload: { ...store.getState().app.state, openRoomCharacter: true, openRoomCharacterId: charId }
+});
+```
+
+> **주의**: `openRoomCharacterId`에는 `entities.roomCharacters` 의 entity key (= Firestore 문서 ID)를 사용합니다.
+> 캐릭터 객체 내부의 `_id` 필드와는 다를 수 있습니다.
+
+### 기타 유용한 키
+
+| 키 | 타입 | 설명 |
+|----|------|------|
+| `roomId` | string | 현재 방 ID |
+| `uid` | string | 현재 사용자 UID |
+| `roomPointerX` / `roomPointerY` | number | 마우스 포인터 좌표 (action type 검증 테스트용) |
+| `loading` | boolean | 로딩 상태 |
+| `openRoomSetting` | boolean | 방 설정 다이얼로그 |
+| `openSavedata` | boolean | 세이브 다이얼로그 |
+
+### app.state 전체 키 덤프
+
+```js
+// 콘솔에서 실행
+window.dispatchEvent(new CustomEvent('bwbr-dump-redux-keys'));
+// → app.state의 모든 키, entities 하위 키 목록 출력
+```
+
+### app.state 변경 추적 (스냅샷 diff)
+
+```js
+// 1단계: 스냅샷 저장
+window.dispatchEvent(new CustomEvent('bwbr-snapshot-before'));
+
+// 2단계: 코코포리아에서 UI 조작 (확대 보기, 편집 등)
+
+// 3단계: 변화 확인
+window.dispatchEvent(new CustomEvent('bwbr-snapshot-after'));
+// → 변경된 키와 before/after 값 출력
+```
+
+---
+
+## 10. Redux Action Type 탐색 기법
+
+> `app.state`를 수정하려면 올바른 Redux action type이 필요합니다.
+> 코코포리아는 RTK (Redux Toolkit)의 `createSlice`를 사용하며,
+> action type은 minified되어 있어 정적으로 알 수 없습니다.
+
+### 탐색 전략 (3-tier)
+
+#### Tier 1: webpack 모듈 검색
+
+webpack 모듈에서 `.seted` action creator를 직접 검색합니다.
+
+```js
+// RTK createSlice 패턴: slice.actions.seted({ ...state })
+const req = acquireWebpackRequire();
+for (const id of Object.keys(req.m)) {
+  const mod = req(id);
+  for (const key of Object.keys(mod || {})) {
+    const val = mod[key];
+    if (val?.seted?.type) {
+      // 검증: roomPointerX를 변경하여 실제로 app.state를 바꾸는지 확인
+    }
+  }
+}
+```
+
+#### Tier 2: 문자열 브루트포스
+
+가능한 slice/action name 조합을 시도합니다.
+
+```js
+// "sliceName/actionName" 형식
+const sliceNames = ['state', 'appState', 'app', 'ui', 'page', 'view', ...];
+const actionNames = ['seted', 'set', 'setState', 'update', ...];
+for (const sn of sliceNames) {
+  for (const an of actionNames) {
+    store.dispatch({ type: `${sn}/${an}`, payload: testPayload });
+    // roomPointerX 변경 여부로 검증
+  }
+}
+```
+
+#### Tier 3: 패시브 인터셉터 (가장 안정적)
+
+사용자의 일반 상호작용에서 action type을 자동 캡처합니다.
+
+```js
+const origDispatch = store.dispatch;
+store.dispatch = function (action) {
+  if (typeof action === 'function') {
+    // RTK thunk: inner dispatch를 인터셉트
+    return action(function innerDispatch(innerAction) {
+      if (innerAction?.payload?.openInspector !== undefined
+          && innerAction?.payload?.roomPointerX !== undefined) {
+        // ✅ 이것이 app.state 수정 action type
+        capturedType = innerAction.type;
+        store.dispatch = origDispatch; // 복원
+      }
+      return origDispatch.call(store, innerAction);
+    }, store.getState);
+  }
+  return origDispatch.call(this, action);
+};
+```
+
+> **RTK thunk 주의**: 코코포리아의 dispatch는 대부분 thunk (`typeof action === 'function'`)입니다.
+> thunk 내부에서 실제 action이 dispatch되므로, 외부 dispatch만 감시하면
+> type이 `undefined`로 나타납니다. 반드시 inner dispatch를 인터셉트해야 합니다.
+
+### action type 검증 방법
+
+```js
+// roomPointerX를 임시값으로 변경 → 복원
+const origX = store.getState().app.state.roomPointerX;
+store.dispatch({ type: candidateType, payload: { ...appState, roomPointerX: -99999 } });
+if (store.getState().app.state.roomPointerX === -99999) {
+  // ✅ 유효한 action type
+  store.dispatch({ type: candidateType, payload: { ...appState, roomPointerX: origX } });
+}
+```

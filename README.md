@@ -111,6 +111,36 @@
 
 ---
 
+## 캐릭터 단축키
+
+### Alt + 숫자 바인딩
+
+`Alt + 0~9` 키로 발화 캐릭터를 빠르게 전환할 수 있습니다.
+
+#### 바인딩 방법
+
+1. **보드 토큰 우클릭** → 「단축키 지정」 클릭
+2. **채팅 캐릭터 리스트 우클릭** → 「단축키 지정」 클릭
+3. 바인딩 다이얼로그에서 `Alt + 숫자` 입력
+
+#### 캐릭터 리스트 우클릭 메뉴
+
+채팅 패널의 캐릭터 선택 드롭다운에서 캐릭터를 우클릭하면:
+
+- **편집**: 캐릭터 편집 다이얼로그 열기
+- **확대 보기**: 캐릭터 이미지 전체 화면 표시 (네이티브)
+- **단축키 지정**: Alt+숫자 바인딩 지정
+- **단축키 해제**: 기존 바인딩 제거
+- **집어넣기**: 캐릭터를 보드에서 제거
+- **복사**: 캐릭터 복제
+- **삭제**: 캐릭터 삭제
+
+#### 바인딩 키 표시
+
+캐릭터 선택 드롭다운에서 바인딩된 캐릭터 옆에 `Alt + N` 뱃지가 표시됩니다.
+
+---
+
 ## 근접전 합 시스템
 
 ### 합 개시
@@ -195,6 +225,7 @@
 manifest.json             Chrome Extension 매니페스트 (MV3)
 background.js             Service Worker (설치/업데이트, 메시지 라우팅)
 README.md                 이 파일
+COCOFOLIA_DATA_API.md     코코포리아 내부 데이터 API 레퍼런스
 
 content/
   config-defaults.js      기본 설정값
@@ -202,11 +233,11 @@ content/
   combat-engine.js        전투 보조 엔진 (턴/행동 관리)
   chat-interface.js       코코포리아 채팅 인터페이스 (메시지 감지/전송)
   auto-complete.js        채팅 자동완성 (#캐릭터, !스테이터스, @컷인, 괄호, 명령어)
+  char-shortcut.js        캐릭터 단축키 (Alt+숫자 바인딩, 토큰/리스트 메뉴)
   overlay.js              전투 패널 UI
   overlay.css             전투 패널 스타일
   content.js              메인 컨트롤러 (상태 머신, 오케스트레이션)
   redux-injector.js       코코포리아 Redux/Firestore 접근 (MAIN world)
-  site-volume.js          사이트 음량 제어
 
 popup/
   popup.html              설정 팝업 UI
@@ -221,3 +252,85 @@ sounds/                   효과음 파일 (.wav, .mp3)
 ## 라이선스
 
 비공개 프로젝트. 코코포리아의 비공식 서드파티 도구입니다.
+
+---
+
+## 아키텍처 (개발자 참고)
+
+### 세계(world) 분리
+
+Chrome Extension MV3에서는 content script의 JS 컨텍스트가 페이지와 분리됩니다:
+
+- **ISOLATED world** (content scripts): `content.js`, `chat-interface.js`, `auto-complete.js`, `overlay.js`, `combat-engine.js`, `melee-engine.js`, `config-defaults.js`, `char-shortcut.js`
+- **MAIN world** (페이지 컨텍스트): `redux-injector.js` — Redux store, Firestore SDK 접근
+
+### ISOLATED ↔ MAIN 통신
+
+CustomEvent + DOM attribute 방식:
+
+| 이벤트 | 방향 | 용도 |
+|--------|------|------|
+| `bwbr-send-message-direct` | ISOLATED → MAIN | 메시지 전송 |
+| `bwbr-send-message-result` | MAIN → ISOLATED | 전송 결과 |
+| `bwbr-request-characters` / `bwbr-characters-data` | 양방향 | 캐릭터 목록 |
+| `bwbr-request-speaking-character` / `bwbr-speaking-character-data` | 양방향 | 발화 캐릭터 |
+| `bwbr-request-cutins` / `bwbr-cutins-data` | 양방향 | 컷인(이펙트) 목록 |
+| `bwbr-modify-status` / `bwbr-modify-status-result` | 양방향 | 스테이터스 변경 |
+| `bwbr-request-all-characters` / `bwbr-all-characters-data` | 양방향 | 전체 캐릭터 (숨김 포함) |
+| `bwbr-identify-character-by-image` / `bwbr-character-identified` | 양방향 | 이미지 URL로 캐릭터 식별 |
+| `bwbr-switch-character` | ISOLATED → MAIN | 발화 캐릭터 변경 |
+| `bwbr-native-zoom` | ISOLATED → MAIN | 네이티브 확대 보기 |
+| `bwbr-character-edit` / `bwbr-character-store` / `bwbr-character-copy` / `bwbr-character-delete` | ISOLATED → MAIN | 캐릭터 조작 |
+
+### 코코포리아 내부 접근 (redux-injector.js)
+
+- **Redux store**: `state.entities.roomCharacters` (캐릭터), `state.entities.roomMessages` (메시지), `state.entities.roomEffects` (이펙트)
+- **app.state**: 174개 이상의 UI 상태 키 (`openInspector`, `openRoomCharacterId` 등 — 확대 보기, 캐릭터 편집에 활용)
+- **Firestore SDK**: webpack 모듈에서 추출 (`setDoc`, `doc`, `collection`, `getDocs`)
+- **RTK action type**: 패시브 인터셉터로 thunk inner dispatch에서 자동 캡처
+
+> 상세 내부 API: [COCOFOLIA_DATA_API.md](COCOFOLIA_DATA_API.md) 참조
+
+### 전투 흐름 (상태 머신)
+
+```
+IDLE → COMBAT_STARTED → ROUND_HEADER_SENT → WAITING_ATTACKER_RESULT
+     → WAITING_DEFENDER_RESULT → PROCESSING_RESULT → (다음 합 반복 또는 COMBAT_END)
+```
+
+- **PAUSED** 상태로 일시정지 가능
+- **TURN_COMBAT**: 전투 보조 모드 (턴 관리 + 합 진행 가능)
+- **SPECTATING**: 다른 사용자의 합 관전 모드
+- 결과 타임아웃 시 수동 입력 UI 표시
+
+### 주요 기술 사항
+
+- **메시지 감지**: Redux store.subscribe (DOM 대신 Redux 기반 — 100% 감지율)
+- **Firestore 직접 전송**: 시스템 메시지는 textarea 경유 없이 Firestore에 기록 (type: 'system')
+- **컷인 재생**: Firestore effects 컬렉션의 playTime 필드 갱신으로 트리거
+- **자동완성 드롭다운 충돌 방지**: chat-interface의 Enter 감지에서 드롭다운 활성 상태 확인
+- **합 개시 자동완성**: #선택 시 before 텍스트에서 `《합 개시》` 패턴 감지 → 캐릭터 params에서 전투 스탯 자동 채움
+- **테스트 캐릭터**: # 자동완성에 항상 '테스트' 포함 (주사위 3, 대성공 20, 대실패 1)
+- **chrome.storage.sync**: 설정 저장 (popup ↔ content 공유)
+- **Script 로드 순서**: site-volume (document_start) → config-defaults → melee-engine → combat-engine → chat-interface → overlay → auto-complete → content (document_idle)
+- **MAIN world 스크립트**: redux-injector.js는 web_accessible_resources로 등록, content.js에서 `<script>` 태그로 주입
+- **네이티브 확대 보기**: Redux `app.state.openInspector` + `inspectImageUrl` 설정으로 코코포리아 내장 뷰어 활용
+- **캐릭터 편집**: Redux `app.state.openRoomCharacter` + `openRoomCharacterId` 설정
+
+### 설정 구조 (BWBR_DEFAULTS)
+
+- `templates`: 메시지 템플릿 (합 헤더, 굴림 명령, 결과, 승리 등)
+- `timing`: 각 단계별 대기 시간 (ms)
+- `sounds`: 효과음 배열 (합 시작, 합 헤더, 결과, 승리 — 다중 사운드 무작위 선택)
+- `rules`: D20, 대성공/대실패 값, 보너스/감소, 동점 처리
+- `patterns`: 정규식 (트리거, 주사위 결과, 중지)
+- `selectors`: 코코포리아 DOM 선택자
+- `general`: 활성화, 수동 모드, 전투 로그, 자동완성, 자동스크롤, 오버레이, 행동 자동소모, 디버그, 효과음/사이트 음량
+- `traits`: 종족 특성 정의 (H0, H00, H1~H3, H4, H40, H400)
+
+### 참고사항
+
+- 버전: manifest.json의 `version` 필드가 유일한 출처
+- git commit: `bwad-X.Y.Z` → post-commit hook이 manifest.json 자동 갱신
+- popup.js에 DEFAULTS가 별도 정의 (content script 접근 불가)
+- 코코포리아 시스템 메시지: `type: 'system'`은 color 필드 무시됨
