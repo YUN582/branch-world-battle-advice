@@ -2100,18 +2100,24 @@
       }
 
       const { messages, roomName } = e.detail;
-      overlay.addLog(`📜 ${messages.length}건 로그 가져옴, HTML 생성 중...`, 'info');
-      _showExportToast(`📜 ${messages.length}건 로그 가져옴, HTML 생성 중...`);
+      overlay.addLog(`📜 ${messages.length}건 로그 가져옴`, 'info');
+      _showExportToast(`📜 ${messages.length}건 로그 가져옴`, 2000);
 
-      try {
-        const html = _generateLogHtml(messages, roomName);
-        const filename = `log_${roomName || 'cocofolia'}_${_formatDateForFilename(new Date())}.html`;
-        _downloadFile(filename, html, 'text/html');
-        overlay.addLog(`📜 로그 추출 완료! ${messages.length}건 → ${filename}`, 'success');
-        _showExportToast(`✅ ${messages.length}건 로그 추출 완료!`, 3000);
-      } catch (genErr) {
-        overlay.addLog('HTML 생성 실패: ' + genErr.message, 'error');
-        _showExportToast('❌ HTML 생성 실패', 3000);
+      // 다이얼로그 열기 (log-export-dialog.js)
+      if (window.LogExportDialog) {
+        window.LogExportDialog.open(messages, roomName);
+      } else {
+        // fallback: 직접 내보내기 (다이얼로그 로드 실패 시)
+        try {
+          const html = _generateLogHtml(messages, roomName);
+          const filename = `log_${roomName || 'cocofolia'}_${_formatDateForFilename(new Date())}.html`;
+          _downloadFile(filename, html, 'text/html');
+          overlay.addLog(`📜 로그 추출 완료! ${messages.length}건 → ${filename}`, 'success');
+          _showExportToast(`✅ ${messages.length}건 로그 추출 완료!`, 3000);
+        } catch (genErr) {
+          overlay.addLog('HTML 생성 실패: ' + genErr.message, 'error');
+          _showExportToast('❌ HTML 생성 실패', 3000);
+        }
       }
     };
 
