@@ -20,12 +20,12 @@
   const _FS_CONFIG = {
     firestoreModId: 49631,   // Firestore SDK 함수 모듈
     dbModId: 5156,           // Firestore DB 인스턴스 모듈
-    fsKeys: { setDoc: 'pl', doc: 'JU', collection: 'hJ' },
+    fsKeys: { setDoc: 'pl', doc: 'JU', collection: 'hJ', getDocs: 'PL' },
     dbKey: 'db'
   };
 
   let _wpRequire = null;
-  let _firestoreSDK = null;  // { db, setDoc, doc, collection }
+  let _firestoreSDK = null;  // { db, setDoc, doc, collection, getDocs }
 
   /**
    * React Fiber 트리를 순회하여 Redux Store를 찾습니다.
@@ -436,7 +436,7 @@
 
     console.log(`%c[BWBR]%c ✅ Firestore 함수 자동 발견: collection=${collectionKey}, doc=${docKey}, setDoc=${setDocKey}`,
       'color: #4caf50; font-weight: bold;', 'color: inherit;');
-    return { collection: collectionFn, doc: docFn, setDoc: setDocFn };
+    return { collection: collectionFn, doc: docFn, setDoc: setDocFn, getDocs: null };
   }
 
   /**
@@ -475,13 +475,17 @@
     let setDocFn = fsMod[_FS_CONFIG.fsKeys.setDoc];
     let docFn = fsMod[_FS_CONFIG.fsKeys.doc];
     let collectionFn = fsMod[_FS_CONFIG.fsKeys.collection];
+    let getDocsFn = fsMod[_FS_CONFIG.fsKeys.getDocs];
 
     // 검증
     if (typeof collectionFn === 'function' && typeof docFn === 'function' && typeof setDocFn === 'function') {
       try {
         const testRef = collectionFn(db, '__bwbr_validate__');
         if (testRef && testRef.type === 'collection') {
-          _firestoreSDK = { db, setDoc: setDocFn, doc: docFn, collection: collectionFn };
+          _firestoreSDK = {
+            db, setDoc: setDocFn, doc: docFn, collection: collectionFn,
+            getDocs: typeof getDocsFn === 'function' ? getDocsFn : null
+          };
           console.log('%c[BWBR]%c ✅ Firestore SDK 획득 성공 (알려진 키)',
             'color: #4caf50; font-weight: bold;', 'color: inherit;');
           return _firestoreSDK;
@@ -494,7 +498,12 @@
       'color: #ff9800; font-weight: bold;', 'color: inherit;');
     const discovered = autoDiscoverFirestoreFunctions(fsMod, db);
     if (discovered) {
-      _firestoreSDK = { db, ...discovered };
+      // getDocs는 자동탐색으로 찾을 수 없으므로 알려진 키로 시도
+      let fallbackGetDocs = fsMod[_FS_CONFIG.fsKeys.getDocs];
+      _firestoreSDK = {
+        db, ...discovered,
+        getDocs: typeof fallbackGetDocs === 'function' ? fallbackGetDocs : null
+      };
       return _firestoreSDK;
     }
 
@@ -688,8 +697,11 @@
 
     const ctx = getMessageContext();
     if (!ctx) {
-      console.warn('[BWBR] 메시지 컨텍스트 없음 (아직 메시지를 보낸 적 없음?)');
-      return false;
+      // 컨텍스트 없어도 시스템 메시지는 최소한의 정보만으로 전송 가능
+      if (!overrides) {
+        console.warn('[BWBR] 메시지 컨텍스트 없음 (아직 메시지를 보낸 적 없음?)');
+        return false;
+      }
     }
 
     const state = reduxStore.getState();
@@ -707,13 +719,13 @@
       const msg = {
         text: text,
         type: 'text',
-        name: ctx.name,
-        channel: ctx.channel,
-        channelName: ctx.channelName,
-        color: ctx.color,
-        iconUrl: ctx.iconUrl,
+        name: ctx?.name || '',
+        channel: ctx?.channel || '',
+        channelName: ctx?.channelName || '',
+        color: ctx?.color || '#e0e0e0',
+        iconUrl: ctx?.iconUrl || '',
         imageUrl: null,
-        from: ctx.from,
+        from: ctx?.from || state.app?.state?.uid || '',
         to: null,
         toName: '',
         extend: {},
@@ -729,6 +741,133 @@
     } catch (e) {
       console.error('[BWBR] Firestore 직접 전송 실패:', e);
       return false;
+    }
+  }
+
+  /**
+   * 현재 보고 있는 채팅 탭의 채널 정보를 감지합니다 (MAIN world).
+   * 1) Redux store의 app state에서 현재 채널 확인 시도
+   * 2) DOM에서 선택된 탭 텍스트로 채널 매핑
+   * @returns {{ channel: string, channelName: string } | null}
+   */
+  function _detectCurrentChannel() {
+    try {
+      // 방법 1: Redux store에서 현재 채널 확인
+      if (reduxStore) {
+        const appState = reduxStore.getState().app;
+        const ch = appState?.chat?.channel
+          || appState?.state?.channel
+          || appState?.chat?.channelId
+          || appState?.state?.channelId;
+        const chName = appState?.chat?.channelName
+          || appState?.state?.channelName;
+        if (ch !== undefined && ch !== null) {
+          return { channel: ch || '', channelName: chName || '' };
+        }
+      }
+
+      // 방법 2: DOM에서 채팅 패널의 탭 인덱스로 채널 결정
+      // 코코포리아 기본 탭 순서 (고정):
+      //   [0] 메인 → channel:'main'  [1] 정보 → channel:'info'  [2] 잡담 → channel:'other'
+      //   [3+] 커스텀 → 고유 channel ID (메시지에서 조회)
+      const BUILTIN_CHANNELS = [
+        { channel: 'main',  channelName: 'main' },   // 탭 0
+        { channel: 'info',  channelName: 'info' },   // 탭 1
+        { channel: 'other', channelName: 'other' }    // 탭 2
+      ];
+
+      // 채팅 패널에 속한 탭 목록을 인덱스 포함으로 찾기
+      let chatTabs = null;   // [role="tablist"] 안의 모든 탭들
+      let selectedIdx = -1;  // 선택된 탭의 인덱스
+      let selectedText = ''; // 선택된 탭의 텍스트
+
+      // textarea 기준으로 올라가며 탭리스트 찾기
+      const textarea = document.querySelector('textarea[name="text"]');
+      if (textarea) {
+        let node = textarea.parentElement;
+        for (let i = 0; i < 30 && node; i++) {
+          const tablist = node.querySelector('[role="tablist"]');
+          if (tablist) {
+            chatTabs = tablist.querySelectorAll('[role="tab"]');
+            break;
+          }
+          // 형제 요소도 확인
+          if (node.parentElement) {
+            for (const sibling of node.parentElement.children) {
+              if (sibling === node) continue;
+              const tl = sibling.querySelector('[role="tablist"]');
+              if (tl) {
+                chatTabs = tl.querySelectorAll('[role="tab"]');
+                break;
+              }
+            }
+          }
+          if (chatTabs) break;
+          node = node.parentElement;
+        }
+      }
+
+      // 폴백: 전역에서 선택된 탭 찾기
+      if (!chatTabs) {
+        const allTabs = document.querySelectorAll('[role="tab"]');
+        // textarea가 같은 컨테이너에 있는 탭 그룹 찾기
+        for (const tab of allTabs) {
+          if (tab.getAttribute('aria-selected') === 'true') {
+            let container = tab.parentElement;
+            for (let j = 0; j < 10 && container; j++) {
+              if (container.querySelector('textarea[name="text"]')) {
+                // 이 탭의 tablist 찾기
+                const parent = tab.parentElement;
+                if (parent) chatTabs = parent.querySelectorAll('[role="tab"]');
+                break;
+              }
+              container = container.parentElement;
+            }
+          }
+          if (chatTabs) break;
+        }
+      }
+
+      if (!chatTabs || chatTabs.length === 0) return null;
+
+      // 선택된 탭의 인덱스와 텍스트 확인
+      chatTabs.forEach((tab, idx) => {
+        if (tab.getAttribute('aria-selected') === 'true' ||
+            tab.classList.contains('Mui-selected')) {
+          selectedIdx = idx;
+          selectedText = tab.textContent?.trim() || '';
+        }
+      });
+
+      if (selectedIdx < 0) return null;
+
+      // 기본 탭 (인덱스 0, 1, 2) → 고정 채널 매핑
+      if (selectedIdx < BUILTIN_CHANNELS.length) {
+        return BUILTIN_CHANNELS[selectedIdx];
+      }
+
+      // 커스텀 탭 (인덱스 3+) → 메시지에서 channelName으로 고유 ID 조회
+      if (selectedText && reduxStore) {
+        const rm = reduxStore.getState().entities?.roomMessages;
+        if (rm?.ids) {
+          const BUILTIN_IDS = ['', 'main', 'info', 'other'];
+          for (let i = rm.ids.length - 1; i >= 0; i--) {
+            const entity = rm.entities?.[rm.ids[i]];
+            if (!entity) continue;
+            if (entity.type === 'system' || entity.name === 'system') continue;
+            if (entity.channelName === selectedText
+                && entity.channel
+                && !BUILTIN_IDS.includes(entity.channel)) {
+              return { channel: entity.channel, channelName: selectedText };
+            }
+          }
+        }
+      }
+      // 커스텀 탭이지만 매핑 실패 → other 폴백
+      return { channel: 'other', channelName: 'other' };
+    } catch (e) {
+      console.warn('[BWBR] _detectCurrentChannel error:', e);
+      return null;
     }
   }
 
@@ -764,6 +903,12 @@
     let overrides;
     if (sendType === 'system') {
       overrides = { name: 'system', type: 'system', color: '#888888', iconUrl: null };
+      // ★ 현재 보고 있는 탭의 채널로 전송 (DOM에서 탐지)
+      const chInfo = _detectCurrentChannel();
+      if (chInfo) {
+        overrides.channel = chInfo.channel;
+        overrides.channelName = chInfo.channelName;
+      }
     } else {
       overrides = null;
     }
@@ -1004,6 +1149,75 @@
   });
 
   // ================================================================
+  //  진단용: 현재 채널 탐지 테스트
+  //  콘솔에서 실행: window.dispatchEvent(new CustomEvent('bwbr-detect-channel'))
+  // ================================================================
+  window.addEventListener('bwbr-detect-channel', () => {
+    console.log('%c[BWBR 진단]%c ===== 채널 탐지 테스트 =====',
+      'color: #2196f3; font-weight: bold;', 'color: inherit;');
+    // Redux app state 덤프
+    if (reduxStore) {
+      const fullState = reduxStore.getState();
+      const app = fullState.app;
+      console.log('app.chat:', JSON.parse(JSON.stringify(app?.chat || {})));
+      console.log('app.state:', JSON.parse(JSON.stringify(app?.state || {})));
+
+      // ★ Redux entities 전체 키 + 방 설정에서 채널 정보 탐색
+      const entities = fullState.entities;
+      console.log('entities 키:', Object.keys(entities || {}));
+      // room 관련 entities 내용 덤프
+      for (const key of Object.keys(entities || {})) {
+        if (key === 'roomMessages') continue; // 메시지는 별도 분석
+        const ent = entities[key];
+        if (ent?.ids?.length > 0) {
+          console.log(`entities.${key} (${ent.ids.length}개):`);
+          // 처음 3개만 출력
+          for (let i = 0; i < Math.min(3, ent.ids.length); i++) {
+            console.log(`  [${i}]`, JSON.parse(JSON.stringify(ent.entities[ent.ids[i]])));
+          }
+        }
+      }
+      // app 전체 키 중 channel 관련 탐색
+      for (const key of Object.keys(app || {})) {
+        if (key === 'chat' || key === 'state') continue;
+        const val = app[key];
+        if (val && typeof val === 'object') {
+          const str = JSON.stringify(val);
+          if (str.includes('channel') || str.includes('Channel') || str.includes('tab') || str.includes('Tab')) {
+            console.log(`app.${key} (채널 관련?):`, JSON.parse(str));
+          }
+        }
+      }
+
+      // 메시지에서 모든 고유 channel/channelName 쌍 수집
+      const rm = reduxStore.getState().entities?.roomMessages;
+      if (rm?.ids) {
+        const channelMap = new Map();
+        for (const id of rm.ids) {
+          const e = rm.entities?.[id];
+          if (!e) continue;
+          const key = (e.channel || '(empty)') + ' | ' + (e.channelName || '(empty)');
+          if (!channelMap.has(key)) channelMap.set(key, 0);
+          channelMap.set(key, channelMap.get(key) + 1);
+        }
+        console.log('메시지 채널 분포:');
+        channelMap.forEach((count, key) => console.log(`  ${key}  (${count}건)`));
+      }
+    }
+    // DOM 탭 탐색
+    const allTabs = document.querySelectorAll('[role="tab"]');
+    console.log('전체 [role="tab"] 수:', allTabs.length);
+    allTabs.forEach((t, i) => {
+      console.log(`  탭[${i}]: text="${t.textContent?.trim()}" selected=${t.getAttribute('aria-selected')} class="${t.className?.substring(0, 80)}"`);
+    });
+    // 함수 결과
+    const result = _detectCurrentChannel();
+    console.log('_detectCurrentChannel() 결과:', result);
+    console.log('%c[BWBR 진단]%c ===========================',
+      'color: #2196f3; font-weight: bold;', 'color: inherit;');
+  });
+
+  // ================================================================
   //  진단용: Firestore SDK 탐색
   //  콘솔에서 실행: window.dispatchEvent(new CustomEvent('bwbr-discover-firestore'))
   // ================================================================
@@ -1091,6 +1305,101 @@
 
     console.log('%c[BWBR 진단]%c ===============================',
       'color: #2196f3; font-weight: bold;', 'color: inherit;');
+  });
+
+  // ================================================================
+  //  채팅 로그 전체 추출 (Firestore 직접 쿼리)
+  //  ISOLATED world에서 bwbr-export-log 이벤트로 요청
+  // ================================================================
+  window.addEventListener('bwbr-export-log', async () => {
+    const respond = (data) => {
+      window.dispatchEvent(new CustomEvent('bwbr-export-log-result', { detail: data }));
+    };
+
+    try {
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) {
+        respond({ success: false, error: 'Firestore SDK 획득 실패' });
+        return;
+      }
+      if (!sdk.getDocs) {
+        respond({ success: false, error: 'getDocs 함수를 찾을 수 없음 (fsKeys.getDocs 확인 필요)' });
+        return;
+      }
+      if (!reduxStore) {
+        respond({ success: false, error: 'Redux Store 없음' });
+        return;
+      }
+
+      const state = reduxStore.getState();
+      const roomId = state.app?.state?.roomId
+        || window.location.pathname.match(/rooms\/([^/]+)/)?.[1];
+      if (!roomId) {
+        respond({ success: false, error: 'roomId를 찾을 수 없음' });
+        return;
+      }
+
+      // 방 이름 가져오기
+      const roomName = state.room?.data?.name
+        || state.entities?.room?.name
+        || document.title?.replace(' - ココフォリア', '') || '';
+
+      console.log('%c[BWBR]%c 📜 로그 추출 시작... (roomId: ' + roomId + ')',
+        'color: #2196f3; font-weight: bold;', 'color: inherit;');
+
+      // Firestore에서 전체 메시지 컬렉션 조회
+      const messagesCol = sdk.collection(sdk.db, 'rooms', roomId, 'messages');
+      const snapshot = await sdk.getDocs(messagesCol);
+
+      const messages = [];
+      snapshot.forEach(docSnap => {
+        const data = docSnap.data();
+
+        // Firestore Timestamp → epoch ms 변환
+        let createdAt = 0;
+        const ca = data.createdAt;
+        if (ca) {
+          if (typeof ca.toMillis === 'function') createdAt = ca.toMillis();
+          else if (typeof ca.seconds === 'number') createdAt = ca.seconds * 1000;
+          else if (ca instanceof Date) createdAt = ca.getTime();
+          else if (typeof ca === 'number') createdAt = ca;
+        }
+
+        // 주사위 결과 추출
+        let diceResult = '';
+        if (data.extend?.roll?.result) {
+          diceResult = data.extend.roll.result;
+        }
+
+        messages.push({
+          id: docSnap.id,
+          text: data.text || '',
+          name: data.name || '',
+          type: data.type || 'text',
+          color: data.color || '#e0e0e0',
+          iconUrl: data.iconUrl || '',
+          channel: data.channel || '',
+          channelName: data.channelName || '',
+          diceResult: diceResult,
+          createdAt: createdAt,
+          to: data.to || null,
+          toName: data.toName || '',
+          imageUrl: data.imageUrl || null
+        });
+      });
+
+      // 시간순 정렬
+      messages.sort((a, b) => a.createdAt - b.createdAt);
+
+      console.log(`%c[BWBR]%c 📜 로그 추출 완료: ${messages.length}건`,
+        'color: #4caf50; font-weight: bold;', 'color: inherit;');
+
+      respond({ success: true, messages, roomId, roomName });
+
+    } catch (e) {
+      console.error('[BWBR] 로그 추출 실패:', e);
+      respond({ success: false, error: e.message });
+    }
   });
 
 })();

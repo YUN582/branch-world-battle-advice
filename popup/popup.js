@@ -64,6 +64,7 @@
       showBattleLog: false,
       autoComplete: true,
       autoConsumeActions: true,
+      showVisitHistory: true,
       autoScroll: true,
       showOverlay: true,
       debugMode: false,
@@ -163,6 +164,9 @@
     // 행동 자동 소모
     $('toggle-autoConsumeActions').checked = cfg.general.autoConsumeActions !== false;
 
+    // 방문 기록
+    $('toggle-showVisitHistory').checked = cfg.general.showVisitHistory !== false;
+
     // 타이밍
     setTimingField('time-beforeFirstRoll', cfg.timing.beforeFirstRoll);
     setTimingField('time-betweenRolls', cfg.timing.betweenRolls);
@@ -214,6 +218,9 @@
 
     // 행동 자동 소모
     cfg.general.autoConsumeActions = $('toggle-autoConsumeActions').checked;
+
+    // 방문 기록
+    cfg.general.showVisitHistory = $('toggle-showVisitHistory').checked;
 
     // 타이밍
     cfg.timing.beforeFirstRoll = getTimingValue('time-beforeFirstRoll');

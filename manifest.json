@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "가지세계 도우미",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "코코포리아 GM 보조 확장 프로그램 - 근접전 합 처리 자동화",
   "permissions": [
     "storage",
@@ -24,6 +24,26 @@
         "content/site-volume.js"
       ],
       "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://ccfolia.com/rooms/*",
+        "https://*.ccfolia.com/rooms/*"
+      ],
+      "js": [
+        "content/room-save.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://ccfolia.com/*",
+        "https://*.ccfolia.com/*"
+      ],
+      "js": [
+        "content/home-display.js"
+      ],
+      "run_at": "document_idle"
     },
     {
       "matches": [

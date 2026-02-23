@@ -1472,3 +1472,25 @@
   text-shadow: 0 0 8px rgba(255, 213, 79, 0.4);
   transition: color 0.3s, text-shadow 0.3s;
 }
+
+/* ── 로그 추출 토스트 ────────────────────────── */
+.bwbr-export-toast {
+  display: none;
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #263238;
+  color: #e0e0e0;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  z-index: 100000;
+  align-items: center;
+  gap: 8px;
+  opacity: 1;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}

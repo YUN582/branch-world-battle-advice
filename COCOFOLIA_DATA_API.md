@@ -191,6 +191,47 @@ if (entity.extend?.roll?.result) {
 | `to` | 귓속말 판별 | null이면 전체 메시지 |
 | `extend` | 주사위 데이터 | `extend.roll` 안에 `→ 숫자` 패턴으로 결과 저장 |
 
+### 채널(탭) 시스템
+
+코코포리아의 채팅은 **채널(탭)**으로 구분됩니다.
+채널 정보는 Redux state에 별도로 저장되지 않으며, 메시지의 `channel`/`channelName` 필드로만 구분됩니다.
+
+#### 기본 탭 (고정 순서)
+
+코코포리아 방에는 3개의 기본 탭이 항상 존재하며, **DOM 탭 인덱스와 채널 ID가 고정**되어 있습니다:
+
+| 탭 인덱스 | 기본 이름 | `channel` 값 | `channelName` 값 | 비고 |
+|----------|----------|-------------|-----------------|------|
+| 0 | メイン (메인) | `"main"` | `"main"` | 방 이름으로 변경 가능 (예: "메인0") |
+| 1 | 情報 (정보) | `"info"` | `"info"` | 탭 이름 변경 가능 |
+| 2 | 雑談 (잡담) | `"other"` | `"other"` | 탭 이름 변경 가능 |
+
+#### 커스텀 탭 (인덱스 3+)
+
+GM이 추가한 탭은 인덱스 3부터 시작하며, **고유 랜덤 ID**를 가집니다:
+
+| 탭 인덱스 | 예시 이름 | `channel` 값 | `channelName` 값 |
+|----------|----------|-------------|-----------------|
+| 3 | 주사위 굴림 연습 | `"RleEHkuPK"` | `"주사위 굴림 연습"` |
+| 4+ | (마지막은 빈 "+" 추가 탭) | — | — |
+
+#### 중요 사항
+
+- **기본 탭의 `channelName`은 탭 UI 이름과 다릅니다**: 탭 이름이 "정보"여도 `channelName`은 `"info"`
+- **커스텀 탭의 `channelName`은 탭 UI 이름과 동일합니다**: `channelName: "주사위 굴림 연습"`
+- **Redux state에는 현재 선택된 탭 정보가 없습니다**: `app.chat`에는 `{inputText:''}` 만 존재
+- **탭 감지는 DOM에서 해야 합니다**: MUI Tab 컴포넌트의 `[role="tab"][aria-selected="true"]` 사용
+- **채널 정보는 `entities.rooms` 등에도 저장되지 않습니다**: 메시지를 통해서만 확인 가능
+
+#### DOM 탭 감지 방법
+
+```js
+// 채팅 패널의 탭리스트 찾기 (textarea 기준으로 올라가며 탐색)
+const textarea = document.querySelector('textarea[name="text"]');
+// textarea의 조상 중 [role="tablist"]를 찾아 그 안의 [role="tab"] 순회
+// aria-selected="true" 또는 class="Mui-selected"인 탭의 인덱스로 채널 결정
+```
+
 ### 시스템 메시지 (type: "system")
 
 코코포리아는 `:HP-10` 같은 네이티브 명령어 실행 시 시스템 메시지를 생성합니다.

@@ -107,6 +107,9 @@
     alwaysLog('채팅 DOM 발견! 채팅 관찰 시작...');
     overlay.addLog('코코포리아 연결 완료', 'success');
 
+    // 로그 추출 메뉴 삽입 (톱니바퀴 메뉴에 항목 추가)
+    setupLogExportMenu();
+
     // 채팅 관찰 시작 - Redux 기반 (DOM 대신 Redux store.subscribe 사용)
     // 탭 전환, DOM 갱신에 영향받지 않아 100% 메시지 감지율을 보장합니다.
     chat.observeReduxMessages(onNewMessage);
@@ -1995,6 +1998,876 @@
         break;
     }
   }
+
+  // ── 로그 추출 ────────────────────────────────────────────
+
+  let _logExportBusy = false;
+
+  /**
+   * 코코포리아 톱니바퀴 드롭다운에 "더 나은 로그 출력" 메뉴 항목을 삽입합니다.
+   * MUI Menu가 열릴 때마다 감지하여 자동으로 항목을 추가합니다.
+   */
+  function setupLogExportMenu() {
+    const bodyObserver = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (node.nodeType !== 1) continue;
+          // MUI Popover/Modal → 직접 자식으로 body에 추가됨
+          if (node.getAttribute?.('role') === 'presentation' ||
+              node.classList?.contains?.('MuiModal-root') ||
+              node.classList?.contains?.('MuiPopover-root')) {
+            _tryInjectExportMenuItem(node);
+          }
+        }
+      }
+    });
+    bodyObserver.observe(document.body, { childList: true });
+  }
+
+  function _tryInjectExportMenuItem(container) {
+    // React 렌더 완료 대기 (double rAF)
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const items = container.querySelectorAll('li[role="menuitem"], li.MuiMenuItem-root');
+      let logItem = null;
+      for (const item of items) {
+        const text = item.textContent.trim();
+        // 코코포리아 메뉴: "ログ出力" (일본어) 또는 유사 표현
+        if (text.includes('ログ出力') || text.includes('ログを出力') ||
+            text === '로그 출력' || text.toLowerCase().includes('log')) {
+          logItem = item;
+          break;
+        }
+      }
+      if (!logItem) return;
+      if (logItem.parentElement?.querySelector?.('.bwbr-export-log-item')) return;
+
+      // 기존 MUI MenuItem과 동일한 구조로 복제
+      const exportItem = logItem.cloneNode(false);
+      exportItem.className = logItem.className;
+      exportItem.removeAttribute('id');
+      exportItem.classList.add('bwbr-export-log-item');
+      exportItem.setAttribute('role', 'menuitem');
+      exportItem.setAttribute('tabindex', '-1');
+      exportItem.textContent = '더 나은 로그 출력';
+      exportItem.style.color = '#90caf9';
+
+      exportItem.addEventListener('mouseenter', () => {
+        exportItem.style.backgroundColor = 'rgba(144,202,249,0.08)';
+      });
+      exportItem.addEventListener('mouseleave', () => {
+        exportItem.style.backgroundColor = '';
+      });
+
+      exportItem.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        // MUI Menu 닫기 — backdrop 클릭
+        const backdrop = container.querySelector('.MuiBackdrop-root, [class*="Backdrop"]');
+        if (backdrop) backdrop.click();
+        else container.style.display = 'none';
+        // 로그 추출 시작
+        startLogExport();
+      });
+
+      logItem.insertAdjacentElement('afterend', exportItem);
+      alwaysLog('톱니바퀴 메뉴에 "더 나은 로그 출력" 삽입됨');
+    }));
+  }
+
+  /**
+   * 로그 추출을 시작합니다.
+   * Firestore에서 전체 메시지를 가져와 HTML로 변환하고 다운로드합니다.
+   */
+  function startLogExport() {
+    if (_logExportBusy) {
+      alwaysLog('로그 추출이 이미 진행 중입니다.');
+      return;
+    }
+    _logExportBusy = true;
+
+    // 진행 상태 토스트 표시
+    overlay.addLog('📜 로그 추출 중...', 'info');
+    _showExportToast('📜 Firestore에서 로그를 가져오는 중...');
+
+    const handler = (e) => {
+      window.removeEventListener('bwbr-export-log-result', handler);
+      _logExportBusy = false;
+
+      if (!e.detail?.success) {
+        overlay.addLog('로그 추출 실패: ' + (e.detail?.error || '알 수 없는 오류'), 'error');
+        _showExportToast('❌ 로그 추출 실패: ' + (e.detail?.error || ''), 3000);
+        return;
+      }
+
+      const { messages, roomName } = e.detail;
+      overlay.addLog(`📜 ${messages.length}건 로그 가져옴, HTML 생성 중...`, 'info');
+      _showExportToast(`📜 ${messages.length}건 로그 가져옴, HTML 생성 중...`);
+
+      try {
+        const html = _generateLogHtml(messages, roomName);
+        const filename = `log_${roomName || 'cocofolia'}_${_formatDateForFilename(new Date())}.html`;
+        _downloadFile(filename, html, 'text/html');
+        overlay.addLog(`📜 로그 추출 완료! ${messages.length}건 → ${filename}`, 'success');
+        _showExportToast(`✅ ${messages.length}건 로그 추출 완료!`, 3000);
+      } catch (genErr) {
+        overlay.addLog('HTML 생성 실패: ' + genErr.message, 'error');
+        _showExportToast('❌ HTML 생성 실패', 3000);
+      }
+    };
+
+    // 타임아웃 (60초)
+    const timeout = setTimeout(() => {
+      window.removeEventListener('bwbr-export-log-result', handler);
+      _logExportBusy = false;
+      overlay.addLog('로그 추출 타임아웃 (60초 초과)', 'error');
+      _showExportToast('❌ 로그 추출 타임아웃', 3000);
+    }, 60000);
+
+    window.addEventListener('bwbr-export-log-result', (e) => {
+      clearTimeout(timeout);
+      handler(e);
+    }, { once: true });
+
+    // MAIN world에 요청
+    window.dispatchEvent(new CustomEvent('bwbr-export-log'));
+  }
+
+  /**
+   * 메시지 배열을 코코포리아 채팅 스타일 HTML 문서로 변환합니다.
+   * 코코포리아 실제 채팅 UI를 최대한 재현합니다.
+   */
+  function _generateLogHtml(messages, roomName) {
+    const now = new Date();
+    const exportDate = _formatDateTime(now);
+
+    // 공백 메시지 필터링 + 텍스트 정리
+    const filtered = messages.filter(m =>
+      (m.text && m.text.trim()) || m.imageUrl || m.diceResult
+    ).map(m => {
+      if (m.text) {
+        let t = m.text;
+        t = t.replace(/\r\n/g, '\n');
+        const lines = t.split('\n');
+        for (let j = 0; j < lines.length; j++) lines[j] = lines[j].trimEnd();
+        while (lines.length && !lines[0].trim()) lines.shift();
+        while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+        const cleaned = [];
+        let emptyCount = 0;
+        for (const ln of lines) {
+          if (!ln.trim()) { emptyCount++; if (emptyCount <= 1) cleaned.push(''); }
+          else { emptyCount = 0; cleaned.push(ln); }
+        }
+        t = cleaned.join('\n');
+        m = Object.assign({}, m, { text: t });
+      }
+      return m;
+    });
+    const total = filtered.length;
+
+    function isMainChannel(msg) {
+      if (!msg.channel) return true;
+      const cn = (msg.channelName || '').trim().toLowerCase();
+      if (!cn) return true;                          // channelName 없으면 메인 취급
+      return cn === 'メイン' || cn === 'めいん' || cn === '메인' || cn === 'main';
+    }
+
+    let prevDate = '';
+    let prevKey = '';
+    let prevChannel = '';
+    let groupStartTime = 0;
+    const rows = [];
+    const GROUP_GAP = 600000;
+    let inAltSection = false;   // 현재 비메인 탭 섹션 안인지
+
+    let sysBuffer = [];
+    let sysGroupStart = 0;
+
+    function flushSysBuffer() {
+      if (!sysBuffer.length) return;
+      const timeStr = sysGroupStart ? _formatTime(new Date(sysGroupStart)) : '';
+      rows.push(
+        `<div class="sys-block">` +
+          (timeStr ? `<div class="sys-time">${timeStr}</div>` : '') +
+          sysBuffer.join('') +
+        `</div>`
+      );
+      sysBuffer = [];
+    }
+
+    function openAltSection(chName) {
+      if (inAltSection) return;
+      rows.push(`<div class="alt-section"><div class="alt-ch-name">${_escapeHtml(chName)}</div>`);
+      inAltSection = true;
+    }
+    function closeAltSection() {
+      if (!inAltSection) return;
+      rows.push(`</div>`);
+      inAltSection = false;
+    }
+
+    function cleanHtml(raw) {
+      let h = _escapeHtml(raw || '').replace(/\n/g, '<br>');
+      h = h.replace(/^(<br\s*\/?>)+/gi, '');
+      h = h.replace(/(<br\s*\/?>)+$/gi, '');
+      h = h.replace(/(<br\s*\/?>){3,}/gi, '<br><br>');
+      return h;
+    }
+
+    // ── 합 블록 사전 탐색 (공격자/방어자/승자 정보 추출) ──
+    const hapBlocks = [];
+    {
+      let hs = -1;
+      for (let j = 0; j < filtered.length; j++) {
+        const t = filtered[j].text || '';
+        if (/《합\s*개시》/.test(t)) {
+          hs = j;
+        } else if (hs >= 0 && /《합\s*(승리|종료|중지)》/.test(t)) {
+          let rounds = 0;
+          const isDraw = /무승부/.test(t) || /《합\s*종료》/.test(t);
+
+          // 합 개시 메시지에서 공격자/방어자 이름 추출
+          const startText = filtered[hs].text || '';
+          const atkMatch = startText.match(/⚔\uFE0F?\s*(.+?)\s*-\s*\d+/);
+          const defMatch = startText.match(/🛡\uFE0F?\s*(.+?)\s*-\s*\d+/);
+          const atkName = atkMatch ? atkMatch[1].trim() : '';
+          const defName = defMatch ? defMatch[1].trim() : '';
+
+          // 승자 이름 (승리 메시지에서)
+          let winnerName = '';
+          let winnerSide = 'draw';
+          if (!isDraw) {
+            const wm = t.match(/[⚔️🛡️]\s*(.+?)(?:\s*@|\s*$)/);
+            if (wm) winnerName = wm[1].trim();
+            // 승자가 공격자인지 방어자인지
+            if (winnerName === atkName) winnerSide = 'attacker';
+            else if (winnerName === defName) winnerSide = 'defender';
+            else winnerSide = 'attacker'; // fallback
+          }
+
+          // 색상/아이콘/주사위 추출
+          let atkColor = '#d0d0d0', defColor = '#d0d0d0';
+          let atkIcon = '', defIcon = '';
+          let winnerDice = '';
+          for (let k = hs; k <= j; k++) {
+            const km = filtered[k];
+            const kt = km.text || '';
+            if (/《\d+합》/.test(kt)) rounds++;
+            if (km.name === atkName && !atkIcon) { atkIcon = km.iconUrl || ''; atkColor = km.color || '#d0d0d0'; }
+            if (km.name === defName && !defIcon) { defIcon = km.iconUrl || ''; defColor = km.color || '#d0d0d0'; }
+            // 승자의 마지막 주사위
+            if (winnerName && km.name === winnerName && km.diceResult) winnerDice = km.diceResult;
+            // 시스템 주사위도 검사 (승자 이름이 텍스트에 포함된 경우)
+            if (winnerName && (km.type === 'system' || km.name === 'system') && km.diceResult && kt.includes(winnerName)) {
+              winnerDice = km.diceResult;
+            }
+          }
+
+          hapBlocks.push({
+            startIdx: hs, endIdx: j, rounds, isDraw,
+            atkName, defName, atkColor, defColor, atkIcon, defIcon,
+            winnerName, winnerSide, winnerDice
+          });
+          hs = -1;
+        }
+      }
+    }
+    // 합 범위에 속하는 메시지 인덱스 → 블록 매핑
+    const hapIndexMap = new Map(); // idx → { blockIdx, isStart }
+    for (let bi = 0; bi < hapBlocks.length; bi++) {
+      const b = hapBlocks[bi];
+      for (let k = b.startIdx; k <= b.endIdx; k++) {
+        hapIndexMap.set(k, { blockIdx: bi, isStart: k === b.startIdx });
+      }
+    }
+
+    // ── 합 내부 메시지 렌더 함수 (개별 메시지 → HTML) ──
+    function renderSingleMsg(msg, forceNoGroup) {
+      const esc = cleanHtml(msg.text);
+      const si = msg.imageUrl && msg.imageUrl !== msg.iconUrl;
+      const ih = si ? `<div class="msg-img"><img src="${_escapeHtml(msg.imageUrl)}" loading="lazy"></div>` : '';
+      const dh = msg.diceResult ? `<div class="dice"><span class="dice-icon">&#x1F3B2;</span><span class="dice-val">${_escapeHtml(msg.diceResult)}</span></div>` : '';
+      const isSys = msg.type === 'system' || msg.name === 'system';
+      if (isSys) {
+        const timeS = msg.createdAt ? _formatTime(new Date(msg.createdAt)) : '';
+        return `<div class="sys-block"><div class="sys-time">${timeS}</div>${esc ? `<div class="sys-line">${esc}</div>` : ''}${dh}${ih}</div>`;
+      }
+      const iconSrc = msg.iconUrl ? _escapeHtml(msg.iconUrl) : '';
+      const key = msg.name || '';
+      const aviInner = iconSrc
+        ? `<img src="${iconSrc}" alt="" loading="lazy">`
+        : `<span class="avi-letter">${_escapeHtml(key.charAt(0) || '?')}</span>`;
+      const nc = msg.color || '#d0d0d0';
+      const ts = msg.createdAt ? _formatTime(new Date(msg.createdAt)) : '';
+      return `<div class="msg"><div class="msg-gutter"><div class="avi">${aviInner}</div></div><div class="msg-body"><div class="msg-head"><span class="msg-name" style="color:${_escapeHtml(nc)}">${_escapeHtml(key)}</span><span class="msg-ts">${ts}</span></div>${esc ? `<div class="msg-text">${esc}</div>` : ''}${dh}${ih}</div></div>`;
+    }
+
+    for (let i = 0; i < filtered.length; i++) {
+      const msg = filtered[i];
+      const isSystem = msg.type === 'system' || msg.name === 'system';
+      const curKey = isSystem ? '__system__' : (msg.name || '');
+      const curCh = msg.channelName || msg.channel || '';
+      const mainCh = isMainChannel(msg);
+
+      // 날짜 구분
+      const dateStr = msg.createdAt ? _formatDate(new Date(msg.createdAt)) : '';
+      if (dateStr && dateStr !== prevDate) {
+        flushSysBuffer();
+        closeAltSection();
+        rows.push(
+          `<div class="date-sep">` +
+            `<div class="date-line"></div>` +
+            `<span class="date-text">${dateStr}</span>` +
+            `<div class="date-line"></div>` +
+          `</div>`
+        );
+        prevDate = dateStr;
+        prevKey = '';
+        prevChannel = '';
+        groupStartTime = 0;
+        sysGroupStart = 0;
+      }
+
+      // 탭 전환 처리
+      if (curCh !== prevChannel) {
+        flushSysBuffer();
+        if (mainCh) {
+          closeAltSection();
+          // 메인 탭 라벨 (항상 표시)
+          rows.push(`<div class="main-ch-name">MAIN</div>`);
+        } else {
+          closeAltSection();
+          openAltSection(msg.channelName || curCh);
+        }
+        prevKey = '';
+        groupStartTime = 0;
+      }
+
+      const escaped = cleanHtml(msg.text);
+      const showImage = msg.imageUrl && msg.imageUrl !== msg.iconUrl;
+      const imgHtml = showImage
+        ? `<div class="msg-img"><img src="${_escapeHtml(msg.imageUrl)}" loading="lazy"></div>` : '';
+      const diceHtml = msg.diceResult
+        ? `<div class="dice"><span class="dice-icon">&#x1F3B2;</span><span class="dice-val">${_escapeHtml(msg.diceResult)}</span></div>` : '';
+      const whisperTag = msg.to
+        ? `<span class="whisper-badge">&#x1F512; → ${_escapeHtml(msg.toName || msg.to)}</span>` : '';
+
+      // ── 합 블록 처리 (전체를 한번에 렌더) ──
+      const hapInfo = hapIndexMap.get(i);
+      if (hapInfo && hapInfo.isStart) {
+        flushSysBuffer();
+        const b = hapBlocks[hapInfo.blockIdx];
+        // 합 내부 전체 메시지를 개별 렌더
+        const innerParts = [];
+        for (let k = b.startIdx; k <= b.endIdx; k++) {
+          innerParts.push(renderSingleMsg(filtered[k]));
+        }
+        // summary 디자인 (가운데 정렬)
+        const resultLabel = b.isDraw ? '무승부' : '승리!';
+        const wDice = b.winnerDice ? _escapeHtml(b.winnerDice) : '';
+        const eAtkName = _escapeHtml(b.atkName || '???');
+        const eDefName = _escapeHtml(b.defName || '???');
+        const eAtkColor = _escapeHtml(b.atkColor);
+        const eDefColor = _escapeHtml(b.defColor);
+        // 승자/패자 강조: 승자는 밝게, 패자는 희미하게
+        const atkBright = b.winnerSide === 'attacker' || b.isDraw;
+        const defBright = b.winnerSide === 'defender' || b.isDraw;
+
+        rows.push(
+          `<details class="hap-fold">` +
+            `<summary class="hap-fold-summary">` +
+              `<div class="hap-fold-badge">${resultLabel}</div>` +
+              `<div class="hap-fold-sep">` +
+                `<div class="hap-fold-line"></div>` +
+                `<span class="hap-fold-rounds">${b.rounds}합</span>` +
+                `<div class="hap-fold-line"></div>` +
+              `</div>` +
+              `<div class="hap-fold-versus">` +
+                `<span class="hap-fold-fighter${atkBright ? '' : ' dim'}" style="color:${eAtkColor}">⚔️ ${eAtkName}</span>` +
+                `<span class="hap-fold-vs">vs</span>` +
+                `<span class="hap-fold-fighter${defBright ? '' : ' dim'}" style="color:${eDefColor}">🛡️ ${eDefName}</span>` +
+              `</div>` +
+              (wDice ? `<div class="hap-fold-dice">${wDice}</div>` : '') +
+            `</summary>` +
+            `<div class="hap-fold-body">${innerParts.join('\n')}</div>` +
+          `</details>`
+        );
+        // 합 끝까지 스킵
+        i = b.endIdx;
+        prevKey = '';
+        prevChannel = curCh;
+        groupStartTime = 0;
+        continue;
+      }
+      // 합 범위 안인데 isStart가 아닌 경우 (이미 위에서 처리됨) → 스킵
+      if (hapInfo) continue;
+
+      // ── 시스템 ──
+      if (isSystem) {
+        if (sysBuffer.length && msg.createdAt - sysGroupStart >= GROUP_GAP) {
+          flushSysBuffer();
+        }
+        if (!sysBuffer.length) sysGroupStart = msg.createdAt || 0;
+        sysBuffer.push(
+          (escaped ? `<div class="sys-line">${escaped}</div>` : '') +
+          `${diceHtml}${imgHtml}`
+        );
+        prevKey = '__system__';
+        prevChannel = curCh;
+        continue;
+      }
+
+      flushSysBuffer();
+
+      // 발화자 변경 → 구분선 (시스템 직후 제외)
+      if (prevKey && prevKey !== curKey && prevKey !== '__system__') {
+        rows.push(`<div class="divider"></div>`);
+      }
+
+      const timeDiff = msg.createdAt - groupStartTime;
+      const sameGroup = (curKey === prevKey) && (curCh === prevChannel) && (timeDiff < GROUP_GAP);
+      if (!sameGroup) groupStartTime = msg.createdAt || 0;
+      const timeStr = msg.createdAt ? _formatTime(new Date(msg.createdAt)) : '';
+
+      if (sameGroup) {
+        rows.push(
+          `<div class="msg grouped">` +
+            `<div class="msg-gutter"></div>` +
+            `<div class="msg-body">` +
+              `${whisperTag}` +
+              (escaped ? `<div class="msg-text">${escaped}</div>` : '') +
+              `${diceHtml}${imgHtml}` +
+            `</div>` +
+          `</div>`
+        );
+      } else {
+        const iconSrc = msg.iconUrl ? _escapeHtml(msg.iconUrl) : '';
+        const aviInner = iconSrc
+          ? `<img src="${iconSrc}" alt="" loading="lazy">`
+          : `<span class="avi-letter">${_escapeHtml(curKey ? curKey.charAt(0) : '?')}</span>`;
+        const nameColor = msg.color || '#d0d0d0';
+
+        rows.push(
+          `<div class="msg">` +
+            `<div class="msg-gutter"><div class="avi">${aviInner}</div></div>` +
+            `<div class="msg-body">` +
+              `<div class="msg-head">` +
+                `<span class="msg-name" style="color:${_escapeHtml(nameColor)}">${_escapeHtml(curKey)}</span>` +
+                `<span class="msg-ts">${timeStr}</span>` +
+                `${whisperTag}` +
+              `</div>` +
+              (escaped ? `<div class="msg-text">${escaped}</div>` : '') +
+              `${diceHtml}${imgHtml}` +
+            `</div>` +
+          `</div>`
+        );
+      }
+
+      prevKey = curKey;
+      prevChannel = curCh;
+    }
+    flushSysBuffer();
+    closeAltSection();
+
+    return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${_escapeHtml(roomName || '코코포리아')} - 채팅 로그</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&family=IBM+Plex+Mono:wght@600;700&display=swap');
+
+:root{
+  --bg:#d8d8dc;
+  --bg-panel:#131316;
+  --bg-log:#17171b;
+  --bg-card:#1d1d22;
+  --border:rgba(200,200,210,.06);
+  --border-hard:rgba(200,200,210,.11);
+  --text:#ececf0;
+  --text-sub:rgba(225,225,230,.65);
+  --text-dim:rgba(170,170,180,.35);
+  --sys-bg:#222228;
+  --sys-text:rgba(215,215,225,.82);
+  --whisper-c:#c0a8f0;
+  --whisper-bg:rgba(192,168,240,.08);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+
+body{
+  font-family:"Noto Sans KR",sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  min-height:100vh;
+  line-height:1.6;
+  font-size:16px;
+  -webkit-font-smoothing:antialiased;
+  position:relative;
+  padding:24px 0 0;
+}
+body::before{
+  content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(circle, rgba(0,0,0,.10) 1px, transparent 1px);
+  background-size:14px 14px;
+}
+
+/* ── 헤더 ── */
+.hdr{
+  position:sticky;top:0;z-index:200;
+  background:var(--bg-panel);
+  border-bottom:1px solid var(--border-hard);
+  padding:18px 32px;
+  display:flex;align-items:center;justify-content:space-between;
+  max-width:860px;margin:0 auto;
+  border-radius:12px 12px 0 0;
+  box-shadow:0 -8px 32px rgba(0,0,0,.12);
+}
+.hdr-title{font-size:18px;font-weight:900;color:var(--text)}
+.hdr-meta{font-size:12px;color:var(--text-dim);display:flex;gap:16px;font-weight:500}
+
+/* ── 로그 ── */
+.log-wrap{
+  position:relative;z-index:1;
+  max-width:860px;
+  margin:0 auto;
+  padding:20px 0 60px;
+  background:var(--bg-log);
+  border-radius:0;
+  min-height:calc(100vh - 100px);
+  overflow:hidden;
+  box-shadow:0 4px 40px rgba(0,0,0,.10);
+}
+/* 하프톤: 좌우 끝에서 안쪽으로 */
+.log-wrap::after{
+  content:'';position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(circle, rgba(255,255,255,.14) 1px, transparent 1px);
+  background-size:16px 16px;
+  mask-image:linear-gradient(to right, rgba(0,0,0,.9) 0%, transparent 30%, transparent 70%, rgba(0,0,0,.9) 100%);
+  -webkit-mask-image:linear-gradient(to right, rgba(0,0,0,.9) 0%, transparent 30%, transparent 70%, rgba(0,0,0,.9) 100%);
+}
+.log-wrap>*{position:relative;z-index:1}
+
+/* ── 날짜 ── */
+.date-sep{
+  display:flex;align-items:center;
+  gap:20px;padding:44px 28px 22px;user-select:none;
+}
+.date-line{
+  flex:1;height:1px;
+  background:linear-gradient(to right,transparent,rgba(255,255,255,.2),transparent);
+}
+.date-text{
+  font-size:15px;font-weight:700;
+  color:#fff;letter-spacing:4px;
+  white-space:nowrap;
+}
+
+/* ── 메인 탭 라벨 ── */
+.main-ch-name{
+  font-size:11px;font-weight:700;
+  letter-spacing:2px;
+  color:rgba(255,255,255,.55);
+  text-transform:uppercase;
+  padding:6px 40px 10px;
+  margin-top:14px;
+}
+
+/* ── 비메인 탭 섹션 (흰색 톤) ── */
+.alt-section{
+  background:#e8e8ec;
+  color:#1a1a1e;
+  margin:28px 0;
+  padding:14px 0 18px;
+  border-top:1px solid rgba(0,0,0,.08);
+  border-bottom:1px solid rgba(0,0,0,.08);
+}
+.alt-ch-name{
+  font-size:11px;font-weight:700;
+  letter-spacing:2px;
+  color:rgba(0,0,0,.5);
+  text-transform:uppercase;
+  padding:6px 40px 10px;
+}
+.alt-section .msg-text{color:rgba(0,0,0,.85)}
+.alt-section .msg-name{color:#111!important}
+.alt-section .msg-ts{color:rgba(0,0,0,.45)}
+.alt-section .avi{background:#d0d0d5}
+.alt-section .avi-letter{background:#d0d0d5;color:rgba(0,0,0,.25)}
+.alt-section .divider{background:rgba(0,0,0,.08)}
+.alt-section .sys-block{
+  background:#dddde2;
+  border-color:rgba(0,0,0,.08);
+}
+.alt-section .sys-line{color:rgba(0,0,0,.7)}
+.alt-section .sys-time{color:rgba(0,0,0,.4)}
+.alt-section .dice{
+  background:rgba(0,0,0,.05);
+  border-color:rgba(0,0,0,.12);
+}
+.alt-section .dice-val{color:rgba(0,0,0,.75)}
+.alt-section .dice-icon{filter:grayscale(1) brightness(.4)}
+.alt-section .date-line{background:linear-gradient(to right,transparent,rgba(0,0,0,.15),transparent)}
+.alt-section .date-text{color:rgba(0,0,0,.65)}
+.alt-section .whisper-badge{
+  color:#7a5cb0;background:rgba(122,92,176,.08);
+  border-color:rgba(122,92,176,.18);
+}
+
+/* ── 구분선 ── */
+.divider{height:1px;margin:12px 0;background:var(--border-hard)}
+
+/* ── 메시지 ── */
+.msg{display:flex;padding:3px 28px}
+.msg:not(.grouped){margin-top:14px}
+
+.msg-gutter{
+  width:92px;flex-shrink:0;
+  display:flex;align-items:flex-start;justify-content:center;
+  padding-top:2px;
+}
+
+/* 아바타 */
+.avi{
+  width:80px;height:80px;border-radius:14px;
+  overflow:hidden;background:var(--bg-card);flex-shrink:0;
+}
+.avi img{width:100%;height:100%;object-fit:cover;object-position:center 5%;display:block}
+.avi-letter{
+  width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+  font-size:24px;font-weight:900;color:var(--text-dim);background:var(--bg-card);
+}
+
+.msg-body{flex:1;min-width:0;padding:0 12px}
+.msg-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:3px}
+.msg-name{font-size:16px;font-weight:700}
+.msg-ts{font-size:12px;color:var(--text-dim);font-weight:500}
+.msg-text{
+  font-size:16px;line-height:1.7;
+  color:#fff;word-break:break-word;
+}
+
+/* ── 주사위 ── */
+.dice{
+  display:inline-flex;align-items:center;gap:8px;
+  margin:6px 0 2px;
+  padding:8px 18px;
+  background:rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:6px;
+}
+.dice-icon{font-size:17px;line-height:1;flex-shrink:0}
+.dice-val{
+  font-family:"IBM Plex Mono","Consolas",monospace;
+  font-size:15px;font-weight:700;
+  color:rgba(255,255,255,.88);
+  letter-spacing:.5px;
+}
+
+/* 이미지 */
+.msg-img{margin:8px 0 4px}
+.msg-img img{
+  max-width:320px;max-height:320px;border-radius:12px;
+  border:1px solid var(--border-hard);display:block;
+}
+
+/* 위스퍼 */
+.whisper-badge{
+  font-size:12px;font-weight:700;
+  color:var(--whisper-c);background:var(--whisper-bg);
+  border:1px solid rgba(192,168,240,.18);
+  border-radius:3px;padding:1px 8px;white-space:nowrap;
+}
+
+/* ── 시스템 ── */
+.sys-block{
+  background:var(--sys-bg);
+  border-top:1px solid var(--border-hard);
+  border-bottom:1px solid var(--border-hard);
+  margin:14px 0;
+  padding:16px 48px;
+  text-align:center;
+}
+.sys-time{font-size:12px;color:var(--text-dim);font-weight:500;margin-bottom:6px}
+.sys-line{
+  font-size:15px;line-height:1.7;
+  color:var(--sys-text);word-break:break-word;
+  font-style:italic;
+}
+.sys-line+.sys-line{margin-top:2px}
+.sys-block .dice{
+  background:rgba(255,255,255,.03);
+  border-color:rgba(255,255,255,.08);
+}
+
+/* ── 합 접기/펼치기 ── */
+.hap-fold{
+  margin:20px 0;
+  border-top:1px solid var(--border-hard);
+  border-bottom:1px solid var(--border-hard);
+  overflow:hidden;
+}
+.hap-fold-summary{
+  cursor:pointer;list-style:none;
+  display:flex;flex-direction:column;align-items:center;
+  padding:28px 32px 22px;
+  background:rgba(255,255,255,.03);
+  user-select:none;
+  transition:background .15s;
+  gap:10px;
+}
+.hap-fold-summary:hover{background:rgba(255,255,255,.06)}
+.hap-fold-summary::-webkit-details-marker{display:none}
+
+.hap-fold-badge{
+  font-size:20px;font-weight:900;
+  color:#5b9bf0;
+  letter-spacing:3px;
+}
+.hap-fold-sep{
+  display:flex;align-items:center;gap:12px;
+  width:80%;max-width:320px;
+}
+.hap-fold-line{
+  flex:1;height:1px;
+  background:linear-gradient(to right,transparent,rgba(255,255,255,.18),transparent);
+}
+.hap-fold-rounds{
+  font-size:14px;font-weight:700;
+  color:rgba(255,255,255,.35);
+  white-space:nowrap;letter-spacing:1px;
+}
+.hap-fold-versus{
+  display:flex;align-items:center;gap:10px;
+  font-size:17px;font-weight:700;
+}
+.hap-fold-fighter{transition:opacity .15s}
+.hap-fold-fighter.dim{opacity:.35}
+.hap-fold-vs{
+  font-size:13px;font-weight:500;
+  color:rgba(255,255,255,.28);
+  letter-spacing:1px;
+}
+.hap-fold-dice{
+  font-family:"IBM Plex Mono","Consolas",monospace;
+  font-size:14px;font-weight:600;
+  color:rgba(255,255,255,.3);
+  letter-spacing:.5px;
+  margin-top:2px;
+}
+
+.hap-fold[open]>.hap-fold-summary{
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+.hap-fold-body{
+  padding:12px 0;
+}
+
+/* 합 — alt-section 오버라이드 */
+.alt-section .hap-fold{border-color:rgba(0,0,0,.1)}
+.alt-section .hap-fold-summary{background:rgba(0,0,0,.03)}
+.alt-section .hap-fold-summary:hover{background:rgba(0,0,0,.06)}
+.alt-section .hap-fold-badge{color:#3b7ad0}
+.alt-section .hap-fold-line{background:linear-gradient(to right,transparent,rgba(0,0,0,.12),transparent)}
+.alt-section .hap-fold-rounds{color:rgba(0,0,0,.4)}
+.alt-section .hap-fold-fighter{color:#222!important}
+.alt-section .hap-fold-vs{color:rgba(0,0,0,.35)}
+.alt-section .hap-fold-dice{color:rgba(0,0,0,.35)}
+.alt-section .hap-fold[open]>.hap-fold-summary{border-bottom-color:rgba(0,0,0,.08)}
+
+/* ── 푸터 ── */
+.ftr{
+  max-width:860px;margin:0 auto;background:var(--bg-log);
+  text-align:center;padding:24px;
+  font-size:12px;color:var(--text-dim);font-weight:500;
+  border-top:1px solid var(--border);
+  border-radius:0 0 12px 12px;
+}
+
+@media print{
+  body{background:#fff;color:#111}
+  body::before,.log-wrap::after{display:none}
+  .log-wrap,.ftr{background:#fafafa;box-shadow:none}
+  .msg-text{color:#222}
+  .sys-block{background:#f0f0f0;border-color:#ddd}
+  .sys-line{color:#333}
+  .msg-name{color:#111!important}
+  .dice{background:#f4f4f4;border-color:#ccc}
+  .dice-val{color:#111}
+  .hdr{position:static;background:#f4f4f4;border-color:#ccc}
+  .ftr{background:#fafafa}
+  .alt-section{background:#f0f0f0;color:#111}
+}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <span class="hdr-title">${_escapeHtml(roomName || '코코포리아')} — 채팅 로그</span>
+  <div class="hdr-meta">
+    <span>${total.toLocaleString()}건</span>
+    <span>${_escapeHtml(exportDate)}</span>
+  </div>
+</div>
+<div class="log-wrap">
+${rows.join('\n')}
+</div>
+<div class="ftr">Exported by BWBR · ${_escapeHtml(exportDate)}</div>
+</body>
+</html>`;
+  }
+
+  /** 파일 다운로드 트리거 */
+  function _downloadFile(filename, content, mimeType) {
+    const blob = new Blob([content], { type: mimeType + ';charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  /** 로그 추출 진행 토스트 */
+  function _showExportToast(text, autoHideMs) {
+    let toast = document.getElementById('bwbr-export-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'bwbr-export-toast';
+      toast.className = 'bwbr-export-toast';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = text;
+    toast.style.display = 'flex';
+    toast.style.opacity = '1';
+    if (toast._hideTimer) clearTimeout(toast._hideTimer);
+    if (autoHideMs) {
+      toast._hideTimer = setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => { toast.style.display = 'none'; }, 300);
+      }, autoHideMs);
+    }
+  }
+
+  // 로그 추출용 유틸리티
+  function _escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+  function _formatDateTime(d) {
+    return `${d.getFullYear()}-${_pad(d.getMonth()+1)}-${_pad(d.getDate())} ${_pad(d.getHours())}:${_pad(d.getMinutes())}:${_pad(d.getSeconds())}`;
+  }
+  function _formatDate(d) {
+    return `${d.getFullYear()}-${_pad(d.getMonth()+1)}-${_pad(d.getDate())}`;
+  }
+  function _formatTime(d) {
+    return `${_pad(d.getHours())}:${_pad(d.getMinutes())}`;
+  }
+  function _formatDateForFilename(d) {
+    return `${d.getFullYear()}${_pad(d.getMonth()+1)}${_pad(d.getDate())}_${_pad(d.getHours())}${_pad(d.getMinutes())}`;
+  }
+  function _pad(n) { return n < 10 ? '0' + n : '' + n; }
 
   // ── 유틸리티 ─────────────────────────────────────────────
 
