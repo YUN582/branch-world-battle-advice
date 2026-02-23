@@ -22,6 +22,7 @@
 8. [업데이트 대응 가이드](#8-업데이트-대응-가이드)
 9. [app.state 상세 구조 및 UI 제어](#9-appstate-상세-구조-및-ui-제어)
 10. [Redux Action Type 탐색 기법](#10-redux-action-type-탐색-기법)
+11. [DOM 구조 레퍼런스 (MUI 컴포넌트 매핑)](#11-dom-구조-레퍼런스-mui-컴포넌트-매핑)
 
 ---
 
@@ -936,5 +937,233 @@ store.dispatch({ type: candidateType, payload: { ...appState, roomPointerX: -999
 if (store.getState().app.state.roomPointerX === -99999) {
   // ✅ 유효한 action type
   store.dispatch({ type: candidateType, payload: { ...appState, roomPointerX: origX } });
+}
+```
+
+---
+
+## 11. DOM 구조 레퍼런스 (MUI 컴포넌트 매핑)
+
+> 코코포리아는 **MUI (Material-UI v5)** + **styled-components** + **downshift**를 사용합니다.
+> 아래는 확장 프로그램이 참조하는 주요 UI 요소의 실제 DOM 구조입니다.
+>
+> **기준**: 2026-02-24 (콘솔 진단으로 확인)
+
+### 11.1 캐릭터 선택 드롭다운
+
+채팅 패널 좌측의 캐릭터 아이콘을 클릭하면 나타나는 캐릭터 선택 목록입니다.
+
+#### 컨테이너 구조
+
+```
+body
+└─ div.MuiPopover-root          ← 팝업 루트 (포탈로 body 직속에 렌더링)
+   ├─ div.MuiBackdrop-root      ← 투명 백드롭 (클릭 시 닫힘)
+   └─ div.MuiPaper-root.MuiPaper-rounded  ← 실제 드롭다운 패널
+      └─ ul.MuiList-root                   ← 리스트 컨테이너
+         ├─ div.MuiButtonBase-root.MuiListItemButton-root [role="button"]
+         ├─ div.MuiButtonBase-root.MuiListItemButton-root [role="button"]
+         └─ ...  (캐릭터 아이템 반복)
+```
+
+**핵심 포인트**:
+- 아이템은 `<div>` (NOT `<li>`)이며 클래스는 `MuiListItemButton-root`
+- `role="option"`, `role="listbox"` 없음 → MUI Autocomplete가 아닌 **커스텀 Popover + List 조합**
+- `MuiAutocomplete-popper` 클래스 없음
+
+#### downshift 연동
+
+```
+입력 필드 → UL#downshift-:rm:-menu[role="listbox"]
+            └─ children: 0 (비어 있음!)
+
+아이템 → 별도의 MuiPopover-root 안에 렌더링 (downshift 리스트와 분리됨)
+```
+
+- downshift ID 형식: `downshift-:rm:-menu` (`:rm:` 는 React 18의 `useId()` 접두사)
+- 이전 형식 `downshift-0-menu`, `downshift-1-menu`는 **더 이상 사용되지 않음**
+- 정규식 매칭: `/^downshift-.+-menu/` (`.+` 사용, `\d+` 아님)
+
+#### 캐릭터 아이템 내부 구조
+
+```
+div.MuiListItemButton-root [role="button"]
+├─ div.MuiListItemAvatar-root
+│  └─ div.MuiAvatar-root
+│     └─ img [src="캐릭터 아이콘 URL"]
+├─ div.MuiListItemText-root
+│  ├─ span (또는 p)  →  "캐릭터이름"          (font-size: 14px)
+│  └─ span (또는 p)  →  "활성화 상태"         (font-size: 14px)
+│                        또는 "비활성화 상태"
+└─ (확장 프로그램 주입) span.bwbr-key-badge  →  "Alt + 1"  (font-size: 11.2px)
+```
+
+**상태 텍스트 규칙**:
+- `"활성화 상태"` = 캐릭터가 맵(보드) 위에 활성화되어 있음
+- `"비활성화 상태"` = 캐릭터가 보드에서 제거(집어넣기)되어 있음
+- 이 텍스트로 active/inactive 상태를 DOM에서 직접 판별 가능
+
+#### 뱃지(키 라벨) 주입 위치
+
+```
+✅ 올바른 방법:  "활성화 상태" span 내부에 appendChild
+   → span  →  "활성화 상태 Alt + 1"  (같은 baseline, 자연스러운 정렬)
+
+❌ 잘못된 방법:  item에 flex + align-self:flex-end
+   → 세로 위치 어긋남 (상태 텍스트 y:286-306 vs 뱃지 y:298-309 = 3px 차이)
+```
+
+#### 셀렉터 가이드
+
+| 대상 | 올바른 셀렉터 | ❌ 잘못된 셀렉터 |
+|------|--------------|------------------|
+| 드롭다운 컨테이너 | `.MuiPopover-root` | `[role="listbox"]`, `.MuiAutocomplete-popper` |
+| 캐릭터 아이템 | `.MuiListItemButton-root` 또는 `[role="button"]` | `li[role="option"]`, `[id^="downshift-"][id*="-item"]` |
+| 아바타 이미지 | `.MuiListItemAvatar-root img` | — |
+| 상태 텍스트 | `.MuiListItemText-root` 내 span/p 중 "활성화/비활성화" | — |
+
+---
+
+### 11.2 확대 보기 (Inspector)
+
+토큰 우클릭 → "확대 보기" 또는 확장 프로그램의 커스텀 메뉴에서 열리는 이미지 뷰어입니다.
+
+#### 컨테이너 구조
+
+```
+body
+└─ div.MuiModal-root             ← 모달 루트 (포탈)
+   ├─ div.MuiBackdrop-root       ← 반투명 백드롭
+   └─ div (내용 컨테이너)
+      └─ img [src="이미지URL"]    ← 실제 이미지
+```
+
+**핵심 포인트**:
+- **`MuiModal-root`** 사용 (NOT `MuiDialog-root`)
+- 이미지가 뷰포트보다 클 수 있음 (예: 944×1999px)
+- CSS로 `max-height: 90vh; object-fit: contain` 등으로 제한 필요
+
+#### ⚠️ CSS 셀렉터 주의
+
+```css
+/* ❌ 위험: 너무 광범위 — 캐릭터 목록의 아바타 이미지까지 영향 */
+.MuiModal-root img { max-height: 90vh; }
+
+/* ✅ 안전: JS에서 Inspector 열린 후 해당 img만 직접 스타일링 */
+/* redux-injector.js의 constrainInspectorImage() 사용 */
+```
+
+`.MuiModal-root img`는 코코포리아 전체의 MuiModal(캐릭터 편집 등)에도 적용되므로
+아바타/아이콘 이미지까지 잘못 제한할 수 있습니다. **JS 기반 제한을 권장**합니다.
+
+---
+
+### 11.3 채팅 영역 이미지 (우클릭 대상)
+
+채팅 메시지에 포함된 이미지(주사위 결과 등)의 DOM 체인입니다.
+
+```
+IMG
+└─ BUTTON.MuiButtonBase-root.sc-EhTgW    ← styled-component 래퍼
+   └─ DIV.sc-iuImfv
+      └─ DIV.sc-liAOXi
+         └─ FORM
+            └─ ... (채팅 패널 루트)
+```
+
+- 채팅 이미지는 `BUTTON > IMG` 구조 (MUI ButtonBase + styled-components)
+- `sc-*` 클래스명은 빌드마다 변경될 수 있으므로 **의존하지 말 것**
+- 우클릭 허용 판별: `tag === 'img' && target.closest('.MuiModal-root')` → Inspector 이미지만 허용
+
+---
+
+### 11.4 토큰 우클릭 컨텍스트 메뉴 (MUI)
+
+보드 위 캐릭터 토큰을 우클릭하면 나타나는 네이티브 MUI 메뉴입니다.
+
+```
+body
+└─ div.MuiPopover-root
+   ├─ div.MuiBackdrop-root (invisible)
+   └─ div.MuiPaper-root.MuiMenu-paper
+      └─ ul.MuiList-root [role="menu"]
+         ├─ li.MuiMenuItem-root  →  "확대 보기"
+         ├─ li.MuiMenuItem-root  →  "집어넣기"  / "꺼내기"
+         ├─ li.MuiMenuItem-root  →  "편집"
+         ├─ li.MuiMenuItem-root  →  "복사"
+         └─ li.MuiMenuItem-root  →  "삭제"
+```
+
+**패널 메뉴와의 구분**:
+- 토큰 메뉴: `"집어넣기"`, `"확대 보기"` 포함
+- 패널 메뉴: `"위치 고정"`, `"패널 숨기기"` 포함 → 확장 프로그램이 주입하지 않음
+
+---
+
+### 11.5 MUI 컴포넌트 ↔ DOM 매핑 요약
+
+| UI 요소 | MUI 컴포넌트 | DOM 클래스 | 비고 |
+|---------|-------------|-----------|------|
+| 캐릭터 선택 드롭다운 | Popover + List | `.MuiPopover-root` | Autocomplete 아님 |
+| 캐릭터 아이템 | ListItemButton | `.MuiListItemButton-root` | `<div>`, NOT `<li>` |
+| 확대 보기 (Inspector) | Modal | `.MuiModal-root` | Dialog 아님 |
+| 토큰 컨텍스트 메뉴 | Popover + Menu | `.MuiPopover-root > .MuiMenu-paper` | MenuItem은 `<li>` |
+| 캐릭터 편집 | Dialog (Modal) | `.MuiDialog-root` (= `.MuiModal-root`) | 둘 다 가짐 |
+| 채팅 입력 | TextField | `textarea[name="text"]` | — |
+| 채팅 탭 | Tabs | `[role="tablist"] > [role="tab"]` | — |
+
+---
+
+### 11.6 진단 스크립트
+
+DOM 구조가 변경되었는지 확인할 때 아래 스크립트를 브라우저 콘솔(F12)에서 실행하세요.
+
+#### 캐릭터 드롭다운 구조 확인
+
+```js
+// 캐릭터 선택 드롭다운을 연 상태에서 실행
+var pop = document.querySelector('.MuiPopover-root .MuiPaper-rounded');
+if (!pop) { console.log('❌ 드롭다운이 열려있지 않습니다'); }
+else {
+  var items = pop.querySelectorAll('.MuiListItemButton-root');
+  console.log('캐릭터 아이템 수:', items.length);
+  items.forEach(function(item, i) {
+    var texts = [];
+    item.querySelectorAll('span, p').forEach(function(el) {
+      if (el.textContent.trim()) texts.push(el.textContent.trim());
+    });
+    var img = item.querySelector('img');
+    console.log(i + ':', texts.join(' | '), img ? '(아이콘 있음)' : '(아이콘 없음)');
+  });
+}
+```
+
+#### Inspector 구조 확인
+
+```js
+// 확대 보기를 연 상태에서 실행
+var modal = document.querySelector('.MuiModal-root');
+if (!modal) { console.log('❌ Inspector가 열려있지 않습니다'); }
+else {
+  var img = modal.querySelector('img');
+  if (img) {
+    console.log('이미지 크기:', img.naturalWidth + 'x' + img.naturalHeight);
+    console.log('렌더 크기:', img.width + 'x' + img.height);
+    console.log('뷰포트:', window.innerWidth + 'x' + window.innerHeight);
+    console.log('overflow:', img.height > window.innerHeight ? '⚠️ 오버플로!' : '✅ 정상');
+  }
+  console.log('MuiDialog-root 존재:', !!modal.querySelector('.MuiDialog-root'));
+}
+```
+
+#### downshift ID 형식 확인
+
+```js
+var dsMenu = document.querySelector('[id^="downshift-"][id$="-menu"]');
+if (dsMenu) {
+  console.log('downshift menu ID:', dsMenu.id);
+  console.log('children:', dsMenu.children.length);
+} else {
+  console.log('❌ downshift 메뉴를 찾을 수 없습니다 (캐릭터 입력 필드를 클릭하세요)');
 }
 ```

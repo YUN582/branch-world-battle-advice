@@ -1604,77 +1604,35 @@
     }
   });
 
-  // ── 집어넣기: 보드 토큰 컨텍스트 메뉴 → "집어넣기" 클릭, 또는 Firestore active 토글 ──
+  // ── 집어넣기/꺼내기: Firestore active 토글 ──
   window.addEventListener('bwbr-character-store', async (e) => {
     const name = e.detail?.name;
     if (!name) return respondAction('캐릭터를 특정할 수 없습니다');
 
-    // 1차: 보드 토큰 컨텍스트 메뉴 → "집어넣기" 클릭
-    const token = findCharTokenOnBoard(name);
-    if (token) {
-      const rect = token.getBoundingClientRect();
-      token.dispatchEvent(new MouseEvent('contextmenu', {
-        bubbles: true, cancelable: true, view: window,
-        clientX: rect.left + rect.width / 2,
-        clientY: rect.top + rect.height / 2,
-        button: 2
-      }));
-      let attempts = 0;
-      const tryClick = () => {
-        const pops = document.querySelectorAll('.MuiPopover-root');
-        if (pops.length) {
-          const pop = pops[pops.length - 1];
-          const items = pop.querySelectorAll('li[role="menuitem"]');
-          for (const item of items) {
-            const t = (item.textContent || '').trim();
-            if (t.indexOf('집어넣기') === 0 || t.indexOf('しまう') === 0) {
-              item.click();
-              respondAction(name + ' → 집어넣음');
-              return;
-            }
-          }
-          // 메뉴는 떴지만 집어넣기가 없으면 메뉴 닫기
-          const bd = pop.querySelector('.MuiBackdrop-root');
-          if (bd) bd.click(); else document.body.click();
-          respondAction(name + ': 집어넣기 메뉴를 찾을 수 없습니다');
-          return;
-        }
-        if (++attempts < 15) setTimeout(tryClick, 50);
-        else fallbackFirestore();
-      };
-      setTimeout(tryClick, 60);
-      return;
-    }
+    try {
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) throw new Error('Firestore SDK 없음');
 
-    // 2차: 보드에 토큰 없음 → Firestore로 직접 active 토글
-    fallbackFirestore();
+      const roomId = getRoomId();
+      if (!roomId) throw new Error('방 ID를 찾을 수 없음');
 
-    async function fallbackFirestore() {
-      try {
-        const sdk = acquireFirestoreSDK();
-        if (!sdk) throw new Error('Firestore SDK 없음');
+      const char = getCharacterByName(name);
+      if (!char) throw new Error('캐릭터 "' + name + '" 없음');
 
-        const roomId = getRoomId();
-        if (!roomId) throw new Error('방 ID를 찾을 수 없음');
+      console.log(`%c[BWBR]%c 집어넣기/꺼내기 Firestore: id=${char.__id}, active=${char.active}`,
+        'color: #ff9800; font-weight: bold;', 'color: inherit;');
 
-        const char = getCharacterByName(name);
-        if (!char) throw new Error('캐릭터 "' + name + '" 없음');
+      const charsCol = sdk.collection(sdk.db, 'rooms', roomId, 'characters');
+      const charRef = sdk.doc(charsCol, char.__id);
+      const newActive = !char.active;
+      await sdk.setDoc(charRef, { active: newActive, updatedAt: Date.now() }, { merge: true });
 
-        console.log(`%c[BWBR]%c 집어넣기 Firestore: id=${char.__id}, active=${char.active}`,
-          'color: #ff9800; font-weight: bold;', 'color: inherit;');
-
-        const charsCol = sdk.collection(sdk.db, 'rooms', roomId, 'characters');
-        const charRef = sdk.doc(charsCol, char.__id);
-        const newActive = !char.active;
-        await sdk.setDoc(charRef, { active: newActive, updatedAt: Date.now() }, { merge: true });
-
-        respondAction(name + (newActive ? ' → 보드에 꺼냄' : ' → 집어넣음'));
-        console.log(`%c[BWBR]%c ${name} active: ${char.active} → ${newActive}`,
-          'color: #4caf50; font-weight: bold;', 'color: inherit;');
-      } catch (err) {
-        console.error('[BWBR] 집어넣기 실패:', err);
-        respondAction('집어넣기 실패: ' + err.message);
-      }
+      respondAction(name + (newActive ? ' → 보드에 꺼냄' : ' → 집어넣음'));
+      console.log(`%c[BWBR]%c ${name} active: ${char.active} → ${newActive}`,
+        'color: #4caf50; font-weight: bold;', 'color: inherit;');
+    } catch (err) {
+      console.error('[BWBR] 집어넣기/꺼내기 실패:', err);
+      respondAction('집어넣기/꺼내기 실패: ' + err.message);
     }
   });
 
@@ -2124,36 +2082,82 @@
     };
   })();
 
-  /** Inspector 이미지 오버플로 수정 — 렌더링 후 img 요소에 max 제한 */
-  function constrainInspectorImage(imageUrl) {
-    let attempts = 0;
-    const tryConstrain = () => {
-      // Inspector 오버레이 안의 이미지 탐색
-      const allImgs = document.querySelectorAll('#root img');
-      for (const img of allImgs) {
-        if (!img.src) continue;
-        // 같은 이미지 URL인지 확인 (부분 매칭)
-        if (img.src === imageUrl || img.src.includes(imageUrl) || imageUrl.includes(img.src)
-            || (extractStoragePath(img.src) && extractStoragePath(img.src) === extractStoragePath(imageUrl))) {
-          // Inspector 내부 이미지인지 확인: 부모가 전체화면 오버레이여야 함
-          const rect = img.getBoundingClientRect();
-          if (rect.width > window.innerWidth * 0.9 || rect.height > window.innerHeight * 0.9
-              || rect.right > window.innerWidth || rect.bottom > window.innerHeight) {
-            img.style.maxWidth = '90vw';
-            img.style.maxHeight = '90vh';
-            img.style.objectFit = 'contain';
-            img.style.width = 'auto';
-            img.style.height = 'auto';
-            console.log('%c[BWBR]%c Inspector 이미지 크기 제한 적용',
-              'color: #4caf50; font-weight: bold;', 'color: inherit;');
-            return;
-          }
+  // ── Inspector 이미지 오버플로 수정 ──
+  // 구조: MuiModal-root > sc-*(뷰포트 ~960×960) > MuiPaper(드래그, transform) > div > figure > img
+  // 전략: img에 명시적 px 크기를 계산해서 직접 세팅 + Paper transform 리셋
+  // 다른 요소는 일절 건드리지 않음 → img가 줄어들면 부모들이 자연히 줄어듦
+  (function setupInspectorConstraint() {
+    function constrainImg(modal) {
+      const img = modal.querySelector('figure > img');
+      if (!img) return false;
+
+      // 뷰포트 컨테이너: MuiModal 직계 자식 중 백드롭이 아니고 크기가 있는 것
+      let viewport = null;
+      for (const child of modal.children) {
+        if (child.classList.contains('MuiBackdrop-root')) continue;
+        const r = child.getBoundingClientRect();
+        if (r.width > 50 && r.height > 50) { viewport = child; break; }
+      }
+      if (!viewport) return false;
+
+      const vw = viewport.getBoundingClientRect().width;
+      const vh = viewport.getBoundingClientRect().height;
+      const nw = img.naturalWidth || img.width;
+      const nh = img.naturalHeight || img.height;
+      if (!nw || !nh) return false;
+
+      // 뷰포트에 맞는 크기 계산 (패딩 8px씩)
+      const pad = 16;
+      const maxW = vw - pad;
+      const maxH = vh - pad;
+      const scale = Math.min(maxW / nw, maxH / nh, 1); // 1 이상은 확대 안 함
+      const fitW = Math.round(nw * scale);
+      const fitH = Math.round(nh * scale);
+
+      // img에 직접 크기 속성 + 인라인 스타일 둘 다 세팅
+      img.setAttribute('width', fitW);
+      img.setAttribute('height', fitH);
+      img.style.setProperty('width', fitW + 'px', 'important');
+      img.style.setProperty('height', fitH + 'px', 'important');
+      img.style.setProperty('max-width', fitW + 'px', 'important');
+      img.style.setProperty('max-height', fitH + 'px', 'important');
+      img.style.setProperty('object-fit', 'contain', 'important');
+
+      // Paper transform 리셋 → 이미지가 뷰포트 안에 바로 보이도록
+      const paper = viewport.querySelector('.MuiPaper-root');
+      if (paper) {
+        paper.style.transform = 'translate3d(0, 0, 0)';
+      }
+
+      console.log(`%c[BWBR]%c Inspector 이미지 제한: ${nw}×${nh} → ${fitW}×${fitH} (viewport ${vw}×${vh})`,
+        'color: #4caf50; font-weight: bold;', 'color: inherit;');
+      return true;
+    }
+
+    const obs = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (node.nodeType !== 1) continue;
+          if (!node.classList?.contains('MuiModal-root')) continue;
+          // 여러 타이밍에 시도 (React 렌더링 + 이미지 로드 대기)
+          const tryApply = () => {
+            const img = node.querySelector('figure > img');
+            if (!img) return;
+            if (img.naturalWidth > 0) {
+              constrainImg(node);
+            } else {
+              img.addEventListener('load', () => constrainImg(node), { once: true });
+            }
+          };
+          setTimeout(tryApply, 50);
+          setTimeout(tryApply, 150);
+          setTimeout(tryApply, 400);
+          setTimeout(tryApply, 800);
         }
       }
-      if (++attempts < 20) requestAnimationFrame(tryConstrain);
-    };
-    requestAnimationFrame(tryConstrain);
-  }
+    });
+    obs.observe(document.body, { childList: true });
+  })();
 
   window.addEventListener('bwbr-native-zoom', (e) => {
     const imageUrl = e.detail?.imageUrl;
@@ -2179,8 +2183,6 @@
         console.log('%c[BWBR]%c ✅ 네이티브 확대 보기 열림',
           'color: #4caf50; font-weight: bold;', 'color: inherit;');
         window.dispatchEvent(new CustomEvent('bwbr-native-zoom-result', { detail: { success: true } }));
-        // 이미지 오버플로 수정: Inspector 렌더링 후 이미지 크기 제한
-        constrainInspectorImage(imageUrl);
       } else {
         window.dispatchEvent(new CustomEvent('bwbr-native-zoom-result', { detail: { success: false } }));
       }
