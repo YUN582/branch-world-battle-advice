@@ -1970,8 +1970,77 @@
   });
 
   // ================================================================
-  //  캐릭터 단축키: 네이티브 확대 보기 (inspectImageUrl 방식)
-  //  ISOLATED → bwbr-native-zoom { imageUrl }
+  //  전체 Redux state 깊은 비교 (grid 키 탐색용)
+  //  bwbr-deep-snapshot-before → 전체 state 스냅샷
+  //  bwbr-deep-snapshot-after  → 전체 state diff
+  //  사용법: before → 코코포리아에서 그리드 토글 → after
+  // ================================================================
+
+  let _deepSnapshot = null;
+
+  function deepDiff(before, after, path, result, depth) {
+    if (depth > 6) return; // 깊이 제한
+    if (before === after) return;
+    if (typeof before !== typeof after
+      || before === null || after === null
+      || typeof before !== 'object') {
+      result.push({ path, before, after });
+      return;
+    }
+    // 배열
+    if (Array.isArray(before) || Array.isArray(after)) {
+      if (JSON.stringify(before) !== JSON.stringify(after)) {
+        result.push({ path, before: `Array(${(before||[]).length})`, after: `Array(${(after||[]).length})` });
+      }
+      return;
+    }
+    // 객체
+    const allKeys = new Set([...Object.keys(before), ...Object.keys(after)]);
+    for (const key of allKeys) {
+      deepDiff(before[key], after[key], path + '.' + key, result, depth + 1);
+    }
+  }
+
+  window.addEventListener('bwbr-deep-snapshot-before', () => {
+    if (!reduxStore) return console.error('[BWBR] Redux Store 없음');
+    try {
+      _deepSnapshot = JSON.parse(JSON.stringify(reduxStore.getState()));
+      console.log('%c[BWBR]%c 🔬 전체 Redux state 스냅샷 저장됨 (키: %d)',
+        'color: #e91e63; font-weight: bold;', 'color: inherit;',
+        Object.keys(_deepSnapshot).length);
+    } catch (e) {
+      console.error('[BWBR] 스냅샷 실패 (순환 참조?):', e.message);
+    }
+  });
+
+  window.addEventListener('bwbr-deep-snapshot-after', () => {
+    if (!reduxStore) return console.error('[BWBR] Redux Store 없음');
+    if (!_deepSnapshot) return console.error('[BWBR] 먼저 bwbr-deep-snapshot-before 실행하세요');
+
+    let current;
+    try {
+      current = JSON.parse(JSON.stringify(reduxStore.getState()));
+    } catch (e) {
+      return console.error('[BWBR] 현재 상태 직렬화 실패:', e.message);
+    }
+
+    const diffs = [];
+    deepDiff(_deepSnapshot, current, 'state', diffs, 0);
+
+    console.log('%c[BWBR]%c 🔬 전체 Redux state 변화 (%d건):',
+      'color: #e91e63; font-weight: bold;', 'color: inherit;', diffs.length);
+    if (diffs.length === 0) {
+      console.log('  (변화 없음 — Firestore 직접 쓰기일 수 있음)');
+    } else {
+      for (const d of diffs) {
+        console.log(`  ${d.path}:`, d.before, '→', d.after);
+      }
+    }
+    _deepSnapshot = null;
+  });
+
+  // ================================================================
+  //  app.state 수정용 action creator 자동 탐색
   // ================================================================
 
   /** 캐시된 seted action creator (한 번 발견하면 재사용) */
@@ -1980,8 +2049,8 @@
   /**
    * app.state 수정용 action creator를 자동 탐색.
    * 방법 1: webpack 모듈에서 .seted action creator 검색 (RTK 패턴)
-   * 방법 2: dispatch 인터셉터로 자연 상호작용에서 캡처
-   * 방법 3: 확장된 type 문자열 브루트포스
+   * 방법 2: type 문자열 브루트포스
+   * 방법 3: dispatch 인터셉터로 자연 상호작용에서 캡처 (아래 installPassiveInterceptor)
    */
   function findSetedActionCreator() {
     if (_setedActionCreator) return _setedActionCreator;
@@ -1997,9 +2066,7 @@
           for (const key of Object.keys(mod)) {
             const val = mod[key];
             if (!val || typeof val !== 'object') continue;
-            // RTK slice.actions 또는 직접 export된 action creator 객체
             if (typeof val.seted === 'function' && typeof val.seted.type === 'string') {
-              // 검증: 이 action type이 실제로 app.state를 변경하는지 확인
               const testType = val.seted.type;
               const appState = reduxStore.getState().app?.state;
               if (appState) {
@@ -2027,7 +2094,6 @@
     const appState = state.app?.state;
     if (appState && typeof appState === 'object') {
       const origX = appState.roomPointerX;
-      // 가능한 slice name 조합
       const sliceNames = [
         'state', 'appState', 'app', 'ui', 'page', 'view', 'layout',
         'global', 'root', 'main', 'setting', 'settings', 'config',
@@ -2062,7 +2128,6 @@
     const orig = reduxStore.dispatch;
     reduxStore.dispatch = function (action) {
       if (typeof action === 'function') {
-        // thunk — inner dispatch 인터셉트
         return action(function innerDispatch(innerAction) {
           if (typeof innerAction !== 'function' && innerAction?.type && innerAction?.payload) {
             const p = innerAction.payload;
@@ -2071,7 +2136,6 @@
               _setedActionCreator = { type: innerAction.type, __intercepted: true };
               console.log(`%c[BWBR]%c ✅ seted action type 캡처됨: "${innerAction.type}"`,
                 'color: #4caf50; font-weight: bold;', 'color: inherit;');
-              // 캡처 완료 → 원래 dispatch 복원
               reduxStore.dispatch = orig;
             }
           }
@@ -2081,6 +2145,162 @@
       return orig.call(this, action);
     };
   })();
+
+  // ================================================================
+  //  네이티브 그리드 상태 감시 (displayGrid)
+  //  Firestore: rooms/{roomId}.displayGrid (boolean)
+  //  Redux:    entities.rooms.entities.{roomId}.displayGrid
+  //
+  //  cocofolia 필드 설정에서 "전경에 그리드 표시"를 켜면
+  //  ISOLATED world의 grid-overlay.js에 이벤트를 발행하여
+  //  네이티브 그리드 대신 커스텀 디자인으로 교체합니다.
+  //
+  //  ISOLATED → bwbr-query-native-grid  → bwbr-query-native-grid-result
+  //  MAIN    → bwbr-display-grid-changed { value }  (store.subscribe)
+  // ================================================================
+
+  /** 현재 방의 displayGrid 값을 Redux에서 읽기 */
+  function readDisplayGrid() {
+    if (!reduxStore) return null;
+    const state = reduxStore.getState();
+    const roomId = state.app?.state?.roomId
+      || window.location.pathname.match(/\/rooms\/([^/]+)/)?.[1];
+    if (!roomId) return null;
+    const room = state.entities?.rooms?.entities?.[roomId];
+    if (!room || typeof room.displayGrid !== 'boolean') return null;
+    return { roomId, value: room.displayGrid };
+  }
+
+  // 그리드 상태 조회 (ISOLATED → MAIN)
+  window.addEventListener('bwbr-query-native-grid', () => {
+    const grid = readDisplayGrid();
+    window.dispatchEvent(new CustomEvent('bwbr-query-native-grid-result', {
+      detail: grid
+        ? { success: true, roomId: grid.roomId, value: grid.value }
+        : { success: false, reason: 'room_not_found' }
+    }));
+  });
+
+  // 그리드 토글 (Firestore 직접 쓰기) — SpeedDial 버튼에서 호출
+  window.addEventListener('bwbr-toggle-native-grid', async (e) => {
+    const forceValue = e.detail?.value; // true/false 또는 undefined(토글)
+    try {
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) {
+        window.dispatchEvent(new CustomEvent('bwbr-toggle-native-grid-result', {
+          detail: { success: false, reason: 'firestore_sdk_not_found' }
+        }));
+        return;
+      }
+
+      const grid = readDisplayGrid();
+      if (!grid) {
+        window.dispatchEvent(new CustomEvent('bwbr-toggle-native-grid-result', {
+          detail: { success: false, reason: 'room_not_found' }
+        }));
+        return;
+      }
+
+      const next = forceValue !== undefined ? !!forceValue : !grid.value;
+
+      // Firestore 쓰기: rooms/{roomId}.displayGrid
+      const roomCol = sdk.collection(sdk.db, 'rooms');
+      const roomRef = sdk.doc(roomCol, grid.roomId);
+      await sdk.setDoc(roomRef, { displayGrid: next }, { merge: true });
+
+      console.log(`%c[BWBR]%c 그리드 토글: displayGrid = ${grid.value} → ${next}`,
+        'color: #4caf50; font-weight: bold;', 'color: inherit;');
+
+      window.dispatchEvent(new CustomEvent('bwbr-toggle-native-grid-result', {
+        detail: { success: true, roomId: grid.roomId, value: next }
+      }));
+    } catch (err) {
+      console.error('[BWBR] 네이티브 그리드 토글 실패:', err);
+      window.dispatchEvent(new CustomEvent('bwbr-toggle-native-grid-result', {
+        detail: { success: false, reason: 'error', error: err.message }
+      }));
+    }
+  });
+
+  // ── displayGrid 변경 감시 (store.subscribe) ──
+  {
+    let _prevDisplayGrid = undefined;
+
+    function watchDisplayGrid() {
+      if (!reduxStore) return;
+      reduxStore.subscribe(() => {
+        const grid = readDisplayGrid();
+        const curVal = grid ? grid.value : false;
+        if (curVal !== _prevDisplayGrid) {
+          _prevDisplayGrid = curVal;
+          console.log(`%c[BWBR]%c displayGrid 변경 감지: ${curVal}`,
+            'color: #4caf50; font-weight: bold;', 'color: inherit;');
+          window.dispatchEvent(new CustomEvent('bwbr-display-grid-changed', {
+            detail: { value: curVal }
+          }));
+        }
+      });
+      // 초기값 설정 (이벤트 발행 없이)
+      const grid = readDisplayGrid();
+      _prevDisplayGrid = grid ? grid.value : false;
+    }
+
+    // reduxStore가 확보된 직후 실행되도록 약간 지연
+    const _watchInterval = setInterval(() => {
+      if (reduxStore) {
+        clearInterval(_watchInterval);
+        watchDisplayGrid();
+        console.log('%c[BWBR]%c displayGrid 감시 시작',
+          'color: #4caf50; font-weight: bold;', 'color: inherit;');
+      }
+    }, 500);
+  }
+
+  // ── 네이티브 그리드 DOM 진단 ──
+  // displayGrid=true 상태에서 zoom container의 전체 자식을 덤프
+  window.addEventListener('bwbr-inspect-native-grid', () => {
+    const movable = document.querySelector('.movable');
+    if (!movable) {
+      console.error('[BWBR] .movable 없음 — 방에 입장하세요');
+      return;
+    }
+    const zoom = movable.parentElement;
+    console.group('%c[BWBR]%c zoom container 자식 목록 (displayGrid 활성 상태에서 실행)',
+      'color:#4caf50;font-weight:bold', 'color:inherit');
+    for (let i = 0; i < zoom.children.length; i++) {
+      const ch = zoom.children[i];
+      const tag = ch.tagName.toLowerCase();
+      const cls = ch.className ? `.${[...ch.classList].join('.')}` : '';
+      const id  = ch.id ? `#${ch.id}` : '';
+      const size = `${ch.offsetWidth}×${ch.offsetHeight}`;
+      const style = ch.style.cssText.slice(0, 120);
+      const isMovable = ch.classList.contains('movable');
+      const hasImg = ch.querySelector('img') ? ' [has <img>]' : '';
+      const hasCanvas = ch.querySelector('canvas') || tag === 'canvas'
+        ? ' [★ CANVAS]' : '';
+      const hasSVG = ch.querySelector('svg') || tag === 'svg'
+        ? ' [★ SVG]' : '';
+      const bgImg = getComputedStyle(ch).backgroundImage;
+      const hasBg = bgImg && bgImg !== 'none' ? ` [bg: ${bgImg.slice(0, 60)}]` : '';
+      console.log(
+        `  [${i}] <${tag}${id}${cls}> ${size} ${isMovable ? '[movable]' : ''}` +
+        `${hasImg}${hasCanvas}${hasSVG}${hasBg}\n    style: ${style}`
+      );
+      // canvas의 경우 추가 정보
+      if (tag === 'canvas' || ch.querySelector('canvas')) {
+        const cvs = tag === 'canvas' ? ch : ch.querySelector('canvas');
+        console.log(`    canvas 크기: ${cvs.width}×${cvs.height}, ` +
+          `display: ${getComputedStyle(cvs).display}, ` +
+          `position: ${getComputedStyle(cvs).position}`);
+      }
+    }
+    console.groupEnd();
+  });
+
+  // ================================================================
+  //  네이티브 확대 보기 (inspectImageUrl 방식)
+  //  ISOLATED → bwbr-native-zoom { imageUrl }
+  // ================================================================
 
   // ── Inspector 이미지 오버플로 수정 ──
   // 구조: MuiModal-root > sc-*(뷰포트 ~960×960) > MuiPaper(드래그, transform) > div > figure > img

@@ -24,6 +24,7 @@
 9. [app.state 상세 구조 및 UI 제어](#9-appstate-상세-구조-및-ui-제어)
 10. [Redux Action Type 탐색 기법](#10-redux-action-type-탐색-기법)
 11. [DOM 구조 레퍼런스 (MUI 컴포넌트 매핑)](#11-dom-구조-레퍼런스-mui-컴포넌트-매핑)
+    - [11.7 배틀맵 / 씬 계층 구조](#117-배틀맵--씬-계층-구조-foreground--background--zoom--pan)
 
 ---
 
@@ -858,6 +859,51 @@ window.dispatchEvent(new CustomEvent('bwbr-snapshot-after'));
 // → 변경된 키와 before/after 값 출력
 ```
 
+### 전체 Redux state 깊은 비교 (deep snapshot diff)
+
+> `app.state` 외에 `entities` 등 깊은 곳의 변화를 추적할 때 사용합니다.
+> 깊이 6까지 재귀적으로 비교합니다.
+
+```js
+// 1단계: 전체 state 스냅샷
+window.dispatchEvent(new CustomEvent('bwbr-deep-snapshot-before'));
+
+// 2단계: 코코포리아에서 아무 조작
+
+// 3단계: 전체 state diff 확인
+window.dispatchEvent(new CustomEvent('bwbr-deep-snapshot-after'));
+// → 변경된 필드의 전체 경로와 before/after 값 출력
+// 예: state.entities.rooms.entities.{roomId}.displayGrid: false → true
+```
+
+### 9.1 rooms 엔티티 (필드 설정)
+
+> 방 설정은 `entities.rooms.entities.{roomId}` 에 Firestore 문서로 저장됩니다.
+> `app.state`가 아닌 `entities.rooms`에 있으므로 변경 시 Firestore 직접 쓰기가 필요합니다.
+>
+> **기준**: 2026-02-24
+
+#### 그리드 표시
+
+| 키 | 경로 | 타입 | 설명 |
+|----|------|------|------|
+| `displayGrid` | `entities.rooms.entities.{roomId}.displayGrid` | boolean | 전경에 그리드 표시 여부 |
+
+```js
+// 그리드 상태 읽기
+const state = store.getState();
+const roomId = state.app.state.roomId;
+const displayGrid = state.entities.rooms.entities[roomId].displayGrid;
+
+// 그리드 토글 (Firestore 직접 쓰기 — { merge: true } 필수)
+const roomCol = sdk.collection(sdk.db, 'rooms');
+const roomRef = sdk.doc(roomCol, roomId);
+await sdk.setDoc(roomRef, { displayGrid: !displayGrid }, { merge: true });
+```
+
+> **주의**: `app.state`에는 `displayGrid` 키가 존재하지 않습니다 (174개 키 중 grid 관련 없음).
+> Redux 상태는 Firestore 실시간 리스너를 통해 자동 동기화됩니다.
+
 ---
 
 ## 10. Redux Action Type 탐색 기법
@@ -1168,3 +1214,194 @@ if (dsMenu) {
   console.log('❌ downshift 메뉴를 찾을 수 없습니다 (캐릭터 입력 필드를 클릭하세요)');
 }
 ```
+
+---
+
+### 11.7 배틀맵 / 씬 계층 구조 (Foreground · Background · Zoom · Pan)
+
+> 코코포리아 맵(씬)의 배경 이미지, 전경 이미지, 토큰이 배치되는 DOM 계층입니다.
+> 줌(확대/축소)과 팬(드래그 이동)에 대한 동작이 계층별로 다르므로,
+> 오버레이를 삽입할 때 정확한 위치 선정이 중요합니다.
+>
+> **기준**: 2026-02-28 (콘솔 진단으로 확인)
+
+#### 전체 계층 구조
+
+```
+sc-LvPkz (overflow:hidden)                     ← 공통 조상 (최상위 씬 래퍼)
+├─ [1] sc-dYYaKM (배경 레이어)                     position:absolute, overflow:hidden
+│      → 줌과 무관: 항상 뷰포트 크기 (예: 1972×1318)
+│      └─ sc-eVedOh (배경 이미지)                   position:absolute, left:-8px, top:-8px
+│           → 뷰포트보다 약간 큰 이미지 (예: 1988×1334)
+│
+├─ [2] sc-geBDJh (토큰 뷰포트)                     position:absolute, overflow:hidden
+│      └─ sc-bZetrt
+│           └─ sc-iiKPbm                           overflow:hidden
+│                └─ sc-fkmgoA                       overflow:hidden (다중 클리핑)
+│                     └─ sc-jcsPWJ (pan 컨테이너)   transform: translate(X, Y)
+│                          └─ div (zoom 컨테이너)   transform: scale(N), 0×0, static
+│                               ├─ [0] div (전경)   position:absolute, <img> 포함
+│                               │     └─ <img>     필드 크기 × 24px (예: 1920×1080)
+│                               ├─ [1] .movable    토큰 #1
+│                               ├─ [2] .movable    토큰 #2
+│                               └─ ...
+│
+└─ [3] MuiDrawer                                   채팅 사이드바
+```
+
+#### 핵심 특성
+
+| 요소 | 줌 영향 | 크기 결정 | 비고 |
+|------|---------|----------|------|
+| 배경 레이어 (sc-dYYaKM) | ❌ 무관 | 뷰포트 크기 | 줌 0.4~2.0 에서 불변 |
+| 배경 이미지 (sc-eVedOh > img) | ❌ 무관 | 뷰포트 + 여유 (~8px) | 가장자리 안티앨리어싱용 |
+| 전경 (zoom[0]) | ✅ scale(N) 적용 | 필드 설정 × 24px | `width × 24`, `height × 24` |
+| 토큰 (.movable) | ✅ scale(N) 적용 | 개별 크기 | 전경과 동일 좌표계 |
+
+#### 전경 이미지 크기 계산
+
+코코포리아 필드 설정의 **1マス (1칸) = 24px** 입니다.
+
+```
+전경 이미지 너비 = 필드 가로칸 수 × 24
+전경 이미지 높이 = 필드 세로칸 수 × 24
+```
+
+예시 (16:9 비율):
+| 가로 칸 | 세로 칸 | 전경 크기 (px) |
+|---------|---------|---------------|
+| 80 | 45 | 1920 × 1080 |
+| 60 | 34 | 1440 × 816 |
+| 40 | 23 | 960 × 552 |
+
+#### 전경 요소 프로그래밍적 탐지
+
+```js
+// 전경 = zoom 컨테이너의 첫 번째 자식 중 .movable이 아니고 큰 <img>를 포함하는 것
+var movable = document.querySelector('.movable');
+var zoomEl = movable.parentElement;
+for (var i = 0; i < zoomEl.children.length; i++) {
+  var ch = zoomEl.children[i];
+  if (ch.classList.contains('movable')) continue;  // 토큰 스킵
+  var img = ch.querySelector('img');
+  if (img && img.offsetWidth >= 200) {
+    // ch = 전경 요소, img = 전경 이미지
+    console.log('전경:', img.offsetWidth + '×' + img.offsetHeight);
+    break;
+  }
+}
+```
+
+#### 오버레이 삽입 전략
+
+| 삽입 위치 | 결과 | 권장 |
+|----------|------|------|
+| 배경 레이어 (sc-dYYaKM) | ❌ 줌과 무관, 전경 크기와 불일치 | — |
+| pan 컨테이너 형제 (sc-fkmgoA) | ❌ pan/zoom 밖, 전경과 연동 안 됨 | — |
+| zoom 컨테이너 직접 | ⚠️ 전경 크기를 JS로 복사해야 함 | — |
+| **전경 바로 뒤 형제 (afterend)** | ✅ 동일 좌표계, 크기 동기화 용이 | **권장** |
+
+```js
+// 전경과 동일한 position:absolute + computed style 복사
+var overlay = document.createElement('div');
+var cs = getComputedStyle(foregroundEl);
+overlay.style.position = 'absolute';
+overlay.style.left = cs.left;
+overlay.style.top = cs.top;
+overlay.style.width = cs.width;
+overlay.style.height = cs.height;
+foregroundEl.insertAdjacentElement('afterend', overlay);
+```
+
+#### ⚠️ 주의사항
+
+- `sc-*` 클래스명은 styled-components 빌드마다 변경됨 → **클래스명에 의존하지 말 것**
+- `.movable`은 안정적 클래스 (토큰 요소의 CSS 클래스)
+- zoom 컨테이너는 `0×0` 크기이며 자식의 position:absolute로 콘텐츠 표시
+- 다중 overflow:hidden 조상이 자동 클리핑을 제공 (전경 바깥 오버레이 영역은 자동으로 잘림)
+- 전경 크기는 방 설정 변경 시 변할 수 있으므로 주기적 동기화 필요 (현재 2초 주기)
+
+#### 진단 스크립트
+
+```js
+// 전경·줌·팬 컨테이너 확인 (F12에서 실행)
+var m = document.querySelector('.movable');
+if (!m) { console.log('❌ 토큰(.movable)이 없습니다'); }
+else {
+  var zoom = m.parentElement;
+  var pan = zoom.parentElement;
+  console.log('zoom transform:', zoom.style.transform || getComputedStyle(zoom).transform);
+  console.log('pan transform:', pan.style.transform || getComputedStyle(pan).transform);
+  console.log('zoom children:', zoom.children.length,
+    '(전경 1 + 토큰', zoom.querySelectorAll('.movable').length + ')');
+  for (var i = 0; i < zoom.children.length; i++) {
+    var ch = zoom.children[i];
+    if (ch.classList.contains('movable')) continue;
+    var img = ch.querySelector('img');
+    if (img) {
+      console.log('전경 이미지:', img.offsetWidth + '×' + img.offsetHeight,
+        '→', Math.round(img.offsetWidth/24) + '칸 ×', Math.round(img.offsetHeight/24) + '칸');
+    }
+  }
+}
+```
+
+---
+
+### 11.8 연필 메뉴 (FAB) DOM 구조
+
+> 코코포리아 우하단의 연필 아이콘 버튼과 펼쳐지는 메뉴의 DOM 구조입니다.
+> **MuiSpeedDial이 아닙니다.** MuiFab + MuiPopover 메뉴입니다.
+>
+> **기준**: 2026-02-24 (콘솔 진단으로 확인, 2026-02-24 재확인)
+
+#### FAB 버튼
+
+```
+sc-geBDJh (조부모 컨테이너, 토큰 뷰포트 역할도 겸)
+  └─ DIV (FAB wrapper, 클래스 없음)
+       └─ BUTTON.MuiFab-root.MuiFab-circular.MuiFab-sizeLarge
+            └─ (연필 아이콘 SVG)
+```
+
+#### 메뉴 팝업 (FAB 클릭 시 body 포탈로 렌더링)
+
+```
+body
+└─ div.MuiPopover-root                    ← Portal (body 직속)
+   ├─ div.MuiBackdrop-root               ← 투명 백드롭
+   └─ div.MuiPaper-root                  ← 실제 메뉴 패널 (FAB 위에 위치)
+      └─ ul.MuiList-root
+         ├─ div.MuiListItemButton-root   ← 메뉴 아이템 1
+         │  ├─ div.MuiListItemIcon-root  → <svg> 아이콘
+         │  └─ div.MuiListItemText-root
+         │     ├─ span.MuiTypography-root → "기능 이름" (primary)
+         │     └─ span.MuiTypography-root → "설명 텍스트" (secondary)
+         ├─ div.MuiListItemButton-root   ← 메뉴 아이템 2 (PRO 기능일 수 있음)
+         └─ ...
+```
+
+#### 주입 전략 (수정됨)
+
+1. `MutationObserver`로 body 감시 (메뉴 열릴 때 Popover DOM 생성됨)
+2. `.MuiPopover-root` 안의 `.MuiPaper-root` 찾기
+3. Paper 위치가 FAB 근처인지 확인 (`getBoundingClientRect()` 비교)
+4. `.MuiList-root` 안의 `.MuiListItemButton-root` 복제
+5. PRO 뱃지/보조 텍스트 제거, 아이콘/라벨 교체
+6. `list.insertBefore(clone, list.firstChild)` 로 맨 위에 삽입
+
+#### 주의사항
+
+- 메뉴 닫으면 MuiPopover DOM 전체 제거됨 → 열 때마다 재주입 필요
+- PRO 기능 아이템은 Chip/Badge + secondary text 포함 → 복제 시 반드시 제거
+- Popover backdrop이 클릭을 가로챌 수 있으므로 capture phase로 핸들러 등록
+- FAB 조부모(sc-geBDJh) 안의 MuiIconButton들은 **툴바 버튼**이며 메뉴 아이템이 아님
+
+### 11.9 네이티브 그리드 (displayGrid) DOM
+
+> `displayGrid = true` 상태에서 zoom container 내부에 별도의 그리드 DOM 요소(canvas, SVG 등)가
+> **생성되지 않습니다.** (2026-02-24 실측: zoom container 자식 = 전경 + .movable들 + 커스텀 오버레이뿐)
+>
+> 네이티브 그리드는 **전경 div의 CSS background**로 렌더링되는 것으로 추정됩니다.
+> 커스텀 그리드 활성 시 `fg.style.setProperty('background', 'transparent', 'important')` 로
+> 네이티브 그리드를 숨기고, 오버레이로 대체합니다.
