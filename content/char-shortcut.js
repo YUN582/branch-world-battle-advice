@@ -291,6 +291,60 @@
     obs.observe(document.body, { childList: true });
   }
 
+  // ================================================================
+  //  스크린 패널 우클릭 메뉴 → 전투이동 버튼 주입
+  // ================================================================
+  function injectCombatMoveToPanel(menuList, items, texts, paper) {
+    // 위치 고정 아이템 찾기
+    var anchorItem = null;
+    for (var i = 0; i < items.length; i++) {
+      if (texts[i].indexOf('위치 고정') === 0 || texts[i].indexOf('位置固定') === 0) {
+        anchorItem = items[i];
+        break;
+      }
+    }
+
+    var firstItem = menuList.querySelector('li[role="menuitem"]');
+    var itemClass = firstItem ? firstItem.className : 'MuiButtonBase-root MuiMenuItem-root MuiMenuItem-gutters';
+    var popover = paper.closest('.MuiPopover-root') || paper.parentElement;
+
+    var combatItem = document.createElement('li');
+    combatItem.className = itemClass;
+    combatItem.tabIndex = -1;
+    combatItem.role = 'menuitem';
+    combatItem.dataset.bwbr = '1';
+    combatItem.textContent = '전투이동';
+    combatItem.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      dismissMenu(popover);
+      // 우클릭한 토큰의 imageUrl로 전투이동 시작
+      var tokenEl = findTokenElement(lastRightClickTarget);
+      if (!tokenEl) {
+        log('전투이동: 토큰을 찾을 수 없습니다');
+        return;
+      }
+      var imgUrl = extractImageUrl(tokenEl);
+      if (!imgUrl) {
+        log('전투이동: 이미지 URL을 찾을 수 없습니다');
+        return;
+      }
+      // combat-move 모듈에 이동 요청
+      document.documentElement.setAttribute('data-bwbr-context-move-url', imgUrl);
+      window.dispatchEvent(new Event('bwbr-context-combat-move'));
+    });
+
+    // 위치 고정 아래에 삽입
+    if (anchorItem && anchorItem.nextSibling) {
+      menuList.insertBefore(combatItem, anchorItem.nextSibling);
+    } else if (anchorItem) {
+      menuList.appendChild(combatItem);
+    } else {
+      // 위치 고정을 찾지 못한 경우 맨 아래
+      menuList.appendChild(combatItem);
+    }
+    log('스크린 패널 메뉴에 전투이동 주입');
+  }
+
   function onPaperReady(paper) {
     var menuList = paper.querySelector("ul[role='menu']");
     if (!menuList) return;
@@ -300,13 +354,14 @@
     var texts = [];
     for (var i = 0; i < items.length; i++) texts.push((items[i].textContent || '').trim());
 
-    // 패널 메뉴 감지 → 주입 안 함 (이미 확대 보기가 있음)
+    // 패널 메뉴 감지 → 전투이동 버튼만 주입
     var isPanel = texts.some(function (t) {
       return t.indexOf('위치 고정') === 0 || t.indexOf('패널 숨기기') === 0
         || t.indexOf('位置固定') === 0 || t.indexOf('パネルを隱す') === 0;
     });
     if (isPanel) {
-      log('스크린 패널 메뉴 → 주입 안 함');
+      log('스크린 패널 메뉴 → 전투이동 주입');
+      injectCombatMoveToPanel(menuList, items, texts, paper);
       return;
     }
 

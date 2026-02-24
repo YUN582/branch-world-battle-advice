@@ -941,6 +941,52 @@
   });
 
   // ================================================================
+  //  특정 캐릭터로 채팅 전송 (combat-move 등에서 사용)
+  //  DOM attribute: data-bwbr-char-msg-text, data-bwbr-char-msg-name,
+  //                 data-bwbr-char-msg-icon, data-bwbr-char-msg-color
+  // ================================================================
+  window.addEventListener('bwbr-send-message-as-char', async () => {
+    const el = document.documentElement;
+    const text = el.getAttribute('data-bwbr-char-msg-text') || '';
+    const charName = el.getAttribute('data-bwbr-char-msg-name') || '';
+    const iconUrl = el.getAttribute('data-bwbr-char-msg-icon') || '';
+    const color = el.getAttribute('data-bwbr-char-msg-color') || '#e0e0e0';
+    el.removeAttribute('data-bwbr-char-msg-text');
+    el.removeAttribute('data-bwbr-char-msg-name');
+    el.removeAttribute('data-bwbr-char-msg-icon');
+    el.removeAttribute('data-bwbr-char-msg-color');
+
+    if (!text) {
+      window.dispatchEvent(new CustomEvent('bwbr-char-msg-result', {
+        detail: { success: false, error: 'no-text' }
+      }));
+      return;
+    }
+
+    try {
+      const chInfo = _detectCurrentChannel();
+      const overrides = {
+        name: charName,
+        iconUrl: iconUrl,
+        color: color
+      };
+      if (chInfo) {
+        overrides.channel = chInfo.channel;
+        overrides.channelName = chInfo.channelName;
+      }
+      const success = await sendDirectMessage(text, overrides);
+      window.dispatchEvent(new CustomEvent('bwbr-char-msg-result', {
+        detail: { success, text }
+      }));
+    } catch (err) {
+      console.error('[BWBR] char-msg send error:', err);
+      window.dispatchEvent(new CustomEvent('bwbr-char-msg-result', {
+        detail: { success: false, text, error: err.message }
+      }));
+    }
+  });
+
+  // ================================================================
   //  Content Script ↔ Page Context 이벤트 통신
   // ================================================================
 

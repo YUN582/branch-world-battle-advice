@@ -110,6 +110,16 @@
     });
   }
 
+  /** 특정 캐릭터로 채팅 메시지 전송 (Firestore 직접) */
+  function sendChatAsChar(text, charName, iconUrl, color) {
+    var el = document.documentElement;
+    el.setAttribute('data-bwbr-char-msg-text', text);
+    el.setAttribute('data-bwbr-char-msg-name', charName || '');
+    el.setAttribute('data-bwbr-char-msg-icon', iconUrl || '');
+    el.setAttribute('data-bwbr-char-msg-color', color || '#e0e0e0');
+    window.dispatchEvent(new Event('bwbr-send-message-as-char'));
+  }
+
   // ------------------------------------------------
   //  4. Token click handling
   // ------------------------------------------------
@@ -139,7 +149,6 @@
     requestCharForMove(imageUrl).then(function (result) {
       if (!result || !result.success) {
         LOG('매칭 실패 — memo에 〔캐릭터이름〕이 있는지 확인하세요');
-        showToast('이 토큰에 〔캐릭터이름〕이 설정되어 있지 않습니다', 3000);
         return;
       }
       _selectedItem = { item: result.item, char: result.char };
@@ -151,6 +160,17 @@
   //  5. Document click handler (capture phase)
   //     전투 모드 ON일 때 모든 클릭을 관리
   // ------------------------------------------------
+
+  /** 전투 모드 시 드래그 차단 (pointerdown capture) */
+  function onCombatPointerDown(e) {
+    if (!_combatMode && !_contextMoveActive) return;
+    var movable = findTokenElement(e.target);
+    if (movable) {
+      e.stopPropagation();   // 코코포리아 드래그 핸들러에 도달 못하게
+      e.preventDefault();
+    }
+  }
+
   function onCombatClick(e) {
     if (!_combatMode) return;
 
@@ -349,12 +369,18 @@
       moveItem(item._id, targetX, targetY).then(function (result) {
         if (result && result.success) {
           LOG(char.name + ' 이동: (' + item.x + ',' + item.y + ') → (' + targetX + ',' + targetY + ')');
+          // 이동 거리 채팅 출력
+          sendChatAsChar(
+            '【이동👣】| ' + dist + '칸 이동',
+            char.name, char.iconUrl, char.color
+          );
         } else {
           LOG('이동 실패');
           showToast('이동 실패', 2000);
         }
         clearMoveOverlay();
         _selectedItem = null;
+        if (_contextMoveActive) endContextMove();
       });
     });
 
@@ -381,6 +407,8 @@
     if (_combatMode) return;
     _combatMode = true;
     document.addEventListener('click', onCombatClick, true);
+    document.addEventListener('pointerdown', onCombatPointerDown, true);
+    document.addEventListener('mousedown', onCombatPointerDown, true);
     updateFabLabel();
     LOG('전투 모드 ON');
     showToast('전투 모드 ON — 토큰을 클릭하면 이동 범위가 표시됩니다', 3000);
@@ -391,6 +419,8 @@
     clearMoveOverlay();
     _selectedItem = null;
     document.removeEventListener('click', onCombatClick, true);
+    document.removeEventListener('pointerdown', onCombatPointerDown, true);
+    document.removeEventListener('mousedown', onCombatPointerDown, true);
     updateFabLabel();
     LOG('전투 모드 OFF');
     showToast('전투 모드 OFF', 2000);
@@ -599,6 +629,15 @@
   // ------------------------------------------------
   setupFabInjection();
 
+  // Alt+* 단축키로 전투 모드 토글
+  document.addEventListener('keydown', function(e) {
+    // NumPad multiply = '*', 또는 Shift+8 = '*'
+    if (e.altKey && (e.key === '*' || e.code === 'NumpadMultiply')) {
+      e.preventDefault();
+      toggleCombatMode();
+    }
+  });
+
   // 글로벌 API
   window.__bwbrCombatMove = {
     get combatMode() { return _combatMode; },
@@ -606,6 +645,59 @@
     disable: disableCombatMode,
     toggle: toggleCombatMode
   };
+
+  // 우클릭 메뉴 → 전투이동 (전투 모드 아닐 때도 동작)
+  window.addEventListener('bwbr-context-combat-move', function () {
+    var imageUrl = document.documentElement.getAttribute('data-bwbr-context-move-url');
+    document.documentElement.removeAttribute('data-bwbr-context-move-url');
+    if (!imageUrl) return;
+
+    LOG('우클릭 전투이동: imageUrl=' + imageUrl.substring(0, 60) + '...');
+    requestCharForMove(imageUrl).then(function (result) {
+      if (!result || !result.success) {
+        LOG('전투이동 매칭 실패');
+        return;
+      }
+      _selectedItem = { item: result.item, char: result.char };
+      showMoveRange(result.item, result.char);
+      // 전투 모드가 아니면 임시 클릭 핸들러 활성화
+      if (!_combatMode) {
+        _contextMoveActive = true;
+        document.addEventListener('click', onContextMoveClick, true);
+        document.addEventListener('pointerdown', onCombatPointerDown, true);
+        document.addEventListener('mousedown', onCombatPointerDown, true);
+      }
+    });
+  });
+
+  // 우클릭 전투이동 전용 클릭 핸들러 (전투 모드 OFF 상태에서 사용)
+  var _contextMoveActive = false;
+  function onContextMoveClick(e) {
+    if (!_contextMoveActive) return;
+
+    // 이동 타일 클릭 → 타일의 자체 핸들러가 처리
+    if (e.target.closest && e.target.closest('[data-bwbr-move-tile]')) return;
+
+    // 현재 위치 클릭 → 취소
+    if (e.target.closest && e.target.closest('[data-bwbr-current-pos]')) {
+      e.stopPropagation();
+      e.preventDefault();
+      endContextMove();
+      return;
+    }
+
+    // 다른 곳 클릭 → 취소
+    endContextMove();
+  }
+
+  function endContextMove() {
+    _contextMoveActive = false;
+    clearMoveOverlay();
+    _selectedItem = null;
+    document.removeEventListener('click', onContextMoveClick, true);
+    document.removeEventListener('pointerdown', onCombatPointerDown, true);
+    document.removeEventListener('mousedown', onCombatPointerDown, true);
+  }
 
   LOG('module loaded');
 })();

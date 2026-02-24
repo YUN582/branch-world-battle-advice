@@ -387,6 +387,14 @@
   // start FAB menu injection
   setupFabInjection();
 
+  // Alt+/ 단축키로 그리드 토글
+  document.addEventListener('keydown', function(e) {
+    if (e.altKey && e.key === '/') {
+      e.preventDefault();
+      window.dispatchEvent(new CustomEvent('bwbr-toggle-native-grid'));
+    }
+  });
+
   // global API
   window.__bwbrGridOverlay = { show: show, hide: hide, get isVisible() { return _visible; } };
 
