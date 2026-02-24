@@ -2916,6 +2916,14 @@ ${rows.join('\n')}
       sounds.victorySounds = [sounds.victorySound];
       delete sounds.victorySound;
     }
+    // 효과음 이름 챙챙→챙 수정 (v1.1.8 이전 잘못된 기본값 수정)
+    var fixName = function(arr) {
+      if (!Array.isArray(arr)) return arr;
+      return arr.map(function(s) { return typeof s === 'string' ? s.replace(/^챙챙/, '챙') : s; });
+    };
+    if (sounds.roundHeaderSounds) sounds.roundHeaderSounds = fixName(sounds.roundHeaderSounds);
+    if (sounds.resultNormalSounds) sounds.resultNormalSounds = fixName(sounds.resultNormalSounds);
+    if (sounds.resultSpecialSounds) sounds.resultSpecialSounds = fixName(sounds.resultSpecialSounds);
   }
 
   /** 항상 출력되는 핵심 로그 */

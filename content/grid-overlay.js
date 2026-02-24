@@ -218,12 +218,8 @@
   function setupFabInjection() {
     var MENU_ATTR = GRID_ATTR;
 
-    /** FAB 근처 MuiPopover 안의 MuiList 찾기 */
+    /** FAB MuiPopover 안의 MuiList 찾기 (키워드 기반 식별) */
     function findFabMenuList() {
-      var fab = document.querySelector('.MuiFab-root');
-      if (!fab) return null;
-      var fabRect = fab.getBoundingClientRect();
-
       var popovers = document.querySelectorAll('.MuiPopover-root');
       for (var i = 0; i < popovers.length; i++) {
         var paper = popovers[i].querySelector('.MuiPaper-root');
@@ -231,14 +227,12 @@
         var list = paper.querySelector('.MuiList-root');
         if (!list) continue;
         var items = list.querySelectorAll('.MuiListItemButton-root');
-        if (items.length === 0) continue;
-
-        // FAB 근처 여부 — 메뉴는 FAB 위에 열림
-        var pr = paper.getBoundingClientRect();
-        var nearFab =
-          Math.abs(pr.right - fabRect.right) < 300 &&
-          Math.abs(pr.bottom - fabRect.top) < 300;
-        if (nearFab) return list;
+        if (items.length < 4) continue;
+        // FAB 메뉴 식별: "스크린 패널" (KR) 또는 "スクリーンパネル" (JP)
+        // 이 텍스트는 FAB 메뉴의 "스크린 패널을 추가" 항목에만 존재
+        var text = list.textContent;
+        if (text.indexOf('스크린 패널') === -1 && text.indexOf('スクリーンパネル') === -1) continue;
+        return list;
       }
       return null;
     }
@@ -338,6 +332,9 @@
       // 리스트 맨 위에 삽입 (Popover 높이 밖으로 밀려나지 않게)
       list.insertBefore(clone, list.firstChild);
       LOG('FAB menu grid item injected (첫 번째 항목)');
+
+      // 다른 모듈(combat-move 등)에게 FAB 메뉴 준비 알림
+      window.dispatchEvent(new Event('bwbr-fab-injected'));
     }
 
     var debId = null;

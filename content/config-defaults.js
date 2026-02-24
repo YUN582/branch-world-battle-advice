@@ -55,9 +55,9 @@ window.BWBR_DEFAULTS = {
   // ── 효과음 설정 ───────────────────────────────────────
   sounds: {
     combatStartSounds: ['합'],                        // 합 개시 시 효과음
-    roundHeaderSounds: ['챙챙1', '챙챙2', '챙챙3'],          // 합 헤더 시 무작위
-    resultNormalSounds: ['챙챙1', '챙챙2', '챙챙3'],      // 일반 결과 시 무작위
-    resultSpecialSounds: ['챙챙4'],                   // 대성공/대실패 시 무작위
+    roundHeaderSounds: ['챙1', '챙2', '챙3'],          // 합 헤더 시 무작위
+    resultNormalSounds: ['챙1', '챙2', '챙3'],      // 일반 결과 시 무작위
+    resultSpecialSounds: ['챙4'],                   // 대성공/대실패 시 무작위
     victorySounds: ['합']                              // 승리 시 무작위
   },
 

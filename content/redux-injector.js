@@ -1621,7 +1621,7 @@
           for (const item of items) {
             const t = (item.textContent || '').trim();
             for (const kw of menuKeywords) {
-              if (t.indexOf(kw) === 0) {
+              if (t.includes(kw)) {
                 item.click();
                 hideStyle.remove();
                 respondAction(name + ' → ' + actionLabel);
@@ -1638,13 +1638,18 @@
         } else {
           hideStyle.remove();
           // 메뉴가 안 열리거나 항목 못 찾음 → 메뉴 닫기
+          // 디버깅: 발견된 모든 메뉴 항목 출력
           const lastPop = document.querySelector('.MuiPopover-root');
           if (lastPop) {
+            const foundItems = lastPop.querySelectorAll('li[role="menuitem"]');
+            const labels = [...foundItems].map(el => `"${(el.textContent||'').trim()}"`);
+            console.warn(`[BWBR] ${actionLabel} 실패: 메뉴 항목 미발견\n  찾은 항목: [${labels.join(', ')}]\n  검색 키워드: [${menuKeywords.join(', ')}]`);
             const bd = lastPop.querySelector('.MuiBackdrop-root');
             if (bd) bd.click(); else document.body.click();
+          } else {
+            console.warn(`[BWBR] ${actionLabel} 실패: MuiPopover-root 자체가 없음`);
           }
           respondAction(name + ': ' + actionLabel + ' 실패 — 메뉴 항목을 찾을 수 없습니다');
-          console.warn(`[BWBR] ${actionLabel} 실패: 메뉴 항목 미발견 (keywords: ${menuKeywords})`);
         }
       };
       setTimeout(tryClick, 60);
@@ -1656,12 +1661,40 @@
     }
   }
 
-  // ── 집어넣기/꺼내기: 네이티브 캐릭터 메뉴 ──
-  window.addEventListener('bwbr-character-store', (e) => {
+  // ── 집어넣기/꺼내기: active 상태에 따라 분기 ──
+  // 집어넣기(active→stored): 네이티브 메뉴 사용
+  // 꺼내기(stored→active): Firestore 직접 쓰기 (네이티브 메뉴에 항목이 다르게 표시될 수 있음)
+  window.addEventListener('bwbr-character-store', async (e) => {
     const name = e.detail?.name;
     if (!name) return respondAction('캐릭터를 특정할 수 없습니다');
-    // 네이티브 메뉴 "집어넣기" 또는 "꺼내기" (active 상태에 따라 다름)
-    triggerNativeCharMenu(name, ['집어넣기', '꺼내기', '仕舞う', '出す'], '집어넣기/꺼내기');
+
+    const char = getCharacterByName(name);
+    if (!char) return respondAction(name + ': 캐릭터를 찾을 수 없습니다');
+
+    if (char.active !== false) {
+      // 보드 위에 있음 → 집어넣기 (네이티브 메뉴)
+      triggerNativeCharMenu(name, ['집어넣기', '仕舞う'], '집어넣기');
+    } else {
+      // 집어넣어진 상태 → 꺼내기 (Firestore 직접 쓰기)
+      try {
+        const sdk = acquireFirestoreSDK();
+        if (!sdk) throw new Error('Firestore SDK 없음');
+        const roomId = getRoomId();
+        if (!roomId) throw new Error('방 ID를 찾을 수 없음');
+
+        const charsCol = sdk.collection(sdk.db, 'rooms', roomId, 'characters');
+        const charRef = sdk.doc(charsCol, char.__id);
+        await sdk.setDoc(charRef, { active: true, updatedAt: Date.now() }, { merge: true });
+
+        respondAction(name + ' → 꺼내기');
+        console.log(`%c[BWBR]%c ✅ ${name} 꺼내기 (Firestore direct)`,
+          'color: #4caf50; font-weight: bold;', 'color: inherit;');
+        setTimeout(broadcastCharacterList, 500);
+      } catch (err) {
+        console.error('[BWBR] 꺼내기 실패:', err);
+        respondAction('꺼내기 실패: ' + err.message);
+      }
+    }
   });
 
   // ── 복제: 네이티브 캐릭터 메뉴 ──
@@ -1676,6 +1709,129 @@
     const name = e.detail?.name;
     if (!name) return respondAction('캐릭터를 특정할 수 없습니다');
     triggerNativeCharMenu(name, ['삭제', '削除'], '삭제');
+  });
+
+  // ================================================================
+  //  전투 이동: 토큰 imageUrl로 roomItem → 캐릭터 데이터 조회
+  //  bwbr-request-char-for-move (DOM attr: data-bwbr-move-imageurl)
+  //  → bwbr-char-move-data { success, item, char }
+  // ================================================================
+  window.addEventListener('bwbr-request-char-for-move', () => {
+    const el = document.documentElement;
+    const imageUrl = el.getAttribute('data-bwbr-move-imageurl') || '';
+    el.removeAttribute('data-bwbr-move-imageurl');
+
+    const fail = () => window.dispatchEvent(
+      new CustomEvent('bwbr-char-move-data', { detail: { success: false } })
+    );
+
+    if (!imageUrl || !reduxStore) return fail();
+
+    const state = reduxStore.getState();
+    const ri = state.entities?.roomItems;
+    if (!ri?.ids) return fail();
+
+    // URL 경로 추출 (쿼리 파라미터 제거)
+    function extractPath(url) {
+      try { return new URL(url).pathname; } catch (e) { return url; }
+    }
+    const clickedPath = extractPath(imageUrl);
+
+    // 1) roomItems에서 imageUrl 매칭
+    let item = null;
+    for (const id of ri.ids) {
+      const it = ri.entities?.[id];
+      if (!it || !it.active) continue;
+      if (!it.imageUrl) continue;
+      // 정확히 일치 또는 경로 일치 (쿼리 파라미터 무시)
+      if (it.imageUrl === imageUrl || extractPath(it.imageUrl) === clickedPath) {
+        item = it;
+        break;
+      }
+    }
+    if (!item) {
+      console.log(`[BWBR Move] roomItem imageUrl 매칭 실패: "${imageUrl.substring(0, 80)}..."`);
+      return fail();
+    }
+
+    // 2) memo에서 〔캐릭터이름〕 파싱
+    const memo = item.memo || '';
+    const nameMatch = memo.match(/〔(.+?)〕/);
+    if (!nameMatch) {
+      console.log(`[BWBR Move] memo에 〔이름〕 없음: "${memo}"`);
+      return fail();
+    }
+    const charName = nameMatch[1].trim();
+
+    // 3) roomCharacters에서 이름 매칭
+    const rc = state.entities?.roomCharacters;
+    let found = null;
+    if (rc?.ids) {
+      for (const id of rc.ids) {
+        const ch = rc.entities?.[id];
+        if (ch?.name === charName || ch?.name?.includes(charName)) {
+          found = ch; break;
+        }
+      }
+    }
+    if (!found) {
+      console.log(`[BWBR Move] 캐릭터 "${charName}" 미발견`);
+      return fail();
+    }
+
+    console.log(`[BWBR Move] 매칭: item "${item._id}" → 캐릭터 "${found.name}"`);
+    window.dispatchEvent(new CustomEvent('bwbr-char-move-data', {
+      detail: {
+        success: true,
+        item: {
+          _id: item._id,
+          x: item.x ?? 0,
+          y: item.y ?? 0,
+          width: item.width ?? 4,
+          height: item.height ?? 4
+        },
+        char: {
+          _id: found._id,
+          name: found.name || '',
+          params: found.params || [],
+          commands: found.commands || ''
+        }
+      }
+    }));
+  });
+
+  // ================================================================
+  //  전투 이동: 아이템(스크린 패널) 위치 이동 (Firestore 쓰기)
+  //  bwbr-move-item { itemId, x, y }
+  //  → bwbr-move-item-result { success }
+  // ================================================================
+  window.addEventListener('bwbr-move-item', async (e) => {
+    const { itemId, x, y } = e.detail || {};
+    const respond = (detail) => window.dispatchEvent(
+      new CustomEvent('bwbr-move-item-result', { detail })
+    );
+
+    try {
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) throw new Error('Firestore SDK 없음');
+      if (!reduxStore) throw new Error('Redux Store 없음');
+
+      const state = reduxStore.getState();
+      const roomId = state.app?.state?.roomId
+        || window.location.pathname.match(/rooms\/([^/]+)/)?.[1];
+      if (!roomId) throw new Error('방 ID를 찾을 수 없음');
+
+      const itemsCol = sdk.collection(sdk.db, 'rooms', roomId, 'items');
+      const itemRef = sdk.doc(itemsCol, itemId);
+      await sdk.setDoc(itemRef, { x, y, updatedAt: Date.now() }, { merge: true });
+
+      console.log(`%c[BWBR]%c ✅ 아이템 이동: ${itemId} → (${x}, ${y})`,
+        'color: #4caf50; font-weight: bold;', 'color: inherit;');
+      respond({ success: true, itemId, x, y });
+    } catch (err) {
+      console.error('[BWBR] 아이템 이동 실패:', err);
+      respond({ success: false, error: err.message });
+    }
   });
 
   // ================================================================
@@ -1718,6 +1874,56 @@
     }
     console.log('%c[BWBR 진단]%c ===========================',
       'color: #2196f3; font-weight: bold;', 'color: inherit;');
+  });
+
+  // ================================================================
+  //  진단: roomItems(스크린 패널) 상세 덤프
+  //  콘솔: window.dispatchEvent(new CustomEvent('bwbr-dump-items'))
+  // ================================================================
+  window.addEventListener('bwbr-dump-items', () => {
+    if (!reduxStore) {
+      console.error('[BWBR 진단] Redux Store 없음');
+      return;
+    }
+    const state = reduxStore.getState();
+    const ri = state.entities.roomItems;
+    if (!ri?.ids?.length) {
+      console.log('[BWBR 진단] roomItems: 0건');
+      return;
+    }
+    console.log('%c[BWBR 진단]%c ===== roomItems 상세 =====',
+      'color: #ff9800; font-weight: bold;', 'color: inherit;');
+    console.log('총 아이템 수:', ri.ids.length);
+
+    // type별 그룹핑
+    const byType = {};
+    for (const id of ri.ids) {
+      const item = ri.entities[id];
+      const t = item.type || '(없음)';
+      if (!byType[t]) byType[t] = [];
+      byType[t].push(item);
+    }
+    console.log('type별 분류:', Object.fromEntries(
+      Object.entries(byType).map(([k, v]) => [k, v.length])
+    ));
+
+    // 각 type별 샘플 1개씩
+    for (const [type, items] of Object.entries(byType)) {
+      console.log(`\n--- type: "${type}" (${items.length}건) ---`);
+      const sample = items[0];
+      console.log('  샘플:', JSON.parse(JSON.stringify(sample)));
+      // active인 것만 요약
+      const activeItems = items.filter(i => i.active);
+      console.log(`  active: ${activeItems.length}건`);
+      if (activeItems.length > 0) {
+        for (const ai of activeItems.slice(0, 5)) {
+          console.log(`    [${ai._id}] pos=(${ai.x},${ai.y}) size=${ai.width}x${ai.height} memo="${ai.memo || ''}" img=${ai.imageUrl ? '있음' : '없음'}`);
+        }
+        if (activeItems.length > 5) console.log(`    ... 외 ${activeItems.length - 5}건`);
+      }
+    }
+    console.log('%c[BWBR 진단]%c ============================',
+      'color: #ff9800; font-weight: bold;', 'color: inherit;');
   });
 
   // ================================================================

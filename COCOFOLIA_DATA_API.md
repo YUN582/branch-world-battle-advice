@@ -15,11 +15,12 @@
 
 1. [Redux Store 획득](#1-기본-접근-redux-store)
 2. [채팅 메시지 데이터 구조](#2-채팅-메시지-데이터-구조-roommessages)
-3. [Firestore 직접 접근 (읽기 + 쓰기)](#3-firestore-직접-접근-읽기--쓰기)
-4. [webpack require 획득 방법](#4-webpack-require-획득-방법)
-5. [Redux Store 획득 코드](#5-redux-store-획득-방법)
-6. [캐릭터 셀렉터 함수](#6-캐릭터-셀렉터-함수-모듈-88464)
-7. [주의사항 & 트러블슈팅](#주의사항--트러블슈팅)
+3. [캐릭터 데이터 구조](#3-캐릭터-데이터-구조-roomcharacters)
+    - [3.1 스크린 패널 / 아이템 데이터 구조](#31-스크린-패널--아이템-데이터-구조-roomitems)
+4. [Firestore 직접 접근 (읽기 + 쓰기)](#4-firestore-직접-접근-읽기--쓰기)
+5. [webpack require 획득 방법](#5-webpack-require-획득-방법)
+6. [Redux Store 획득 코드](#6-redux-store-획득-방법)
+7. [캐릭터 셀렉터 함수](#7-캐릭터-셀렉터-함수-모듈-88464)
 8. [업데이트 대응 가이드](#8-업데이트-대응-가이드)
 9. [app.state 상세 구조 및 UI 제어](#9-appstate-상세-구조-및-ui-제어)
 10. [Redux Action Type 탐색 기법](#10-redux-action-type-탐색-기법)
@@ -380,6 +381,130 @@ params: [
 ```js
 const str = char.params.find(p => p.label === 'STR');
 const strValue = parseInt(str.value, 10);  // 14 (number)
+```
+
+---
+
+### 3.1 스크린 패널 / 아이템 데이터 구조 (roomItems)
+
+> 코코포리아의 스크린 패널(맵 위의 이미지 오브젝트)은 `entities.roomItems`에 저장됩니다.
+> 캐릭터 토큰(`roomCharacters`)과는 별개의 엔티티이며, 맵에 배치되는 이미지/오브젝트입니다.
+>
+> **기준**: 2026-02-25 (콘솔 진단으로 확인)
+
+#### 접근 방법
+
+```js
+const state = store.getState();
+const ri = state.entities.roomItems;
+
+// 모든 아이템 ID
+ri.ids  // ['QT20cxKSUJgS6v68721M', 'DrWMO4FkQ4otdjGJ4G7Y', ...]
+
+// 특정 아이템
+ri.entities['아이템ID']
+
+// 활성 아이템만
+ri.ids.map(id => ri.entities[id]).filter(i => i.active)
+
+// type별 필터
+ri.ids.map(id => ri.entities[id]).filter(i => i.type === 'object')  // 오브젝트
+ri.ids.map(id => ri.entities[id]).filter(i => i.type === 'plane')   // 배경 패널
+```
+
+#### 아이템 객체 키 (25개)
+
+```js
+{
+  _id: "DrWMO4FkQ4otdjGJ4G7Y",     // Firestore 문서 ID
+  x: -40, y: -33, z: 150,           // 맵 좌표 (z = 레이어 순서)
+  angle: 0,                          // 회전 각도
+  width: 6, height: 6,               // 크기 (칸 단위)
+  deckId: null,                      // 카드 덱 ID (카드 아이템 시)
+  locked: false,                     // 위치 잠금
+  visible: true,                     // 표시 여부
+  closed: false,                     // 카드 뒤집기 상태
+  withoutOwner: false,               // 소유자 없음
+  freezed: false,                    // 고정 (이동 불가)
+  type: "object",                    // ★ 타입: "object" | "plane"
+  active: true,                      // 맵에 활성화 여부
+  owner: "Az1rUAx4...",             // 소유자 UID
+  ownerName: "",                     // 소유자 이름
+  ownerColor: "",                    // 소유자 색상
+  memo: "이동거리: 4\n사거리: 0 | 1", // ★ 메모 (전투 데이터 등)
+  imageUrl: "https://storage...",    // ★ 이미지 URL
+  coverImageUrl: "",                 // 카드 뒷면 이미지
+  clickAction: "",                   // 클릭 액션
+  order: -1,                         // 정렬 순서
+  createdAt: 1234567890,             // 생성 시각
+  updatedAt: 1234567890              // 수정 시각
+}
+```
+
+#### type별 분류
+
+| type | 설명 | 특징 |
+|------|------|------|
+| `"object"` | 오브젝트 패널 | 캐릭터 토큰 이미지, 소형 (4×4 ~ 6×6), `memo`에 전투 데이터 |
+| `"plane"` | 배경/대형 패널 | 대형 이미지 (19×14 ~ 223×129), 배경 장식용 |
+
+#### memo 필드 활용 (전투 시스템)
+
+스크린 패널의 `memo` 필드를 전투 데이터 저장에 활용합니다.
+확인된 memo 형식:
+
+```
+이동거리: 4
+사거리: 0 | 1
+```
+
+```
+이동거리｜5
+```
+
+```
+[대상 지정]
+```
+
+**이동거리 파싱**: `memo`에서 "이동거리" 뒤의 숫자를 추출
+```js
+function parseMoveDistance(memo) {
+  if (!memo) return 0;
+  const m = memo.match(/이동거리[:\s｜|]+(\d+)/i);
+  return m ? parseInt(m[1], 10) : 0;
+}
+```
+
+**사거리 파싱**: "사거리" 뒤의 숫자 (복수 값 가능: `0 | 1`)
+```js
+function parseAttackRange(memo) {
+  if (!memo) return [];
+  const m = memo.match(/사거리[:\s｜|]+([\d\s|]+)/i);
+  if (!m) return [];
+  return m[1].split(/\s*\|\s*/).map(Number).filter(n => !isNaN(n));
+}
+```
+
+#### Firestore 문서 경로
+
+```
+rooms/{roomId}/items/{itemId}
+```
+
+#### 아이템 이동 (Firestore 직접 쓰기)
+
+```js
+const itemsCol = sdk.collection(sdk.db, 'rooms', roomId, 'items');
+const itemRef = sdk.doc(itemsCol, item._id);
+await sdk.setDoc(itemRef, { x: newX, y: newY, updatedAt: Date.now() }, { merge: true });
+```
+
+#### 진단 명령어
+
+```js
+// 콘솔에서 실행 (확장 프로그램 로드 상태)
+window.dispatchEvent(new CustomEvent('bwbr-dump-items'));
+// → type별 분류, 샘플 데이터, active 아이템 목록 출력
 ```
 
 ---
@@ -1353,7 +1478,7 @@ else {
 > 코코포리아 우하단의 연필 아이콘 버튼과 펼쳐지는 메뉴의 DOM 구조입니다.
 > **MuiSpeedDial이 아닙니다.** MuiFab + MuiPopover 메뉴입니다.
 >
-> **기준**: 2026-02-24 (콘솔 진단으로 확인, 2026-02-24 재확인)
+> **기준**: 2026-02-25 (콘솔 진단으로 확인, 2026-02-25 재검증)
 
 #### FAB 버튼
 
@@ -1368,27 +1493,33 @@ sc-geBDJh (조부모 컨테이너, 토큰 뷰포트 역할도 겸)
 
 ```
 body
-└─ div.MuiPopover-root                    ← Portal (body 직속)
-   ├─ div.MuiBackdrop-root               ← 투명 백드롭
-   └─ div.MuiPaper-root                  ← 실제 메뉴 패널 (FAB 위에 위치)
-      └─ ul.MuiList-root
-         ├─ div.MuiListItemButton-root   ← 메뉴 아이템 1
-         │  ├─ div.MuiListItemIcon-root  → <svg> 아이콘
+└─ div.MuiPopover-root                           ← Portal (body 직속)
+   ├─ div.MuiBackdrop-root                      ← 투명 백드롭
+   └─ div.MuiPaper-root.MuiMenu-paper           ← 실제 메뉴 패널
+      └─ ul.MuiList-root [role="menu"]           ← role="menu" 있음!
+         ├─ div.MuiListItemButton-root           ← 메뉴 아이템 1
+         │  ├─ div.MuiListItemAvatar-root → 아바타 이미지 (아이콘 아님!)
          │  └─ div.MuiListItemText-root
-         │     ├─ span.MuiTypography-root → "기능 이름" (primary)
-         │     └─ span.MuiTypography-root → "설명 텍스트" (secondary)
-         ├─ div.MuiListItemButton-root   ← 메뉴 아이템 2 (PRO 기능일 수 있음)
-         └─ ...
+         │     ├─ span.MuiTypography-root → "전경, 배경을 변경" (primary)
+         │     └─ p.MuiTypography-root    → "메인 필드의 이미지를 설정합니다" (secondary)
+         ├─ div.MuiListItemButton-root           ← 메뉴 아이템 2
+         └─ ... (총 6개: 전경/배경, 스크린패널, 마커패널, 다이스심볼, 카드덱, 타이머)
 ```
 
-#### 주입 전략 (수정됨)
+> **중요 (2026-02-25 확인)**:
+> - `MuiListItemIcon-root` 가 아닌 `MuiListItemAvatar-root` 사용
+> - `role="menu"` 가 list에 설정되어 있음 → role로 제외하면 안 됨!
+> - 캐릭터 선택 메뉴도 `MuiListItemAvatar-root` 사용 → 아바타로 구분 불가
+> - 캐릭터 선택 메뉴도 `MuiTypography-root` 2개 ("[ 이름 ] | 활성화 상태") → typography 개수로 구분 불가!
+> - **식별 기준 (최종)**: list의 `textContent`에 **"스크린 패널"** (KR) 또는 **"スクリーンパネル"** (JP) 키워드 포함 여부. FAB 메뉴에만 존재하는 고유 텍스트.
+
+#### 주입 전략 (수정됨 2026-02-25 v2)
 
 1. `MutationObserver`로 body 감시 (메뉴 열릴 때 Popover DOM 생성됨)
-2. `.MuiPopover-root` 안의 `.MuiPaper-root` 찾기
-3. Paper 위치가 FAB 근처인지 확인 (`getBoundingClientRect()` 비교)
-4. `.MuiList-root` 안의 `.MuiListItemButton-root` 복제
-5. PRO 뱃지/보조 텍스트 제거, 아이콘/라벨 교체
-6. `list.insertBefore(clone, list.firstChild)` 로 맨 위에 삽입
+2. `.MuiPopover-root` 안의 `.MuiPaper-root > .MuiList-root` 찾기
+3. 아이템 4개 이상 + list textContent에 "스크린 패널" 또는 "スクリーンパネル" 포함 → FAB 메뉴
+4. `.MuiListItemButton-root` 복제 → PRO 뱃지 제거, 아이콘/라벨 교체
+5. `list.insertBefore(clone, list.firstChild)` 로 맨 위에 삽입
 
 #### 주의사항
 

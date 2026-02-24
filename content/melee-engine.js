@@ -213,7 +213,7 @@ window.BattleRollEngine = class BattleRollEngine {
     // ── 결과별 효과음 선택 ──
     const isSpecial = atkCrit || atkFumble || defCrit || defFumble;
     const resultSound = isSpecial
-      ? this._pickRandom(this.config.sounds.resultSpecialSounds || this.config.sounds.resultSpecialSound || ['챙챙4'])
+      ? this._pickRandom(this.config.sounds.resultSpecialSounds || this.config.sounds.resultSpecialSound || ['챙4'])
       : this._pickRandom(this.config.sounds.resultNormalSounds || ['챙1', '챙2', '챙3']);
 
     // ── 특수 케이스 판정 ──

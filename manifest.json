@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "가지세계 도우미",
-  "version": "1.1.8",
+  "version": "1.1.8.5",
   "description": "코코포리아 GM 보조 확장 프로그램 - 근접전 합 처리 자동화",
   "permissions": [
     "storage",
@@ -59,6 +59,7 @@
         "content/char-shortcut.js",
         "content/log-export-dialog.js",
         "content/grid-overlay.js",
+        "content/combat-move.js",
         "content/content.js"
       ],
       "css": [
