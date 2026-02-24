@@ -7,17 +7,20 @@
   const targetSelector = 'h6[class*="MuiTypography-subtitle2"]';
 
   function saveRoomInfo(name) {
-    chrome.storage.local.get({ bwbrRoomHistory: {} }, data => {
-      const map = data.bwbrRoomHistory;
-      const existing = map[roomUrl] || {};
-      map[roomUrl] = {
-        ...existing,
-        name,
-        lastVisitTime: Date.now()
-      };
-      if (!map[roomUrl].memo) map[roomUrl].memo = '';
-      chrome.storage.local.set({ bwbrRoomHistory: map });
-    });
+    try {
+      chrome.storage.local.get({ bwbrRoomHistory: {} }, data => {
+        if (chrome.runtime.lastError) return;
+        const map = data.bwbrRoomHistory;
+        const existing = map[roomUrl] || {};
+        map[roomUrl] = {
+          ...existing,
+          name,
+          lastVisitTime: Date.now()
+        };
+        if (!map[roomUrl].memo) map[roomUrl].memo = '';
+        chrome.storage.local.set({ bwbrRoomHistory: map });
+      });
+    } catch { /* 컨텍스트 무효화 시 무시 */ }
   }
 
   function findAndSave() {

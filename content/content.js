@@ -49,6 +49,7 @@
   // ── 초기화 ───────────────────────────────────────────────
 
   async function init() {
+    try {
     alwaysLog('확장 프로그램 초기화 시작...');
 
     // 설정 로드
@@ -127,28 +128,49 @@
 
     alwaysLog('초기화 완료! 트리거 대기 중...');
     alwaysLog(`트리거 정규식: ${config.patterns.triggerRegex}`);
+    } catch (err) {
+      console.error('[BWBR] 초기화 실패:', err);
+      alwaysLog('초기화 실패: ' + (err.message || err));
+    }
   }
 
   // ── 설정 로드 ────────────────────────────────────────────
 
   async function loadConfig() {
     return new Promise((resolve) => {
-      chrome.storage.sync.get('bwbr_config', (result) => {
-        if (result.bwbr_config) {
-          // 저장된 설정과 기본값 병합 (새 키 추가 대응)
-          const merged = deepMerge(window.BWBR_DEFAULTS, result.bwbr_config);
-          // 정규식, 템플릿은 항상 최신 기본값을 사용 (이전 버전 호환)
-          merged.patterns = JSON.parse(JSON.stringify(window.BWBR_DEFAULTS.patterns));
-          merged.templates = JSON.parse(JSON.stringify(window.BWBR_DEFAULTS.templates));
-          // 효과음: 구 형식(single) → 신 형식(array) 마이그레이션
-          migrateSounds(merged.sounds);
-          alwaysLog('저장된 설정 로드 (패턴/템플릿은 기본값 사용)');
-          resolve(merged);
-        } else {
-          alwaysLog('기본 설정 사용');
-          resolve(JSON.parse(JSON.stringify(window.BWBR_DEFAULTS)));
-        }
-      });
+      // 확장 컨텍스트 무효화 대비: 타임아웃 후 기본값 사용
+      const fallbackTimer = setTimeout(() => {
+        alwaysLog('설정 로드 타임아웃 → 기본값 사용');
+        resolve(JSON.parse(JSON.stringify(window.BWBR_DEFAULTS)));
+      }, 5000);
+      try {
+        chrome.storage.sync.get('bwbr_config', (result) => {
+          clearTimeout(fallbackTimer);
+          if (chrome.runtime.lastError) {
+            alwaysLog('설정 로드 오류: ' + chrome.runtime.lastError.message + ' → 기본값 사용');
+            resolve(JSON.parse(JSON.stringify(window.BWBR_DEFAULTS)));
+            return;
+          }
+          if (result.bwbr_config) {
+            // 저장된 설정과 기본값 병합 (새 키 추가 대응)
+            const merged = deepMerge(window.BWBR_DEFAULTS, result.bwbr_config);
+            // 정규식, 템플릿은 항상 최신 기본값을 사용 (이전 버전 호환)
+            merged.patterns = JSON.parse(JSON.stringify(window.BWBR_DEFAULTS.patterns));
+            merged.templates = JSON.parse(JSON.stringify(window.BWBR_DEFAULTS.templates));
+            // 효과음: 구 형식(single) → 신 형식(array) 마이그레이션
+            migrateSounds(merged.sounds);
+            alwaysLog('저장된 설정 로드 (패턴/템플릿은 기본값 사용)');
+            resolve(merged);
+          } else {
+            alwaysLog('기본 설정 사용');
+            resolve(JSON.parse(JSON.stringify(window.BWBR_DEFAULTS)));
+          }
+        });
+      } catch (e) {
+        clearTimeout(fallbackTimer);
+        alwaysLog('chrome.storage 접근 실패: ' + e.message + ' → 기본값 사용');
+        resolve(JSON.parse(JSON.stringify(window.BWBR_DEFAULTS)));
+      }
     });
   }
 
@@ -2090,6 +2112,7 @@
     _showExportToast('📜 Firestore에서 로그를 가져오는 중...');
 
     const handler = (e) => {
+      clearTimeout(timeout);
       window.removeEventListener('bwbr-export-log-result', handler);
       _logExportBusy = false;
 
@@ -2122,17 +2145,14 @@
     };
 
     // 타임아웃 (60초)
-    const timeout = setTimeout(() => {
+    let timeout = setTimeout(() => {
       window.removeEventListener('bwbr-export-log-result', handler);
       _logExportBusy = false;
       overlay.addLog('로그 추출 타임아웃 (60초 초과)', 'error');
       _showExportToast('❌ 로그 추출 타임아웃', 3000);
     }, 60000);
 
-    window.addEventListener('bwbr-export-log-result', (e) => {
-      clearTimeout(timeout);
-      handler(e);
-    }, { once: true });
+    window.addEventListener('bwbr-export-log-result', handler, { once: true });
 
     // MAIN world에 요청
     window.dispatchEvent(new CustomEvent('bwbr-export-log'));
@@ -2983,9 +3003,9 @@ ${rows.join('\n')}
 
   // 페이지 로드 후 초기화
   if (document.readyState === 'complete') {
-    init();
+    init().catch(e => console.error('[BWBR] init 미처리 거부:', e));
   } else {
-    window.addEventListener('load', () => init());
+    window.addEventListener('load', () => init().catch(e => console.error('[BWBR] init 미처리 거부:', e)));
   }
 
 })();

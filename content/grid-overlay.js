@@ -25,6 +25,44 @@
   let _visible   = false;
   const GRID_ATTR = 'data-bwbr-grid';
 
+  // -- 미리 계산된 SVG data URL (상수이므로 1회만 생성) --
+  const _SVG_CACHE = (function() {
+    var SM = 24, LG = 48, XL = 96, D = 5;
+    var enc = function(s) { return 'data:image/svg+xml,' + encodeURIComponent(s); };
+
+    var diamond96 =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="' + XL + '" height="' + XL + '">' +
+      '<polygon points="' + (XL/2) + ',' + (XL/2-D) + ' ' + (XL/2+D) + ',' + (XL/2) + ' ' + (XL/2) + ',' + (XL/2+D) + ' ' + (XL/2-D) + ',' + (XL/2) + '"' +
+      ' fill="rgba(255,255,255,0.5)"/>' +
+      '<polygon points="0,' + (-D) + ' ' + D + ',0 0,' + D + ' ' + (-D) + ',0"' +
+      ' fill="rgba(255,255,255,0.5)"/>' +
+      '<polygon points="' + XL + ',' + (-D) + ' ' + (XL+D) + ',0 ' + XL + ',' + D + ' ' + (XL-D) + ',0"' +
+      ' fill="rgba(255,255,255,0.5)"/>' +
+      '<polygon points="0,' + (XL-D) + ' ' + D + ',' + XL + ' 0,' + (XL+D) + ' ' + (-D) + ',' + XL + '"' +
+      ' fill="rgba(255,255,255,0.5)"/>' +
+      '<polygon points="' + XL + ',' + (XL-D) + ' ' + (XL+D) + ',' + XL + ' ' + XL + ',' + (XL+D) + ' ' + (XL-D) + ',' + XL + '"' +
+      ' fill="rgba(255,255,255,0.5)"/>' +
+      '</svg>';
+
+    var smallCell =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="' + SM + '" height="' + SM + '">' +
+      '<line x1="0" y1="0" x2="0" y2="' + SM + '" stroke="rgba(255,255,255,0.18)" stroke-width="0.5"/>' +
+      '<line x1="0" y1="0" x2="' + SM + '" y2="0" stroke="rgba(255,255,255,0.18)" stroke-width="0.5"/></svg>';
+
+    var bigCell =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="' + LG + '" height="' + LG + '">' +
+      '<line x1="0" y1="0" x2="0" y2="' + LG + '" stroke="rgba(255,255,255,0.4)" stroke-width="1"/>' +
+      '<line x1="0" y1="0" x2="' + LG + '" y2="0" stroke="rgba(255,255,255,0.4)" stroke-width="1"/></svg>';
+
+    return {
+      bg: 'url("' + enc(diamond96) + '") repeat,' +
+          'url("' + enc(bigCell) + '") repeat,' +
+          'url("' + enc(smallCell) + '") repeat',
+      bgSize: XL + 'px ' + XL + 'px,' + LG + 'px ' + LG + 'px,' + SM + 'px ' + SM + 'px',
+      bgPos: '0 0, 0 0, 0 0'
+    };
+  })();
+
   // ------------------------------------------------
   //  1. Find foreground (투명 전경 대응: img 없어도 찾기)
   // ------------------------------------------------
@@ -101,45 +139,10 @@
     const H = parseFloat(cs.height);
     if (!W || !H) return;
 
-    const SM = 24, LG = 48, XL = 96;
-    const D = 5; // 다이아몬드 크기 (반대각선 절반)
-    const enc = function(s) { return 'data:image/svg+xml,' + encodeURIComponent(s); };
-
-    // 채워진 다이아몬드 (96px 타일: 중앙 + 네 꼭지점)
-    // 중앙(48,48) = 완전한 다이아몬드
-    // 4 꼭지점 = 각 1/4만 보이고, 인접 타일과 합쳐져 완전한 다이아몬드
-    const diamond96 =
-      '<svg xmlns="http://www.w3.org/2000/svg" width="' + XL + '" height="' + XL + '">' +
-      '<polygon points="' + (XL/2) + ',' + (XL/2-D) + ' ' + (XL/2+D) + ',' + (XL/2) + ' ' + (XL/2) + ',' + (XL/2+D) + ' ' + (XL/2-D) + ',' + (XL/2) + '"' +
-      ' fill="rgba(255,255,255,0.5)"/>' +
-      '<polygon points="0,' + (-D) + ' ' + D + ',0 0,' + D + ' ' + (-D) + ',0"' +
-      ' fill="rgba(255,255,255,0.5)"/>' +
-      '<polygon points="' + XL + ',' + (-D) + ' ' + (XL+D) + ',0 ' + XL + ',' + D + ' ' + (XL-D) + ',0"' +
-      ' fill="rgba(255,255,255,0.5)"/>' +
-      '<polygon points="0,' + (XL-D) + ' ' + D + ',' + XL + ' 0,' + (XL+D) + ' ' + (-D) + ',' + XL + '"' +
-      ' fill="rgba(255,255,255,0.5)"/>' +
-      '<polygon points="' + XL + ',' + (XL-D) + ' ' + (XL+D) + ',' + XL + ' ' + XL + ',' + (XL+D) + ' ' + (XL-D) + ',' + XL + '"' +
-      ' fill="rgba(255,255,255,0.5)"/>' +
-      '</svg>';
-
-    // 작은 칸 (24px)
-    const smallCell =
-      '<svg xmlns="http://www.w3.org/2000/svg" width="' + SM + '" height="' + SM + '">' +
-      '<line x1="0" y1="0" x2="0" y2="' + SM + '" stroke="rgba(255,255,255,0.18)" stroke-width="0.5"/>' +
-      '<line x1="0" y1="0" x2="' + SM + '" y2="0" stroke="rgba(255,255,255,0.18)" stroke-width="0.5"/></svg>';
-
-    // 큰 칸 (48px) - 더 굵고 밝은 선
-    const bigCell =
-      '<svg xmlns="http://www.w3.org/2000/svg" width="' + LG + '" height="' + LG + '">' +
-      '<line x1="0" y1="0" x2="0" y2="' + LG + '" stroke="rgba(255,255,255,0.4)" stroke-width="1"/>' +
-      '<line x1="0" y1="0" x2="' + LG + '" y2="0" stroke="rgba(255,255,255,0.4)" stroke-width="1"/></svg>';
-
-    el.style.background =
-      'url("' + enc(diamond96) + '") repeat,' +
-      'url("' + enc(bigCell) + '") repeat,' +
-      'url("' + enc(smallCell) + '") repeat';
-    el.style.backgroundSize = XL + 'px ' + XL + 'px,' + LG + 'px ' + LG + 'px,' + SM + 'px ' + SM + 'px';
-    el.style.backgroundPosition = '0 0, 0 0, 0 0';
+    // 캐시된 SVG data URL 적용 (상수이므로 매번 재생성하지 않음)
+    el.style.background = _SVG_CACHE.bg;
+    el.style.backgroundSize = _SVG_CACHE.bgSize;
+    el.style.backgroundPosition = _SVG_CACHE.bgPos;
   }
 
   // ------------------------------------------------

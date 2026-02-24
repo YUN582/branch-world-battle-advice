@@ -1548,27 +1548,6 @@
       || window.location.pathname.match(/rooms\/([^/]+)/)?.[1] || null;
   }
 
-  /** 보드 위 캐릭터 토큰 엘리먼트 찾기 (이미지 URL 매칭) */
-  function findCharTokenOnBoard(charName) {
-    const char = getCharacterByName(charName);
-    if (!char?.iconUrl) return null;
-    const targetPath = extractStoragePath(char.iconUrl);
-    const allImgs = document.querySelectorAll('#root img');
-    for (const img of allImgs) {
-      if (!img.src) continue;
-      const imgPath = extractStoragePath(img.src);
-      if ((targetPath && imgPath && targetPath === imgPath)
-        || img.src.includes(char.iconUrl) || char.iconUrl.includes(img.src)) {
-        let el = img;
-        for (let i = 0; i < 20 && el; i++, el = el.parentElement) {
-          if (el.className && typeof el.className === 'string'
-            && el.className.includes('movable')) return el;
-        }
-      }
-    }
-    return null;
-  }
-
   // ── 편집: Redux state에서 openRoomCharacterId 설정 → 네이티브 편집 다이얼로그 ──
   window.addEventListener('bwbr-character-edit', (e) => {
     const name = e.detail?.name;
@@ -1604,240 +1583,99 @@
     }
   });
 
-  // ── 집어넣기/꺼내기: Firestore active 토글 ──
-  window.addEventListener('bwbr-character-store', async (e) => {
-    const name = e.detail?.name;
-    if (!name) return respondAction('캐릭터를 특정할 수 없습니다');
+  // ── 네이티브 캐릭터 메뉴 공통 헬퍼 ──
+  // openRoomCharacterMenu + openRoomCharacterMenuId로 네이티브 컨텍스트 메뉴를 열고
+  // 지정된 menuitem을 찾아 클릭한다. 메뉴는 화면에 보이지 않게 처리.
+  function triggerNativeCharMenu(name, menuKeywords, actionLabel) {
+    const char = getCharacterByName(name);
+    if (!char) {
+      respondAction(name + ': 캐릭터를 찾을 수 없습니다');
+      return;
+    }
 
     try {
-      const sdk = acquireFirestoreSDK();
-      if (!sdk) throw new Error('Firestore SDK 없음');
-
-      const roomId = getRoomId();
-      if (!roomId) throw new Error('방 ID를 찾을 수 없음');
-
-      const char = getCharacterByName(name);
-      if (!char) throw new Error('캐릭터 "' + name + '" 없음');
-
-      console.log(`%c[BWBR]%c 집어넣기/꺼내기 Firestore: id=${char.__id}, active=${char.active}`,
-        'color: #ff9800; font-weight: bold;', 'color: inherit;');
-
-      const charsCol = sdk.collection(sdk.db, 'rooms', roomId, 'characters');
-      const charRef = sdk.doc(charsCol, char.__id);
-      const newActive = !char.active;
-      await sdk.setDoc(charRef, { active: newActive, updatedAt: Date.now() }, { merge: true });
-
-      respondAction(name + (newActive ? ' → 보드에 꺼냄' : ' → 집어넣음'));
-      console.log(`%c[BWBR]%c ${name} active: ${char.active} → ${newActive}`,
-        'color: #4caf50; font-weight: bold;', 'color: inherit;');
-    } catch (err) {
-      console.error('[BWBR] 집어넣기/꺼내기 실패:', err);
-      respondAction('집어넣기/꺼내기 실패: ' + err.message);
-    }
-  });
-
-  // ── 복제 (네이티브 토큰 메뉴 우선, Firestore 폴백) ──
-  window.addEventListener('bwbr-character-copy', async (e) => {
-    const name = e.detail?.name;
-    if (!name) return respondAction('캐릭터를 특정할 수 없습니다');
-
-    // 1차: 보드 토큰 컨텍스트 메뉴 → "복제" 클릭 (네이티브)
-    const token = findCharTokenOnBoard(name);
-    if (token) {
-      const rect = token.getBoundingClientRect();
-      token.dispatchEvent(new MouseEvent('contextmenu', {
-        bubbles: true, cancelable: true, view: window,
-        clientX: rect.left + rect.width / 2,
-        clientY: rect.top + rect.height / 2,
-        button: 2
-      }));
-      let attempts = 0;
-      const tryClick = () => {
-        const pops = document.querySelectorAll('.MuiPopover-root');
-        if (pops.length) {
-          const pop = pops[pops.length - 1];
-          const items = pop.querySelectorAll('li[role="menuitem"]');
-          for (const item of items) {
-            const t = (item.textContent || '').trim();
-            if (t.indexOf('복제') === 0 || t.indexOf('複製') === 0) {
-              item.click();
-              respondAction(name + ' → 복제됨');
-              console.log(`%c[BWBR]%c ${name} 네이티브 복제`,
-                'color: #4caf50; font-weight: bold;', 'color: inherit;');
-              setTimeout(broadcastCharacterList, 800);
-              return;
-            }
-          }
-          // "복제" 항목이 없으면 메뉴 닫고 Firestore 폴백
-          const bd = pop.querySelector('.MuiBackdrop-root');
-          if (bd) bd.click(); else document.body.click();
-          fallbackFirestoreCopy();
-          return;
-        }
-        if (++attempts < 15) setTimeout(tryClick, 50);
-        else fallbackFirestoreCopy();
-      };
-      setTimeout(tryClick, 60);
-      return;
-    }
-
-    // 2차: 보드에 토큰 없음 → Firestore 수동 복사
-    fallbackFirestoreCopy();
-
-    async function fallbackFirestoreCopy() {
-      try {
-        const sdk = acquireFirestoreSDK();
-        if (!sdk) throw new Error('Firestore SDK 없음');
-        const roomId = getRoomId();
-        if (!roomId) throw new Error('방 ID를 찾을 수 없음');
-        const char = getCharacterByName(name);
-        if (!char) throw new Error('캐릭터 "' + name + '" 없음');
-
-        const copyData = {};
-        const skipKeys = ['__id', '_id', 'speaking', 'createdAt'];
-        for (const [k, v] of Object.entries(char)) {
-          if (!skipKeys.includes(k)) copyData[k] = v;
-        }
-        // 복사 이름: 원본 (1), 원본 (2), ... 형식
-        const baseName = name.replace(/\s*\(\d+\)$/, '');
-        let copyNum = 1;
-        const rc = reduxStore.getState().entities?.roomCharacters;
-        if (rc) {
-          for (const cid of (rc.ids || [])) {
-            const cc = rc.entities?.[cid];
-            if (!cc?.name) continue;
-            const m = cc.name.match(/^(.+?)\s*\((\d+)\)$/);
-            if (m && m[1] === baseName) {
-              copyNum = Math.max(copyNum, parseInt(m[2], 10) + 1);
-            }
-          }
-        }
-        copyData.name = baseName + ' (' + copyNum + ')';
-        copyData.active = false;
-        copyData.updatedAt = Date.now();
-
-        const charsCol = sdk.collection(sdk.db, 'rooms', roomId, 'characters');
-        let newRef;
-        try {
-          newRef = sdk.doc(charsCol);
-          if (!newRef || !newRef.id) throw 0;
-        } catch {
-          const newId = Date.now().toString(36) + Math.random().toString(36).substring(2, 10);
-          newRef = sdk.doc(charsCol, newId);
-        }
-        await sdk.setDoc(newRef, copyData);
-
-        respondAction(copyData.name + ' 복사 완료 (Firestore)');
-        console.log(`%c[BWBR]%c ${copyData.name} Firestore 복사 (ID: ${newRef.id})`,
-          'color: #ff9800; font-weight: bold;', 'color: inherit;');
-        setTimeout(broadcastCharacterList, 500);
-      } catch (err) {
-        console.error('[BWBR] 복사 실패:', err);
-        respondAction('복사 실패: ' + err.message);
+      const creator = findSetedActionCreator();
+      if (!creator) {
+        respondAction(name + ': Redux action type 미발견 — 잠시 후 다시 시도해주세요');
+        return;
       }
-    }
-  });
 
-  // ── 삭제 (네이티브 토큰 메뉴 우선, Firestore 폴백) ──
-  window.addEventListener('bwbr-character-delete', async (e) => {
-    const name = e.detail?.name;
-    if (!name) return respondAction('캐릭터를 특정할 수 없습니다');
+      // 메뉴가 열릴 때 화면에 보이지 않도록 임시 CSS 삽입
+      const hideStyle = document.createElement('style');
+      hideStyle.id = 'bwbr-hide-native-menu';
+      hideStyle.textContent = '.MuiPopover-root:not(.bwbr-ctx-menu) { opacity:0 !important; pointer-events:auto !important; }';
+      document.head.appendChild(hideStyle);
 
-    // 1차: 보드 토큰 컨텍스트 메뉴 → "삭제" 클릭 (네이티브)
-    const token = findCharTokenOnBoard(name);
-    if (token) {
-      const rect = token.getBoundingClientRect();
-      token.dispatchEvent(new MouseEvent('contextmenu', {
-        bubbles: true, cancelable: true, view: window,
-        clientX: rect.left + rect.width / 2,
-        clientY: rect.top + rect.height / 2,
-        button: 2
-      }));
+      // 네이티브 캐릭터 컨텍스트 메뉴 열기
+      const appState = reduxStore.getState().app?.state;
+      const newState = { ...appState, openRoomCharacterMenu: true, openRoomCharacterMenuId: char.__id };
+      reduxStore.dispatch({ type: creator.type, payload: newState });
+
+      // MUI Popover가 렌더링될 때까지 대기 → menuitem 클릭
       let attempts = 0;
       const tryClick = () => {
         const pops = document.querySelectorAll('.MuiPopover-root');
-        if (pops.length) {
-          const pop = pops[pops.length - 1];
+        for (let i = pops.length - 1; i >= 0; i--) {
+          const pop = pops[i];
           const items = pop.querySelectorAll('li[role="menuitem"]');
           for (const item of items) {
             const t = (item.textContent || '').trim();
-            if (t.indexOf('삭제') === 0 || t.indexOf('削除') === 0) {
-              item.click();
-              respondAction(name + ' 삭제됨');
-              console.log(`%c[BWBR]%c ${name} 네이티브 삭제`,
-                'color: #f44336; font-weight: bold;', 'color: inherit;');
-              setTimeout(broadcastCharacterList, 500);
-              return;
-            }
-          }
-          const bd = pop.querySelector('.MuiBackdrop-root');
-          if (bd) bd.click(); else document.body.click();
-          fallbackFirestoreDelete();
-          return;
-        }
-        if (++attempts < 15) setTimeout(tryClick, 50);
-        else fallbackFirestoreDelete();
-      };
-      setTimeout(tryClick, 60);
-      return;
-    }
-
-    // 2차: 보드에 없음 → Firestore 직접 삭제
-    fallbackFirestoreDelete();
-
-    async function fallbackFirestoreDelete() {
-      try {
-        const sdk = acquireFirestoreSDK();
-        if (!sdk) throw new Error('Firestore SDK 없음');
-        const roomId = getRoomId();
-        if (!roomId) throw new Error('방 ID를 찾을 수 없음');
-        const char = getCharacterByName(name);
-        if (!char) throw new Error('캐릭터 "' + name + '" 없음');
-
-        const charsCol = sdk.collection(sdk.db, 'rooms', roomId, 'characters');
-        const charRef = sdk.doc(charsCol, char.__id);
-
-        // deleteDoc 탐색 시도
-        let deleted = false;
-        const req = acquireWebpackRequire();
-        if (req) {
-          try {
-            const fsMod = req(_FS_CONFIG.firestoreModId);
-            const knownKeys = new Set([
-              _FS_CONFIG.fsKeys.setDoc, _FS_CONFIG.fsKeys.doc,
-              _FS_CONFIG.fsKeys.collection, _FS_CONFIG.fsKeys.getDocs
-            ]);
-            for (const [k, v] of Object.entries(fsMod)) {
-              if (typeof v !== 'function' || knownKeys.has(k)) continue;
-              if (v.length === 1 || v.length === 0) {
-                try {
-                  const result = v(charRef);
-                  if (result && typeof result.then === 'function') {
-                    await result;
-                    deleted = true;
-                    break;
-                  }
-                } catch { /* not deleteDoc, continue */ }
+            for (const kw of menuKeywords) {
+              if (t.indexOf(kw) === 0) {
+                item.click();
+                hideStyle.remove();
+                respondAction(name + ' → ' + actionLabel);
+                console.log(`%c[BWBR]%c ✅ ${name} 네이티브 ${actionLabel} (메뉴: "${t}")`,
+                  'color: #4caf50; font-weight: bold;', 'color: inherit;');
+                setTimeout(broadcastCharacterList, 500);
+                return;
               }
             }
-          } catch { /* fallback to soft delete */ }
+          }
         }
-
-        if (!deleted) {
-          await sdk.setDoc(charRef, {
-            active: false, hideStatus: true, updatedAt: Date.now()
-          }, { merge: true });
+        if (++attempts < 20) {
+          setTimeout(tryClick, 50);
+        } else {
+          hideStyle.remove();
+          // 메뉴가 안 열리거나 항목 못 찾음 → 메뉴 닫기
+          const lastPop = document.querySelector('.MuiPopover-root');
+          if (lastPop) {
+            const bd = lastPop.querySelector('.MuiBackdrop-root');
+            if (bd) bd.click(); else document.body.click();
+          }
+          respondAction(name + ': ' + actionLabel + ' 실패 — 메뉴 항목을 찾을 수 없습니다');
+          console.warn(`[BWBR] ${actionLabel} 실패: 메뉴 항목 미발견 (keywords: ${menuKeywords})`);
         }
-
-        respondAction(name + ' 삭제됨 (Firestore)');
-        console.log(`%c[BWBR]%c ${name} Firestore 삭제${deleted ? '' : ' (soft)'}`,
-          'color: #f44336; font-weight: bold;', 'color: inherit;');
-        setTimeout(broadcastCharacterList, 500);
-      } catch (err) {
-        console.error('[BWBR] 삭제 실패:', err);
-        respondAction('삭제 실패: ' + err.message);
-      }
+      };
+      setTimeout(tryClick, 60);
+    } catch (err) {
+      const hs = document.getElementById('bwbr-hide-native-menu');
+      if (hs) hs.remove();
+      console.error(`[BWBR] ${actionLabel} 실패:`, err);
+      respondAction(actionLabel + ' 실패: ' + err.message);
     }
+  }
+
+  // ── 집어넣기/꺼내기: 네이티브 캐릭터 메뉴 ──
+  window.addEventListener('bwbr-character-store', (e) => {
+    const name = e.detail?.name;
+    if (!name) return respondAction('캐릭터를 특정할 수 없습니다');
+    // 네이티브 메뉴 "집어넣기" 또는 "꺼내기" (active 상태에 따라 다름)
+    triggerNativeCharMenu(name, ['집어넣기', '꺼내기', '仕舞う', '出す'], '집어넣기/꺼내기');
+  });
+
+  // ── 복제: 네이티브 캐릭터 메뉴 ──
+  window.addEventListener('bwbr-character-copy', (e) => {
+    const name = e.detail?.name;
+    if (!name) return respondAction('캐릭터를 특정할 수 없습니다');
+    triggerNativeCharMenu(name, ['복제', '複製', '복사', 'コピー'], '복제');
+  });
+
+  // ── 삭제: 네이티브 캐릭터 메뉴 ──
+  window.addEventListener('bwbr-character-delete', (e) => {
+    const name = e.detail?.name;
+    if (!name) return respondAction('캐릭터를 특정할 수 없습니다');
+    triggerNativeCharMenu(name, ['삭제', '削除'], '삭제');
   });
 
   // ================================================================
@@ -2055,6 +1893,22 @@
   function findSetedActionCreator() {
     if (_setedActionCreator) return _setedActionCreator;
 
+    // 안전한 테스트: roomPointerX를 -99999로 바꿔 보고, 성공 여부와 무관하게 반드시 복원
+    function safeProbeType(typeStr, appState, origX) {
+      try {
+        reduxStore.dispatch({ type: typeStr, payload: { ...appState, roomPointerX: -99999 } });
+        return reduxStore.getState().app?.state?.roomPointerX === -99999;
+      } catch { return false; }
+      finally {
+        // 테스트 후 반드시 원래 값으로 복원
+        try {
+          if (reduxStore.getState().app?.state?.roomPointerX === -99999) {
+            reduxStore.dispatch({ type: typeStr, payload: { ...reduxStore.getState().app.state, roomPointerX: origX } });
+          }
+        } catch { /* 최선 노력 복원 */ }
+      }
+    }
+
     // ── 방법 1: webpack 모듈에서 RTK action creator 검색 ──
     const req = acquireWebpackRequire();
     if (req) {
@@ -2071,16 +1925,12 @@
               const appState = reduxStore.getState().app?.state;
               if (appState) {
                 const origX = appState.roomPointerX;
-                try {
-                  reduxStore.dispatch({ type: testType, payload: { ...appState, roomPointerX: -99999 } });
-                  if (reduxStore.getState().app?.state?.roomPointerX === -99999) {
-                    reduxStore.dispatch({ type: testType, payload: { ...reduxStore.getState().app.state, roomPointerX: origX } });
+                if (safeProbeType(testType, appState, origX)) {
                     _setedActionCreator = val.seted;
                     console.log(`%c[BWBR]%c ✅ seted action creator 발견: type="${testType}" (module ${ids[mi]}, key "${key}")`,
                       'color: #4caf50; font-weight: bold;', 'color: inherit;');
                     return _setedActionCreator;
-                  }
-                } catch { /* not the right one */ }
+                }
               }
             }
           }
@@ -2104,16 +1954,12 @@
       for (const sn of sliceNames) {
         for (const an of actionNames) {
           const type = `${sn}/${an}`;
-          try {
-            reduxStore.dispatch({ type, payload: { ...appState, roomPointerX: -99999 } });
-            if (reduxStore.getState().app?.state?.roomPointerX === -99999) {
-              reduxStore.dispatch({ type, payload: { ...reduxStore.getState().app.state, roomPointerX: origX } });
+          if (safeProbeType(type, appState, origX)) {
               _setedActionCreator = { type, __synthetic: true };
               console.log(`%c[BWBR]%c ✅ app.state type 발견 (브루트포스): "${type}"`,
                 'color: #4caf50; font-weight: bold;', 'color: inherit;');
               return _setedActionCreator;
-            }
-          } catch { /* try next */ }
+          }
         }
       }
     }

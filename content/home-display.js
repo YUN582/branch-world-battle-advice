@@ -5,16 +5,34 @@
 (function () {
   let styleInjected = false;
 
+  // 안전한 chrome.storage 래퍼 (컨텍스트 무효화 대응)
+  function safeStorageGet(area, key, fallback) {
+    return new Promise(resolve => {
+      const timer = setTimeout(() => resolve(fallback), 3000);
+      try {
+        chrome.storage[area].get(key, data => {
+          clearTimeout(timer);
+          if (chrome.runtime.lastError) { resolve(fallback); return; }
+          resolve(typeof key === 'string' ? data[key] : data[Object.keys(key)[0]]);
+        });
+      } catch { clearTimeout(timer); resolve(fallback); }
+    });
+  }
+
+  function safeStorageSet(area, obj) {
+    return new Promise(resolve => {
+      try {
+        chrome.storage[area].set(obj, () => resolve());
+      } catch { resolve(); }
+    });
+  }
+
   async function getRoomData() {
-    return new Promise(r =>
-      chrome.storage.local.get({ bwbrRoomHistory: {} }, data => r(data.bwbrRoomHistory))
-    );
+    return safeStorageGet('local', { bwbrRoomHistory: {} }, {});
   }
 
   async function setRoomData(roomData) {
-    return new Promise(r =>
-      chrome.storage.local.set({ bwbrRoomHistory: roomData }, r)
-    );
+    return safeStorageSet('local', { bwbrRoomHistory: roomData });
   }
 
   function isHomePage() {
@@ -102,6 +120,7 @@
   }
 
   async function renderVisitHistory() {
+    try {
     // 홈이 아니면 기존 컨테이너만 제거하고 리턴
     if (!isHomePage()) {
       const existing = document.getElementById('bwbr-visit-history-container');
@@ -112,9 +131,7 @@
     injectStyles();
 
     // 설정 확인
-    const settings = await new Promise(r =>
-      chrome.storage.sync.get('bwbr_config', data => r(data.bwbr_config))
-    );
+    const settings = await safeStorageGet('sync', 'bwbr_config', null);
     const isVisible = settings?.general?.showVisitHistory !== false;
 
     // 기존 컨테이너 제거
@@ -189,17 +206,24 @@
       // 폴백: body 맨 앞
       document.body.insertBefore(container, document.body.firstChild);
     }
+    } catch (e) {
+      console.warn('[BWBR home-display] renderVisitHistory 오류:', e);
+    }
   }
 
-  // ★ SPA 내비게이션 감지: URL 폴링 (content script에서 pushState 훅이 안 먹힘)
+  // ★ SPA 내비게이션 감지: pushState는 content script에서 훅 불가
+  //   → popstate/hashchange 이벤트 + 2초 폴백 (500ms→2000ms 최적화)
   let lastUrl = location.href;
-  setInterval(() => {
+  function checkUrlChange() {
     const currentUrl = location.href;
     if (currentUrl !== lastUrl) {
       lastUrl = currentUrl;
       setTimeout(renderVisitHistory, 500);
     }
-  }, 500);
+  }
+  window.addEventListener('popstate', checkUrlChange);
+  window.addEventListener('hashchange', checkUrlChange);
+  setInterval(checkUrlChange, 2000);
 
   // 초기 렌더링
   if (document.readyState === 'loading') {
@@ -209,12 +233,14 @@
   }
 
   // storage 변경 감지
-  chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === 'sync' && changes.bwbr_config) {
-      if (isHomePage()) renderVisitHistory();
-    }
-    if (areaName === 'local' && changes.bwbrRoomHistory) {
-      if (isHomePage()) renderVisitHistory();
-    }
-  });
+  try {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName === 'sync' && changes.bwbr_config) {
+        if (isHomePage()) renderVisitHistory();
+      }
+      if (areaName === 'local' && changes.bwbrRoomHistory) {
+        if (isHomePage()) renderVisitHistory();
+      }
+    });
+  } catch { /* 컨텍스트 무효화 시 무시 */ }
 })();

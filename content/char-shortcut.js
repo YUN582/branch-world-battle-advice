@@ -57,7 +57,10 @@
     try { var d = await chrome.storage.sync.get(STORAGE_KEY); bindings = d[STORAGE_KEY] || {}; }
     catch (_) { bindings = {}; }
   }
-  async function saveBindings() { await chrome.storage.sync.set({ [STORAGE_KEY]: bindings }); }
+  async function saveBindings() {
+    try { await chrome.storage.sync.set({ [STORAGE_KEY]: bindings }); }
+    catch (e) { console.warn('[BWBR char-shortcut] saveBindings 실패:', e); }
+  }
   async function loadEnabled() {
     try { var d = await chrome.storage.sync.get('bwbr_config'); enabled = d.bwbr_config?.general?.charShortcuts !== false; }
     catch (_) { enabled = true; }
@@ -149,10 +152,11 @@
     obs.observe(document.body, { childList: true, subtree: true });
 
     // 주기적 스캔 — 가시성만 바뀌는 드롭다운 + 뱃지가 사라진 경우 재주입
+    // MutationObserver가 주요 트리거이므로 폴백은 2초면 충분 (600ms→2000ms)
     setInterval(function () {
       if (!enabled || !Object.keys(bindings).length) return;
       scanAllVisibleCharLists();
-    }, 600);
+    }, 2000);
   }
 
   function scanAllVisibleCharLists() {
@@ -208,6 +212,8 @@
 
   function injectKeyLabelToItem(item) {
     if (!item || item.querySelector('.bwbr-key-badge')) return;
+    // 보드 토큰(.movable) 내부에는 뱃지 주입 안 함
+    if (item.closest && item.closest('.movable')) return;
     var info = extractCharFromElement(item);
     if (!info) return;
     var key = findBindingForCharacter(info.name);
@@ -534,8 +540,8 @@
       dispatchCharAction('bwbr-character-store', charName);
     }));
 
-    // 복사
-    wrap.appendChild(ctxItem('복사', function () {
+    // 복제
+    wrap.appendChild(ctxItem('복제', function () {
       wrap.remove();
       dispatchCharAction('bwbr-character-copy', charName);
     }));

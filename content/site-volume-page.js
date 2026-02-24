@@ -48,6 +48,12 @@
 
   /* ── 볼륨 변경 ── */
   function apply() {
+    // GC 대상 media element 정리 (DOM에서 제거됐고 참조 없는 것들)
+    _media.forEach(function (el) {
+      if (!el.parentNode && el.paused && el.readyState === 0) {
+        _media.delete(el);
+      }
+    });
     _media.forEach(function (el) {
       if (el.__bv !== undefined) _vDesc.set.call(el, Math.max(0, Math.min(1, el.__bv * _vol)));
     });

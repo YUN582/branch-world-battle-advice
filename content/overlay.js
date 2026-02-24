@@ -232,8 +232,8 @@ window.BattleRollOverlay = class BattleRollOverlay {
       // 나중에 추가: { pattern: /《연사/, guideType: 'rapid' }
     ];
 
-    // 입력창 감지 인터벌
-    this._inputWatcherTimer = setInterval(() => {
+    // 입력 이벤트 기반 감지 (300ms 폴링 → event-driven)
+    this._inputHandler = () => {
       const input = document.querySelector('textarea[name="text"]');
       if (!input) return;
 
@@ -252,7 +252,15 @@ window.BattleRollOverlay = class BattleRollOverlay {
       } else if (!this._guideManuallyOpened) {
         this.hideGuide();
       }
-    }, 300);
+    };
+
+    // textarea가 동적으로 추가되므로 document 레벨에서 capture
+    this._inputCaptureHandler = (e) => {
+      if (e.target?.matches?.('textarea[name="text"]')) {
+        this._inputHandler();
+      }
+    };
+    document.addEventListener('input', this._inputCaptureHandler, true);
   }
 
   show() {
@@ -283,7 +291,10 @@ window.BattleRollOverlay = class BattleRollOverlay {
       this.element = null;
     }
     if (this._retryTimer) clearTimeout(this._retryTimer);
-    if (this._inputWatcherTimer) clearInterval(this._inputWatcherTimer);
+    if (this._inputCaptureHandler) {
+      document.removeEventListener('input', this._inputCaptureHandler, true);
+      this._inputCaptureHandler = null;
+    }
   }
 
   ensureInjected() {
@@ -605,13 +616,18 @@ window.BattleRollOverlay = class BattleRollOverlay {
     return this._audioCtx;
   }
 
-  /** 사운드 파일 fetch → AudioBuffer 캐시 */
+  /** 사운드 파일 fetch → AudioBuffer 캐시 (최대 50개) */
   async _loadSoundBuffer(url) {
     if (this._soundBuffers[url]) return this._soundBuffers[url];
     try {
       const resp = await fetch(url);
       const arrayBuf = await resp.arrayBuffer();
       const audioBuffer = await this._getAudioCtx().decodeAudioData(arrayBuf);
+      // LRU 캡: 50개 초과 시 가장 오래된 항목 제거
+      const keys = Object.keys(this._soundBuffers);
+      if (keys.length >= 50) {
+        delete this._soundBuffers[keys[0]];
+      }
       this._soundBuffers[url] = audioBuffer;
       return audioBuffer;
     } catch (e) {
