@@ -1839,6 +1839,8 @@
         char: {
           _id: found._id,
           name: found.name || '',
+          iconUrl: found.iconUrl || '',
+          color: found.color || '#e0e0e0',
           params: found.params || [],
           commands: found.commands || ''
         }

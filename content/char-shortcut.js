@@ -844,7 +844,7 @@
     if (!box) {
       box = document.createElement('div');
       box.id = 'bwbr-toast-container';
-      box.style.cssText = 'position:fixed;bottom:24px;left:24px;z-index:14000;display:flex;flex-direction:column;gap:8px;pointer-events:none';
+      box.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:14000;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none';
       root.appendChild(box);
     }
     var t = document.createElement('div');

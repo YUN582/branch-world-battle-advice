@@ -171,6 +171,16 @@
     }
   }
 
+  /** 전투 모드 시 우클릭 차단 (contextmenu capture) */
+  function onCombatContextMenu(e) {
+    if (!_combatMode) return;
+    var movable = findTokenElement(e.target);
+    if (movable) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }
+
   function onCombatClick(e) {
     if (!_combatMode) return;
 
@@ -409,6 +419,7 @@
     document.addEventListener('click', onCombatClick, true);
     document.addEventListener('pointerdown', onCombatPointerDown, true);
     document.addEventListener('mousedown', onCombatPointerDown, true);
+    document.addEventListener('contextmenu', onCombatContextMenu, true);
     updateFabLabel();
     LOG('전투 모드 ON');
     showToast('전투 모드 ON — 토큰을 클릭하면 이동 범위가 표시됩니다', 3000);
@@ -421,6 +432,7 @@
     document.removeEventListener('click', onCombatClick, true);
     document.removeEventListener('pointerdown', onCombatPointerDown, true);
     document.removeEventListener('mousedown', onCombatPointerDown, true);
+    document.removeEventListener('contextmenu', onCombatContextMenu, true);
     updateFabLabel();
     LOG('전투 모드 OFF');
     showToast('전투 모드 OFF', 2000);

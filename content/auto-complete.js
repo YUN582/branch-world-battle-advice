@@ -482,17 +482,9 @@
     toast.className = 'bwbr-toast show' + (type === 'error' ? ' error' : type === 'success' ? ' success' : '');
     toast.textContent = msg;
     document.body.appendChild(toast);
-    // textarea 바로 위에 위치시키기
-    const ta = document.querySelector('textarea');
-    if (ta) {
-      const r = ta.getBoundingClientRect();
-      toast.style.bottom = (window.innerHeight - r.top + 6) + 'px';
-      toast.style.left = r.left + 'px';
-    } else {
-      toast.style.bottom = '80px';
-      toast.style.left = '50%';
-      toast.style.transform = 'translateX(-50%)';
-    }
+    toast.style.bottom = '80px';
+    toast.style.left = '50%';
+    toast.style.transform = 'translateX(-50%)';
     setTimeout(() => { toast.classList.remove('show'); }, 2000);
     setTimeout(() => { toast.remove(); }, 2400);
   }
