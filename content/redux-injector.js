@@ -2512,4 +2512,217 @@
     }
   });
 
+  // ================================================================
+  //  룸 복사: 내보내기 (bwbr-room-export)
+  //  ISOLATED world에서 bwbr-room-export 이벤트로 요청
+  //  Redux 상태에서 방 설정 + 캐릭터 + 아이템을 수집하여 반환
+  // ================================================================
+
+  window.addEventListener('bwbr-room-export', () => {
+    const respond = (data) => {
+      window.dispatchEvent(new CustomEvent('bwbr-room-export-result', { detail: data }));
+    };
+
+    try {
+      if (!reduxStore) {
+        respond({ success: false, error: 'Redux Store 없음' });
+        return;
+      }
+
+      const state = reduxStore.getState();
+      const roomId = state.app?.state?.roomId
+        || window.location.pathname.match(/\/rooms\/([^/]+)/)?.[1];
+      if (!roomId) {
+        respond({ success: false, error: 'roomId를 찾을 수 없음' });
+        return;
+      }
+
+      // 방 이름
+      const roomEntity = state.entities?.rooms?.entities?.[roomId];
+      const roomName = roomEntity?.name
+        || document.title?.replace(/ - ココフォリア$/, '').replace(/ - 코코포리아$/, '')
+        || 'room';
+
+      // 방 설정 (entities.rooms.entities[roomId])
+      const roomSettings = roomEntity ? { ...roomEntity } : {};
+
+      // 캐릭터 (entities.roomCharacters)
+      const rc = state.entities?.roomCharacters;
+      const characters = [];
+      if (rc?.ids?.length) {
+        for (const id of rc.ids) {
+          const c = rc.entities[id];
+          if (c) characters.push({ ...c });
+        }
+      }
+
+      // 아이템/스크린패널 (entities.roomItems)
+      const ri = state.entities?.roomItems;
+      const items = [];
+      if (ri?.ids?.length) {
+        for (const id of ri.ids) {
+          const item = ri.entities[id];
+          if (item) items.push({ ...item });
+        }
+      }
+
+      const exportData = {
+        version: 1,
+        exportedAt: Date.now(),
+        sourceRoomId: roomId,
+        roomName: roomName,
+        roomSettings: roomSettings,
+        characters: characters,
+        items: items
+      };
+
+      console.log(`%c[BWBR]%c 📦 룸 데이터 내보내기: 방 설정 + 캐릭터 ${characters.length}개 + 아이템 ${items.length}개`,
+        'color: #ce93d8; font-weight: bold;', 'color: inherit;');
+
+      respond({ success: true, data: exportData, roomName: roomName });
+
+    } catch (err) {
+      console.error('[BWBR] 룸 데이터 내보내기 오류:', err);
+      respond({ success: false, error: err.message });
+    }
+  });
+
+  // ================================================================
+  //  룸 복사: 가져오기 (bwbr-room-import)
+  //  ISOLATED → DOM attr 'data-bwbr-room-import' 에 JSON 저장 → 이벤트 발행
+  //  MAIN world에서 Firestore에 직접 쓰기
+  // ================================================================
+
+  /** Firestore 호환 문서 ID 생성 (20자 영숫자) */
+  function _generateFirestoreId() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let id = '';
+    for (let i = 0; i < 20; i++) {
+      id += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return id;
+  }
+
+  window.addEventListener('bwbr-room-import', async () => {
+    const respond = (data) => {
+      window.dispatchEvent(new CustomEvent('bwbr-room-import-result', { detail: data }));
+    };
+
+    try {
+      // DOM 속성에서 JSON 데이터 읽기
+      const raw = document.documentElement.getAttribute('data-bwbr-room-import');
+      document.documentElement.removeAttribute('data-bwbr-room-import');
+      if (!raw) {
+        respond({ success: false, error: 'data-bwbr-room-import 속성에 데이터 없음' });
+        return;
+      }
+
+      const importData = JSON.parse(raw);
+      if (!importData.version) {
+        respond({ success: false, error: '유효하지 않은 데이터 형식' });
+        return;
+      }
+
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) {
+        respond({ success: false, error: 'Firestore SDK 획득 실패' });
+        return;
+      }
+      if (!reduxStore) {
+        respond({ success: false, error: 'Redux Store 없음' });
+        return;
+      }
+
+      const state = reduxStore.getState();
+      const roomId = state.app?.state?.roomId
+        || window.location.pathname.match(/\/rooms\/([^/]+)/)?.[1];
+      if (!roomId) {
+        respond({ success: false, error: 'roomId를 찾을 수 없음' });
+        return;
+      }
+      const uid = state.app?.state?.uid || '';
+
+      console.log(`%c[BWBR]%c 📥 룸 데이터 가져오기 시작 (roomId: ${roomId})`,
+        'color: #90caf9; font-weight: bold;', 'color: inherit;');
+
+      // ── 1. 방 설정 덮어쓰기 (merge) ── (roomSettings가 null이면 건너뜀)
+      let settingsUpdated = false;
+      if (importData.roomSettings) {
+        const roomSettingsBlacklist = new Set([
+          // 방 정체성 & 소유 관련은 복사하지 않음
+          '_id', 'id', 'owner', 'createdBy', 'uid',
+          'members', 'memberCount', 'password',
+          'createdAt', 'plan', 'planExpiredAt',
+          'premium', 'pro', 'proExpiredAt'
+        ]);
+        const cleanSettings = {};
+        for (const [key, value] of Object.entries(importData.roomSettings)) {
+          if (!roomSettingsBlacklist.has(key)) {
+            cleanSettings[key] = value;
+          }
+        }
+        cleanSettings.updatedAt = Date.now();
+
+        const roomCol = sdk.collection(sdk.db, 'rooms');
+        const roomRef = sdk.doc(roomCol, roomId);
+        await sdk.setDoc(roomRef, cleanSettings, { merge: true });
+        settingsUpdated = true;
+        console.log('%c[BWBR]%c   방 설정 업데이트 완료', 'color: #90caf9; font-weight: bold;', 'color: inherit;');
+      } else {
+        console.log('%c[BWBR]%c   방 설정 건너뜀 (선택 안 됨)', 'color: #90caf9; font-weight: bold;', 'color: #888;');
+      }
+
+      // ── 2. 캐릭터 복사 ──
+      let charCount = 0;
+      if (importData.characters?.length) {
+        const charsCol = sdk.collection(sdk.db, 'rooms', roomId, 'characters');
+        for (const char of importData.characters) {
+          const newId = _generateFirestoreId();
+          const charData = { ...char };
+          // 원본 ID 제거, 새 소유자 설정
+          delete charData._id;
+          delete charData.id;
+          charData.owner = uid;
+          charData.roomId = roomId;
+          charData.createdAt = Date.now();
+          charData.updatedAt = Date.now();
+
+          const charRef = sdk.doc(charsCol, newId);
+          await sdk.setDoc(charRef, charData);
+          charCount++;
+        }
+        console.log(`%c[BWBR]%c   캐릭터 ${charCount}개 생성 완료`, 'color: #90caf9; font-weight: bold;', 'color: inherit;');
+      }
+
+      // ── 3. 아이템/스크린패널 복사 ──
+      let itemCount = 0;
+      if (importData.items?.length) {
+        const itemsCol = sdk.collection(sdk.db, 'rooms', roomId, 'items');
+        for (const item of importData.items) {
+          const newId = _generateFirestoreId();
+          const itemData = { ...item };
+          delete itemData._id;
+          delete itemData.id;
+          itemData.owner = uid;
+          itemData.createdAt = Date.now();
+          itemData.updatedAt = Date.now();
+
+          const itemRef = sdk.doc(itemsCol, newId);
+          await sdk.setDoc(itemRef, itemData);
+          itemCount++;
+        }
+        console.log(`%c[BWBR]%c   아이템 ${itemCount}개 생성 완료`, 'color: #90caf9; font-weight: bold;', 'color: inherit;');
+      }
+
+      console.log(`%c[BWBR]%c ✅ 룸 데이터 가져오기 완료!`,
+        'color: #4caf50; font-weight: bold;', 'color: inherit;');
+
+      respond({ success: true, settingsUpdated, charCount, itemCount });
+
+    } catch (err) {
+      console.error('[BWBR] 룸 데이터 가져오기 오류:', err);
+      respond({ success: false, error: err.message });
+    }
+  });
+
 })();

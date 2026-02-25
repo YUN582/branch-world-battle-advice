@@ -329,6 +329,15 @@
         }, true);
       });
 
+      // ── 메뉴 스크롤 가능하게 (확장 항목 추가로 넘칠 수 있음) ──
+      // Paper의 top 위치 기준으로 maxHeight를 동적 제한
+      var paper = list.closest('.MuiPaper-root');
+      if (paper) {
+        var pRect = paper.getBoundingClientRect();
+        var maxAvail = window.innerHeight - pRect.top - 16; // 16px 하단 여백
+        if (maxAvail > 100) paper.style.maxHeight = maxAvail + 'px';
+      }
+
       // 리스트 맨 위에 삽입 (Popover 높이 밖으로 밀려나지 않게)
       list.insertBefore(clone, list.firstChild);
       LOG('FAB menu grid item injected (첫 번째 항목)');

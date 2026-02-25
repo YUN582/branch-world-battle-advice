@@ -557,6 +557,14 @@
         btn.addEventListener('click', onCombatItemClick, true);
       });
 
+      // ── 메뉴 스크롤 가능하게 (확장 항목 추가로 넘칠 수 있음) ──
+      var paper = list.closest('.MuiPaper-root');
+      if (paper) {
+        var pRect = paper.getBoundingClientRect();
+        var maxAvail = window.innerHeight - pRect.top - 16;
+        if (maxAvail > 100) paper.style.maxHeight = maxAvail + 'px';
+      }
+
       // 그리드 버튼 뒤에 삽입 (없으면 첫 번째 항목 뒤)
       var gridItem = list.querySelector('[data-bwbr-grid]');
       if (gridItem && gridItem.nextSibling) {

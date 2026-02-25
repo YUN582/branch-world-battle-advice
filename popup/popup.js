@@ -171,6 +171,8 @@
     // 캐릭터 단축키
     $('toggle-charShortcuts').checked = cfg.general.charShortcuts !== false;
 
+    // 맞춤법 검사 — 제거됨
+
     // 타이밍
     setTimingField('time-beforeFirstRoll', cfg.timing.beforeFirstRoll);
     setTimingField('time-betweenRolls', cfg.timing.betweenRolls);
@@ -228,6 +230,8 @@
 
     // 캐릭터 단축키
     cfg.general.charShortcuts = $('toggle-charShortcuts').checked;
+
+    // 맞춤법 검사 — 제거됨
 
     // 타이밍
     cfg.timing.beforeFirstRoll = getTimingValue('time-beforeFirstRoll');
