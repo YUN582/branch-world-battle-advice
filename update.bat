@@ -1,21 +1,21 @@
 @echo off
 chcp 65001 >nul 2>&1
 echo ========================================
-echo   ê°€ì§€ì„¸ê³„ ë„ìš°ë¯¸ ì—…ë°ì´íŠ¸
+echo   °¡Áö¼¼°è µµ¿ì¹Ì ¾÷µ¥ÀÌÆ®
 echo ========================================
 echo.
-echo ìµœì‹  ë²„ì „ì„ GitHubì—ì„œ ê°€ì ¸ì˜µë‹ˆë‹¤...
+echo ÃÖ½Å ¹öÀüÀ» GitHub¿¡¼­ °¡Á®¿É´Ï´Ù...
 echo.
 git pull origin master
 echo.
 if %ERRORLEVEL% == 0 (
-    echo âœ… ì—…ë°ì´íŠ¸ê°€ ì™„ë£Œë˜ì—ˆìŠµë‹ˆë‹¤!
+    echo [¿Ï·á] ¾÷µ¥ÀÌÆ®°¡ ¿Ï·áµÇ¾ú½À´Ï´Ù!
     echo.
-    echo í¬ë¡¬ ì£¼ì†Œì°½ì— chrome://extensions ì„ ìž…ë ¥í•œ í›„
-    echo ì´ í™•ìž¥ í”„ë¡œê·¸ëž¨ì˜ ðŸ”„ ìƒˆë¡œê³ ì¹¨ ë²„íŠ¼ì„ ëˆŒëŸ¬ì£¼ì„¸ìš”.
+    echo Å©·Ò ÁÖ¼ÒÃ¢¿¡ chrome://extensions À» ÀÔ·ÂÇÑ ÈÄ
+    echo ÀÌ È®Àå ÇÁ·Î±×·¥ÀÇ »õ·Î°íÄ§ ¹öÆ°À» ´­·¯ÁÖ¼¼¿ä.
 ) else (
-    echo âŒ ì—…ë°ì´íŠ¸ì— ì‹¤íŒ¨í–ˆìŠµë‹ˆë‹¤.
-    echo    ì¸í„°ë„· ì—°ê²°ì„ í™•ì¸í•˜ê±°ë‚˜, í´ë”ì— ìˆ˜ì •ëœ íŒŒì¼ì´ ìžˆëŠ”ì§€ í™•ì¸í•´ì£¼ì„¸ìš”.
+    echo [½ÇÆÐ] ¾÷µ¥ÀÌÆ®¿¡ ½ÇÆÐÇß½À´Ï´Ù.
+    echo    ÀÎÅÍ³Ý ¿¬°áÀ» È®ÀÎÇÏ°Å³ª, Æú´õ¿¡ ¼öÁ¤µÈ ÆÄÀÏÀÌ ÀÖ´ÂÁö È®ÀÎÇØÁÖ¼¼¿ä.
 )
 echo.
 pause
