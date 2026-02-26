@@ -58,7 +58,13 @@ window.BWBR_DEFAULTS = {
     roundHeaderSounds: ['챙1', '챙2', '챙3'],          // 합 헤더 시 무작위
     resultNormalSounds: ['챙1', '챙2', '챙3'],      // 일반 결과 시 무작위
     resultSpecialSounds: ['챙4'],                   // 대성공/대실패 시 무작위
-    victorySounds: ['합']                              // 승리 시 무작위
+    victorySounds: ['합'],                              // 승리 시 무작위
+    // 전투 보조 (턴제) 사운드
+    battleStartSounds: [],                            // 전투 보조 개시 시
+    turnStartSounds: [],                              // 차례 시작 시
+    actionConsumeSounds: ['발도1'],                    // 행동 소비 시
+    actionAddSounds: ['발도2'],                        // 행동 추가 시
+    battleEndSounds: []                               // 전투 보조 종료 시
   },
 
   // ── 전투 규칙 ──────────────────────────────────────────

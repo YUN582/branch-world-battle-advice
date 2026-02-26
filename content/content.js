@@ -201,6 +201,13 @@
 
   // ── 사용자 메시지 도착 대기 ───────────────────────
 
+  /** 설정된 사운드 배열에서 무작위 하나를 @sound 형식으로 반환. 비어있으면 빈 문자열. */
+  function _pickCutin(soundsKey) {
+    const arr = config?.sounds?.[soundsKey];
+    if (!arr || arr.length === 0) return '';
+    return ' @' + arr[Math.floor(Math.random() * arr.length)];
+  }
+
   /**
    * 사용자의 트리거 메시지가 Firestore/Redux에 도착할 때까지 대기.
    * onInputSubmit은 keydown(Enter) 시점에 발동하므로, 실제 메시지가
@@ -468,6 +475,12 @@
 
     // 첫 턴 시작 메시지 전송
     sendTurnStartMessage();
+
+    // 전투 개시 사운드 (별도 시스템 메시지)
+    const startCutin = _pickCutin('battleStartSounds');
+    if (startCutin) {
+      chat.sendSystemMessage(`《 전투 보조 개시 》${startCutin}`);
+    }
   }
 
   /** 다음 턴으로 이동 */
@@ -515,7 +528,7 @@
     if (!current) return;
 
     const emoji = actionType === '주' ? '🔺' : '🔹';
-    const msg = `《${emoji}${actionType} 행동 소비》\n${current.name} | 🔺주 행동 ${current.mainActions}, 🔹보조 행동 ${current.subActions} | 이동거리 ${current.movement} @발도1`;
+    const msg = `《${emoji}${actionType} 행동 소비》\n${current.name} | 🔺주 행동 ${current.mainActions}, 🔹보조 행동 ${current.subActions} | 이동거리 ${current.movement}${_pickCutin('actionConsumeSounds')}`;
     chat.sendSystemMessage(msg);
   }
 
@@ -551,7 +564,7 @@
     if (!current) return;
 
     const emoji = actionType === '주' ? '🔺' : '🔹';
-    const msg = `《${emoji}${actionType} 행동 추가》\n${current.name} | 🔺주 행동 ${current.mainActions}, 🔹보조 행동 ${current.subActions} | 이동거리 ${current.movement} @발도2`;
+    const msg = `《${emoji}${actionType} 행동 추가》\n${current.name} | 🔺주 행동 ${current.mainActions}, 🔹보조 행동 ${current.subActions} | 이동거리 ${current.movement}${_pickCutin('actionAddSounds')}`;
     chat.sendSystemMessage(msg);
   }
 
@@ -661,12 +674,49 @@
       // 현재 턴 UI 표시
       await refreshTurnUI();
 
+      // HP 데이터가 비어있으면 재시도 (Redux 인젝터 초기화 지연 대응)
+      _retryRefreshIfMissingHP();
+
       alwaysLog('[턴 전투] 상태 복원 완료!');
       return true;
     } catch (e) {
       alwaysLog(`[턴 전투] 복원 실패: ${e.message}`);
       return false;
     }
+  }
+
+  /**
+   * 복원 후 HP 정보가 비어있으면 재시도합니다.
+   * Redux 인젝터가 아직 준비되지 않았을 수 있으므로 지연 재시도합니다.
+   */
+  function _retryRefreshIfMissingHP() {
+    const state = combatEngine.getState();
+    const current = state.currentCharacter;
+    if (!current) return;
+
+    const { willValue } = _extractCharInfo(current);
+    if (willValue !== null && willValue !== undefined) return; // 이미 있음
+
+    alwaysLog('[턴 전투] HP 데이터 없음 — 재시도 예약');
+    let retries = 0;
+    const maxRetries = 5;
+    const timer = setInterval(async () => {
+      retries++;
+      try {
+        await _refreshCharacterOriginalData();
+        const { willValue: w } = _extractCharInfo(combatEngine.getState().currentCharacter);
+        if (w !== null && w !== undefined) {
+          alwaysLog(`[턴 전투] HP 데이터 획득 성공 (${retries}회차)`);
+          await refreshTurnUI();
+          clearInterval(timer);
+        } else if (retries >= maxRetries) {
+          alwaysLog('[턴 전투] HP 데이터 재시도 한도 초과');
+          clearInterval(timer);
+        }
+      } catch (e) {
+        if (retries >= maxRetries) clearInterval(timer);
+      }
+    }, 2000);
   }
 
   async function refreshTurnUI() {
@@ -706,7 +756,7 @@
     }
 
     // 《 {캐릭터 이름}의 차례 》\n🔺주 행동 N개, 🔹보조 행동 Y개 | 이동거리 Z
-    const turnMsg = `《 ${current.name}의 차례 》\n🔺주 행동 ${current.mainActions}개, 🔹보조 행동 ${current.subActions}개 | 이동거리 ${current.movement}`;
+    const turnMsg = `《 ${current.name}의 차례 》\n🔺주 행동 ${current.mainActions}개, 🔹보조 행동 ${current.subActions}개 | 이동거리 ${current.movement}${_pickCutin('turnStartSounds')}`;
     
     alwaysLog(`턴 메시지: ${turnMsg}`);
     overlay.addLog(`🎯 ${current.name}의 차례`, 'success');
@@ -737,6 +787,13 @@
     if (flowState !== STATE.TURN_COMBAT) return;
 
     alwaysLog('🎲 전투 보조 모드 종료');
+
+    // 전투 종료 사운드
+    const endCutin = _pickCutin('battleEndSounds');
+    if (endCutin) {
+      chat.sendSystemMessage(`《 전투 보조 종료 》${endCutin}`);
+    }
+
     combatEngine.endCombat();
     flowState = STATE.IDLE;
 
@@ -3082,19 +3139,41 @@ ${rows.join('\n')}
   // ── aria-hidden 포커스 충돌 완화 (ccfolia MUI 버그) ───────
 
   /**
-   * MUI Popover/Menu가 닫힐 때 aria-hidden="true"가 설정되면서
+   * MUI Popover/Dialog/Menu가 닫힐 때 aria-hidden="true"가 설정되면서
    * 내부에 포커스가 남아있으면 브라우저 경고가 발생합니다.
-   * aria-hidden이 설정되기 직전에 포커스를 body로 이동시켜 방지합니다.
+   *
+   * MutationObserver는 비동기이므로 경고 발생 후에야 실행됩니다.
+   * 대신 클릭(capture)과 키보드(Escape) 이벤트에서 Modal/Popover 내
+   * 포커스를 사전에 blur하여 aria-hidden 충돌을 방지합니다.
    */
   (function fixAriaHiddenFocus() {
+    var MODAL_SEL = '.MuiPopover-root, .MuiDialog-root, .MuiModal-root, .MuiMenu-root';
+
+    // 1) 클릭 시: Modal/Popover 내부 요소 클릭하면 포커스를 즉시 해제
+    //    capture 단계 → React onClick보다 먼저 실행 → aria-hidden 설정 전에 blur
+    document.addEventListener('click', function(e) {
+      var ae = document.activeElement;
+      if (!ae || ae === document.body) return;
+      var modal = ae.closest(MODAL_SEL);
+      if (modal) ae.blur();
+    }, true);
+
+    // 2) Escape 키: Dialog/Popover 닫기 전에 blur
+    document.addEventListener('keydown', function(e) {
+      if (e.key !== 'Escape') return;
+      var ae = document.activeElement;
+      if (!ae || ae === document.body) return;
+      var modal = ae.closest(MODAL_SEL);
+      if (modal) ae.blur();
+    }, true);
+
+    // 3) 폴백: aria-hidden 설정 시 (이미 경고가 나올 수 있지만 접근성 트리 정리용)
     var obs = new MutationObserver(function(mutations) {
       for (var i = 0; i < mutations.length; i++) {
         var m = mutations[i];
         if (m.type !== 'attributes' || m.attributeName !== 'aria-hidden') continue;
         var target = m.target;
         if (target.getAttribute('aria-hidden') !== 'true') continue;
-        if (!target.classList || (!target.classList.contains('MuiPopover-root') && !target.classList.contains('MuiModal-root'))) continue;
-        // 포커스가 이 요소 내부에 있으면 body로 이동
         if (target.contains(document.activeElement)) {
           document.activeElement.blur();
         }

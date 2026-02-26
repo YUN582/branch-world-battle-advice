@@ -44,15 +44,16 @@
       ' fill="rgba(255,255,255,0.5)"/>' +
       '</svg>';
 
+    // 손그림 선 (cubic bezier path) — 타일 경계에서 tangent 일치하도록 제어점 설계
     var smallCell =
       '<svg xmlns="http://www.w3.org/2000/svg" width="' + SM + '" height="' + SM + '">' +
-      '<line x1="0" y1="0" x2="0" y2="' + SM + '" stroke="rgba(255,255,255,0.18)" stroke-width="0.5" stroke-dasharray="2,2"/>' +
-      '<line x1="0" y1="0" x2="' + SM + '" y2="0" stroke="rgba(255,255,255,0.18)" stroke-width="0.5" stroke-dasharray="2,2"/></svg>';
+      '<path d="M0,0 C0.7,4 -0.5,8 0.4,12 C-0.4,16 -0.7,20 0,24" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="0.5" stroke-dasharray="2,2" stroke-linecap="round"/>' +
+      '<path d="M0,0 C4,0.7 8,-0.5 12,0.4 C16,-0.4 20,-0.7 24,0" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="0.5" stroke-dasharray="2,2" stroke-linecap="round"/></svg>';
 
     var bigCell =
       '<svg xmlns="http://www.w3.org/2000/svg" width="' + LG + '" height="' + LG + '">' +
-      '<line x1="0" y1="0" x2="0" y2="' + LG + '" stroke="rgba(255,255,255,0.4)" stroke-width="1"/>' +
-      '<line x1="0" y1="0" x2="' + LG + '" y2="0" stroke="rgba(255,255,255,0.4)" stroke-width="1"/></svg>';
+      '<path d="M0,0 C1.2,8 -0.9,16 0.7,24 C-0.7,32 -1.2,40 0,48" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1" stroke-linecap="round"/>' +
+      '<path d="M0,0 C8,1.2 16,-0.9 24,0.7 C32,-0.7 40,-1.2 48,0" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1" stroke-linecap="round"/></svg>';
 
     // 체스판 틴트 96px: 192px 반복, 대각선 96px 셀 2개에 밝은 tint (큰 칸 구분)
     var XLXL = XL * 2; // 192
@@ -62,11 +63,11 @@
       '<rect x="' + XL + '" y="' + XL + '" width="' + XL + '" height="' + XL + '" fill="rgba(255,255,255,0.20)"/>' +
       '</svg>';
 
-    // 96px(한 칸) 경계선: bigCell보다 굵고 밝은 전용 레이어
+    // 96px(한 칸) 경계선: 손그림 선 (2px, 불투명 흩색)
     var xlCell =
       '<svg xmlns="http://www.w3.org/2000/svg" width="' + XL + '" height="' + XL + '">' +
-      '<line x1="0" y1="0" x2="0" y2="' + XL + '" stroke="rgba(255,255,255,1)" stroke-width="2"/>' +
-      '<line x1="0" y1="0" x2="' + XL + '" y2="0" stroke="rgba(255,255,255,1)" stroke-width="2"/></svg>';
+      '<path d="M0,0 C1.8,16 -1.4,32 1.0,48 C-1.0,64 -1.8,80 0,96" fill="none" stroke="rgba(255,255,255,1)" stroke-width="2" stroke-linecap="round"/>' +
+      '<path d="M0,0 C16,1.8 32,-1.4 48,1.0 C64,-1.0 80,-1.8 96,0" fill="none" stroke="rgba(255,255,255,1)" stroke-width="2" stroke-linecap="round"/></svg>';
 
     return {
       bg: 'url("' + enc(diamond96) + '") repeat,' +
@@ -168,6 +169,27 @@
       el.style.clipPath = 'inset(' + offY + 'px ' + (exX - offX) + 'px ' + (exY - offY) + 'px ' + offX + 'px)';
     } else {
       el.style.clipPath = 'none';
+    }
+
+    // 그리드 경계 프레임 (마감 장식)
+    var gridW = W - exX;   // 완전한 그리드 영역 크기
+    var gridH = H - exY;
+    var frame = el.querySelector('.bwbr-grid-frame');
+    if (exX > 0 || exY > 0) {
+      if (!frame) {
+        frame = document.createElement('div');
+        frame.className = 'bwbr-grid-frame';
+        el.appendChild(frame);
+      }
+      frame.style.cssText = 'position:absolute;' +
+        'left:' + offX + 'px;top:' + offY + 'px;' +
+        'width:' + gridW + 'px;height:' + gridH + 'px;' +
+        'border:1.5px solid rgba(255,255,255,0.35);' +
+        'pointer-events:none;box-sizing:border-box;' +
+        'border-radius:2px;' +
+        'box-shadow:0 0 6px rgba(255,255,255,0.1);';
+    } else {
+      if (frame) frame.remove();
     }
   }
 

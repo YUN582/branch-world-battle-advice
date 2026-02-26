@@ -209,8 +209,8 @@
 
 .bwbr-trait-n0 {
   background: #1a2a1a;
-  color: #b2ff59;
-  border: 1px solid #33691e;
+  color: #81c784;
+  border: 1px solid #2e5c2e;
 }
 
 /* ── 전투 정보 ────────────────────────────────── */
@@ -350,8 +350,9 @@
   font-weight: 600;
   padding: 1px 6px;
   border-radius: 4px;
-  background: #e0ffe0;
-  color: #ccc;
+  background: #2a2a2a;
+  color: #aaa;
+  border: 1px solid #444;
   white-space: nowrap;
   line-height: 1.4;
 }

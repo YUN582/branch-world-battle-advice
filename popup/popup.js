@@ -36,7 +36,12 @@
       roundHeaderSounds: ['후웅1', '후웅2', '후웅3', '후웅4'],
       resultNormalSounds: ['챙1', '챙2', '챙3'],
       resultSpecialSounds: ['챙4'],
-      victorySounds: ['합']
+      victorySounds: ['합'],
+      battleStartSounds: [],
+      turnStartSounds: [],
+      actionConsumeSounds: ['발도1'],
+      actionAddSounds: ['발도2'],
+      battleEndSounds: []
     },
     rules: {
       diceType: 20,
@@ -188,6 +193,13 @@
     renderTagList('sound-resultSpecial-list', cfg.sounds.resultSpecialSounds || ['챙4'], 'resultSpecialSounds');
     renderTagList('sound-victory-list', cfg.sounds.victorySounds || ['합'], 'victorySounds');
 
+    // 전투 보조 (턴제) 효과음
+    renderTagList('sound-battleStart-list', cfg.sounds.battleStartSounds || [], 'battleStartSounds');
+    renderTagList('sound-turnStart-list', cfg.sounds.turnStartSounds || [], 'turnStartSounds');
+    renderTagList('sound-actionConsume-list', cfg.sounds.actionConsumeSounds || ['발도1'], 'actionConsumeSounds');
+    renderTagList('sound-actionAdd-list', cfg.sounds.actionAddSounds || ['발도2'], 'actionAddSounds');
+    renderTagList('sound-battleEnd-list', cfg.sounds.battleEndSounds || [], 'battleEndSounds');
+
     // 로컬 효과음 (커스텀 롤 사운드)
     loadCustomRollSounds();
 
@@ -247,6 +259,11 @@
     cfg.sounds.resultNormalSounds = collectTags('sound-resultNormal-list');
     cfg.sounds.resultSpecialSounds = collectTags('sound-resultSpecial-list');
     cfg.sounds.victorySounds = collectTags('sound-victory-list');
+    cfg.sounds.battleStartSounds = collectTags('sound-battleStart-list');
+    cfg.sounds.turnStartSounds = collectTags('sound-turnStart-list');
+    cfg.sounds.actionConsumeSounds = collectTags('sound-actionConsume-list');
+    cfg.sounds.actionAddSounds = collectTags('sound-actionAdd-list');
+    cfg.sounds.battleEndSounds = collectTags('sound-battleEnd-list');
 
     // 패턴
     cfg.patterns.triggerRegex = $('pat-triggerRegex').value;
@@ -325,7 +342,12 @@
       { list: 'sound-roundHeader-list', input: 'sound-roundHeader-input', add: 'sound-roundHeader-add', key: 'roundHeaderSounds' },
       { list: 'sound-resultNormal-list', input: 'sound-resultNormal-input', add: 'sound-resultNormal-add', key: 'resultNormalSounds' },
       { list: 'sound-resultSpecial-list', input: 'sound-resultSpecial-input', add: 'sound-resultSpecial-add', key: 'resultSpecialSounds' },
-      { list: 'sound-victory-list', input: 'sound-victory-input', add: 'sound-victory-add', key: 'victorySounds' }
+      { list: 'sound-victory-list', input: 'sound-victory-input', add: 'sound-victory-add', key: 'victorySounds' },
+      { list: 'sound-battleStart-list', input: 'sound-battleStart-input', add: 'sound-battleStart-add', key: 'battleStartSounds' },
+      { list: 'sound-turnStart-list', input: 'sound-turnStart-input', add: 'sound-turnStart-add', key: 'turnStartSounds' },
+      { list: 'sound-actionConsume-list', input: 'sound-actionConsume-input', add: 'sound-actionConsume-add', key: 'actionConsumeSounds' },
+      { list: 'sound-actionAdd-list', input: 'sound-actionAdd-input', add: 'sound-actionAdd-add', key: 'actionAddSounds' },
+      { list: 'sound-battleEnd-list', input: 'sound-battleEnd-input', add: 'sound-battleEnd-add', key: 'battleEndSounds' }
     ];
     soundTagConfigs.forEach(({ list, input, add, key }) => {
       $(add).addEventListener('click', () => addTag(list, input, key));
