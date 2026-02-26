@@ -26,6 +26,7 @@
 10. [Redux Action Type 탐색 기법](#10-redux-action-type-탐색-기법)
 11. [DOM 구조 레퍼런스 (MUI 컴포넌트 매핑)](#11-dom-구조-레퍼런스-mui-컴포넌트-매핑)
     - [11.7 배틀맵 / 씬 계층 구조](#117-배틀맵--씬-계층-구조-foreground--background--zoom--pan)
+12. [특성 시스템 (Traits)](#12-특성-시스템-traits)
 
 ---
 
@@ -1550,3 +1551,204 @@ body
 > 커스텀 그리드 활성 시 `fg`에 `data-bwbr-no-grid` 속성을 부여하고,
 > CSS 규칙 `[data-bwbr-no-grid], [data-bwbr-no-grid] > * { background: transparent !important }` 로
 > 전경 본체와 그리드 자식 div 모두의 배경을 투명화하여 네이티브 그리드를 숨깁니다.
+
+---
+
+## 12. 특성 시스템 (Traits)
+
+> 가지세계 TRPG 합 전투에서 캐릭터에 부여되는 특수 능력/효과입니다.
+> 합 개시 트리거의 마지막 캡처그룹으로 파싱되며, `melee-engine.js`에서 처리됩니다.
+>
+> **기준**: 2026-02-28 (`melee-engine.js`, `content.js`, `overlay.js` 코드 분석)
+
+### 12.1 특성 코드 목록
+
+| 코드 | 한글 명칭 | 카테고리 | 설명 |
+|------|----------|---------|------|
+| `H0` | 인간 특성 | 인간 | 주사위 0 시 1개 부활 (1회). 크리티컬로 초기화 가능 |
+| `H00` | 인간 특성 (잠재) | 인간 | 기본 비활성. 크리티컬 시 초기화되어 H0과 동일하게 작동 |
+| `H4` | 피로 새겨진 역사 | 역사 | 크리티컬 시 대성공 범위 누적 확대. 비크리 시 초기화 |
+| `H40` | 역사+인간 | 복합 | H4 + H0 상호작용. H4 초기화 시 인간 특성으로 스택 유지 |
+| `H400` | 역사+인간 (잠재) | 복합 | H4 + H00 상호작용. H00처럼 처음엔 비활성 |
+| `N0` | 연격 | 연격 | 상대 주사위 -2, 승리 시 +1 누적 보너스, 패배 시 초기화 |
+| `H1`~`H3` | (공석) | — | 예약됨. 현재 미구현 |
+
+### 12.2 트리거 파싱
+
+합 개시 메시지에서 특성 태그는 주사위/대성공/대실패 뒤의 선택적 캡처그룹으로 전달됩니다.
+
+```
+《합 개시》| ⚔️ 캐릭터A - 5/20/1/H0H4 | 🛡️ 캐릭터B - 4/20/1/N0
+                                ^^^^                    ^^
+                              특성 태그             특성 태그
+```
+
+#### 파싱 로직 (`melee-engine.js: _parseTraits`)
+
+```js
+// 태그 문자열 → 특성 배열
+_parseTraits(tagStr) {
+  if (!tagStr) return [];
+  const matches = tagStr.toUpperCase().match(/[A-Z]\d+/g);
+  return matches || [];
+}
+
+// 예시:
+// "H0H4"   → ['H0', 'H4']
+// "H00H4"  → ['H00', 'H4']    ← 00은 하나의 토큰
+// "N0"     → ['N0']
+// "H40"    → ['H40']          ← H4 + H0 복합
+// "H400"   → ['H400']         ← H4 + H00 복합
+// ""       → []
+```
+
+### 12.3 특성별 상세 메커니즘
+
+#### H0 / H00 — 인간 특성
+
+| 구분 | H0 | H00 (잠재) |
+|------|----|-----------|
+| 초기 상태 | h0Used = **false** (발동 가능) | h0Used = **true** (발동 불가) |
+| 발동 조건 | 주사위 0개 & h0Used == false | 동일 |
+| 효과 | 주사위 0 → 1 부활, h0Used = true | 동일 |
+| 초기화 | 크리티컬 달성 시 h0Used → false | 동일 (크리 시 활성화) |
+| 수동 모드 | 발동 전 사용자 확인 프롬프트 | 동일 |
+
+```
+전투 상태:
+  fighter.h0Used: boolean     // true = 이미 사용함 (재발동 불가)
+
+자동 모드 흐름:
+  주사위 0 & !h0Used → dice=1, h0Used=true → traitEvent('resurrect')
+  크리티컬 & h0Used  → h0Used=false        → traitEvent('reset')
+
+수동 모드 흐름:
+  주사위 0 & !h0Used → traitEvent('h0_available') → 사용자 확인 → applyManualH0()
+```
+
+#### H4 — 피로 새겨진 역사
+
+| 항목 | 값 |
+|------|----|
+| 크리티컬 시 | 대성공 범위 +2 누적 (critThreshold -= 2) |
+| 최대 누적 | +5 (임계값 최대 -5) |
+| 비크리티컬 시 | 보너스 전부 초기화 (h4Bonus → 0) |
+
+```
+전투 상태:
+  fighter.h4Bonus: number          // 현재 누적 보너스 (0~5)
+  fighter.baseCritThreshold: number // 기본 대성공 임계값 (보통 20)
+  fighter.critThreshold: number    // 실효 임계값 = base - h4Bonus
+
+흐름:
+  크리티컬 → h4Bonus = min(h4Bonus + 2, 5)
+           → critThreshold = baseCritThreshold - h4Bonus
+           → traitEvent('stack', { bonus, threshold })
+
+  비크리   → h4Bonus = 0, critThreshold = baseCrit
+           → traitEvent('reset')
+```
+
+예시 (baseCritThreshold = 20):
+| 합 | 결과 | h4Bonus | critThreshold | 비고 |
+|----|------|---------|---------------|------|
+| 1합 | 크리 | 2 | 18 | 18+ 대성공 |
+| 2합 | 크리 | 4 | 16 | 16+ 대성공 |
+| 3합 | 크리 | 5 | 15 | 최대치 도달 |
+| 4합 | 일반 | 0 | 20 | 초기화 |
+
+#### H40 / H400 — 역사 + 인간 복합
+
+H4와 H0 (또는 H00)의 상호작용 특성입니다.
+
+**핵심 메커니즘**: H4 스택이 비크리로 초기화될 때, 인간 특성(H0)이 남아있으면 발동하여 **H4 스택을 유지**한 채 추가 합 1회를 진행합니다.
+
+```
+비크리 & h4Bonus > 0 & !h0Used
+  → H0 발동 (h0Used = true)
+  → H4 스택 유지 (초기화하지 않음!)
+  → traitEvent('h0_extra_round', { bonus, threshold })
+  → 추가 합 진행
+    → 추가 합에서 크리 → H4 계속 누적
+    → 추가 합에서 비크리 → H4 최종 초기화
+
+수동 모드:
+  → traitEvent('h40_h0_available') → 사용자 확인
+  → 확인: applyManualH40H0() → 위와 동일
+  → 거부: declineH40H0() → H4 스택 즉시 초기화
+```
+
+#### N0 — 연격
+
+| 항목 | 값 |
+|------|----|
+| 전투 개시 시 | 상대(응수/방어자) 주사위 **-2** (하한 3) |
+| 승리 시 | 다음 합 판정 보너스 **+1** 누적 |
+| 패배 시 | 누적 보너스 **0**으로 초기화 |
+| 보너스 적용 | 자동: 코코포리아 `1D20+N`으로 전달 / 수동: 엔진에서 합산 |
+| 크리/펌블 판정 | 원본 주사위 값(보너스 차감)으로 판정 |
+
+```
+전투 상태:
+  fighter.n0Bonus: number    // 현재 연격 누적 보너스 (0+)
+
+전투 개시:
+  defender.traits.includes('N0') → defender.dice = max(3, dice - 2)
+
+합 종료:
+  winner === who → n0Bonus += 1 → traitEvent('stack', { bonus })
+  winner !== who → n0Bonus = 0   → traitEvent('reset')
+
+판정값 처리:
+  자동 모드: 결과에 보너스 포함됨 → 원본 = result - n0Bonus (크리/펌블용)
+  수동 모드: 입력값 = 원본 → 판정값 = input + n0Bonus
+```
+
+### 12.4 특성 이벤트 (traitEvents)
+
+`processRoundResult()` 반환값의 `traitEvents` 배열에 특성 관련 이벤트가 기록됩니다.
+`content.js`에서 이를 순회하며 오버레이 로그와 채팅 메시지를 생성합니다.
+
+| trait | event | 의미 | 추가 데이터 |
+|-------|-------|------|------------|
+| H0/H00/H40/H400 | `resurrect` | 인간 특성 발동 (부활) | — |
+| H0/H00/H40/H400 | `reset` | 크리티컬로 인간 특성 초기화 | — |
+| H0/H00/H40/H400 | `h0_available` | 수동 모드: 발동 가능 (확인 대기) | — |
+| H40/H400 | `h0_extra_round` | H0+H4 연계: 스택 유지 추가 합 | bonus, threshold |
+| H40/H400 | `h40_h0_available` | 수동 모드: H0+H4 연계 발동 가능 | bonus, threshold |
+| H4 | `stack` | H4 보너스 누적 | bonus, threshold |
+| H4 | `reset` | H4 보너스 초기화 | oldBonus |
+| N0 | `stack` | 연격 보너스 누적 | bonus |
+| N0 | `reset` | 연격 보너스 초기화 | oldBonus |
+
+### 12.5 UI 표시 (overlay.css)
+
+특성 배지는 합 전투 패널의 전투원 이름 아래에 표시됩니다.
+
+| CSS 클래스 | 배경 | 텍스트 | 테두리 | 대상 |
+|-----------|------|--------|--------|------|
+| `.bwbr-trait-badge` (기본) | `#2a2a2a` | `#aaa` | `1px solid #444` | 폴백 |
+| `.bwbr-trait-n0` | `#1a2a1a` | `#81c784` | `1px solid #2e5c2e` | 연격 |
+| `.bwbr-trait-h0` | `#4a2020` | `#ff8a80` | `1px solid #6a3030` | 인간 특성 |
+| `.bwbr-trait-h00` | `#3a2020` | `#ff8a80` | `1px dashed #6a3030` | 인간 특성 (잠재) |
+| `.bwbr-trait-h4` | `#2a2a40` | `#82b1ff` | `1px solid #3a3a5a` | 피로 새겨진 역사 |
+| `.bwbr-trait-h40` | `#3a2040` | `#cc88ff` | `1px solid #5a3060` | 역사+인간 |
+| `.bwbr-trait-h400` | `#3a2040` | `#cc88ff` | `1px dashed #5a3060` | 역사+인간 (잠재) |
+
+> 잠재(`H00`, `H400`)는 **dashed** 테두리 + **opacity: 0.75**로 시각 구분됩니다.
+
+### 12.6 채팅 메시지 포맷
+
+특성 발동 시 채팅에 전송되는 메시지 형식:
+
+```
+🔥 인간 특성 발동! | ⚔️ 캐릭터명 부활! 주사위 +1 @발도1
+✨ 인간 특성 초기화 | 🛡️ 캐릭터명 재사용 가능 @발도2
+📜 피로 새겨진 역사 | ⚔️ 캐릭터명 대성공 범위 +2 (18+) @위험1
+📜 피로 새겨진 역사 초기화 | 🛡️ 캐릭터명
+🔥📜 인간 특성 발동! | ⚔️ 캐릭터명 역사(+4) 유지 → 추가 합! @발도3
+⚡ 연격 | 🛡️ 캐릭터명 다음 판정 +2
+⚡ 연격 초기화 | ⚔️ 캐릭터명
+```
+
+> 사운드(`@발도1` 등)는 `발도1`~`발도3`, `위험1`~`위험3` 중 무작위 선택됩니다.

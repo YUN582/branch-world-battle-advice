@@ -560,6 +560,27 @@
     return Math.max(0, Math.min(1439, h * 60 + m));
   }
 
+  /** 24시간 형식 <select> 드롭다운 생성 (00:00 ~ 23:59) */
+  function buildTimeSelect(currentValue) {
+    var sel = el('select', { className: 'led-date-input', style: { width: '100px' } });
+    var options = [];
+    for (var h = 0; h < 24; h++) {
+      options.push(pad(h) + ':00');
+    }
+    options.push('23:59');
+    // 현재 값이 옵션에 없으면 추가 (예: 15:30)
+    if (currentValue && options.indexOf(currentValue) === -1) {
+      options.push(currentValue);
+      options.sort();
+    }
+    for (var i = 0; i < options.length; i++) {
+      var opt = el('option', { value: options[i] }, options[i]);
+      if (options[i] === currentValue) opt.selected = true;
+      sel.appendChild(opt);
+    }
+    return sel;
+  }
+
   // ════════════════════════════════════════════════════════════════
   //  다이얼로그 열기 / 닫기
   // ════════════════════════════════════════════════════════════════
@@ -873,44 +894,29 @@
     sec3.appendChild(dateRow);
 
     // time inputs row (같은 섹션에 이어서)
-    var timeLabel = el('div', { style: { fontSize: '11px', color: 'rgba(255,255,255,0.35)', marginTop: '10px', marginBottom: '4px' } }, '시간대');
+    var timeLabel = el('div', { style: { fontSize: '11px', color: 'rgba(255,255,255,0.35)', marginTop: '10px', marginBottom: '4px' } }, '시간대 (24시간)');
     sec3.appendChild(timeLabel);
     var timeRow = el('div', { className: 'led-date-row' });
-    var timeFromInput = el('input', {
-      className: 'led-date-input', type: 'time',
-      value: settings.timeFrom || '00:00',
-      style: { width: '100px' },
+    var timeFromSelect = buildTimeSelect(settings.timeFrom || '00:00');
+    timeFromSelect.addEventListener('change', function() {
+      settings.timeFrom = timeFromSelect.value;
+      renderLeftBody(); schedulePreview();
     });
-    timeFromInput.addEventListener('change', function() {
-      settings.timeFrom = timeFromInput.value || '00:00';
-      schedulePreview();
+    var timeToSelect = buildTimeSelect(settings.timeTo || '23:59');
+    timeToSelect.addEventListener('change', function() {
+      settings.timeTo = timeToSelect.value;
+      renderLeftBody(); schedulePreview();
     });
-    var timeToInput = el('input', {
-      className: 'led-date-input', type: 'time',
-      value: settings.timeTo || '23:59',
-      style: { width: '100px' },
-    });
-    timeToInput.addEventListener('change', function() {
-      settings.timeTo = timeToInput.value || '23:59';
-      schedulePreview();
-    });
-    timeRow.appendChild(timeFromInput);
+    timeRow.appendChild(timeFromSelect);
     timeRow.appendChild(document.createTextNode(' ~ '));
-    timeRow.appendChild(timeToInput);
+    timeRow.appendChild(timeToSelect);
     var qTimeAll = el('span', { className: 'led-date-quick' }, '전체');
     qTimeAll.addEventListener('click', function() {
       settings.timeFrom = '00:00'; settings.timeTo = '23:59';
       renderLeftBody(); schedulePreview();
     });
     timeRow.appendChild(qTimeAll);
-    var qNight = el('span', { className: 'led-date-quick' }, '야간');
-    qNight.addEventListener('click', function() {
-      settings.timeFrom = '22:00'; settings.timeTo = '04:00';
-      renderLeftBody(); schedulePreview();
-    });
-    timeRow.appendChild(qNight);
     sec3.appendChild(timeRow);
-    sec3.appendChild(el('div', { className: 'led-info' }, '자정을 넘는 범위도 지원됩니다.'));
     body.appendChild(sec3);
 
     // ── 개별 제외 (미리보기 연동) ──

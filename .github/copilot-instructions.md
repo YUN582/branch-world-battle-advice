@@ -33,3 +33,8 @@
 - Content Scripts run in ISOLATED world (content/*.js)
 - MAIN world access: redux-injector.js (communicates via CustomEvent between MAIN ↔ ISOLATED)
 - Target site UI framework: MUI v5 + styled-components + React + Redux + Firebase (Firestore)
+
+## Git Convention
+
+- **커밋 메시지는 반드시 한국어로 작성**: 버전 태그 + 한국어 설명 형식. 예: `v1.2.3: 그리드 오버레이 개선, 전투 HP 복원 수정`
+- 사소한 변경은 하나의 커밋으로 합치고, 불필요한 커밋 분리 금지
