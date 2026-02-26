@@ -54,12 +54,35 @@
       '<line x1="0" y1="0" x2="0" y2="' + LG + '" stroke="rgba(255,255,255,0.4)" stroke-width="1"/>' +
       '<line x1="0" y1="0" x2="' + LG + '" y2="0" stroke="rgba(255,255,255,0.4)" stroke-width="1"/></svg>';
 
+    // 체스판 틴트 48px: 96px 반복, 대각선 48px 셀 2개에 미세한 밝은 tint
+    var checker48 =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="' + XL + '" height="' + XL + '">' +
+      '<rect x="0" y="0" width="' + LG + '" height="' + LG + '" fill="rgba(255,255,255,0.10)"/>' +
+      '<rect x="' + LG + '" y="' + LG + '" width="' + LG + '" height="' + LG + '" fill="rgba(255,255,255,0.10)"/>' +
+      '</svg>';
+
+    // 체스판 틴트 96px: 192px 반복, 대각선 96px 셀 2개에 밝은 tint (큰 칸 구분)
+    var XLXL = XL * 2; // 192
+    var checker96 =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="' + XLXL + '" height="' + XLXL + '">' +
+      '<rect x="0" y="0" width="' + XL + '" height="' + XL + '" fill="rgba(255,255,255,0.07)"/>' +
+      '<rect x="' + XL + '" y="' + XL + '" width="' + XL + '" height="' + XL + '" fill="rgba(255,255,255,0.07)"/>' +
+      '</svg>';
+
+    // 96px(한 칸) 경계선: bigCell보다 굵고 밝은 전용 레이어
+    var xlCell =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="' + XL + '" height="' + XL + '">' +
+      '<line x1="0" y1="0" x2="0" y2="' + XL + '" stroke="rgba(255,255,255,0.55)" stroke-width="1.5"/>' +
+      '<line x1="0" y1="0" x2="' + XL + '" y2="0" stroke="rgba(255,255,255,0.55)" stroke-width="1.5"/></svg>';
+
     return {
       bg: 'url("' + enc(diamond96) + '") repeat,' +
+          'url("' + enc(xlCell) + '") repeat,' +
           'url("' + enc(bigCell) + '") repeat,' +
-          'url("' + enc(smallCell) + '") repeat',
-      bgSize: XL + 'px ' + XL + 'px,' + LG + 'px ' + LG + 'px,' + SM + 'px ' + SM + 'px',
-      bgPos: '0 0, 0 0, 0 0'
+          'url("' + enc(smallCell) + '") repeat,' +
+          'url("' + enc(checker96) + '") repeat,' +
+          'url("' + enc(checker48) + '") repeat',
+      bgSize: XL + 'px ' + XL + 'px,' + XL + 'px ' + XL + 'px,' + LG + 'px ' + LG + 'px,' + SM + 'px ' + SM + 'px,' + XLXL + 'px ' + XLXL + 'px,' + XL + 'px ' + XL + 'px'
     };
   })();
 
@@ -117,13 +140,11 @@
     const fg = findForeground();
     if (!fg) return;
 
-    // 네이티브 그리드 CSS 무력화
-    if (fg.style.getPropertyValue('background') !== 'transparent') {
-      fg.style.setProperty('background', 'transparent', 'important');
-    }
-
     const el = ensureOverlay(fg);
     const cs = getComputedStyle(fg);
+
+    // 네이티브 그리드 CSS 무력화 — 전경 + 모든 형제에 적용
+    _suppressNativeGrid(fg);
 
     el.style.cssText =
       'position:' + cs.position +
@@ -133,7 +154,7 @@
       ';height:' + cs.height +
       ';transform:' + cs.transform +
       ';transform-origin:' + cs.transformOrigin +
-      ';pointer-events:none;z-index:0;';
+      ';pointer-events:none;z-index:0;overflow:hidden;';
 
     const W = parseFloat(cs.width);
     const H = parseFloat(cs.height);
@@ -142,7 +163,61 @@
     // 캐시된 SVG data URL 적용 (상수이므로 매번 재생성하지 않음)
     el.style.background = _SVG_CACHE.bg;
     el.style.backgroundSize = _SVG_CACHE.bgSize;
-    el.style.backgroundPosition = _SVG_CACHE.bgPos;
+
+    // 불완전 96px 셀 중앙 정렬 클리핑
+    // background-position을 오프셋해서 그리드 패턴을 중앙 배치 + clip-path로 양쪽 불완전 셀 제거
+    var exX = Math.round(W % 96);
+    var exY = Math.round(H % 96);
+    var offX = Math.round(exX / 2);
+    var offY = Math.round(exY / 2);
+    var posVal = offX + 'px ' + offY + 'px';
+    el.style.backgroundPosition = posVal + ',' + posVal + ',' + posVal + ',' + posVal + ',' + posVal + ',' + posVal;
+    if (exX > 0 || exY > 0) {
+      el.style.clipPath = 'inset(' + offY + 'px ' + (exX - offX) + 'px ' + (exY - offY) + 'px ' + offX + 'px)';
+    } else {
+      el.style.clipPath = 'none';
+    }
+  }
+
+  // ------------------------------------------------
+  //  3a. Native grid CSS suppression
+  //      전경 요소에만 inline !important + data 속성 + 스타일시트
+  //      성능: 이미 속성 설정된 요소는 건너뜀
+  // ------------------------------------------------
+  var _suppressedEl = null;
+
+  function _suppressNativeGrid(fg) {
+    if (_suppressedEl === fg && fg.hasAttribute('data-bwbr-no-grid')) return;
+    fg.style.setProperty('background', 'transparent', 'important');
+    fg.style.setProperty('background-image', 'none', 'important');
+    fg.setAttribute('data-bwbr-no-grid', '');
+    _suppressedEl = fg;
+    _ensureSuppressStyle();
+  }
+
+  function _restoreNativeGrid(fg) {
+    fg.removeAttribute('data-bwbr-no-grid');
+    fg.style.removeProperty('background');
+    fg.style.removeProperty('background-image');
+    _suppressedEl = null;
+    _removeSuppressStyle();
+  }
+
+  function _ensureSuppressStyle() {
+    if (document.getElementById('bwbr-grid-suppress')) return;
+    var s = document.createElement('style');
+    s.id = 'bwbr-grid-suppress';
+    // 전경 자체 + 전경 직접 자식에도 적용 (네이티브 그리드는 fg>div에 linear-gradient로 렌더링)
+    s.textContent = '[data-bwbr-no-grid],[data-bwbr-no-grid]>*{background:transparent!important;background-image:none!important}';
+    (document.head || document.documentElement).appendChild(s);
+  }
+  function _removeSuppressStyle() {
+    var s = document.getElementById('bwbr-grid-suppress');
+    if (s) s.remove();
+    // data 속성 자운 정리
+    document.querySelectorAll('[data-bwbr-no-grid]').forEach(function(el) {
+      el.removeAttribute('data-bwbr-no-grid');
+    });
   }
 
   // ------------------------------------------------
@@ -190,9 +265,9 @@
   function show() {
     if (_visible) return;
     _visible = true;
-    // 네이티브 그리드 CSS 즉시 숨기기
+    // 네이티브 그리드 즉시 숨기기
     var fg = findForeground();
-    if (fg) fg.style.setProperty('background', 'transparent', 'important');
+    if (fg) _suppressNativeGrid(fg);
     startSyncLoop();
     updateFabLabel();
     LOG('overlay ON');
@@ -202,7 +277,7 @@
     _visible = false;
     // 네이티브 그리드 CSS 복원
     var fg = findForeground();
-    if (fg) fg.style.removeProperty('background');
+    if (fg) _restoreNativeGrid(fg);
     stopSyncLoop();
     if (overlayEl) { overlayEl.remove(); overlayEl = null; }
     updateFabLabel();
@@ -315,18 +390,27 @@
       }
 
       // 클릭 핸들러 (capture 단계로 Popover backdrop보다 먼저 실행)
-      clone.addEventListener('click', function(e) {
+      function handleGridClick(e) {
         e.preventDefault();
         e.stopPropagation();
         window.dispatchEvent(new CustomEvent('bwbr-toggle-native-grid'));
-      }, true);
+        // aria-hidden 오류 방지: 포커스를 해제하고 Popover 닫기
+        var popoverRoot = e.currentTarget.closest('.MuiPopover-root');
+        if (popoverRoot) {
+          // 포커스를 body로 이동 → aria-hidden 충돌 방지
+          document.body.focus();
+          var backdrop = popoverRoot.querySelector('.MuiBackdrop-root');
+          if (backdrop) {
+            setTimeout(function() {
+              backdrop.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+            }, 16);
+          }
+        }
+      }
+      clone.addEventListener('click', handleGridClick, true);
       // 중첩 button이 있을 수 있으므로
       clone.querySelectorAll('button, [role="button"]').forEach(function(btn) {
-        btn.addEventListener('click', function(e) {
-          e.preventDefault();
-          e.stopPropagation();
-          window.dispatchEvent(new CustomEvent('bwbr-toggle-native-grid'));
-        }, true);
+        btn.addEventListener('click', handleGridClick, true);
       });
 
       // ── 메뉴 스크롤 가능하게 (확장 항목 추가로 넘칠 수 있음) ──
@@ -389,9 +473,27 @@
     }
   }, { once: true });
 
-  setTimeout(function() {
-    window.dispatchEvent(new CustomEvent('bwbr-query-native-grid'));
-  }, 2000);
+  // 빠른 시작: .movable 등장 즉시 쿼리 (MutationObserver + 짧은 폴링)
+  (function quickStart() {
+    function tryQuery() {
+      if (document.querySelectorAll('.movable').length > 0) {
+        window.dispatchEvent(new CustomEvent('bwbr-query-native-grid'));
+        return true;
+      }
+      return false;
+    }
+    if (tryQuery()) return;
+    // DOM에 .movable이 아직 없으면 MutationObserver로 감시
+    var initObs = new MutationObserver(function() {
+      if (tryQuery()) { initObs.disconnect(); clearTimeout(initFb); }
+    });
+    initObs.observe(document.body || document.documentElement, { childList: true, subtree: true });
+    // 안전 폴백: 5초
+    var initFb = setTimeout(function() {
+      initObs.disconnect();
+      window.dispatchEvent(new CustomEvent('bwbr-query-native-grid'));
+    }, 5000);
+  })();
 
   // start FAB menu injection
   setupFabInjection();

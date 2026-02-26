@@ -20,6 +20,13 @@
 
 7. **Document discovered API/data structures**: When you discover internal APIs, data structures, DOM hierarchies, Redux state paths, Firestore schemas, or any other architectural information through diagnostics or investigation, record the findings in `COCOFOLIA_DATA_API.md` so they are preserved for future reference.
 
+8. **Always verify before coding — consult DATA API doc and run diagnostics**: Before implementing any feature or fix that touches ccfolia's DOM, Redux state, or internal structures:
+   - **First** check `COCOFOLIA_DATA_API.md` for existing documented structures.
+   - If the doc lacks the needed info, write a diagnostic script for the user to run in the browser console.
+   - **Never assume** DOM class names, element hierarchies, CSS property sources, or state paths without verification.
+   - After confirming the structure, update `COCOFOLIA_DATA_API.md` with any new findings.
+   - This prevents wasted iterations from wrong assumptions (e.g., assuming grid is on parent when it's on a child div).
+
 ## Project Info
 
 - Chrome Extension MV3 ("가지세계 도우미" / Branch World Advice, for ccfolia.com TRPG)

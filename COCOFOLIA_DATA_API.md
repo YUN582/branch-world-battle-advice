@@ -1530,9 +1530,23 @@ body
 
 ### 11.9 네이티브 그리드 (displayGrid) DOM
 
+> **기준**: 2026-02-26 (콘솔 진단으로 확인)
+>
 > `displayGrid = true` 상태에서 zoom container 내부에 별도의 그리드 DOM 요소(canvas, SVG 등)가
 > **생성되지 않습니다.** (2026-02-24 실측: zoom container 자식 = 전경 + .movable들 + 커스텀 오버레이뿐)
 >
-> 네이티브 그리드는 **전경 div의 CSS background**로 렌더링되는 것으로 추정됩니다.
-> 커스텀 그리드 활성 시 `fg.style.setProperty('background', 'transparent', 'important')` 로
-> 네이티브 그리드를 숨기고, 오버레이로 대체합니다.
+> 네이티브 그리드는 **전경 div의 자식 div** (`fg.children[1]`)에 `linear-gradient` CSS background로 렌더링됩니다.
+>
+> ```
+> zoom container
+> └─ [0] 전경 div (position:absolute)
+>      ├─ [0] <IMG>    전경 이미지
+>      └─ [1] <DIV>    ★ 네이티브 그리드 (linear-gradient background)
+>                       background: linear-gradient(rgba(255,255,255,0.25) 1px, transparent 1px),
+>                                   linear-gradient(90deg, rgba(255,255,255,0.25) 1px, transparent 1px)
+>                       background-size: 24px 24px
+> ```
+>
+> 커스텀 그리드 활성 시 `fg`에 `data-bwbr-no-grid` 속성을 부여하고,
+> CSS 규칙 `[data-bwbr-no-grid], [data-bwbr-no-grid] > * { background: transparent !important }` 로
+> 전경 본체와 그리드 자식 div 모두의 배경을 투명화하여 네이티브 그리드를 숨깁니다.
