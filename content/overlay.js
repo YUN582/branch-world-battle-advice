@@ -555,24 +555,38 @@ window.BattleRollOverlay = class BattleRollOverlay {
     const defH0Info = defHasH0 && def.h0Used ? `<span class="bwbr-h0-used" title="인간 특성 사용됨">부활✗</span>` : '';
 
     info.innerHTML = `
-      <div class="bwbr-round-badge">제 ${state.round}합</div>
-      <div class="bwbr-fighters">
-        <div class="bwbr-fighter" id="bwbr-atk">
-          <span class="bwbr-fighter-icon">⚔️</span>
-          <span class="bwbr-fighter-name" title="${this._esc(atk.name)}">${this._esc(atk.name)}</span>
-          ${atkTraitBadges}
-          <span class="bwbr-fighter-dice" id="bwbr-atk-dice">${atk.dice}</span>
-          <span class="bwbr-fighter-thresholds">${atk.critThreshold}+ / ${atk.fumbleThreshold}-</span>
-          <span class="bwbr-trait-status">${atkH4Info}${atkH0Info}</span>
+      <div class="bwbr-hap-content">
+        <div class="bwbr-round-badge">
+          <span class="bwbr-round-line"></span>
+          <span class="bwbr-round-text">${state.round}합</span>
+          <span class="bwbr-round-line"></span>
         </div>
-        <span class="bwbr-vs">VS</span>
-        <div class="bwbr-fighter" id="bwbr-def">
-          <span class="bwbr-fighter-icon">🛡️</span>
-          <span class="bwbr-fighter-name" title="${this._esc(def.name)}">${this._esc(def.name)}</span>
-          ${defTraitBadges}
-          <span class="bwbr-fighter-dice" id="bwbr-def-dice">${def.dice}</span>
-          <span class="bwbr-fighter-thresholds">${def.critThreshold}+ / ${def.fumbleThreshold}-</span>
-          <span class="bwbr-trait-status">${defH4Info}${defH0Info}</span>
+        <div class="bwbr-fighters">
+          <div class="bwbr-fighter" id="bwbr-atk">
+            <span class="bwbr-fighter-icon">⚔️</span>
+            <span class="bwbr-dice-count">🎲 ${atk.dice}</span>
+            <span class="bwbr-fighter-name" title="${this._esc(atk.name)}">${this._esc(this._firstName(atk.name))}</span>
+            <span class="bwbr-fighter-dice" id="bwbr-atk-dice">&nbsp;</span>
+            <span class="bwbr-fighter-thresholds">
+              <span class="bwbr-crit">${atk.critThreshold}+</span>
+              <span class="bwbr-thresh-sep">/</span>
+              <span class="bwbr-fumble">${atk.fumbleThreshold}−</span>
+            </span>
+            <span class="bwbr-trait-status">${atkTraitBadges}${atkH4Info}${atkH0Info}</span>
+          </div>
+          <span class="bwbr-vs">VS</span>
+          <div class="bwbr-fighter" id="bwbr-def">
+            <span class="bwbr-fighter-icon">🛡️</span>
+            <span class="bwbr-dice-count">🎲 ${def.dice}</span>
+            <span class="bwbr-fighter-name" title="${this._esc(def.name)}">${this._esc(this._firstName(def.name))}</span>
+            <span class="bwbr-fighter-dice" id="bwbr-def-dice">&nbsp;</span>
+            <span class="bwbr-fighter-thresholds">
+              <span class="bwbr-crit">${def.critThreshold}+</span>
+              <span class="bwbr-thresh-sep">/</span>
+              <span class="bwbr-fumble">${def.fumbleThreshold}−</span>
+            </span>
+            <span class="bwbr-trait-status">${defTraitBadges}${defH4Info}${defH0Info}</span>
+          </div>
         </div>
       </div>
     `;
@@ -1032,18 +1046,15 @@ window.BattleRollOverlay = class BattleRollOverlay {
       if (loseName) loseName.classList.add('bwbr-roundlose-name');
     }, 150);
 
-    // WIN/LOSE 라벨 생성
-    winEl.style.position = 'relative';
-    loseEl.style.position = 'relative';
-    const winLabel = document.createElement('span');
-    winLabel.className = 'bwbr-round-win-label';
-    winLabel.textContent = 'WIN';
-    winEl.appendChild(winLabel);
-
-    const loseLabel = document.createElement('span');
-    loseLabel.className = 'bwbr-round-lose-label';
-    loseLabel.textContent = 'LOSE';
-    setTimeout(() => loseEl.appendChild(loseLabel), 150);
+    // WIN/LOSE 라벨 — 주사위 값 자리에 표시
+    const winDice = winEl.querySelector('.bwbr-fighter-dice');
+    const loseDice = loseEl.querySelector('.bwbr-fighter-dice');
+    const winOrigVal = winDice ? winDice.textContent : '';
+    const loseOrigVal = loseDice ? loseDice.textContent : '';
+    if (winDice) { winDice.textContent = 'WIN'; winDice.classList.add('bwbr-dice-win'); }
+    setTimeout(() => {
+      if (loseDice) { loseDice.textContent = 'LOSE'; loseDice.classList.add('bwbr-dice-lose'); }
+    }, 150);
 
     // VS → 방향 화살표 전환
     if (vsEl) {
@@ -1080,8 +1091,8 @@ window.BattleRollOverlay = class BattleRollOverlay {
       if (winName) winName.classList.remove('bwbr-roundwin-name');
       const loseName = loseEl.querySelector('.bwbr-fighter-name');
       if (loseName) loseName.classList.remove('bwbr-roundlose-name');
-      winLabel.remove();
-      loseLabel.remove();
+      if (winDice) { winDice.textContent = winOrigVal; winDice.classList.remove('bwbr-dice-win'); }
+      if (loseDice) { loseDice.textContent = loseOrigVal; loseDice.classList.remove('bwbr-dice-lose'); }
     }, 1500);
   }
 
@@ -1166,7 +1177,7 @@ window.BattleRollOverlay = class BattleRollOverlay {
       const scale = 1 + Math.sin(count / totalFrames * Math.PI) * 0.4;
       const rot = (Math.random() - 0.5) * 12;
       diceEl.style.transform = `scale(${scale}) rotate(${rot}deg)`;
-      diceEl.style.color = ['#fff', '#ffd54f', '#ff9800', '#e0e0e0'][count % 4];
+      diceEl.style.color = 'rgba(255, 255, 255, 0.5)';
 
       if (count >= totalFrames) {
         clearInterval(interval);
@@ -1423,7 +1434,8 @@ window.BattleRollOverlay = class BattleRollOverlay {
       H0: '인간 특성', H00: '인간 특성 (잠재)',
       H1: '공석', H2: '공석', H3: '공석',
       H4: '피로 새겨진 역사',
-      H40: '역사+인간', H400: '역사+인간'
+      H40: '역사+인간', H400: '역사+인간',
+      N0: '연격'
     };
     return '<div class="bwbr-trait-badges">' +
       fighter.traits
@@ -1431,6 +1443,11 @@ window.BattleRollOverlay = class BattleRollOverlay {
         .map(t => `<span class="bwbr-trait-badge bwbr-trait-${t.toLowerCase()}" title="${t}: ${TRAIT_NAMES[t]}">${TRAIT_NAMES[t]}</span>`)
         .join('') +
       '</div>';
+  }
+
+  _firstName(name) {
+    if (!name) return '';
+    return name.trim().split(/\s+/)[0];
   }
 
   _esc(str) {

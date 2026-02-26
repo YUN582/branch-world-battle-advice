@@ -118,7 +118,7 @@
         return;
       }
       if (e.key === 'Enter') {
-        e.preventDefault(); e.stopPropagation();
+        e.preventDefault(); e.stopImmediatePropagation();
         const list = _filteredHash();
         if (list.length > 0 && _hashIdx >= 0) _selectHash(list[_hashIdx]);
         else _hideHash();
@@ -161,7 +161,7 @@
         return;
       }
       if (e.key === 'Enter') {
-        e.preventDefault(); e.stopPropagation();
+        e.preventDefault(); e.stopImmediatePropagation();
         const list = _filteredBang();
         if (list.length > 0 && _bangIdx >= 0) _selectBang(list[_bangIdx].label);
         else _hideBang();
@@ -204,7 +204,7 @@
         return;
       }
       if (e.key === 'Enter') {
-        e.preventDefault(); e.stopPropagation();
+        e.preventDefault(); e.stopImmediatePropagation();
         const list = _filteredAt();
         if (list.length > 0 && _atIdx >= 0) _selectAt(list[_atIdx].name);
         else _hideAt();
@@ -235,17 +235,18 @@
       const sysMatch = val.match(/^\/ㅇ\s+(.+)$/);
       if (sysMatch) {
         e.preventDefault();
-        e.stopPropagation();
+        e.stopImmediatePropagation();
         _guard = true; setNative(el, ''); _guard = false;
         _sendSystemMessage(sysMatch[1]);
         return;
       }
 
       // : 스테이터스 명령 (:캐릭이름 스테이터스+-=값)
-      const cmdMatch = val.match(/^:([^\s]+)\s+(\S+?)([+\-=])(\d+)$/);
+      // 캐릭이름에 공백 허용 (.+ greedy), 스테이터스명에 이모지 허용 (\S+? non-ws)
+      const cmdMatch = val.match(/^:(.+)\s+(\S+?)([+\-=])(\d+)$/);
       if (cmdMatch) {
         e.preventDefault();
-        e.stopPropagation();
+        e.stopImmediatePropagation();
         _execStatusCmd(el, cmdMatch[1].trim(), cmdMatch[2], cmdMatch[3], parseInt(cmdMatch[4], 10));
         return;
       }
@@ -1018,6 +1019,9 @@
 
   /* ── 페이지 힌트 주입 (주사위 버튼 바 영역) ──────────── */
   function injectHint() {
+    // 방(/rooms/*) 페이지에서만 힌트 표시 — 홈 화면 등에서는 표시하지 않음
+    if (!window.location.pathname.match(/^\/rooms\//)) return;
+
     // 전송 버튼(type="submit") 옆에 힌트 삽입
     const submitBtn = document.querySelector('button[type="submit"]');
     if (!submitBtn) return;
@@ -1034,7 +1038,7 @@
 
   // 코코포리아 SPA 로드 대기 후 힌트 주입
   let _hintTimer = setInterval(() => {
-    if (document.querySelector('button[type="submit"]')) {
+    if (window.location.pathname.match(/^\/rooms\//) && document.querySelector('button[type="submit"]')) {
       clearInterval(_hintTimer);
       injectHint();
     }

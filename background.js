@@ -7,9 +7,13 @@ const UPDATE_CHECK_URL = 'https://api.github.com/repos/YUN582/branch-world-battl
 const GITHUB_REPO_URL = 'https://github.com/YUN582/branch-world-battle-advice';
 const UPDATE_CHECK_INTERVAL = 4 * 60 * 60 * 1000; // 4시간
 
+// content script에서 chrome.storage.session 접근 허용 (서비스 워커 시작 시마다 보장)
+chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' });
+
 // ── 설치 / 업데이트 ───────────────────────────────────────
 
 chrome.runtime.onInstalled.addListener((details) => {
+
   if (details.reason === 'install') {
     console.log('[BWBR] 확장 프로그램 설치 완료');
     chrome.storage.sync.set({ bwbr_config: null });
@@ -133,6 +137,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]) {
         chrome.tabs.sendMessage(tabs[0].id, message, (response) => {
+          // content script가 없는 탭에서 발생하는 lastError 억제
+          if (chrome.runtime.lastError) {
+            sendResponse({ error: chrome.runtime.lastError.message });
+            return;
+          }
           sendResponse(response);
         });
       } else {

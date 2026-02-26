@@ -494,6 +494,72 @@ window.CombatEngine = class CombatEngine {
     };
   }
 
+  // ── 턴 전투 상태 직렬화/복원 ──────────────────────────────
+
+  /**
+   * 턴 전투 상태를 직렬화합니다 (chrome.storage.session 저장용).
+   * originalData는 용량이 크므로 제외합니다 (복원 시 Redux에서 재취득).
+   * @returns {object|null} 직렬화된 상태 또는 null
+   */
+  serializeTurnCombat() {
+    if (!this.inCombat || !this.turnOrder.length) return null;
+
+    return {
+      turnOrder: this.turnOrder.map(c => ({
+        id: c.id,
+        name: c.name,
+        initiative: c.initiative,
+        mainActions: c.mainActions,
+        mainActionsMax: c.mainActionsMax,
+        subActions: c.subActions,
+        subActionsMax: c.subActionsMax,
+        movement: c.movement,
+        iconUrl: c.iconUrl
+        // originalData 제외
+      })),
+      currentTurnIndex: this.currentTurnIndex,
+      savedAt: Date.now()
+    };
+  }
+
+  /**
+   * 직렬화된 상태에서 턴 전투를 복원합니다.
+   * @param {object} data - serializeTurnCombat()의 반환값
+   * @returns {boolean} 복원 성공 여부
+   */
+  restoreTurnCombat(data) {
+    if (!data || !data.turnOrder || !data.turnOrder.length) return false;
+
+    this.turnOrder = data.turnOrder.map(c => ({
+      ...c,
+      originalData: {}  // 빈 객체 — refreshOriginalData로 채워야 함
+    }));
+    this.currentTurnIndex = data.currentTurnIndex ?? 0;
+    this.currentTurn = this.turnOrder[this.currentTurnIndex] || this.turnOrder[0];
+    this.inCombat = true;
+
+    this._log(`턴 전투 복원 완료: ${this.turnOrder.length}명, ${this.currentTurn.name}의 차례`);
+    return true;
+  }
+
+  // ── 캐릭터 데이터 갱신 ──────────────────────────────────
+
+  /**
+   * turnOrder의 originalData를 최신 캐릭터 데이터로 갱신합니다.
+   * 전투 중 HP 등이 변경되었을 때 오버레이에 반영하기 위해 사용합니다.
+   * @param {Array} characters - 최신 캐릭터 배열
+   */
+  refreshOriginalData(characters) {
+    if (!characters || !this.turnOrder) return;
+    for (const entry of this.turnOrder) {
+      const fresh = characters.find(c => c._id === entry.id || c.name === entry.name);
+      if (fresh) {
+        entry.originalData = fresh;
+      }
+    }
+    this._log('originalData 갱신 완료');
+  }
+
   // ── 상태 확인 ───────────────────────────────────────────
 
   /**

@@ -214,6 +214,9 @@
     if (!item || item.querySelector('.bwbr-key-badge')) return;
     // 보드 토큰(.movable) 내부에는 뱃지 주입 안 함
     if (item.closest && item.closest('.movable')) return;
+    // 파일 관리자/이미지 갤러리(MuiDialog) 내부에는 뱃지 주입 안 함
+    // (캐릭터 선택 드롭다운은 MuiAutocomplete-popper 로 body에 포탈되므로 영향 없음)
+    if (item.closest && item.closest('.MuiDialog-root')) return;
     var info = extractCharFromElement(item);
     if (!info) return;
     var key = findBindingForCharacter(info.name);

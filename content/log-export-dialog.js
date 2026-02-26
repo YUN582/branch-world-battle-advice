@@ -1351,9 +1351,10 @@
     var progressEl = document.getElementById(DIALOG_ID + '-export-progress');
     var title = settings.title || roomName || '코코포리아';
 
-    // 이미지 임베드
+    // 이미지 임베드 (클립보드 복사 시에는 base64 임베드를 건너뜀 — 메모리 초과 방지)
     var exportMessages = filtered;
-    if (settings.embedImages) {
+    var doEmbed = settings.embedImages && settings.exportFormat !== 'clipboard';
+    if (doEmbed) {
       if (progressEl) progressEl.textContent = '이미지 수집 중...';
       try {
         var imageMap = await embedAllImages(filtered, progressEl);
@@ -1364,6 +1365,11 @@
         if (progressEl) progressEl.textContent = '이미지 임베드 실패 — URL 유지로 진행';
       }
     }
+
+    if (progressEl && !progressEl.textContent) progressEl.textContent = 'HTML 생성 중...';
+
+    // yield to UI so progress text renders before heavy work
+    await new Promise(function(r) { setTimeout(r, 50); });
 
     var htmlParts;
     try {
@@ -1376,13 +1382,14 @@
     }
 
     if (settings.exportFormat === 'clipboard') {
-      // Extract style + body from parts array WITHOUT joining (avoids RangeError on huge base64 logs)
+      // clipboard: extract style + body from parts WITHOUT joining
       try {
+        if (progressEl) progressEl.textContent = '클립보드 복사 중...';
         var headStr = htmlParts[0];
         var styleMatch = headStr.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
         var bodyTagIdx = headStr.indexOf('<body');
         var bodyTagEnd = bodyTagIdx >= 0 ? headStr.indexOf('>', bodyTagIdx) : -1;
-        var headBody = bodyTagEnd >= 0 ? headStr.substring(bodyTagEnd + 2) : '';
+        var headBody = bodyTagEnd >= 0 ? headStr.substring(bodyTagEnd + 1) : '';
 
         var clipParts = [];
         if (styleMatch) clipParts.push('<style>\n' + styleMatch[1] + '\n</style>\n');

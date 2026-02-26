@@ -5,6 +5,20 @@
 (function () {
   let styleInjected = false;
 
+  // ── 사전 캐시: 스크립트 로드 즉시 storage 읽기 시작 ──
+  let _cachedConfig = undefined;   // undefined = 아직 로드 안 됨
+  let _cachedRoomData = undefined;
+
+  // 캐시 프리로드 (즉시 시작, 렌더링 전에 완료되도록)
+  try {
+    chrome.storage.sync.get('bwbr_config', function(data) {
+      if (!chrome.runtime.lastError) _cachedConfig = data.bwbr_config || null;
+    });
+    chrome.storage.local.get('bwbrRoomHistory', function(data) {
+      if (!chrome.runtime.lastError) _cachedRoomData = data.bwbrRoomHistory || {};
+    });
+  } catch { /* 컨텍스트 무효화 시 무시 */ }
+
   // 안전한 chrome.storage 래퍼 (컨텍스트 무효화 대응)
   function safeStorageGet(area, key, fallback) {
     return new Promise(resolve => {
@@ -130,8 +144,10 @@
 
     injectStyles();
 
-    // 설정 확인
-    const settings = await safeStorageGet('sync', 'bwbr_config', null);
+    // 캐시가 있으면 즉시 사용, 없으면 storage에서 읽기
+    const settings = _cachedConfig !== undefined
+      ? _cachedConfig
+      : await safeStorageGet('sync', 'bwbr_config', null);
     const isVisible = settings?.general?.showVisitHistory !== false;
 
     // 기존 컨테이너 제거
@@ -140,7 +156,9 @@
 
     if (!isVisible) return;
 
-    const map = await getRoomData();
+    const map = _cachedRoomData !== undefined
+      ? _cachedRoomData
+      : await getRoomData();
     let rooms = Object.keys(map)
       .map(url => ({ url, name: map[url].name, time: map[url].lastVisitTime }))
       .sort((a, b) => b.time - a.time);
@@ -211,19 +229,39 @@
     }
   }
 
-  // ★ SPA 내비게이션 감지: pushState는 content script에서 훅 불가
-  //   → popstate/hashchange 이벤트 + 2초 폴백 (500ms→2000ms 최적화)
+  // ★ SPA 내비게이션 감지
+  //   1) MutationObserver로 <title> 변화 감지 (즉시)
+  //   2) popstate/hashchange 이벤트
+  //   3) 500ms 폴백 폴링 (pushState 누락 대비)
   let lastUrl = location.href;
-  function checkUrlChange() {
+  let _renderPending = false;
+
+  function onUrlChange() {
     const currentUrl = location.href;
     if (currentUrl !== lastUrl) {
       lastUrl = currentUrl;
-      setTimeout(renderVisitHistory, 500);
+      if (!_renderPending) {
+        _renderPending = true;
+        // 최소한의 딜레이 — DOM 렌더링 사이클 1회 대기
+        requestAnimationFrame(function() {
+          _renderPending = false;
+          renderVisitHistory();
+        });
+      }
     }
   }
-  window.addEventListener('popstate', checkUrlChange);
-  window.addEventListener('hashchange', checkUrlChange);
-  setInterval(checkUrlChange, 2000);
+
+  // <title> 변화 감지 — SPA가 pushState 후 title을 바꿀 때 트리거
+  try {
+    var titleEl = document.querySelector('title');
+    if (titleEl) {
+      new MutationObserver(onUrlChange).observe(titleEl, { childList: true, characterData: true, subtree: true });
+    }
+  } catch {}
+
+  window.addEventListener('popstate', onUrlChange);
+  window.addEventListener('hashchange', onUrlChange);
+  setInterval(onUrlChange, 500);
 
   // 초기 렌더링
   if (document.readyState === 'loading') {
@@ -232,13 +270,15 @@
     renderVisitHistory();
   }
 
-  // storage 변경 감지
+  // storage 변경 감지 — 캐시도 갱신
   try {
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName === 'sync' && changes.bwbr_config) {
+        _cachedConfig = changes.bwbr_config.newValue || null;
         if (isHomePage()) renderVisitHistory();
       }
       if (areaName === 'local' && changes.bwbrRoomHistory) {
+        _cachedRoomData = changes.bwbrRoomHistory.newValue || {};
         if (isHomePage()) renderVisitHistory();
       }
     });

@@ -126,6 +126,12 @@
     // 사이트 음량 적용 (site-volume.js에서 이미 API 패치 완료)
     applySiteVolume(config.general.siteVolume ?? 1.0);
 
+    // 저장된 턴 전투 상태 복원 시도 (새로고침 후)
+    const restored = await _tryRestoreTurnCombat();
+    if (restored) {
+      alwaysLog('턴 전투 상태 복원 완료 — 전투 보조 모드 재개');
+    }
+
     alwaysLog('초기화 완료! 트리거 대기 중...');
     alwaysLog(`트리거 정규식: ${config.patterns.triggerRegex}`);
     } catch (err) {
@@ -457,6 +463,9 @@
     // 첫 턴 시작 (currentTurnIndex를 -1에서 0으로)
     combatEngine.nextTurn();
 
+    // 상태 저장
+    _saveTurnCombatState();
+
     // 첫 턴 시작 메시지 전송
     sendTurnStartMessage();
   }
@@ -481,6 +490,7 @@
       alwaysLog(`주 행동 사용! 남은 주 행동: ${result.remaining.mainActions}개`);
       overlay.addLog(`🔺주 행동 사용 (남은: ${result.remaining.mainActions}개)`, 'info');
       refreshTurnUI();  // UI 갱신
+      _saveTurnCombatState();
       sendActionConsumedMessage('주');  // 비동기 — 사용자 메시지 도착 대기 후 전송
     }
   }
@@ -492,6 +502,7 @@
       alwaysLog(`보조 행동 사용! 남은 보조 행동: ${result.remaining.subActions}개`);
       overlay.addLog(`🔹보조 행동 사용 (남은: ${result.remaining.subActions}개)`, 'info');
       refreshTurnUI();  // UI 갱신
+      _saveTurnCombatState();
       sendActionConsumedMessage('보조');  // 비동기 — 사용자 메시지 도착 대기 후 전송
     }
   }
@@ -515,6 +526,7 @@
       alwaysLog(`주 행동 추가! 현재 주 행동: ${result.remaining.mainActions}개`);
       overlay.addLog(`🔺주 행동 추가 (현재: ${result.remaining.mainActions}개)`, 'info');
       refreshTurnUI();  // UI 갱신
+      _saveTurnCombatState();
       sendActionAddedMessage('주');  // 비동기 — 사용자 메시지 도착 대기 후 전송
     }
   }
@@ -526,6 +538,7 @@
       alwaysLog(`보조 행동 추가! 현재 보조 행동: ${result.remaining.subActions}개`);
       overlay.addLog(`🔹보조 행동 추가 (현재: ${result.remaining.subActions}개)`, 'info');
       refreshTurnUI();  // UI 갱신
+      _saveTurnCombatState();
       sendActionAddedMessage('보조');  // 비동기 — 사용자 메시지 도착 대기 후 전송
     }
   }
@@ -542,13 +555,9 @@
     chat.sendSystemMessage(msg);
   }
 
-  /** 턴 정보 UI 갱신 */
-  function refreshTurnUI() {
-    const state = combatEngine.getState();
-    const current = state.currentCharacter;
-    if (!current) return;
-
-    // 기존 sendTurnStartMessage의 데이터 수집 로직 재사용
+  /** 턴 전투 UI 갱신 */
+  /** 캐릭터 originalData에서 의지/장갑/이명 정보 추출 */
+  function _extractCharInfo(current) {
     let willValue = null;
     let willMax = null;
     const willStatus = combatEngine.getStatusValue(current.originalData, '의지');
@@ -573,6 +582,102 @@
     }
 
     const aliasValue = combatEngine.getParamValue(current.originalData, '이명');
+
+    return { willValue, willMax, armorValue, aliasValue };
+  }
+
+  /** Redux에서 최신 캐릭터 데이터를 가져와 엔진의 originalData를 갱신합니다. */
+  async function _refreshCharacterOriginalData() {
+    try {
+      const characters = await requestCharacterData();
+      if (characters && characters.length > 0) {
+        combatEngine.refreshOriginalData(characters);
+      }
+    } catch (e) {
+      alwaysLog(`[전투 보조] 캐릭터 데이터 갱신 실패: ${e.message}`);
+    }
+  }
+
+  // ── 턴 전투 상태 영속성 (새로고침 복원) ──────────────────
+
+  /** 현재 턴 전투 상태를 chrome.storage.session에 저장합니다. */
+  function _saveTurnCombatState() {
+    if (flowState !== STATE.TURN_COMBAT) return;
+    try {
+      const data = combatEngine.serializeTurnCombat();
+      if (data) {
+        chrome.storage.session.set({ bwbr_turnCombat: data });
+        alwaysLog('[턴 전투] 상태 저장됨');
+      }
+    } catch (e) {
+      alwaysLog(`[턴 전투] 상태 저장 실패: ${e.message}`);
+    }
+  }
+
+  /** chrome.storage.session에서 턴 전투 상태를 삭제합니다. */
+  function _clearTurnCombatState() {
+    try {
+      chrome.storage.session.remove('bwbr_turnCombat');
+      alwaysLog('[턴 전투] 저장된 상태 삭제');
+    } catch (e) {
+      // 무시
+    }
+  }
+
+  /**
+   * 새로고침 후 저장된 턴 전투 상태를 복원합니다.
+   * init() 말미에서 호출됩니다.
+   */
+  async function _tryRestoreTurnCombat() {
+    try {
+      const result = await chrome.storage.session.get('bwbr_turnCombat');
+      const data = result?.bwbr_turnCombat;
+      if (!data) return false;
+
+      // 10분 이상 지난 상태는 폐기
+      if (data.savedAt && Date.now() - data.savedAt > 10 * 60 * 1000) {
+        alwaysLog('[턴 전투] 저장된 상태가 10분 초과 — 폐기');
+        _clearTurnCombatState();
+        return false;
+      }
+
+      // 엔진에 상태 복원
+      const restored = combatEngine.restoreTurnCombat(data);
+      if (!restored) {
+        alwaysLog('[턴 전투] 엔진 복원 실패');
+        _clearTurnCombatState();
+        return false;
+      }
+
+      // Redux에서 최신 캐릭터 데이터로 originalData 채우기
+      await _refreshCharacterOriginalData();
+
+      // 흐름 상태 & 오버레이 복원
+      flowState = STATE.TURN_COMBAT;
+      overlay.show();
+      overlay.setStatus('active', '전투 보조 중');
+      overlay.addLog('🔄 전투 보조 복원됨 (새로고침)', 'success');
+
+      // 현재 턴 UI 표시
+      await refreshTurnUI();
+
+      alwaysLog('[턴 전투] 상태 복원 완료!');
+      return true;
+    } catch (e) {
+      alwaysLog(`[턴 전투] 복원 실패: ${e.message}`);
+      return false;
+    }
+  }
+
+  async function refreshTurnUI() {
+    const state = combatEngine.getState();
+    const current = state.currentCharacter;
+    if (!current) return;
+
+    // Redux에서 최신 캐릭터 데이터 가져와 originalData 갱신
+    await _refreshCharacterOriginalData();
+
+    const { willValue, willMax, armorValue, aliasValue } = _extractCharInfo(current);
 
     overlay.updateTurnInfo({
       name: current.name,
@@ -606,35 +711,9 @@
     alwaysLog(`턴 메시지: ${turnMsg}`);
     overlay.addLog(`🎯 ${current.name}의 차례`, 'success');
 
-    // 오버레이에 턴 정보 표시
-    // 의지는 status에서 찾기 (value/max)
-    let willValue = null;
-    let willMax = null;
-    const willStatus = combatEngine.getStatusValue(current.originalData, '의지');
-    if (willStatus) {
-      willValue = willStatus.value;
-      willMax = willStatus.max;
-    } else {
-      // params에서 찾기
-      const paramWill = combatEngine.getParamValue(current.originalData, '의지');
-      if (paramWill !== null) {
-        willValue = paramWill;
-        willMax = paramWill;  // params는 max가 없으므로 동일하게
-      }
-    }
-
-    // 장갑 값 가져오기
-    let armorValue = null;
-    const armorStatus = combatEngine.getStatusValue(current.originalData, '장갑');
-    if (armorStatus !== null) {
-      armorValue = armorStatus.value;
-    } else {
-      const paramArmor = combatEngine.getParamValue(current.originalData, '장갑');
-      if (paramArmor !== null) armorValue = paramArmor;
-    }
-
-    // 이명 가져오기 (params에서)
-    const aliasValue = combatEngine.getParamValue(current.originalData, '이명');
+    // 오버레이에 턴 정보 표시 (최신 데이터로 갱신 후)
+    await _refreshCharacterOriginalData();
+    const { willValue, willMax, armorValue, aliasValue } = _extractCharInfo(current);
     
     overlay.updateTurnInfo({
       name: current.name,
@@ -660,6 +739,8 @@
     alwaysLog('🎲 전투 보조 모드 종료');
     combatEngine.endCombat();
     flowState = STATE.IDLE;
+
+    _clearTurnCombatState();
 
     overlay.updateTurnInfo(null);  // 턴 정보 패널 숨김
     overlay.addLog('🎲 전투 보조 모드 종료', 'warning');
