@@ -3079,6 +3079,30 @@ ${rows.join('\n')}
     });
   }
 
+  // ── aria-hidden 포커스 충돌 완화 (ccfolia MUI 버그) ───────
+
+  /**
+   * MUI Popover/Menu가 닫힐 때 aria-hidden="true"가 설정되면서
+   * 내부에 포커스가 남아있으면 브라우저 경고가 발생합니다.
+   * aria-hidden이 설정되기 직전에 포커스를 body로 이동시켜 방지합니다.
+   */
+  (function fixAriaHiddenFocus() {
+    var obs = new MutationObserver(function(mutations) {
+      for (var i = 0; i < mutations.length; i++) {
+        var m = mutations[i];
+        if (m.type !== 'attributes' || m.attributeName !== 'aria-hidden') continue;
+        var target = m.target;
+        if (target.getAttribute('aria-hidden') !== 'true') continue;
+        if (!target.classList || (!target.classList.contains('MuiPopover-root') && !target.classList.contains('MuiModal-root'))) continue;
+        // 포커스가 이 요소 내부에 있으면 body로 이동
+        if (target.contains(document.activeElement)) {
+          document.activeElement.blur();
+        }
+      }
+    });
+    obs.observe(document.body, { attributes: true, attributeFilter: ['aria-hidden'], subtree: true });
+  })();
+
   // ── 사이트 음량 컨트롤러 ─────────────────────────────────
 
   /** 사이트 음량을 변경합니다. (site-volume.js의 페이지 스크립트로 전달) */

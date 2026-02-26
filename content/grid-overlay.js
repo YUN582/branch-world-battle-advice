@@ -46,43 +46,35 @@
 
     var smallCell =
       '<svg xmlns="http://www.w3.org/2000/svg" width="' + SM + '" height="' + SM + '">' +
-      '<line x1="0" y1="0" x2="0" y2="' + SM + '" stroke="rgba(255,255,255,0.18)" stroke-width="0.5"/>' +
-      '<line x1="0" y1="0" x2="' + SM + '" y2="0" stroke="rgba(255,255,255,0.18)" stroke-width="0.5"/></svg>';
+      '<line x1="0" y1="0" x2="0" y2="' + SM + '" stroke="rgba(255,255,255,0.18)" stroke-width="0.5" stroke-dasharray="2,2"/>' +
+      '<line x1="0" y1="0" x2="' + SM + '" y2="0" stroke="rgba(255,255,255,0.18)" stroke-width="0.5" stroke-dasharray="2,2"/></svg>';
 
     var bigCell =
       '<svg xmlns="http://www.w3.org/2000/svg" width="' + LG + '" height="' + LG + '">' +
       '<line x1="0" y1="0" x2="0" y2="' + LG + '" stroke="rgba(255,255,255,0.4)" stroke-width="1"/>' +
       '<line x1="0" y1="0" x2="' + LG + '" y2="0" stroke="rgba(255,255,255,0.4)" stroke-width="1"/></svg>';
 
-    // 체스판 틴트 48px: 96px 반복, 대각선 48px 셀 2개에 미세한 밝은 tint
-    var checker48 =
-      '<svg xmlns="http://www.w3.org/2000/svg" width="' + XL + '" height="' + XL + '">' +
-      '<rect x="0" y="0" width="' + LG + '" height="' + LG + '" fill="rgba(255,255,255,0.10)"/>' +
-      '<rect x="' + LG + '" y="' + LG + '" width="' + LG + '" height="' + LG + '" fill="rgba(255,255,255,0.10)"/>' +
-      '</svg>';
-
     // 체스판 틴트 96px: 192px 반복, 대각선 96px 셀 2개에 밝은 tint (큰 칸 구분)
     var XLXL = XL * 2; // 192
     var checker96 =
       '<svg xmlns="http://www.w3.org/2000/svg" width="' + XLXL + '" height="' + XLXL + '">' +
-      '<rect x="0" y="0" width="' + XL + '" height="' + XL + '" fill="rgba(255,255,255,0.07)"/>' +
-      '<rect x="' + XL + '" y="' + XL + '" width="' + XL + '" height="' + XL + '" fill="rgba(255,255,255,0.07)"/>' +
+      '<rect x="0" y="0" width="' + XL + '" height="' + XL + '" fill="rgba(255,255,255,0.20)"/>' +
+      '<rect x="' + XL + '" y="' + XL + '" width="' + XL + '" height="' + XL + '" fill="rgba(255,255,255,0.20)"/>' +
       '</svg>';
 
     // 96px(한 칸) 경계선: bigCell보다 굵고 밝은 전용 레이어
     var xlCell =
       '<svg xmlns="http://www.w3.org/2000/svg" width="' + XL + '" height="' + XL + '">' +
-      '<line x1="0" y1="0" x2="0" y2="' + XL + '" stroke="rgba(255,255,255,0.55)" stroke-width="1.5"/>' +
-      '<line x1="0" y1="0" x2="' + XL + '" y2="0" stroke="rgba(255,255,255,0.55)" stroke-width="1.5"/></svg>';
+      '<line x1="0" y1="0" x2="0" y2="' + XL + '" stroke="rgba(255,255,255,1)" stroke-width="2"/>' +
+      '<line x1="0" y1="0" x2="' + XL + '" y2="0" stroke="rgba(255,255,255,1)" stroke-width="2"/></svg>';
 
     return {
       bg: 'url("' + enc(diamond96) + '") repeat,' +
           'url("' + enc(xlCell) + '") repeat,' +
           'url("' + enc(bigCell) + '") repeat,' +
           'url("' + enc(smallCell) + '") repeat,' +
-          'url("' + enc(checker96) + '") repeat,' +
-          'url("' + enc(checker48) + '") repeat',
-      bgSize: XL + 'px ' + XL + 'px,' + XL + 'px ' + XL + 'px,' + LG + 'px ' + LG + 'px,' + SM + 'px ' + SM + 'px,' + XLXL + 'px ' + XLXL + 'px,' + XL + 'px ' + XL + 'px'
+          'url("' + enc(checker96) + '") repeat',
+      bgSize: XL + 'px ' + XL + 'px,' + XL + 'px ' + XL + 'px,' + LG + 'px ' + LG + 'px,' + SM + 'px ' + SM + 'px,' + XLXL + 'px ' + XLXL + 'px'
     };
   })();
 
@@ -171,7 +163,7 @@
     var offX = Math.round(exX / 2);
     var offY = Math.round(exY / 2);
     var posVal = offX + 'px ' + offY + 'px';
-    el.style.backgroundPosition = posVal + ',' + posVal + ',' + posVal + ',' + posVal + ',' + posVal + ',' + posVal;
+    el.style.backgroundPosition = posVal + ',' + posVal + ',' + posVal + ',' + posVal + ',' + posVal;
     if (exX > 0 || exY > 0) {
       el.style.clipPath = 'inset(' + offY + 'px ' + (exX - offX) + 'px ' + (exY - offY) + 'px ' + offX + 'px)';
     } else {
