@@ -513,13 +513,13 @@
           typos[0].textContent = _combatMode ? '전투 모드 끄기' : '전투 모드';
         }
         if (typos.length > 1) {
-          typos[1].textContent = '이동 범위 표시 + 클릭 이동';
+          typos[1].textContent = '이동 범위 표시 + 클릭 이동 (Alt+*)';
           for (var j = 2; j < typos.length; j++) typos[j].remove();
         } else {
           var desc = document.createElement('span');
           desc.className = typos[0] ? typos[0].className : '';
           desc.style.cssText = 'display:block;font-size:0.75rem;opacity:0.7;';
-          desc.textContent = '이동 범위 표시 + 클릭 이동';
+          desc.textContent = '이동 범위 표시 + 클릭 이동 (Alt+*)';
           lit.appendChild(desc);
         }
       } else {

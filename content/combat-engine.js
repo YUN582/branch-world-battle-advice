@@ -60,18 +60,21 @@ window.CombatEngine = class CombatEngine {
 
   /**
    * 차례 시작 메시지 파싱 (관전자용)
-   * 형식: 《 {이름}의 차례 》\n🔺주 행동 {N}개, 🔹보조 행동 {Y}개 | 이동거리 {Z}
+   * 형식: 〔 {이름}의 차례 〕 (또는 《 》)
+   *   ...
+   *   🔺주 행동 {N}개, 🔹보조 행동 {Y}개 | 이동거리 {Z}
    * @param {string} text - 채팅 메시지 텍스트
    * @returns {object|null} { name, mainActions, subActions, movement }
    */
   parseTurnStartMessage(text) {
-    const pattern = /《\s*(.+?)의\s*차례\s*》[\s|]+🔺?\s*주\s*행동\s*(\d+)개\s*[,\/]\s*🔹?\s*보조\s*행동\s*(\d+)개\s*[|\s]+이동거리\s*(\S+)/u;
+    // 〔〕 또는 《》 모두 지원
+    const pattern = /[《〔]\s*(.+?)의\s*차례\s*[》〕][\s\S]*?🔺?\s*주\s*행동\s*(\d+)개?\s*[,\/]\s*🔹?\s*보조\s*행동\s*(\d+)개?\s*[|\s]+이동거리\s*(\S+)/u;
     const match = text.match(pattern);
     if (!match) return null;
     return {
       name: match[1].trim(),
       mainActions: parseInt(match[2]),
-      mainActionsMax: parseInt(match[2]),  // 시작 시점이므로 max와 같음
+      mainActionsMax: parseInt(match[2]),
       subActions: parseInt(match[3]),
       subActionsMax: parseInt(match[3]),
       movement: match[4]
@@ -80,12 +83,15 @@ window.CombatEngine = class CombatEngine {
 
   /**
    * 행동 소비 메시지 파싱 (관전자용)
-   * 형식: 《{주/보조} 행동 소비》\n{이름} | 🔺주 행동 {N}, 🔹보조 행동 {Y} | 이동거리 {Z}
+   * 형식: 〔 🔺주 행동 소비 〕 (또는 《》)
+   *   [ 이름 ] 주 행동🔺 : oldVal → newVal
+   *   이름 | 🔺주 행동 N, 🔹보조 행동 Y | 이동거리 Z
    * @param {string} text - 채팅 메시지 텍스트
    * @returns {object|null} { actionType, name, mainActions, subActions, movement }
    */
   parseActionConsumedMessage(text) {
-    const pattern = /《[\u{1F53A}\u{1F539}]?(주|보조)\s*행동\s*소비》[\s|]+(.+?)\s*\|\s*\u{1F53A}?\s*주\s*행동\s*(\d+)\s*[,\/]\s*\u{1F539}?\s*보조\s*행동\s*(\d+)\s*\|\s*이동거리\s*(\S+)/u;
+    // 〔〕 또는 《》 모두 지원
+    const pattern = /[《〔]\s*[\u{1F53A}\u{1F539}]?(주|보조)\s*행동\s*소비\s*[》〕][\s\S]*?(.+?)\s*\|\s*\u{1F53A}?\s*주\s*행동\s*(\d+)\s*[,\/]?\s*\u{1F539}?\s*보조\s*행동\s*(\d+)\s*\|\s*이동거리\s*(\S+)/u;
     const match = text.match(pattern);
     if (!match) return null;
     return {
@@ -99,12 +105,12 @@ window.CombatEngine = class CombatEngine {
 
   /**
    * 행동 추가 메시지 파싱 (관전자용)
-   * 형식: 《{주/보조} 행동 추가》\n{이름} | 🔺주 행동 {N}, 🔹보조 행동 {Y} | 이동거리 {Z}
+   * 형식: 〔 🔺주 행동 추가 〕 (또는 《》)
    * @param {string} text - 채팅 메시지 텍스트
    * @returns {object|null} { actionType, name, mainActions, subActions, movement }
    */
   parseActionAddedMessage(text) {
-    const pattern = /《[\u{1F53A}\u{1F539}]?(주|보조)\s*행동\s*추가》[\s|]+(.+?)\s*\|\s*\u{1F53A}?\s*주\s*행동\s*(\d+)\s*[,\/]\s*\u{1F539}?\s*보조\s*행동\s*(\d+)\s*\|\s*이동거리\s*(\S+)/u;
+    const pattern = /[《〔]\s*[\u{1F53A}\u{1F539}]?(주|보조)\s*행동\s*추가\s*[》〕][\s\S]*?(.+?)\s*\|\s*\u{1F53A}?\s*주\s*행동\s*(\d+)\s*[,\/]?\s*\u{1F539}?\s*보조\s*행동\s*(\d+)\s*\|\s*이동거리\s*(\S+)/u;
     const match = text.match(pattern);
     if (!match) return null;
     return {
@@ -125,7 +131,7 @@ window.CombatEngine = class CombatEngine {
    */
   parseMainActionRoll(text) {
     // 제외 패턴: 시스템 메시지 (차례, 전투개시, 전투종료, 차례종료, 행동 소비/추가, 합 개시/승리/종료)
-    if (/《\s*[\u{1F53A}\u{1F539}]?\s*(전투\s*개시|전투\s*종료|차례\s*종료|.+의\s*차례|(주|보조)\s*행동\s*(소비|추가)|합\s*개시|합\s*승리|합\s*종료|\d+합)\s*》/u.test(text)) {
+    if (/[《〔]\s*[\u{1F53A}\u{1F539}]?\s*(전투\s*개시|전투\s*종료|차례\s*종료|.+의\s*차례|(주|보조)\s*행동\s*(소비|추가)|합\s*개시|합\s*승리|합\s*종료|\d+합)\s*[》〕]/u.test(text)) {
       return false;
     }
     

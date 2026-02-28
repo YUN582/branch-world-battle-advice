@@ -76,6 +76,7 @@
       debugMode: false,
       sfxVolume: 0.45,
       siteVolume: 1.0,
+      betterSoundbar: true,
       language: 'ko'
     }
   };
@@ -214,8 +215,7 @@
     $('gen-debugMode').checked = cfg.general.debugMode;
     $('gen-sfxVolume').value = cfg.general.sfxVolume ?? 0.45;
     $('gen-sfxVolume-val').textContent = Math.round((cfg.general.sfxVolume ?? 0.45) * 100) + '%';
-    $('gen-siteVolume').value = cfg.general.siteVolume ?? 1.0;
-    $('gen-siteVolume-val').textContent = Math.round((cfg.general.siteVolume ?? 1.0) * 100) + '%';
+    $('toggle-betterSoundbar').checked = cfg.general.betterSoundbar !== false;
   }
 
   /** UI 필드에서 설정 데이터를 수집합니다 */
@@ -275,7 +275,7 @@
     cfg.general.showOverlay = $('gen-showOverlay').checked;
     cfg.general.debugMode = $('gen-debugMode').checked;
     cfg.general.sfxVolume = parseFloat($('gen-sfxVolume').value) || 0.45;
-    cfg.general.siteVolume = parseFloat($('gen-siteVolume').value) ?? 1.0;
+    cfg.general.betterSoundbar = $('toggle-betterSoundbar').checked;
 
     return cfg;
   }
@@ -303,10 +303,9 @@
       $('gen-sfxVolume-val').textContent = Math.round(e.target.value * 100) + '%';
     });
 
-    // 코코포리아 음량 슬라이더 실시간 표시 + 즉시 적용
-    $('gen-siteVolume').addEventListener('input', (e) => {
-      $('gen-siteVolume-val').textContent = Math.round(e.target.value * 100) + '%';
-      sendToContent({ type: 'BWBR_SET_SITE_VOLUME', volume: parseFloat(e.target.value) });
+    // 더 나은 사운드바 토글 (즉시 적용)
+    $('toggle-betterSoundbar').addEventListener('change', (e) => {
+      sendToContent({ type: 'BWBR_SET_BETTER_SOUNDBAR', betterSoundbar: e.target.checked });
     });
 
     // 활성화 토글

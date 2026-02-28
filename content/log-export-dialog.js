@@ -516,10 +516,22 @@
   function getFilteredMessages() {
     var searchLower = (settings.searchText || '').trim().toLowerCase();
 
-    // 시간대 필터 파싱 (HH:MM → 분 단위)
-    var timeFromMin = parseTimeToMinutes(settings.timeFrom);
-    var timeToMin = parseTimeToMinutes(settings.timeTo);
-    var useTimeFilter = timeFromMin !== 0 || timeToMin !== 1439; // 00:00~23:59 = 전체
+    // 날짜+시간 통합 필터 (dateFrom/dateTo에 시간을 적용)
+    var effectiveFrom = settings.dateFrom;
+    var effectiveTo = settings.dateTo;
+    if (effectiveFrom != null && settings.timeFrom && settings.timeFrom !== '00:00') {
+      var d = new Date(effectiveFrom);
+      var parts = settings.timeFrom.split(':');
+      d.setHours(parseInt(parts[0], 10) || 0, parseInt(parts[1], 10) || 0, 0, 0);
+      effectiveFrom = d.getTime();
+    }
+    if (effectiveTo != null && settings.timeTo && settings.timeTo !== '23:59') {
+      var d = new Date(effectiveTo);
+      d.setHours(0, 0, 0, 0);
+      var parts = settings.timeTo.split(':');
+      d.setHours(parseInt(parts[0], 10) || 0, parseInt(parts[1], 10) || 0, 59, 999);
+      effectiveTo = d.getTime();
+    }
 
     return allMessages.filter(function(m, idx) {
       m._origIdx = idx; // preserve original index for preview click-to-exclude
@@ -528,19 +540,8 @@
 
       var ck = m.channel || 'main';
       if (settings.channels[ck] === false) return false;
-      if (settings.dateFrom && m.createdAt && m.createdAt < settings.dateFrom) return false;
-      if (settings.dateTo && m.createdAt && m.createdAt > settings.dateTo) return false;
-
-      // 시간대 필터
-      if (useTimeFilter && m.createdAt) {
-        var d = new Date(m.createdAt);
-        var mins = d.getHours() * 60 + d.getMinutes();
-        if (timeFromMin <= timeToMin) {
-          if (mins < timeFromMin || mins > timeToMin) return false;
-        } else {
-          if (mins < timeFromMin && mins > timeToMin) return false;
-        }
-      }
+      if (effectiveFrom && m.createdAt && m.createdAt < effectiveFrom) return false;
+      if (effectiveTo && m.createdAt && m.createdAt > effectiveTo) return false;
 
       // 검색 필터
       if (searchLower) {
@@ -560,25 +561,14 @@
     return Math.max(0, Math.min(1439, h * 60 + m));
   }
 
-  /** 24시간 형식 <select> 드롭다운 생성 (00:00 ~ 23:59) */
-  function buildTimeSelect(currentValue) {
-    var sel = el('select', { className: 'led-date-input', style: { width: '100px' } });
-    var options = [];
-    for (var h = 0; h < 24; h++) {
-      options.push(pad(h) + ':00');
-    }
-    options.push('23:59');
-    // 현재 값이 옵션에 없으면 추가 (예: 15:30)
-    if (currentValue && options.indexOf(currentValue) === -1) {
-      options.push(currentValue);
-      options.sort();
-    }
-    for (var i = 0; i < options.length; i++) {
-      var opt = el('option', { value: options[i] }, options[i]);
-      if (options[i] === currentValue) opt.selected = true;
-      sel.appendChild(opt);
-    }
-    return sel;
+  /** HH:MM 시간 입력 필드 생성 (분 단위 지원) */
+  function buildTimeInput(currentValue) {
+    return el('input', {
+      className: 'led-date-input',
+      type: 'time',
+      value: currentValue || '00:00',
+      style: { width: '90px' }
+    });
   }
 
   // ════════════════════════════════════════════════════════════════
@@ -842,8 +832,11 @@
     sec3.appendChild(el('div', { className: 'led-info', style: { marginTop: '0', marginBottom: '6px' } }, '드래그하여 날짜 범위를 선택하세요'));
     sec3.appendChild(buildCalendar());
 
-    // date inputs row
+    // date + time inputs (통합 레이아웃: 시작 날짜/시간 | ~ | 종료 날짜/시간)
     var dateRow = el('div', { className: 'led-date-row' });
+
+    // 시작 컬럼 (날짜 + 시간 세로 배치)
+    var fromCol = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px' } });
     var fromInput = el('input', {
       className: 'led-date-input', type: 'date',
       value: settings.dateFrom ? fmtDate(new Date(settings.dateFrom)) : '',
@@ -853,6 +846,19 @@
       if (!isNaN(d.getTime())) settings.dateFrom = d.getTime();
       renderLeftBody(); schedulePreview();
     });
+    var timeFromInput = buildTimeInput(settings.timeFrom || '00:00');
+    timeFromInput.addEventListener('change', function() {
+      settings.timeFrom = timeFromInput.value || '00:00';
+      renderLeftBody(); schedulePreview();
+    });
+    fromCol.appendChild(fromInput);
+    fromCol.appendChild(timeFromInput);
+    dateRow.appendChild(fromCol);
+
+    dateRow.appendChild(el('span', { style: { alignSelf: 'center', color: 'rgba(255,255,255,0.3)' } }, '~'));
+
+    // 종료 컬럼 (날짜 + 시간 세로 배치)
+    var toCol = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px' } });
     var toInput = el('input', {
       className: 'led-date-input', type: 'date',
       value: settings.dateTo ? fmtDate(new Date(settings.dateTo)) : '',
@@ -862,61 +868,46 @@
       if (!isNaN(d.getTime())) settings.dateTo = d.getTime();
       renderLeftBody(); schedulePreview();
     });
-    dateRow.appendChild(fromInput);
-    dateRow.appendChild(document.createTextNode(' ~ '));
-    dateRow.appendChild(toInput);
+    var timeToInput = buildTimeInput(settings.timeTo || '23:59');
+    timeToInput.addEventListener('change', function() {
+      settings.timeTo = timeToInput.value || '23:59';
+      renderLeftBody(); schedulePreview();
+    });
+    toCol.appendChild(toInput);
+    toCol.appendChild(timeToInput);
+    dateRow.appendChild(toCol);
 
-    // quick date buttons
+    // 빠른 선택 버튼
+    var quickCol = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '2px', alignSelf: 'center' } });
     var qAll = el('span', { className: 'led-date-quick' }, '전체');
     qAll.addEventListener('click', function() {
       settings.dateFrom = dateMin ? startOfDay(dateMin) : null;
       settings.dateTo = dateMax ? endOfDay(dateMax) : null;
+      settings.timeFrom = '00:00'; settings.timeTo = '23:59';
       renderLeftBody(); schedulePreview();
     });
-    dateRow.appendChild(qAll);
+    quickCol.appendChild(qAll);
 
     if (dateMax) {
       var q7 = el('span', { className: 'led-date-quick' }, '최근 7일');
       q7.addEventListener('click', function() {
         settings.dateTo = endOfDay(dateMax);
         settings.dateFrom = startOfDay(dateMax - 6 * 86400000);
+        settings.timeFrom = '00:00'; settings.timeTo = '23:59';
         renderLeftBody(); schedulePreview();
       });
-      dateRow.appendChild(q7);
+      quickCol.appendChild(q7);
       var q30 = el('span', { className: 'led-date-quick' }, '최근 30일');
       q30.addEventListener('click', function() {
         settings.dateTo = endOfDay(dateMax);
         settings.dateFrom = startOfDay(dateMax - 29 * 86400000);
+        settings.timeFrom = '00:00'; settings.timeTo = '23:59';
         renderLeftBody(); schedulePreview();
       });
-      dateRow.appendChild(q30);
+      quickCol.appendChild(q30);
     }
+    dateRow.appendChild(quickCol);
     sec3.appendChild(dateRow);
-
-    // time inputs row (같은 섹션에 이어서)
-    var timeLabel = el('div', { style: { fontSize: '11px', color: 'rgba(255,255,255,0.35)', marginTop: '10px', marginBottom: '4px' } }, '시간대 (24시간)');
-    sec3.appendChild(timeLabel);
-    var timeRow = el('div', { className: 'led-date-row' });
-    var timeFromSelect = buildTimeSelect(settings.timeFrom || '00:00');
-    timeFromSelect.addEventListener('change', function() {
-      settings.timeFrom = timeFromSelect.value;
-      renderLeftBody(); schedulePreview();
-    });
-    var timeToSelect = buildTimeSelect(settings.timeTo || '23:59');
-    timeToSelect.addEventListener('change', function() {
-      settings.timeTo = timeToSelect.value;
-      renderLeftBody(); schedulePreview();
-    });
-    timeRow.appendChild(timeFromSelect);
-    timeRow.appendChild(document.createTextNode(' ~ '));
-    timeRow.appendChild(timeToSelect);
-    var qTimeAll = el('span', { className: 'led-date-quick' }, '전체');
-    qTimeAll.addEventListener('click', function() {
-      settings.timeFrom = '00:00'; settings.timeTo = '23:59';
-      renderLeftBody(); schedulePreview();
-    });
-    timeRow.appendChild(qTimeAll);
-    sec3.appendChild(timeRow);
     body.appendChild(sec3);
 
     // ── 개별 제외 (미리보기 연동) ──

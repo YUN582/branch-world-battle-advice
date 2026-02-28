@@ -372,9 +372,9 @@
         if (typos.length > 0) {
           typos[0].textContent = _visible ? '\uADF8\uB9AC\uB4DC \uC228\uAE30\uAE30' : '\uC804\uACBD\uC5D0 \uADF8\uB9AC\uB4DC \uD45C\uC2DC';
         }
-        // 보조 텍스트 → 설명으로 교체
+        // 보조 텍스트 → 설명으로 교체 (단축키 포함)
         if (typos.length > 1) {
-          typos[1].textContent = '\uC804\uACBD \uC774\uBBF8\uC9C0 \uC704\uC5D0 \uCE78\uC744 \uD45C\uC2DC';
+          typos[1].textContent = '\uC804\uACBD \uC774\uBBF8\uC9C0 \uC704\uC5D0 \uCE78\uC744 \uD45C\uC2DC (Alt+/)';
           // 나머지 보조 텍스트 제거
           for (var j = 2; j < typos.length; j++) typos[j].remove();
         } else {
@@ -382,7 +382,7 @@
           var desc = document.createElement('span');
           desc.className = typos[0] ? typos[0].className : '';
           desc.style.cssText = 'display:block;font-size:0.75rem;opacity:0.7;';
-          desc.textContent = '\uC804\uACBD \uC774\uBBF8\uC9C0 \uC704\uC5D0 \uCE78\uC744 \uD45C\uC2DC';
+          desc.textContent = '\uC804\uACBD \uC774\uBBF8\uC9C0 \uC704\uC5D0 \uCE78\uC744 \uD45C\uC2DC (Alt+/)';
           lit.appendChild(desc);
         }
       } else {

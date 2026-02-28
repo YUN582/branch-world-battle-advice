@@ -1,0 +1,137 @@
+[
+  {
+    "id": "_builtin_heal",
+    "name": "회복",
+    "builtin": true,
+    "enabled": true,
+    "pattern": "《회복》| {대상} | {스탯} | {수치}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "stat", "target": "{대상}", "stat": "{스탯}", "op": "+", "value": "{수치}" },
+      { "type": "message", "template": "✨ {대상}의 {스탯}을(를) +{수치} 회복!" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "_builtin_damage",
+    "name": "피해",
+    "builtin": true,
+    "enabled": true,
+    "pattern": "《피해》| {대상} | {스탯} | {수치}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "stat", "target": "{대상}", "stat": "{스탯}", "op": "-", "value": "{수치}" },
+      { "type": "message", "template": "💥 {대상}의 {스탯}에 -{수치} 피해!" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "_builtin_set_stat",
+    "name": "스탯 설정",
+    "builtin": true,
+    "enabled": true,
+    "pattern": "《설정》| {대상} | {스탯} | {수치}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "stat", "target": "{대상}", "stat": "{스탯}", "op": "=", "value": "{수치}" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "_builtin_announce",
+    "name": "공지",
+    "builtin": true,
+    "enabled": true,
+    "pattern": "《공지》| {내용}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "message", "template": "📢 {내용}" }
+    ],
+    "delay": 0,
+    "priority": 0
+  },
+  {
+    "id": "_builtin_dice_crit",
+    "name": "대성공 알림",
+    "builtin": true,
+    "enabled": false,
+    "pattern": "",
+    "source": "message",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "condition_dice", "op": "==", "value": "20", "inGroup": false },
+      { "type": "message", "template": "🎯 대성공! (주사위 결과: {_주사위})", "inGroup": true }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "_builtin_dice_fumble",
+    "name": "대실패 알림",
+    "builtin": true,
+    "enabled": false,
+    "pattern": "",
+    "source": "message",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "condition_dice", "op": "==", "value": "1", "inGroup": false },
+      { "type": "message", "template": "💀 대실패... (주사위 결과: {_주사위})", "inGroup": true }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "_builtin_scene_change",
+    "name": "장면 전환 (예시)",
+    "builtin": true,
+    "enabled": false,
+    "pattern": "《장면》| {장면이름}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "message", "template": "🎬 장면 전환: {장면이름}" },
+      { "type": "load_scene", "sceneName": "{장면이름}", "applyOption": "all" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "_builtin_dice_check",
+    "name": "판정 (예시)",
+    "builtin": true,
+    "enabled": false,
+    "pattern": "《판정》",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "dice", "command": "1d20" },
+      { "type": "condition_dice", "op": ">=", "value": "15", "inGroup": false },
+      { "type": "message", "template": "✅ {_자신} 판정 성공! (🎲 {_주사위})", "inGroup": true },
+      { "type": "condition_dice", "op": "<", "value": "15", "inGroup": false },
+      { "type": "message", "template": "❌ {_자신} 판정 실패... (🎲 {_주사위})", "inGroup": true }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "_builtin_char_say",
+    "name": "캐릭터 대사 (예시)",
+    "builtin": true,
+    "enabled": false,
+    "pattern": "《대사》| {캐릭터} | {대사}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "char_message", "target": "{캐릭터}", "template": "{대사}" }
+    ],
+    "delay": 300,
+    "priority": 0
+  }
+]

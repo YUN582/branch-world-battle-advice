@@ -525,6 +525,58 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
   }
 
   /**
+   * 주사위를 특정 캐릭터로 직접 굴립니다 (Firestore 직접 기록).
+   * textarea를 경유하지 않으므로 입력 차단 없음 + 해당 캐릭터 토큰으로 표시됩니다.
+   * @param {string} notation - 주사위 표기 (예: "1D20", "1D20+3")
+   * @param {string} label - 라벨 텍스트 (예: "⚔️ 스칼라")
+   * @param {string} charName - 캐릭터 이름
+   * @returns {Promise<{success: boolean, total?: number, resultStr?: string}>}
+   */
+  async sendDiceAsCharacter(notation, label, charName) {
+    // ★ 주사위 메시지는 _lastSentMessages에 등록하지 않음!
+    // _isOwnMessage()가 substring 매칭하므로 돌아오는 주사위 결과
+    // ("1D20 ⚔️ name\n(1D20) ＞ 15")가 필터링되어 combat 로직에 도달하지 못함.
+    // _seenTexts만 등록 (exact match이므로 결과 텍스트와 다름 → 통과)
+    const fullText = label ? `${notation.toUpperCase()} ${label}` : notation.toUpperCase();
+    this._seenTexts.add(fullText);
+
+    this._log(`📤 전송(주사위/캐릭터): "${fullText}" as ${charName}`);
+
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        window.removeEventListener('bwbr-dice-char-result', handler);
+        this._log('⏱️ 주사위+캐릭터 전송 타임아웃');
+        resolve({ success: false });
+      }, 5000);
+
+      const handler = (e) => {
+        clearTimeout(timeout);
+        window.removeEventListener('bwbr-dice-char-result', handler);
+        if (e.detail?.success) {
+          this._log(`✅ 주사위 직접 전송 성공: ${e.detail.resultStr}`);
+          // ★ seenTexts에 결과 안 넣음 — combat 로직이 Redux 메시지를 받아야 함
+        } else {
+          this._log(`⚠️ 주사위 직접 전송 실패: ${e.detail?.error}`);
+        }
+        resolve({
+          success: !!e.detail?.success,
+          total: e.detail?.total,
+          resultStr: e.detail?.resultStr
+        });
+      };
+
+      window.addEventListener('bwbr-dice-char-result', handler);
+
+      // DOM attribute bridge
+      const el = document.documentElement;
+      el.setAttribute('data-bwbr-dice-notation', notation);
+      el.setAttribute('data-bwbr-dice-label', label || '');
+      el.setAttribute('data-bwbr-dice-char-name', charName || '');
+      window.dispatchEvent(new Event('bwbr-send-dice-as-char'));
+    });
+  }
+
+  /**
    * 시스템 메시지로 전송 (type: 'system', name: 'system').
    * 주사위 명령은 시스템 메시지로 보낼 수 없습니다 — textarea 경유 필요.
    * @param {string} text - 전송할 텍스트 (@ 컷인 태그 포함 가능)

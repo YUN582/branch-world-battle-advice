@@ -360,7 +360,6 @@ select.field-input option {
   flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 6px;
-  min-height: 28px;
 }
 
 .tag-item {

@@ -98,6 +98,7 @@ window.BattleRollOverlay = class BattleRollOverlay {
             <input type="number" id="bwbr-manual-value" min="1" max="20" placeholder="1~20">
             <button type="button" id="bwbr-manual-submit">확인</button>
           </div>
+          <div id="bwbr-h0-tip" style="display:none;font-size:10px;color:rgba(255,255,255,0.35);margin-top:4px;padding:0 2px;">💡 인간 특성을 수동 발동하려면 "H0"을 입력하세요 (주사위 0이 아니어도 가능)</div>
         </div>
       </div>
     `;
@@ -371,24 +372,28 @@ window.BattleRollOverlay = class BattleRollOverlay {
       `;
     }
 
-    // 행동 평행사변형 생성
+    // 행동 평행사변형 생성 (current > max 시 초과분 노란색 표시)
     const mainMax = turnData.mainActionsMax || turnData.mainActions;
     const subMax = turnData.subActionsMax || turnData.subActions;
     const mainCurrent = turnData.mainActions;
     const subCurrent = turnData.subActions;
 
     let mainCells = '';
-    for (let i = 0; i < mainMax; i++) {
+    const mainTotal = Math.max(mainMax, mainCurrent);
+    for (let i = 0; i < mainTotal; i++) {
       const spent = i >= mainCurrent ? ' bwbr-action-spent' : '';
-      mainCells += `<div class="bwbr-action-cell bwbr-action-main${spent}" data-action-type="main" data-action-index="${i}"></div>`;
+      const excess = i >= mainMax && i < mainCurrent ? ' bwbr-action-excess' : '';
+      mainCells += `<div class="bwbr-action-cell bwbr-action-main${spent}${excess}" data-action-type="main" data-action-index="${i}"></div>`;
     }
     // 🔺주 행동 + 버튼
     mainCells += `<div class="bwbr-action-add-btn" data-action-type="main" title="🔺주 행동 슬롯 추가">+</div>`;
 
     let subCells = '';
-    for (let i = 0; i < subMax; i++) {
+    const subTotal = Math.max(subMax, subCurrent);
+    for (let i = 0; i < subTotal; i++) {
       const spent = i >= subCurrent ? ' bwbr-action-spent' : '';
-      subCells += `<div class="bwbr-action-cell bwbr-action-sub${spent}" data-action-type="sub" data-action-index="${i}"></div>`;
+      const excess = i >= subMax && i < subCurrent ? ' bwbr-action-excess' : '';
+      subCells += `<div class="bwbr-action-cell bwbr-action-sub${spent}${excess}" data-action-type="sub" data-action-index="${i}"></div>`;
     }
     // 🔹보조 행동 + 버튼
     subCells += `<div class="bwbr-action-add-btn" data-action-type="sub" title="🔹보조 행동 슬롯 추가">+</div>`;
@@ -1230,6 +1235,11 @@ window.BattleRollOverlay = class BattleRollOverlay {
     }
     input.value = '';
     container.style.display = '';
+
+    // H0 수동 발동 힌트: 수동 입력창이 열릴 때 항상 표시
+    const h0Tip = container.querySelector('#bwbr-h0-tip');
+    if (h0Tip) h0Tip.style.display = '';
+
     input.focus();
 
     return new Promise((resolve) => {

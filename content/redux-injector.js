@@ -125,7 +125,27 @@
       window.dispatchEvent(new CustomEvent('bwbr-redux-ready', {
         detail: { success: true, characterCount: charCount }
       }));
-      
+
+      // ★ speaking 캐릭터 변경 감시 (Redux subscription)
+      let _prevSpeakingName = null;
+      reduxStore.subscribe(() => {
+        try {
+          const rc = reduxStore.getState().entities?.roomCharacters;
+          if (!rc?.ids) return;
+          let currentSpeaker = null;
+          for (const id of rc.ids) {
+            const c = rc.entities?.[id];
+            if (c?.speaking) { currentSpeaker = c.name || null; break; }
+          }
+          if (currentSpeaker !== _prevSpeakingName) {
+            _prevSpeakingName = currentSpeaker;
+            // DOM 속성 브릿지로 ISOLATED world에 통보
+            document.documentElement.setAttribute('data-bwbr-speaker-name', currentSpeaker || '');
+            document.dispatchEvent(new CustomEvent('bwbr-speaker-changed'));
+          }
+        } catch (e) {}
+      });
+
       return true;
     }
 
@@ -987,6 +1007,140 @@
   });
 
   // ================================================================
+  //  주사위를 특정 캐릭터로 직접 굴림 (Firestore 직접 기록)
+  //  textarea 경유 없이 자체 난수 생성 + extend.roll 구성
+  //  DOM attribute:
+  //    data-bwbr-dice-notation   "1D20" 또는 "1D20+3"
+  //    data-bwbr-dice-label      라벨 텍스트 (예: "⚔️ 스칼라")
+  //    data-bwbr-dice-char-name  캐릭터 이름
+  // ================================================================
+  window.addEventListener('bwbr-send-dice-as-char', async () => {
+    const el = document.documentElement;
+    const notation  = el.getAttribute('data-bwbr-dice-notation')  || '1D20';
+    const label     = el.getAttribute('data-bwbr-dice-label')     || '';
+    const charName  = el.getAttribute('data-bwbr-dice-char-name') || '';
+    el.removeAttribute('data-bwbr-dice-notation');
+    el.removeAttribute('data-bwbr-dice-label');
+    el.removeAttribute('data-bwbr-dice-char-name');
+
+    try {
+      // 주사위 표기법 파싱: NdM 또는 NdM+B
+      const diceMatch = notation.match(/^(\d+)[dD](\d+)(?:\+(\d+))?$/);
+      if (!diceMatch) {
+        window.dispatchEvent(new CustomEvent('bwbr-dice-char-result', {
+          detail: { success: false, error: 'invalid-notation', notation }
+        }));
+        return;
+      }
+      const count = parseInt(diceMatch[1], 10);
+      const sides = parseInt(diceMatch[2], 10);
+      const bonus = diceMatch[3] ? parseInt(diceMatch[3], 10) : 0;
+
+      // 주사위 굴림
+      const dices = [];
+      let sum = 0;
+      for (let i = 0; i < count; i++) {
+        const val = Math.floor(Math.random() * sides) + 1;
+        dices.push({ faces: sides, value: val });
+        sum += val;
+      }
+      const total = sum + bonus;
+
+      // 결과 문자열 구성 (코코포리아 형식)
+      // ★ 항상 total을 ＞ 직후에 배치 — extractDiceValue 패턴이 첫 번째 ＞ 뒤 숫자를 캡처
+      const diceStr = `(${notation.toUpperCase()})`;
+      const resultStr = `${diceStr} ＞ ${total}`;
+
+      // 캐릭터 정보 조회 (iconUrl, color)
+      let iconUrl = '';
+      let color = '#e0e0e0';
+      if (charName && reduxStore) {
+        const rc = reduxStore.getState().entities?.roomCharacters;
+        if (rc?.ids) {
+          for (const id of rc.ids) {
+            const c = rc.entities?.[id];
+            if (c && c.name === charName) {
+              iconUrl = c.iconUrl || '';
+              color = c.color || '#e0e0e0';
+              break;
+            }
+          }
+        }
+      }
+
+      // 텍스트 = 주사위 표기 + 라벨
+      const text = label ? `${notation.toUpperCase()} ${label}` : notation.toUpperCase();
+
+      // Firestore 메시지 구성 (extend.roll 포함)
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) {
+        window.dispatchEvent(new CustomEvent('bwbr-dice-char-result', {
+          detail: { success: false, error: 'no-firestore', total }
+        }));
+        return;
+      }
+
+      const ctx = getMessageContext();
+      const state = reduxStore.getState();
+      const roomId = state.app?.state?.roomId ||
+        window.location.pathname.match(/rooms\/([^/]+)/)?.[1];
+      if (!roomId) {
+        window.dispatchEvent(new CustomEvent('bwbr-dice-char-result', {
+          detail: { success: false, error: 'no-room', total }
+        }));
+        return;
+      }
+
+      const chInfo = _detectCurrentChannel();
+      const messagesCol = sdk.collection(sdk.db, 'rooms', roomId, 'messages');
+      const newRef = sdk.doc(messagesCol, generateFirestoreId());
+
+      const msg = {
+        text: text,
+        type: 'text',
+        name: charName || ctx?.name || '',
+        channel: chInfo?.channel || ctx?.channel || '',
+        channelName: chInfo?.channelName || ctx?.channelName || '',
+        color: color,
+        iconUrl: iconUrl,
+        imageUrl: null,
+        from: ctx?.from || state.app?.state?.uid || '',
+        to: null,
+        toName: '',
+        extend: {
+          roll: {
+            result: resultStr,
+            dices: dices,
+            critical: false,
+            fumble: false,
+            success: false,
+            failure: false,
+            secret: false,
+            skin: {}
+          }
+        },
+        edited: false,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      await sdk.setDoc(newRef, msg);
+
+      console.log(`%c[BWBR]%c 🎲 ${charName}: ${text} → ${resultStr}`,
+        'color:#ffa726;font-weight:bold', 'color:inherit');
+
+      window.dispatchEvent(new CustomEvent('bwbr-dice-char-result', {
+        detail: { success: true, total, resultStr, text, charName }
+      }));
+    } catch (err) {
+      console.error('[BWBR] dice-as-char error:', err);
+      window.dispatchEvent(new CustomEvent('bwbr-dice-char-result', {
+        detail: { success: false, error: err.message }
+      }));
+    }
+  });
+
+  // ================================================================
   //  Content Script ↔ Page Context 이벤트 통신
   // ================================================================
 
@@ -1016,26 +1170,55 @@
     stopMessageObserver();
   });
 
+  // ================================================================
+  //  현재 발화(선택) 캐릭터 조회
+  // ================================================================
+  window.addEventListener('bwbr-get-speaker', () => {
+    let speakerName = null;
+    if (reduxStore) {
+      const rc = reduxStore.getState().entities?.roomCharacters;
+      // 1) speaking: true 캐릭터 우선
+      if (rc?.ids) {
+        for (const id of rc.ids) {
+          const c = rc.entities?.[id];
+          if (c?.speaking) {
+            speakerName = c.name || null;
+            break;
+          }
+        }
+      }
+      // 2) speaking 없으면 마지막 사용자 메시지의 캐릭터명 폴백
+      if (!speakerName) {
+        const ctx = getMessageContext();
+        if (ctx && ctx.name && ctx.name !== 'system' && ctx.name !== '시스템') {
+          speakerName = ctx.name;
+        }
+      }
+    }
+    // DOM 속성 브릿지 (크로스-월드 안정성)
+    document.documentElement.setAttribute('data-bwbr-speaker-name', speakerName || '');
+    window.dispatchEvent(new CustomEvent('bwbr-speaker-data'));
+  });
+
   // Content Script에서 캐릭터 데이터 요청 시 처리
   window.addEventListener('bwbr-request-characters', () => {
+    let result;
     if (!reduxStore) {
-      // Store가 없으면 다시 시도
       if (setupStore()) {
         const chars = getCharacterData();
-        window.dispatchEvent(new CustomEvent('bwbr-characters-data', {
-          detail: { success: true, characters: chars }
-        }));
+        result = { success: true, characters: chars };
       } else {
-        window.dispatchEvent(new CustomEvent('bwbr-characters-data', {
-          detail: { success: false, characters: null }
-        }));
+        result = { success: false, characters: null };
       }
     } else {
       const chars = getCharacterData();
-      window.dispatchEvent(new CustomEvent('bwbr-characters-data', {
-        detail: { success: !!chars, characters: chars }
-      }));
+      result = { success: !!chars, characters: chars };
     }
+    // DOM 속성 브릿지 (MAIN → ISOLATED 크로스-월드 안정성)
+    document.documentElement.setAttribute('data-bwbr-characters-data', JSON.stringify(result));
+    window.dispatchEvent(new CustomEvent('bwbr-characters-data', {
+      detail: result
+    }));
   });
 
   // ================================================================
@@ -1056,11 +1239,14 @@
             iconUrl: char.iconUrl || '',
             active: char.active,
             speaking: !!char.speaking,
-            color: char.color || ''
+            color: char.color || '',
+            faces: char.faces || []
           });
         }
       }
     }
+    // DOM 속성 브릿지 (MAIN → ISOLATED 크로스-월드 안정성)
+    document.documentElement.setAttribute('data-bwbr-all-characters-data', JSON.stringify({ characters }));
     window.dispatchEvent(new CustomEvent('bwbr-all-characters-data', {
       detail: { characters }
     }));
@@ -1190,14 +1376,50 @@
   });
 
   // ================================================================
+  //  스탯 존재 여부 확인 (조건 연산자용)
+  //  Content Script에서 bwbr-check-stat-exists 이벤트로 요청
+  // ================================================================
+  window.addEventListener('bwbr-check-stat-exists', () => {
+    const raw = document.documentElement.getAttribute('data-bwbr-check-stat-exists');
+    document.documentElement.removeAttribute('data-bwbr-check-stat-exists');
+    const { charName, statLabel } = raw ? JSON.parse(raw) : {};
+    const respond = (result) => {
+      document.documentElement.setAttribute('data-bwbr-check-stat-exists-result', JSON.stringify(result));
+      window.dispatchEvent(new CustomEvent('bwbr-check-stat-exists-result'));
+    };
+    try {
+      if (!reduxStore) throw new Error('Redux Store 없음');
+      const state = reduxStore.getState();
+      const rc = state.entities?.roomCharacters;
+      if (!rc) throw new Error('캐릭터 데이터 없음');
+      let target = null;
+      for (const id of (rc.ids || [])) {
+        const c = rc.entities?.[id];
+        if (c && c.name === charName) { target = c; break; }
+      }
+      if (!target) { respond({ exists: false, charFound: false }); return; }
+      const found = (target.status || []).some(s => s.label === statLabel);
+      respond({ exists: found, charFound: true });
+    } catch (err) {
+      console.error('[BWBR] 스탯 존재 확인 실패:', err.message);
+      respond({ exists: false, charFound: false, error: err.message });
+    }
+  });
+
+  // ================================================================
   //  :# 스테이터스 변경 명령 처리
   //  Content Script에서 bwbr-modify-status 이벤트로 요청
   // ================================================================
   window.addEventListener('bwbr-modify-status', async (e) => {
-    const { targetName, statusLabel, operation, value } = e.detail || {};
-    const respond = (detail) => window.dispatchEvent(
-      new CustomEvent('bwbr-modify-status-result', { detail })
-    );
+    // DOM 속성 브릿지 (크로스-월드 안정성)
+    const _raw = document.documentElement.getAttribute('data-bwbr-modify-status');
+    document.documentElement.removeAttribute('data-bwbr-modify-status');
+    const { targetName, statusLabel, operation, value, valueType, silent } = _raw ? JSON.parse(_raw) : (e.detail || {});
+    const field = valueType === 'max' ? 'max' : 'value';
+    const respond = (detail) => {
+      document.documentElement.setAttribute('data-bwbr-modify-status-result', JSON.stringify(detail));
+      window.dispatchEvent(new CustomEvent('bwbr-modify-status-result', { detail }));
+    };
 
     try {
       const sdk = acquireFirestoreSDK();
@@ -1225,18 +1447,23 @@
       const idx = statusArr.findIndex(s => s.label === statusLabel);
       if (idx < 0) throw new Error(`스테이터스 "${statusLabel}" 없음`);
 
-      const oldVal = parseInt(statusArr[idx].value, 10) || 0;
+      const oldVal = parseInt(statusArr[idx][field], 10) || 0;
       let newVal;
-      switch (operation) {
-        case '+': newVal = oldVal + value; break;
-        case '-': newVal = oldVal - value; break;
-        case '=': newVal = value; break;
-        default: throw new Error(`잘못된 연산: ${operation}`);
+      if (operation === '=max') {
+        // value를 max로 설정 (최대치 충전)
+        newVal = parseInt(statusArr[idx].max, 10) || 0;
+      } else {
+        switch (operation) {
+          case '+': newVal = oldVal + value; break;
+          case '-': newVal = oldVal - value; break;
+          case '=': newVal = value; break;
+          default: throw new Error(`잘못된 연산: ${operation}`);
+        }
       }
 
       // 새 status 배열 생성
       const newStatus = statusArr.map((s, i) => {
-        if (i === idx) return { ...s, value: newVal };
+        if (i === idx) return { ...s, [field]: newVal };
         return { ...s };
       });
 
@@ -1249,14 +1476,293 @@
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
       respond({ success: true, target: targetName, status: statusLabel, oldVal, newVal });
 
-      // 코코포리아 시스템 메시지 형식으로 변경 내역 전송
-      sendDirectMessage(
-        `[ ${targetName} ] ${statusLabel} : ${oldVal} → ${newVal}`,
-        { name: 'system', type: 'system', color: '#888888', iconUrl: null }
-      ).catch(() => {});
+      // 코코포리아 시스템 메시지 형식으로 변경 내역 전송 (silent 미적용 시만)
+      if (!silent) {
+        sendDirectMessage(
+          `[ ${targetName} ] ${statusLabel} : ${oldVal} → ${newVal}`,
+          { name: 'system', type: 'system', color: '#888888', iconUrl: null }
+        ).catch(() => {});
+      }
 
     } catch (err) {
       console.error('[BWBR] 스테이터스 변경 실패:', err.message);
+      respond({ success: false, error: err.message });
+    }
+  });
+
+  // ================================================================
+  //  트리거: 전체 캐릭터 스탯 일괄 변경
+  //  Content Script에서 bwbr-modify-status-all 이벤트로 요청
+  //  활성화된(hideStatus !== true) 모든 캐릭터를 대상으로 함
+  //  op: '+', '-', '=', '=max' (=max → value를 max 값으로 설정)
+  // ================================================================
+  window.addEventListener('bwbr-modify-status-all', async (e) => {
+    // DOM 속성 브릿지 (크로스-월드 안정성)
+    const _raw = document.documentElement.getAttribute('data-bwbr-modify-status-all');
+    document.documentElement.removeAttribute('data-bwbr-modify-status-all');
+    const { statusLabel, operation, value, valueType, silent } = _raw ? JSON.parse(_raw) : (e.detail || {});
+    const field = valueType === 'max' ? 'max' : 'value';
+    const respond = (detail) => {
+      document.documentElement.setAttribute('data-bwbr-modify-status-all-result', JSON.stringify(detail));
+      window.dispatchEvent(new CustomEvent('bwbr-modify-status-all-result', { detail }));
+    };
+
+    try {
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) throw new Error('Firestore SDK 없음');
+      if (!reduxStore) throw new Error('Redux Store 없음');
+
+      const state = reduxStore.getState();
+      const roomId = state.app?.state?.roomId
+        || window.location.pathname.match(/rooms\/([^/]+)/)?.[1];
+      if (!roomId) throw new Error('방 ID를 찾을 수 없음');
+
+      const rc = state.entities?.roomCharacters;
+      if (!rc) throw new Error('캐릭터 데이터 없음');
+
+      const charsCol = sdk.collection(sdk.db, 'rooms', roomId, 'characters');
+      let affected = 0;
+      const changes = [];
+
+      for (const id of (rc.ids || [])) {
+        const char = rc.entities?.[id];
+        if (!char) continue;
+        // 사이드바에서 숨겨진 캐릭터 제외
+        if (char.hideStatus === true) continue;
+
+        const charId = char._id || id;
+        const statusArr = char.status || [];
+        const idx = statusArr.findIndex(s => s.label === statusLabel);
+        if (idx < 0) continue; // 해당 스탯이 없는 캐릭터는 건너뜀
+
+        const oldVal = parseInt(statusArr[idx][field], 10) || 0;
+        let newVal;
+        if (operation === '=max') {
+          // value를 max로 설정 (최대치까지 채우기)
+          newVal = parseInt(statusArr[idx].max, 10) || 0;
+        } else {
+          switch (operation) {
+            case '+': newVal = oldVal + value; break;
+            case '-': newVal = oldVal - value; break;
+            case '=': newVal = value; break;
+            default: continue;
+          }
+        }
+
+        if (oldVal === newVal) continue; // 변화 없으면 건너뜀
+
+        const newStatus = statusArr.map((s, i) => {
+          if (i === idx) return { ...s, [field]: newVal };
+          return { ...s };
+        });
+
+        const charRef = sdk.doc(charsCol, charId);
+        await sdk.setDoc(charRef, { status: newStatus, updatedAt: Date.now() }, { merge: true });
+        affected++;
+        changes.push({ name: char.name, oldVal, newVal });
+      }
+
+      if (affected > 0) {
+        const opLabel = operation === '=max' ? '최대치 충전' : `${operation}${value}`;
+        console.log(`%c[BWBR]%c ✅ 전체 ${statusLabel} ${opLabel}: ${affected}명`,
+          'color: #4caf50; font-weight: bold;', 'color: inherit;');
+        // 일괄 변경 시스템 메시지 (silent 미적용 시만)
+        if (!silent) {
+          const changeStr = changes.map(c => `${c.name}: ${c.oldVal}→${c.newVal}`).join(', ');
+          sendDirectMessage(
+            `[ 전체 ] ${statusLabel} ${opLabel} → ${affected}명 적용 (${changeStr})`,
+            { name: 'system', type: 'system', color: '#888888', iconUrl: null }
+          ).catch(() => {});
+        }
+      }
+
+      respond({ success: true, affected, label: statusLabel, changes });
+
+    } catch (err) {
+      console.error('[BWBR] 전체 스테이터스 변경 실패:', err.message);
+      respond({ success: false, error: err.message });
+    }
+  });
+
+  // ================================================================
+  //  트리거: 캐릭터 메시지 (특정 캐릭터 이름/아이콘으로 전송)
+  //  Content Script에서 bwbr-trigger-char-msg 이벤트로 요청
+  // ================================================================
+  window.addEventListener('bwbr-trigger-char-msg', async (e) => {
+    // DOM 속성 브릿지 (크로스-월드 안정성)
+    const _raw = document.documentElement.getAttribute('data-bwbr-trigger-char-msg');
+    document.documentElement.removeAttribute('data-bwbr-trigger-char-msg');
+    const { targetName, text } = _raw ? JSON.parse(_raw) : (e.detail || {});
+    const respond = (detail) => window.dispatchEvent(
+      new CustomEvent('bwbr-char-msg-result', { detail })
+    );
+
+    try {
+      if (!reduxStore) throw new Error('Redux Store 없음');
+      if (!text) throw new Error('텍스트 없음');
+
+      // 캐릭터 정보 조회
+      const char = getCharacterByName(targetName);
+      if (!char) throw new Error(`캐릭터 "${targetName}" 없음`);
+
+      const chInfo = _detectCurrentChannel();
+      const overrides = {
+        name: char.name || targetName,
+        iconUrl: char.iconUrl || '',
+        color: char.color || '#e0e0e0'
+      };
+      if (chInfo) {
+        overrides.channel = chInfo.channel;
+        overrides.channelName = chInfo.channelName;
+      }
+      const success = await sendDirectMessage(text, overrides);
+      respond({ success, text });
+    } catch (err) {
+      console.error('[BWBR] 캐릭터 메시지 실패:', err.message);
+      respond({ success: false, error: err.message });
+    }
+  });
+
+  // ================================================================
+  //  트리거: 파라미터 변경 (캐릭터 params[] 배열 수정)
+  //  Content Script에서 bwbr-modify-param 이벤트로 요청
+  // ================================================================
+  window.addEventListener('bwbr-modify-param', async (e) => {
+    // DOM 속성 브릿지 (크로스-월드 안정성)
+    const _raw = document.documentElement.getAttribute('data-bwbr-modify-param');
+    document.documentElement.removeAttribute('data-bwbr-modify-param');
+    const { targetName, paramLabel, operation, value } = _raw ? JSON.parse(_raw) : (e.detail || {});
+    const respond = (detail) => window.dispatchEvent(
+      new CustomEvent('bwbr-modify-param-result', { detail })
+    );
+
+    try {
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) throw new Error('Firestore SDK 없음');
+      if (!reduxStore) throw new Error('Redux Store 없음');
+
+      const roomId = getRoomId();
+      if (!roomId) throw new Error('방 ID를 찾을 수 없음');
+
+      const char = getCharacterByName(targetName);
+      if (!char) throw new Error(`캐릭터 "${targetName}" 없음`);
+
+      const paramsArr = char.params || [];
+      const idx = paramsArr.findIndex(p => p.label === paramLabel);
+      if (idx < 0) throw new Error(`파라미터 "${paramLabel}" 없음`);
+
+      const oldVal = paramsArr[idx].value || '';
+      let newVal;
+      const numOld = parseFloat(oldVal);
+      const numNew = parseFloat(value);
+
+      if (operation === '=' || isNaN(numOld) || isNaN(numNew)) {
+        // 문자열 대입 또는 숫자가 아닌 경우
+        newVal = value;
+      } else {
+        switch (operation) {
+          case '+': newVal = String(numOld + numNew); break;
+          case '-': newVal = String(numOld - numNew); break;
+          default:  newVal = value; break;
+        }
+      }
+
+      const newParams = paramsArr.map((p, i) => {
+        if (i === idx) return { ...p, value: String(newVal) };
+        return { ...p };
+      });
+
+      const charsCol = sdk.collection(sdk.db, 'rooms', roomId, 'characters');
+      const charRef = sdk.doc(charsCol, char.__id);
+      await sdk.setDoc(charRef, { params: newParams, updatedAt: Date.now() }, { merge: true });
+
+      console.log(`%c[BWBR]%c ✅ ${targetName} ${paramLabel}: ${oldVal} → ${newVal}`,
+        'color: #4caf50; font-weight: bold;', 'color: inherit;');
+      respond({ success: true, target: targetName, param: paramLabel, oldVal, newVal });
+
+    } catch (err) {
+      console.error('[BWBR] 파라미터 변경 실패:', err.message);
+      respond({ success: false, error: err.message });
+    }
+  });
+
+  // ================================================================
+  //  트리거: 범용 캐릭터 필드 변경
+  //  field: 'active' | 'face' | 'move' | 'initiative' | 'memo'
+  //  Content Script에서 bwbr-trigger-char-field 이벤트로 요청
+  // ================================================================
+  window.addEventListener('bwbr-trigger-char-field', async (e) => {
+    // DOM 속성 브릿지 (크로스-월드 안정성)
+    const _raw = document.documentElement.getAttribute('data-bwbr-trigger-char-field');
+    document.documentElement.removeAttribute('data-bwbr-trigger-char-field');
+    const detail = _raw ? JSON.parse(_raw) : (e.detail || {});
+    const { targetName, field } = detail;
+    const respond = (d) => window.dispatchEvent(
+      new CustomEvent('bwbr-trigger-char-field-result', { detail: d })
+    );
+
+    try {
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) throw new Error('Firestore SDK 없음');
+      if (!reduxStore) throw new Error('Redux Store 없음');
+
+      const roomId = getRoomId();
+      if (!roomId) throw new Error('방 ID를 찾을 수 없음');
+
+      const char = getCharacterByName(targetName);
+      if (!char) throw new Error(`캐릭터 "${targetName}" 없음`);
+
+      const charsCol = sdk.collection(sdk.db, 'rooms', roomId, 'characters');
+      const charRef = sdk.doc(charsCol, char.__id);
+      let update = { updatedAt: Date.now() };
+
+      switch (field) {
+        case 'active':
+          update.active = !!detail.value;
+          break;
+
+        case 'face': {
+          const faces = char.faces || [];
+          const fIdx = parseInt(detail.value, 10) || 0;
+          if (faces[fIdx]) {
+            // faces는 {label, iconUrl} 객체 배열 또는 URL 문자열 배열 (하위 호환)
+            update.iconUrl = typeof faces[fIdx] === 'object' ? faces[fIdx].iconUrl : faces[fIdx];
+          } else {
+            throw new Error(`표정 인덱스 ${fIdx} 없음 (faces 길이: ${faces.length})`);
+          }
+          break;
+        }
+
+        case 'move': {
+          if (detail.relative) {
+            update.x = (char.x || 0) + (detail.x || 0);
+            update.y = (char.y || 0) + (detail.y || 0);
+          } else {
+            update.x = detail.x || 0;
+            update.y = detail.y || 0;
+          }
+          break;
+        }
+
+        case 'initiative':
+          update.initiative = parseInt(detail.value, 10) || 0;
+          break;
+
+        case 'memo':
+          update.memo = String(detail.value || '');
+          break;
+
+        default:
+          throw new Error(`알 수 없는 필드: ${field}`);
+      }
+
+      await sdk.setDoc(charRef, update, { merge: true });
+      console.log(`%c[BWBR]%c ✅ ${targetName} ${field} 변경 완료`,
+        'color: #4caf50; font-weight: bold;', 'color: inherit;');
+      respond({ success: true, target: targetName, field });
+
+    } catch (err) {
+      console.error(`[BWBR] 캐릭터 필드(${field}) 변경 실패:`, err.message);
       respond({ success: false, error: err.message });
     }
   });
@@ -1922,6 +2428,212 @@
     }
     console.log('%c[BWBR 진단]%c ===========================',
       'color: #2196f3; font-weight: bold;', 'color: inherit;');
+  });
+
+  // ================================================================
+  //  진단: rooms 엔티티 (방 설정) 상세 덤프 — BGM/장면 필드 확인용
+  //  콘솔: window.dispatchEvent(new CustomEvent('bwbr-dump-room'))
+  // ================================================================
+  window.addEventListener('bwbr-dump-room', () => {
+    if (!reduxStore) return console.error('[BWBR 진단] Redux Store 없음');
+    const state = reduxStore.getState();
+    const roomId = state.app?.state?.roomId
+      || window.location.pathname.match(/\/rooms\/([^/]+)/)?.[1];
+    if (!roomId) return console.error('[BWBR 진단] roomId 없음');
+    const room = state.entities?.rooms?.entities?.[roomId];
+    if (!room) return console.error('[BWBR 진단] room 엔티티 없음');
+
+    console.log('%c[BWBR 진단]%c ===== 방 설정 (rooms entity) =====',
+      'color: #ff9800; font-weight: bold;', 'color: inherit;');
+    console.log('모든 키:', Object.keys(room).sort());
+
+    // URL/이미지/사운드 관련 필드 하이라이트
+    const interesting = {};
+    for (const [k, v] of Object.entries(room)) {
+      const lk = k.toLowerCase();
+      if (lk.includes('image') || lk.includes('url') || lk.includes('sound') ||
+          lk.includes('bgm') || lk.includes('music') || lk.includes('audio') ||
+          lk.includes('scene') || lk.includes('background') || lk.includes('foreground') ||
+          lk.includes('volume') || lk.includes('screen')) {
+        interesting[k] = v;
+      }
+    }
+    console.log('🎵 미디어/장면 관련 필드:', interesting);
+    console.log('전체 데이터:', JSON.parse(JSON.stringify(room)));
+    console.log('%c[BWBR 진단]%c ================================',
+      'color: #ff9800; font-weight: bold;', 'color: inherit;');
+  });
+
+  // ================================================================
+  //  트리거: 방 설정 변경 (BGM, 장면 이미지 등)
+  //  Content Script에서 bwbr-trigger-room-field 이벤트로 요청
+  //  field: 방 문서의 필드명 (예: soundUrl, backgroundImageUrl, ...)
+  // ================================================================
+  window.addEventListener('bwbr-trigger-room-field', async (e) => {
+    const detail = e.detail || {};
+    const respond = (d) => window.dispatchEvent(
+      new CustomEvent('bwbr-trigger-room-field-result', { detail: d })
+    );
+
+    try {
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) throw new Error('Firestore SDK 없음');
+      if (!reduxStore) throw new Error('Redux Store 없음');
+
+      const roomId = getRoomId();
+      if (!roomId) throw new Error('방 ID를 찾을 수 없음');
+
+      const update = { updatedAt: Date.now() };
+
+      // 전달받은 fields 객체의 모든 키-값 쌍을 방 문서에 쓴다
+      const fields = detail.fields || {};
+      for (const [key, val] of Object.entries(fields)) {
+        update[key] = val;
+      }
+
+      const roomCol = sdk.collection(sdk.db, 'rooms');
+      const roomRef = sdk.doc(roomCol, roomId);
+      await sdk.setDoc(roomRef, update, { merge: true });
+
+      console.log(`%c[BWBR]%c ✅ 방 설정 변경:`, 'color: #4caf50; font-weight: bold;', 'color: inherit;',
+        Object.keys(fields));
+      respond({ success: true, fields: Object.keys(fields) });
+    } catch (err) {
+      console.error('[BWBR] 방 설정 변경 실패:', err.message);
+      respond({ success: false, error: err.message });
+    }
+  });
+
+  // ================================================================
+  //  진단: 네이티브 장면 목록 덤프
+  //  콘솔: window.dispatchEvent(new CustomEvent('bwbr-dump-scenes'))
+  // ================================================================
+  window.addEventListener('bwbr-dump-scenes', () => {
+    if (!reduxStore) return console.error('[BWBR 진단] Redux Store 없음');
+    const state = reduxStore.getState();
+
+    // scenes는 entities 아래에 있을 수 있음
+    console.log('%c[BWBR 진단]%c ===== 장면(scene) 탐색 =====',
+      'color: #e91e63; font-weight: bold;', 'color: inherit;');
+
+    // entities 내 모든 키 나열
+    const entityKeys = Object.keys(state.entities || {});
+    console.log('entities 내 모든 키:', entityKeys);
+
+    // roomScenes 엔티티 출력
+    const scenesEnt = state.entities?.roomScenes;
+    if (scenesEnt?.ids?.length) {
+      console.log('roomScenes ids:', scenesEnt.ids);
+      for (const sid of scenesEnt.ids) {
+        const sc = scenesEnt.entities[sid];
+        console.log('  장면:', sc?.name || '(이름 없음)', '| 키:', Object.keys(sc || {}), '| 데이터:', JSON.parse(JSON.stringify(sc)));
+      }
+    } else {
+      console.log('roomScenes: 비어 있음');
+    }
+
+    // app.state도 확인
+    if (state.app?.state) {
+      const appKeys = Object.keys(state.app.state);
+      const sceneKeys = appKeys.filter(k => k.toLowerCase().includes('scene'));
+      if (sceneKeys.length) {
+        console.log('app.state 내 scene 키:', sceneKeys.map(k => ({ [k]: state.app.state[k] })));
+      }
+    }
+
+    // 현재 방의 sceneId
+    const roomId = state.app?.state?.roomId
+      || window.location.pathname.match(/\/rooms\/([^/]+)/)?.[1];
+    if (roomId) {
+      const room = state.entities?.rooms?.entities?.[roomId];
+      if (room?.sceneId) console.log('현재 sceneId:', room.sceneId);
+    }
+
+    console.log('%c[BWBR 진단]%c ==============================',
+      'color: #e91e63; font-weight: bold;', 'color: inherit;');
+  });
+
+  // ================================================================
+  //  트리거: 네이티브 장면 불러오기
+  //  장면 이름으로 검색 → 방 문서에 장면 필드 복사
+  //  applyOption: 'all' | 'noBgm' | 'noText'
+  // ================================================================
+  window.addEventListener('bwbr-load-native-scene', async (e) => {
+    // DOM 속성 브릿지 (크로스-월드 안정성)
+    const _raw = document.documentElement.getAttribute('data-bwbr-load-native-scene');
+    document.documentElement.removeAttribute('data-bwbr-load-native-scene');
+    const detail = _raw ? JSON.parse(_raw) : (e.detail || {});
+    const respond = (d) => window.dispatchEvent(
+      new CustomEvent('bwbr-load-native-scene-result', { detail: d })
+    );
+
+    try {
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) throw new Error('Firestore SDK 없음');
+      if (!reduxStore) throw new Error('Redux Store 없음');
+
+      const roomId = getRoomId();
+      if (!roomId) throw new Error('방 ID를 찾을 수 없음');
+
+      const state = reduxStore.getState();
+      const sceneName = (detail.sceneName || '').trim();
+      const applyOption = detail.applyOption || 'all';
+
+      if (!sceneName) throw new Error('장면 이름이 비어 있음');
+
+      // roomScenes 엔티티에서 이름으로 검색
+      const scenesEnt = state.entities?.roomScenes;
+      let targetScene = null;
+
+      if (scenesEnt?.ids?.length) {
+        for (const sid of scenesEnt.ids) {
+          const sc = scenesEnt.entities[sid];
+          if (sc && sc.name === sceneName) {
+            targetScene = sc;
+            break;
+          }
+        }
+      }
+
+      if (!targetScene) throw new Error('장면을 찾을 수 없음: ' + sceneName);
+
+      // 장면 데이터에서 방 문서에 쓸 필드 추출
+      const update = { updatedAt: Date.now() };
+
+      // 장면의 모든 필드를 복사하되, 시스템 필드와 옵션에 따라 제외
+      const blacklist = new Set([
+        '_id', 'name', 'locked', 'order', 'createdAt', 'updatedAt'
+      ]);
+
+      // BGM 관련 필드 (noBgm 옵션용)
+      const bgmFields = new Set([
+        'soundUrl', 'soundVolume', 'soundName', 'soundRef', 'soundRepeat',
+        'mediaUrl', 'mediaVolume', 'mediaName', 'mediaRef', 'mediaRepeat', 'mediaType'
+      ]);
+
+      // 텍스트 관련 필드 (noText 옵션용) — 장면 전환 시 표시되는 텍스트
+      const textFields = new Set([
+        'text'
+      ]);
+
+      for (const [key, val] of Object.entries(targetScene)) {
+        if (blacklist.has(key)) continue;
+        if (applyOption === 'noBgm' && bgmFields.has(key)) continue;
+        if (applyOption === 'noText' && textFields.has(key)) continue;
+        update[key] = val;
+      }
+
+      const roomCol = sdk.collection(sdk.db, 'rooms');
+      const roomRef = sdk.doc(roomCol, roomId);
+      await sdk.setDoc(roomRef, update, { merge: true });
+
+      console.log(`%c[BWBR]%c ✅ 장면 적용:`, 'color: #4caf50; font-weight: bold;', 'color: inherit;',
+        sceneName, '(' + applyOption + ')', '필드:', Object.keys(update).length);
+      respond({ success: true, sceneName: sceneName });
+    } catch (err) {
+      console.error('[BWBR] 장면 적용 실패:', err.message);
+      respond({ success: false, error: err.message });
+    }
   });
 
   // ================================================================

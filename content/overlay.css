@@ -647,6 +647,15 @@
   filter: brightness(1.2);
 }
 
+/* 최대 행동력 초과 슬롯 — 노란색 */
+.bwbr-action-cell.bwbr-action-excess {
+  background: rgba(255, 213, 79, 0.75) !important;
+}
+
+.bwbr-action-cell.bwbr-action-excess:hover {
+  filter: brightness(1.3);
+}
+
 /* 행동 슬롯 추가 버튼 (+) */
 .bwbr-action-add-btn {
   width: 16px;

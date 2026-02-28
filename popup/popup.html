@@ -143,6 +143,15 @@
           <div class="toggle-hint" style="font-size:11px;color:#888;padding:2px 0 4px;">캐릭터 토큰 우클릭 → 단축키 지정, Ctrl/Alt/Shift+숫자로 발화 캐릭터 전환</div>
         </div>
 
+        <div class="field-group">
+          <label class="toggle-label inline">
+            <span>더 나은 사운드바</span>
+            <input type="checkbox" id="toggle-betterSoundbar" checked>
+            <span class="toggle-slider small"></span>
+          </label>
+          <div class="toggle-hint" style="font-size:11px;color:#888;padding:2px 0 4px;">코코포리아 음량 슬라이더를 렉 없는 경량 버전으로 교체합니다</div>
+        </div>
+
       </div>
       <!-- 사운드 설정 탭 -->
       <div class="tab-panel" id="tab-sounds">
@@ -150,11 +159,6 @@
         <!-- 코코포리아 컷인 사운드 -->
         <div class="section-desc" style="font-weight:700;color:#ffab40;">코코포리아 컷인 사운드</div>
         <div class="section-desc">코코포리아 세션에 등록된 컷인 사운드 이름을 입력합니다. 여러 개 등록 시 무작위 재생됩니다.</div>
-
-        <div class="field-group">
-          <label class="field-label">코코포리아 음량 <span id="gen-siteVolume-val" style="color:#ffab40;font-weight:700">100%</span></label>
-          <input type="range" class="field-range" id="gen-siteVolume" min="0" max="1" step="0.05" value="1.0">
-        </div>
 
         <div class="field-group">
           <label class="field-label">합 개시 사운드</label>
@@ -254,9 +258,8 @@
 
         <hr style="border:0;border-top:1px solid #333;margin:16px 0">
 
-        <!-- 로컬 사운드 -->
-        <div class="section-desc" style="font-weight:700;color:#82b1ff;">로컬 사운드</div>
-        <div class="section-desc">확장 프로그램에서 직접 재생하는 로컬 사운드입니다.</div>
+        <!-- 사운드 설정 -->
+        <div class="section-desc" style="font-weight:700;color:#82b1ff;">사운드 설정</div>
 
         <div class="field-group">
           <label class="field-label">로컬 사운드 볼륨 <span id="gen-sfxVolume-val" style="color:#82b1ff;font-weight:700">45%</span></label>

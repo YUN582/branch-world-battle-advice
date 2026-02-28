@@ -45,6 +45,20 @@
   let _spectatorStartTime = 0;           // 관전 시작 시각 (premature end 방지용)
   let _activeCombatFromTurnCombat = false; // 능동 합 진행이 TURN_COMBAT에서 시작되었는지
   let _userMessagePendingPromise = null; // 사용자 메시지 도착 대기 프라미스 (메시지 순서 보장)
+  let triggerEngine = null; // TriggerEngine 인스턴스 (범용 트리거 시스템)
+  let _cachedSpeakerName = null; // 현재 발화(선택) 캐릭터 이름
+
+  // Redux speaking 캐릭터 변경 감시 (redux-injector.js의 store.subscribe에서 push)
+  document.addEventListener('bwbr-speaker-changed', () => {
+    const name = document.documentElement.getAttribute('data-bwbr-speaker-name');
+    if (name) _cachedSpeakerName = name;
+  });
+
+  // char-shortcut.js Alt+숫자 전환 시 캐시 선행 갱신 (Redux 반영 전)
+  window.addEventListener('bwbr-switch-character', (e) => {
+    const name = e.detail?.name;
+    if (name) _cachedSpeakerName = name;
+  });
 
   // ── 초기화 ───────────────────────────────────────────────
 
@@ -75,23 +89,39 @@
     // 패널 이벤트
     overlay.onCancel(() => cancelCombat());
     overlay.onPause(() => togglePause());
-    overlay.setActionClickCallback((type, index, action) => {
-      // 행동 슬롯 클릭 처리
-      // action: 'use' (활성 슬롯 클릭 → 소모), 'restore' (소모된 슬롯 클릭 → 복구), 'add' (+ 버튼 클릭 → 추가)
+    overlay.setActionClickCallback(async (type, index, action) => {
+      // 행동 슬롯 클릭 → 실제 캐릭터 스탯 변경 (Firestore 경유)
+      const current = combatEngine.getState()?.currentCharacter;
+      if (!current) return;
+      const statLabel = type === 'main' ? '주 행동🔺' : '보조 행동🔹';
+
+      // 수정 전 스탯 조회 (요약 메시지용)
+      const preStats = _extractActionStats(current);
+
+      let result;
       if (action === 'use') {
-        if (type === 'main') {
-          handleMainActionUsed(true);
-        } else if (type === 'sub') {
-          handleSubActionUsed();
-        }
-      } else if (action === 'restore' || action === 'add') {
-        const extendMax = (action === 'add');
-        if (type === 'main') {
-          handleMainActionAdded(extendMax);
-        } else if (type === 'sub') {
-          handleSubActionAdded(extendMax);
-        }
+        result = await _modifyCharStat(current.name, statLabel, '-', 1, true);
+      } else if (action === 'restore') {
+        result = await _modifyCharStat(current.name, statLabel, '+', 1, true);
+      } else if (action === 'add') {
+        // 현재 값만 +1 (최대치 초과 허용, max는 변경하지 않음)
+        result = await _modifyCharStat(current.name, statLabel, '+', 1, true);
       }
+
+      // 요약 시스템 메시지 전송
+      if (result && result.success) {
+        const mainStr = type === 'main'
+          ? `🔺주 행동 ${result.oldVal} → ${result.newVal}개`
+          : `🔺주 행동 ${preStats.mainActions}개`;
+        const subStr = type === 'sub'
+          ? `🔹보조 행동 ${result.oldVal} → ${result.newVal}개`
+          : `🔹보조 행동 ${preStats.subActions}개`;
+        const msg = `〔 ${current.name}의 차례 〕\n${mainStr}, ${subStr} | 이동거리 ${current.movement}`;
+        chat.sendSystemMessage(msg);
+      }
+
+      // 즉시 UI 갱신
+      _scheduleStatRefreshUI(100);
     });
     overlay.setStatus(enabled ? 'idle' : 'disabled', enabled ? '대기 중' : '비활성');
 
@@ -111,6 +141,28 @@
     // 로그 추출 메뉴 삽입 (톱니바퀴 메뉴에 항목 추가)
     setupLogExportMenu();
 
+    // 범용 트리거 엔진 초기화
+    if (window.TriggerEngine) {
+      triggerEngine = new window.TriggerEngine();
+      triggerEngine.init({
+        chat: chat,
+        getFlowState: () => flowState,
+        awaitUserMessage: () => _awaitUserMessage(),
+        getCurrentCombatCharName: () => {
+          const s = combatEngine.getState();
+          return s && s.currentCharacter ? s.currentCharacter.name : null;
+        },
+        getSpeakerName: () => _cachedSpeakerName
+      });
+      await triggerEngine.load();
+      alwaysLog('범용 트리거 엔진 초기화 완료 (' + triggerEngine.getTriggers().length + '개 트리거)');
+
+      // 트리거 관리 UI 초기화
+      if (window.BWBR_TriggerUI) {
+        window.BWBR_TriggerUI.init(triggerEngine);
+      }
+    }
+
     // 채팅 관찰 시작 - Redux 기반 (DOM 대신 Redux store.subscribe 사용)
     // 탭 전환, DOM 갱신에 영향받지 않아 100% 메시지 감지율을 보장합니다.
     chat.observeReduxMessages(onNewMessage);
@@ -125,6 +177,9 @@
 
     // 사이트 음량 적용 (site-volume.js에서 이미 API 패치 완료)
     applySiteVolume(config.general.siteVolume ?? 1.0);
+
+    // 사이트 UI에 음량 슬라이더 주입
+    injectSiteVolumeSlider();
 
     // 저장된 턴 전투 상태 복원 시도 (새로고침 후)
     const restored = await _tryRestoreTurnCombat();
@@ -248,13 +303,29 @@
     if (text.startsWith('@')) return;
     log(`[입력 감지] "${text.substring(0, 80)}"`);  // 디버그 모드에서만
 
+    // _cachedSpeakerName는 Redux subscription(bwbr-speaker-changed) + bwbr-switch-character로 실시간 갱신됨
+
     // ★ 사용자 메시지가 Firestore에 도착할 때까지 대기할 프라미스 생성
     // 시스템 메시지(턴 안내, 행동 소비 등)가 사용자 메시지 이후에 전송되도록 보장
     _userMessagePendingPromise = waitForUserMessageDelivery();
 
-    // 전투 보조 시스템 트리거 감지
+    // 전투 보조 시스템 트리거는 항상 먼저 체크 (범용 트리거와 독립 실행)
     if (flowState === STATE.IDLE || flowState === STATE.TURN_COMBAT) {
       checkForCombatAssistTrigger(text);
+    }
+
+    // 범용 트리거 엔진 매칭
+    if (triggerEngine) {
+      const match = triggerEngine.check(text, 'input');
+      if (match) {
+        triggerEngine.execute(match.trigger, match.params, true);
+        // 트리거 매칭 후에도 합 개시 체크는 수행 (《합 개시》 등은 트리거와 별개)
+        if (flowState === STATE.IDLE || flowState === STATE.TURN_COMBAT) {
+          checkForTrigger(text);
+        }
+        checkForCancel(text);
+        return;
+      }
     }
 
     // 합 개시: IDLE 또는 TURN_COMBAT에서 능동 합 진행 시작
@@ -270,6 +341,19 @@
     if (!enabled) return;
 
     alwaysLog(`[상태: ${flowState}] 메시지 수신: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"`);
+
+    // 범용 트리거 엔진 매칭 (source = 'message')
+    if (triggerEngine) {
+      const diceValue = chat.parseDiceResult(text);
+      // 주사위 결과 대기 중이면 캡처 (동작 체인 내 dice 액션용)
+      if (diceValue != null) {
+        triggerEngine.resolvePendingDice(diceValue);
+      }
+      const match = triggerEngine.check(text, 'message', diceValue);
+      if (match) {
+        triggerEngine.execute(match.trigger, match.params, false);
+      }
+    }
 
     // 전투 보조 관전 추적 (전투 진행자가 아닌 경우)
     if (flowState !== STATE.TURN_COMBAT) {
@@ -324,7 +408,7 @@
   // ══════════════════════════════════════════════════════════
 
   /** 전투 보조 개시/종료 트리거 감지 */
-  function checkForCombatAssistTrigger(text) {
+  async function checkForCombatAssistTrigger(text) {
     alwaysLog(`[전투 보조] 트리거 체크: "${text.substring(0, 50)}"`);
     
     // 전투 개시 감지: 《 전투개시 》 또는 《 전투개시 》 @전투
@@ -341,7 +425,6 @@
     }
 
     // 차례 종료 감지: 《 차례 종료 》 또는 《 차례종료 》
-    // 사용자 입력에서 바로 감지 (채팅 로그에서는 컷인이 분리되어 감지 불가)
     if (flowState === STATE.TURN_COMBAT && combatEngine.parseTurnEndTrigger(text)) {
       const now = Date.now();
       if (now - _lastTurnAdvanceTime < 1000) {
@@ -353,12 +436,68 @@
       advanceTurn();
       return;
     }
+
+    // ── 행동 소비: 전투 중 《...》 또는 【...】 감지 ──
+    if (flowState === STATE.TURN_COMBAT) {
+      const mainMatch = /《[^》]+》/.test(text);
+      const subMatch = /【[^】]+】/.test(text);
+
+      if (mainMatch || subMatch) {
+        const statLabel = mainMatch ? '주 행동🔺' : '보조 행동🔹';
+        const emoji = mainMatch ? '🔺' : '🔹';
+        const actionType = mainMatch ? '주' : '보조';
+        // 행동 소비 대상: 발화(선택) 캐릭터 (입력한 캐릭터)
+        const speakerName = _cachedSpeakerName;
+
+        if (!speakerName) {
+          alwaysLog(`[전투 보조] 화자 이름 없음 — 행동 소비 생략`);
+          return;
+        }
+
+        alwaysLog(`[전투 보조] ${actionType} 행동 소비 감지: ${speakerName}`);
+
+        // 사용자 메시지 도착 대기 후 스탯 차감 (silent: 개별 메시지 억제)
+        await _awaitUserMessage();
+        const result = await _modifyCharStat(speakerName, statLabel, '-', 1, true);
+
+        if (result && result.success) {
+          // 묶인 메시지 전송
+          let msg = `〔 ${emoji}${actionType} 행동 소비 〕`;
+          msg += `\n[ ${speakerName} ] ${statLabel} : ${result.oldVal} → ${result.newVal}`;
+          chat.sendSystemMessage(msg);
+
+          // 오버레이 UI 갱신
+          _scheduleStatRefreshUI();
+        } else {
+          alwaysLog(`[전투 보조] 행동 소비 실패: ${result ? result.error : '타임아웃'}`);
+        }
+      }
+    }
   }
 
-  // ── 행동 소모 감지 ─────────────────────────────
-  let _lastActionTime = 0;  // 행동 소모 디바운스 (onNewMessage 경로)
+  /** MAIN 월드에서 캐릭터 전투 스탯 조회 (DOM 속성 브릿지) */
+  function _fetchCharStatsFromMain(name) {
+    return new Promise(resolve => {
+      const timeout = setTimeout(() => {
+        window.removeEventListener('bwbr-char-stats-result', handler);
+        resolve(null);
+      }, 3000);
+      function handler() {
+        clearTimeout(timeout);
+        window.removeEventListener('bwbr-char-stats-result', handler);
+        const raw = document.documentElement.getAttribute('data-bwbr-char-stats-result');
+        document.documentElement.removeAttribute('data-bwbr-char-stats-result');
+        if (raw) { try { resolve(JSON.parse(raw)); return; } catch (e) {} }
+        resolve(null);
+      }
+      window.addEventListener('bwbr-char-stats-result', handler);
+      document.documentElement.setAttribute('data-bwbr-get-char-stats', name);
+      window.dispatchEvent(new CustomEvent('bwbr-get-char-stats'));
+    });
+  }
 
-  /** 전투 보조 모드에서 채팅 메시지 처리 (onNewMessage 경유) */
+  /** 전투 보조 모드에서 채팅 메시지 처리 (onNewMessage 경유)
+   *  주/보조 행동 소모는 트리거 시스템이 담당하므로 여기서는 차례 종료만 감지합니다. */
   function processCombatAssistMessage(text, senderName) {
     if (flowState !== STATE.TURN_COMBAT) return;
 
@@ -375,53 +514,23 @@
       return;
     }
 
-    // 자동 소모가 비활성화되어 있으면 여기서 종료
-    if (!config.general.autoConsumeActions) return;
-
-    // 자체 전송한 행동 소비/추가 메시지는 무시 (에코 방지)
-    if (/《.*행동\s*(소비|추가)》/.test(text)) return;
-
-    // 행동 감지 디바운스: 500ms 내 중복 방지
-    // (onInputSubmit에서 이미 소모한 경우 여기서 차단됨)
-    const now = Date.now();
-    if (now - _lastActionTime < 500) {
-      return;
+    // 스탯 변경 알림에 의한 UI 자동 갱신
+    // 행동 소비/추가 시스템 메시지 감지 시 UI 갱신 (〔〕 및 《》 모두 지원)
+    if (/[《〔].*행동\s*(소비|추가)[》〕]/.test(text) || /\]\s*주 행동🔺/.test(text) || /\]\s*보조 행동🔹/.test(text)) {
+      _scheduleStatRefreshUI();
     }
+  }
 
-    // 합 개시 감지: 공격자가 현재 차례 캐릭터와 같으면 주 행동 소모
-    const meleeAttacker = combatEngine.parseMeleeStartAttacker(text);
-    if (meleeAttacker) {
-      const state = combatEngine.getState();
-      const currentChar = state.currentCharacter;
-      if (currentChar && currentChar.name === meleeAttacker) {
-        _lastActionTime = now;
-        handleMainActionUsed(true);
-      }
-      return;  // 합 개시 메시지는 일반 주 행동으로 처리하지 않음
-    }
-
-    // ★ 메시지 발신자가 현재 차례 캐릭터인지 확인 (다른 캐릭터의 행동은 무시)
-    const currentChar = combatEngine.getState().currentCharacter;
-    if (senderName && currentChar && senderName !== currentChar.name) {
-      // 발신 캐릭터가 현재 차례자와 다르면 행동 소모 하지 않음
-      return;
-    }
-
-    // 주 행동 다이스 감지: 1d20+... | 《...》 | 또는 단독 《...》
-    const mainActionResult = combatEngine.parseMainActionRoll(text);
-    if (mainActionResult) {
-      _lastActionTime = now;
-      handleMainActionUsed(mainActionResult);
-      return;
-    }
-
-    // 보조 행동 감지: 【...】
-    const subActionResult = combatEngine.parseSubActionRoll(text);
-    if (subActionResult) {
-      _lastActionTime = now;
-      handleSubActionUsed();
-      return;
-    }
+  /** 스탯 변경 후 UI 자동 갱신 (디바운스)
+   *  @param {number} [ms=800] 대기 시간 (ms) */
+  let _statRefreshTimer = null;
+  function _scheduleStatRefreshUI(ms) {
+    clearTimeout(_statRefreshTimer);
+    _statRefreshTimer = setTimeout(async () => {
+      // Firestore 반영 대기 후 최신 데이터로 오버레이 갱신
+      await _refreshCharacterOriginalData();
+      await refreshTurnUI();
+    }, ms != null ? ms : 800);
   }
 
   /** 전투 보조 시작 */
@@ -445,7 +554,7 @@
     _doStartCombatAssist();
   }
 
-  function _doStartCombatAssist() {
+  async function _doStartCombatAssist() {
     const result = combatEngine.startCombat();
     if (!result.success) {
       alwaysLog(`전투 보조 시작 실패: ${result.message}`);
@@ -467,6 +576,9 @@
     ).join('\n');
     alwaysLog(`턴 순서:\n${turnOrder}`);
 
+    // 전체 행동력 초기화 (silent: 개별 메시지 억제) + 묶인 메시지 전송
+    await _resetAllActionStats('⚔️ 전투 개시');
+
     // 첫 턴 시작 (currentTurnIndex를 -1에서 0으로)
     combatEngine.nextTurn();
 
@@ -476,11 +588,23 @@
     // 첫 턴 시작 메시지 전송
     sendTurnStartMessage();
 
-    // 전투 개시 사운드 (별도 시스템 메시지)
+    // 전투 개시 컷인 (있으면)
     const startCutin = _pickCutin('battleStartSounds');
     if (startCutin) {
-      chat.sendSystemMessage(`《 전투 보조 개시 》${startCutin}`);
+      chat.sendSystemMessage(startCutin);
     }
+  }
+
+  /** 전체 캐릭터 행동력 초기화 → 묶인 시스템 메시지 전송
+   *  @param {string} headerText - 메시지 헤더 (예: '⚔️ 전투 개시', '🏳️ 전투 종료') */
+  async function _resetAllActionStats(headerText) {
+    await _modifyAllCharStat('취약💥', '=', 0, true);
+    await _modifyAllCharStat('주 행동🔺', '=max', 0, true);
+    await _modifyAllCharStat('보조 행동🔹', '=max', 0, true);
+
+    let msg = `〔 ${headerText} 〕`;
+    msg += `\n모든 캐릭터의 행동력이 초기화되었습니다.`;
+    chat.sendSystemMessage(msg);
   }
 
   /** 다음 턴으로 이동 */
@@ -493,79 +617,75 @@
       alwaysLog('모든 캐릭터 턴 완료, 처음으로 돌아감');
     }
 
+    // 턴 시작 메시지 + 스탯 리셋은 sendTurnStartMessage에서 처리
     sendTurnStartMessage();
   }
 
-  /** 주 행동 사용 처리 */
-  function handleMainActionUsed(actionResult) {
-    const result = combatEngine.useMainAction();
-    if (result.success) {
-      alwaysLog(`주 행동 사용! 남은 주 행동: ${result.remaining.mainActions}개`);
-      overlay.addLog(`🔺주 행동 사용 (남은: ${result.remaining.mainActions}개)`, 'info');
-      refreshTurnUI();  // UI 갱신
-      _saveTurnCombatState();
-      sendActionConsumedMessage('주');  // 비동기 — 사용자 메시지 도착 대기 후 전송
-    }
+  // ── 스탯 변경 헬퍼 ──────────────────────────────
+
+  /** 개별 캐릭터 스탯 변경 이벤트 발송 (Promise 반환, silent 지원) */
+  function _modifyCharStat(characterName, statLabel, operation, value, silent) {
+    return new Promise(resolve => {
+      const timeout = setTimeout(() => {
+        window.removeEventListener('bwbr-modify-status-result', handler);
+        resolve(null);
+      }, 5000);
+      function handler() {
+        clearTimeout(timeout);
+        window.removeEventListener('bwbr-modify-status-result', handler);
+        const raw = document.documentElement.getAttribute('data-bwbr-modify-status-result');
+        document.documentElement.removeAttribute('data-bwbr-modify-status-result');
+        let result = null;
+        if (raw) { try { result = JSON.parse(raw); } catch (e) {} }
+        resolve(result);
+      }
+      window.addEventListener('bwbr-modify-status-result', handler);
+      const detail = {
+        targetName: characterName,
+        statusLabel: statLabel,
+        operation: operation,
+        value: value,
+        valueType: 'value',
+        silent: !!silent
+      };
+      document.documentElement.setAttribute('data-bwbr-modify-status', JSON.stringify(detail));
+      window.dispatchEvent(new CustomEvent('bwbr-modify-status', { detail: detail }));
+    });
   }
 
-  /** 보조 행동 사용 처리 */
-  function handleSubActionUsed() {
-    const result = combatEngine.useSubAction();
-    if (result.success) {
-      alwaysLog(`보조 행동 사용! 남은 보조 행동: ${result.remaining.subActions}개`);
-      overlay.addLog(`🔹보조 행동 사용 (남은: ${result.remaining.subActions}개)`, 'info');
-      refreshTurnUI();  // UI 갱신
-      _saveTurnCombatState();
-      sendActionConsumedMessage('보조');  // 비동기 — 사용자 메시지 도착 대기 후 전송
-    }
+  /** 전체 캐릭터 스탯 일괄 변경 (Promise 반환, silent 지원)
+   *  반환: { success, affected, label, changes: [{name, oldVal, newVal}] } */
+  function _modifyAllCharStat(statLabel, operation, value, silent) {
+    return new Promise(resolve => {
+      const timeout = setTimeout(() => {
+        window.removeEventListener('bwbr-modify-status-all-result', handler);
+        resolve(null);
+      }, 5000);
+      function handler() {
+        clearTimeout(timeout);
+        window.removeEventListener('bwbr-modify-status-all-result', handler);
+        const raw = document.documentElement.getAttribute('data-bwbr-modify-status-all-result');
+        document.documentElement.removeAttribute('data-bwbr-modify-status-all-result');
+        let result = null;
+        if (raw) { try { result = JSON.parse(raw); } catch (e) {} }
+        resolve(result);
+      }
+      window.addEventListener('bwbr-modify-status-all-result', handler);
+      const detail = {
+        statusLabel: statLabel,
+        operation: operation,
+        value: value,
+        valueType: 'value',
+        silent: !!silent
+      };
+      document.documentElement.setAttribute('data-bwbr-modify-status-all', JSON.stringify(detail));
+      window.dispatchEvent(new CustomEvent('bwbr-modify-status-all', { detail: detail }));
+    });
   }
 
-  /** 행동 소비 메시지 전송 */
-  async function sendActionConsumedMessage(actionType) {
-    await _awaitUserMessage();
-    const state = combatEngine.getState();
-    const current = state.currentCharacter;
-    if (!current) return;
-
-    const emoji = actionType === '주' ? '🔺' : '🔹';
-    const msg = `《${emoji}${actionType} 행동 소비》\n${current.name} | 🔺주 행동 ${current.mainActions}, 🔹보조 행동 ${current.subActions} | 이동거리 ${current.movement}${_pickCutin('actionConsumeSounds')}`;
-    chat.sendSystemMessage(msg);
-  }
-
-  /** 주 행동 추가 처리 (슬롯 복구 또는 신규 추가) */
-  function handleMainActionAdded(extendMax = false) {
-    const result = combatEngine.addMainAction(extendMax);
-    if (result.success) {
-      alwaysLog(`주 행동 추가! 현재 주 행동: ${result.remaining.mainActions}개`);
-      overlay.addLog(`🔺주 행동 추가 (현재: ${result.remaining.mainActions}개)`, 'info');
-      refreshTurnUI();  // UI 갱신
-      _saveTurnCombatState();
-      sendActionAddedMessage('주');  // 비동기 — 사용자 메시지 도착 대기 후 전송
-    }
-  }
-
-  /** 보조 행동 추가 처리 (슬롯 복구 또는 신규 추가) */
-  function handleSubActionAdded(extendMax = false) {
-    const result = combatEngine.addSubAction(extendMax);
-    if (result.success) {
-      alwaysLog(`보조 행동 추가! 현재 보조 행동: ${result.remaining.subActions}개`);
-      overlay.addLog(`🔹보조 행동 추가 (현재: ${result.remaining.subActions}개)`, 'info');
-      refreshTurnUI();  // UI 갱신
-      _saveTurnCombatState();
-      sendActionAddedMessage('보조');  // 비동기 — 사용자 메시지 도착 대기 후 전송
-    }
-  }
-
-  /** 행동 추가 메시지 전송 */
-  async function sendActionAddedMessage(actionType) {
-    await _awaitUserMessage();
-    const state = combatEngine.getState();
-    const current = state.currentCharacter;
-    if (!current) return;
-
-    const emoji = actionType === '주' ? '🔺' : '🔹';
-    const msg = `《${emoji}${actionType} 행동 추가》\n${current.name} | 🔺주 행동 ${current.mainActions}, 🔹보조 행동 ${current.subActions} | 이동거리 ${current.movement}${_pickCutin('actionAddSounds')}`;
-    chat.sendSystemMessage(msg);
+  /** 간단한 딜레이 유틸 */
+  function _delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /** 턴 전투 UI 갱신 */
@@ -719,6 +839,18 @@
     }, 2000);
   }
 
+  /** 캐릭터의 실제 스탯에서 주 행동/보조 행동 값 추출 */
+  function _extractActionStats(current) {
+    const mainStatus = combatEngine.getStatusValue(current.originalData, '주 행동');
+    const subStatus = combatEngine.getStatusValue(current.originalData, '보조 행동');
+    return {
+      mainActions: mainStatus ? parseInt(mainStatus.value) || 0 : current.mainActions,
+      mainActionsMax: mainStatus ? parseInt(mainStatus.max) || 0 : current.mainActionsMax,
+      subActions: subStatus ? parseInt(subStatus.value) || 0 : current.subActions,
+      subActionsMax: subStatus ? parseInt(subStatus.max) || 0 : current.subActionsMax
+    };
+  }
+
   async function refreshTurnUI() {
     const state = combatEngine.getState();
     const current = state.currentCharacter;
@@ -728,6 +860,7 @@
     await _refreshCharacterOriginalData();
 
     const { willValue, willMax, armorValue, aliasValue } = _extractCharInfo(current);
+    const actionStats = _extractActionStats(current);
 
     overlay.updateTurnInfo({
       name: current.name,
@@ -736,14 +869,14 @@
       willMax: willMax,
       armor: armorValue,
       alias: aliasValue,
-      mainActions: current.mainActions,
-      mainActionsMax: current.mainActionsMax,
-      subActions: current.subActions,
-      subActionsMax: current.subActionsMax
+      mainActions: actionStats.mainActions,
+      mainActionsMax: actionStats.mainActionsMax,
+      subActions: actionStats.subActions,
+      subActionsMax: actionStats.subActionsMax
     });
   }
 
-  /** 턴 시작 메시지 전송 */
+  /** 턴 시작 메시지 전송 + 해당 캐릭터의 주/보조 행동 stat을 최대치로 리셋 */
   async function sendTurnStartMessage() {
     // 사용자 트리거 메시지가 먼저 도착하도록 대기
     await _awaitUserMessage();
@@ -755,16 +888,26 @@
       return;
     }
 
-    // 《 {캐릭터 이름}의 차례 》\n🔺주 행동 N개, 🔹보조 행동 Y개 | 이동거리 Z
-    const turnMsg = `《 ${current.name}의 차례 》\n🔺주 행동 ${current.mainActions}개, 🔹보조 행동 ${current.subActions}개 | 이동거리 ${current.movement}${_pickCutin('turnStartSounds')}`;
+    // 차례 시작 시: 현재 캐릭터의 주 행동/보조 행동을 최대치로 리셋 (silent)
+    const r1 = await _modifyCharStat(current.name, '주 행동🔺', '=max', 0, true);
+    const r2 = await _modifyCharStat(current.name, '보조 행동🔹', '=max', 0, true);
+
+    // Firestore 반영 대기 후 최신 데이터 가져오기
+    await _delay(400);
+    await _refreshCharacterOriginalData();
+
+    const { willValue, willMax, armorValue, aliasValue } = _extractCharInfo(current);
+    const actionStats = _extractActionStats(current);
+
+    // 묶인 턴 시작 메시지
+    let turnMsg = `〔 ${current.name}의 차례 〕`;
+    turnMsg += `\n🔺주 행동 ${actionStats.mainActions}개, 🔹보조 행동 ${actionStats.subActions}개 | 이동거리 ${current.movement}`;
+    const cutin = _pickCutin('turnStartSounds');
+    if (cutin) turnMsg += cutin;
     
     alwaysLog(`턴 메시지: ${turnMsg}`);
     overlay.addLog(`🎯 ${current.name}의 차례`, 'success');
 
-    // 오버레이에 턴 정보 표시 (최신 데이터로 갱신 후)
-    await _refreshCharacterOriginalData();
-    const { willValue, willMax, armorValue, aliasValue } = _extractCharInfo(current);
-    
     overlay.updateTurnInfo({
       name: current.name,
       iconUrl: current.iconUrl,
@@ -772,10 +915,10 @@
       willMax: willMax,
       armor: armorValue,
       alias: aliasValue,
-      mainActions: current.mainActions,
-      mainActionsMax: current.mainActionsMax,
-      subActions: current.subActions,
-      subActionsMax: current.subActionsMax
+      mainActions: actionStats.mainActions,
+      mainActionsMax: actionStats.mainActionsMax,
+      subActions: actionStats.subActions,
+      subActionsMax: actionStats.subActionsMax
     });
 
     // 채팅으로 전송
@@ -783,15 +926,18 @@
   }
 
   /** 전투 보조 모드 종료 */
-  function endCombatAssist() {
+  async function endCombatAssist() {
     if (flowState !== STATE.TURN_COMBAT) return;
 
     alwaysLog('🎲 전투 보조 모드 종료');
 
-    // 전투 종료 사운드
+    // 전체 행동력 초기화 + 묶인 메시지 전송
+    await _resetAllActionStats('🏳️ 전투 종료');
+
+    // 전투 종료 컷인 (있으면)
     const endCutin = _pickCutin('battleEndSounds');
     if (endCutin) {
-      chat.sendSystemMessage(`《 전투 보조 종료 》${endCutin}`);
+      chat.sendSystemMessage(endCutin);
     }
 
     combatEngine.endCombat();
@@ -998,15 +1144,12 @@
 
     alwaysLog(`✅ 합 개시 감지! ⚔️${triggerData.attacker.name}(${triggerData.attacker.dice}) vs 🛡️${triggerData.defender.name}(${triggerData.defender.dice})`);
 
-    // TURN_COMBAT에서 합 시작 시: 공격자가 현재 차례자이면 주 행동 소모
-    // ※ onNewMessage 경로(processCombatAssistMessage)에서는 감지 불가 —
-    //   checkForTrigger가 먼저 flowState를 COMBAT_STARTED로 변경하기 때문.
-    //   따라서 여기서 직접 처리. 공격자 이름은 메시지에서 명시적으로 파싱되므로 안전.
-    if (flowState === STATE.TURN_COMBAT && config.general.autoConsumeActions) {
+    // TURN_COMBAT에서 합 시작 시: 공격자가 현재 차례자이면 주 행동 스탯 소모
+    if (flowState === STATE.TURN_COMBAT) {
       const currentChar = combatEngine.getState().currentCharacter;
       if (currentChar && currentChar.name === triggerData.attacker.name) {
-        _lastActionTime = Date.now();
-        handleMainActionUsed(true);
+        _modifyCharStat(currentChar.name, '주 행동🔺', '-', 1);
+        _scheduleStatRefreshUI();
       }
     }
 
@@ -1515,10 +1658,14 @@
       overlay.playParrySound();
       await processManualDiceInput('공격자');
     } else {
-      const rollMsg = engine.getAttackerRollMessage();
-      log(`공격자 주사위 굴림: ${rollMsg}`);
+      const state = engine.getState();
+      const bonus = engine.combat?.attacker?.n0Bonus || 0;
+      const notation = bonus > 0 ? `1D${config.rules.diceType}+${bonus}` : `1D${config.rules.diceType}`;
+      const charName = state.combat.attacker.name;
+      const label = `⚔️ ${charName}`;
+      log(`공격자 주사위 굴림: ${notation} ${label} (${charName} 캐릭터로 직접 전송)`);
 
-      chat.sendMessage(rollMsg);
+      chat.sendDiceAsCharacter(notation, label, charName);
       overlay.playParrySound();
 
       // 일시정지 예약이 있으면 여기서 멈춤
@@ -1625,10 +1772,14 @@
       overlay.playParrySound();
       await processManualDiceInput('방어자');
     } else {
-      const rollMsg = engine.getDefenderRollMessage();
-      log(`방어자 주사위 굴림: ${rollMsg}`);
+      const state = engine.getState();
+      const bonus = engine.combat?.defender?.n0Bonus || 0;
+      const notation = bonus > 0 ? `1D${config.rules.diceType}+${bonus}` : `1D${config.rules.diceType}`;
+      const charName = state.combat.defender.name;
+      const label = `🛡️ ${charName}`;
+      log(`방어자 주사위 굴림: ${notation} ${label} (${charName} 캐릭터로 직접 전송)`);
 
-      chat.sendMessage(rollMsg);
+      chat.sendDiceAsCharacter(notation, label, charName);
       overlay.playParrySound();
 
       // 일시정지 예약이 있으면 여기서 멈춤
@@ -1691,12 +1842,11 @@
         return;
       }
 
-      // 결과 메시지 전송 (승자/패자 색상 분리)
+      // 결과 메시지 전송 (승자+패자 한 줄씩 묶어서 전송)
       if (result.description) {
         overlay.addLog(result.description, getResultLogType(result));
 
         if (result.winner) {
-          // 승자(RED) / 패자(BLUE) 분리 전송
           const st = engine.getState();
           const wKey = result.winner;
           const lKey = wKey === 'attacker' ? 'defender' : 'attacker';
@@ -1720,16 +1870,17 @@
           if (lFumble) loseMsg += ' 💀 대실패!';
           if (lDice < 0) loseMsg += ` 주사위 ${lDice}`;
 
-          await chat.sendSystemMessage(winMsg);
-          await chat.sendSystemMessage(loseMsg);
+          // 승자+패자 묶어서 한 번에 전송
+          await chat.sendSystemMessage(winMsg + '\n' + loseMsg);
         } else {
           // 동점 / 쌍방 대성공/대실패 → 기본 색상
           await chat.sendSystemMessage(result.description);
         }
       }
 
-      // 특성 이벤트 로그 + 채팅 전송
+      // 특성 이벤트 로그 + 채팅 전송 (비대화형 이벤트는 묶어서 전송)
       let manualH0ExtraRound = false;  // 수동 모드 H40/H400 추가 합 플래그
+      const traitChatLines = [];       // 묶어서 보낼 특성 메시지 모음
       if (result.traitEvents && result.traitEvents.length > 0) {
         for (const te of result.traitEvents) {
           const icon = te.who === 'attacker' ? '⚔️' : '🛡️';
@@ -1771,6 +1922,11 @@
           }
           // ── 수동 모드: H0 발동 사용자 확인 ──
           else if (te.event === 'h0_available') {
+            // 대화형 → 묶지 않고 즉시 처리
+            if (traitChatLines.length > 0) {
+              await chat.sendSystemMessage(traitChatLines.join('\n'));
+              traitChatLines.length = 0;
+            }
             overlay.addLog(`❓ ${te.name}: 인간 특성 발동 가능 — 확인 대기 중`, 'warning');
             const confirmed = await overlay.showH0Prompt(te.who, te.name);
             if (confirmed) {
@@ -1787,6 +1943,11 @@
           }
           // ── 수동 모드: H40/H400 발동 사용자 확인 ──
           else if (te.event === 'h40_h0_available') {
+            // 대화형 → 묶지 않고 즉시 처리
+            if (traitChatLines.length > 0) {
+              await chat.sendSystemMessage(traitChatLines.join('\n'));
+              traitChatLines.length = 0;
+            }
             overlay.addLog(`❓ ${te.name}: 인간 특성 발동 가능 (역사+${te.bonus} 유지) — 확인 대기 중`, 'warning');
             const confirmed = await overlay.showH0Prompt(te.who, te.name, true);
             if (confirmed) {
@@ -1806,7 +1967,11 @@
           }
 
           if (logMsg) overlay.addLog(logMsg, logType);
-          if (chatMsg) await chat.sendSystemMessage(chatMsg);
+          if (chatMsg) traitChatLines.push(chatMsg);
+        }
+        // 남은 특성 메시지 묶어서 전송
+        if (traitChatLines.length > 0) {
+          await chat.sendSystemMessage(traitChatLines.join('\n'));
         }
       }
 
@@ -2088,12 +2253,14 @@
         chat.updateConfig(config);
         overlay.updateConfig(config);
         applySiteVolume(config.general.siteVolume ?? 1.0);
+        syncSiteVolumeSlider(config.general.siteVolume ?? 1.0);
         sendResponse({ success: true });
         break;
 
       case 'BWBR_SET_SITE_VOLUME':
         config.general.siteVolume = message.volume;
         applySiteVolume(message.volume);
+        syncSiteVolumeSlider(message.volume);
         sendResponse({ success: true });
         break;
 
@@ -2124,6 +2291,17 @@
         config.general.autoConsumeActions = message.autoConsumeActions;
         alwaysLog(`행동 자동 소모 ${message.autoConsumeActions ? '활성화' : '비활성화'}`);
         overlay.addLog(`행동 자동 소모 ${message.autoConsumeActions ? 'ON' : 'OFF'}`, 'info');
+        sendResponse({ success: true });
+        break;
+
+      case 'BWBR_SET_BETTER_SOUNDBAR':
+        config.general.betterSoundbar = message.betterSoundbar;
+        if (message.betterSoundbar) {
+          injectSiteVolumeSlider();
+        } else {
+          removeSiteVolumeSlider();
+        }
+        alwaysLog(`더 나은 사운드바 ${message.betterSoundbar ? '활성화' : '비활성화'}`);
         sendResponse({ success: true });
         break;
 
@@ -3114,21 +3292,30 @@ ${rows.join('\n')}
   function requestCharacterData() {
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
+        window.removeEventListener('bwbr-characters-data', handler);
         alwaysLog('캐릭터 데이터 요청 타임아웃');
         resolve(null);
       }, 5000);
 
-      const handler = (e) => {
+      const handler = () => {
         clearTimeout(timeout);
         window.removeEventListener('bwbr-characters-data', handler);
-        
-        if (e.detail?.success && e.detail?.characters) {
-          alwaysLog(`캐릭터 데이터 수신: ${e.detail.characters.length}명`);
-          resolve(e.detail.characters);
-        } else {
-          alwaysLog('캐릭터 데이터 수신 실패');
-          resolve(null);
+
+        // DOM 속성 브릿지 (MAIN → ISOLATED 크로스-월드 안정성)
+        const raw = document.documentElement.getAttribute('data-bwbr-characters-data');
+        document.documentElement.removeAttribute('data-bwbr-characters-data');
+        if (raw) {
+          try {
+            const data = JSON.parse(raw);
+            if (data.success && data.characters) {
+              alwaysLog(`캐릭터 데이터 수신: ${data.characters.length}명`);
+              resolve(data.characters);
+              return;
+            }
+          } catch (e) { /* JSON 파싱 실패 */ }
         }
+        alwaysLog('캐릭터 데이터 수신 실패');
+        resolve(null);
       };
 
       window.addEventListener('bwbr-characters-data', handler);
@@ -3149,9 +3336,10 @@ ${rows.join('\n')}
   (function fixAriaHiddenFocus() {
     var MODAL_SEL = '.MuiPopover-root, .MuiDialog-root, .MuiModal-root, .MuiMenu-root';
 
-    // 1) 클릭 시: Modal/Popover 내부 요소 클릭하면 포커스를 즉시 해제
+    // 1) 백드롭 클릭 시에만 blur (모달 내부 인터랙션은 방해하지 않음)
     //    capture 단계 → React onClick보다 먼저 실행 → aria-hidden 설정 전에 blur
     document.addEventListener('click', function(e) {
+      if (!e.target.matches || !e.target.matches('.MuiBackdrop-root')) return;
       var ae = document.activeElement;
       if (!ae || ae === document.body) return;
       var modal = ae.closest(MODAL_SEL);
@@ -3188,7 +3376,239 @@ ${rows.join('\n')}
   function applySiteVolume(volume) {
     const v = Math.max(0, Math.min(1, volume));
     window.dispatchEvent(new CustomEvent('bwbr-set-site-volume', { detail: { volume: v } }));
-    alwaysLog(`사이트 음량: ${Math.round(v * 100)}%`);
+  }
+
+  /**
+   * 주입된 경량 슬라이더를 제거하고 네이티브 MUI 슬라이더를 복원합니다.
+   */
+  function removeSiteVolumeSlider() {
+    const root = document.getElementById('bwbr-site-vol-root');
+    if (root) {
+      // 네이티브 슬라이더 복원
+      const parent = root.parentElement;
+      if (parent) {
+        const native = parent.querySelector('.MuiSlider-root');
+        if (native) native.style.display = '';
+      }
+      root.remove();
+    }
+  }
+
+  /**
+   * 코코포리아의 네이티브 MUI 음량 슬라이더를 숨기고,
+   * 동일 위치에 렉 없는 경량 슬라이더로 교체합니다.
+   * (MUI Slider는 드래그 시 React 리렌더를 유발 → 컷인 많은 룸에서 심한 렉)
+   */
+  function injectSiteVolumeSlider() {
+    // 토글 꺼져 있으면 주입하지 않음
+    if (config.general.betterSoundbar === false) return;
+    if (document.getElementById('bwbr-site-vol-root')) return;
+
+    // 상단 툴바의 수평 음량 슬라이더 찾기
+    const sliders = document.querySelectorAll('.MuiSlider-root');
+    let nativeSlider = null;
+    for (const s of sliders) {
+      const r = s.getBoundingClientRect();
+      if (r.top < 200 && r.width > r.height && r.width > 0) { nativeSlider = s; break; }
+    }
+    if (!nativeSlider) {
+      setTimeout(injectSiteVolumeSlider, 2000);
+      return;
+    }
+
+    // 네이티브 MUI 슬라이더의 치수 캡처
+    const nativeRect = nativeSlider.getBoundingClientRect();
+    const parentEl = nativeSlider.parentElement;   // sc-iKUUEK 래퍼
+    const parentRect = parentEl.getBoundingClientRect();
+
+    // CSS 주입 (MUI Slider 외관 모방 — 주황색)
+    if (!document.getElementById('bwbr-site-vol-style')) {
+      const style = document.createElement('style');
+      style.id = 'bwbr-site-vol-style';
+      style.textContent = `
+        #bwbr-site-vol-root {
+          position: relative;
+          width: ${Math.round(nativeRect.width)}px;
+          height: ${Math.round(parentRect.height)}px;
+          display: inline-flex;
+          align-items: center;
+          cursor: pointer;
+          touch-action: none;
+          -webkit-tap-highlight-color: transparent;
+          user-select: none;
+        }
+        #bwbr-site-vol-rail {
+          position: absolute; left: 0; right: 0;
+          height: 4px; border-radius: 2px;
+          background: rgba(255,167,38,0.28);
+        }
+        #bwbr-site-vol-track {
+          position: absolute; left: 0;
+          height: 4px; border-radius: 2px;
+          background: #ffa726;
+          pointer-events: none;
+          transition: none;
+        }
+        #bwbr-site-vol-thumb {
+          position: absolute; width: 14px; height: 14px;
+          border-radius: 50%; background: #ffa726;
+          transform: translate(-50%, -50%); top: 50%;
+          box-shadow: 0 0 0 0 rgba(255,167,38,0.16);
+          transition: box-shadow 0.15s;
+          z-index: 1;
+        }
+        #bwbr-site-vol-thumb:hover,
+        #bwbr-site-vol-root.bwbr-vol-active #bwbr-site-vol-thumb {
+          box-shadow: 0 0 0 8px rgba(255,167,38,0.16);
+        }
+        #bwbr-site-vol-tooltip {
+          position: absolute; top: -32px; left: 50%;
+          transform: translateX(-50%);
+          background: #424242; color: #fff; font-size: 11px;
+          padding: 2px 6px; border-radius: 4px;
+          pointer-events: none; white-space: nowrap;
+          opacity: 0; transition: opacity 0.15s;
+        }
+        #bwbr-site-vol-root:hover #bwbr-site-vol-tooltip,
+        #bwbr-site-vol-root.bwbr-vol-active #bwbr-site-vol-tooltip {
+          opacity: 1;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    // ── 커스텀 슬라이더 구조 생성 ──
+    const root = document.createElement('div');
+    root.id = 'bwbr-site-vol-root';
+    root.title = '가지세계 도우미 — 사이트 음량 (렉 방지)';
+
+    const rail = document.createElement('div');
+    rail.id = 'bwbr-site-vol-rail';
+    const track = document.createElement('div');
+    track.id = 'bwbr-site-vol-track';
+    const thumb = document.createElement('div');
+    thumb.id = 'bwbr-site-vol-thumb';
+    const tooltip = document.createElement('div');
+    tooltip.id = 'bwbr-site-vol-tooltip';
+
+    root.appendChild(rail);
+    root.appendChild(track);
+    thumb.appendChild(tooltip);
+    root.appendChild(thumb);
+
+    // ── 상태 ──
+    let curVal = config.general.siteVolume ?? 1.0;
+    let dragging = false;
+    let _saveTimer = 0;
+
+    function updateVisual(val) {
+      const pct = Math.round(val * 100);
+      track.style.width = pct + '%';
+      thumb.style.left = pct + '%';
+      tooltip.textContent = pct + '%';
+    }
+    updateVisual(curVal);
+
+    function setVolume(val, save) {
+      curVal = Math.max(0, Math.min(1, val));
+      updateVisual(curVal);
+      applySiteVolume(curVal);
+      config.general.siteVolume = curVal;
+      if (save) {
+        clearTimeout(_saveTimer);
+        _saveTimer = setTimeout(() => {
+          try {
+            chrome.storage.sync.get('bwbr_config', (res) => {
+              if (chrome.runtime.lastError) return;
+              const c = res.bwbr_config || {};
+              if (!c.general) c.general = {};
+              c.general.siteVolume = curVal;
+              chrome.storage.sync.set({ bwbr_config: c });
+            });
+          } catch(e) { /* 컨텍스트 무효화 */ }
+        }, 300);
+      }
+    }
+
+    function valFromEvent(e) {
+      const rect = root.getBoundingClientRect();
+      return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    }
+
+    // ── 마우스 이벤트 ──
+    root.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      dragging = true;
+      root.classList.add('bwbr-vol-active');
+      root.setPointerCapture(e.pointerId);
+      setVolume(valFromEvent(e), false);
+    });
+    root.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      setVolume(valFromEvent(e), false);
+    });
+    root.addEventListener('pointerup', (e) => {
+      if (!dragging) return;
+      dragging = false;
+      root.classList.remove('bwbr-vol-active');
+      setVolume(valFromEvent(e), true);
+    });
+    root.addEventListener('pointercancel', () => {
+      dragging = false;
+      root.classList.remove('bwbr-vol-active');
+    });
+
+    // 키보드 접근성
+    root.tabIndex = 0;
+    root.setAttribute('role', 'slider');
+    root.setAttribute('aria-label', '사이트 음량');
+    root.setAttribute('aria-valuemin', '0');
+    root.setAttribute('aria-valuemax', '100');
+    root.setAttribute('aria-valuenow', String(Math.round(curVal * 100)));
+    root.addEventListener('keydown', (e) => {
+      let step = 0;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowUp') step = 0.05;
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') step = -0.05;
+      if (step) {
+        e.preventDefault();
+        setVolume(curVal + step, true);
+        root.setAttribute('aria-valuenow', String(Math.round(curVal * 100)));
+      }
+    });
+
+    // ── 네이티브 MUI 숨기고 교체 (왼쪽에 배치) ──
+    nativeSlider.style.display = 'none';
+    parentEl.insertBefore(root, nativeSlider);
+
+    // DOM 제거 감시 (React 리렌더 대비)
+    let _recheckTimer = 0;
+    const reObs = new MutationObserver(() => {
+      clearTimeout(_recheckTimer);
+      _recheckTimer = setTimeout(() => {
+        if (!document.contains(root)) {
+          reObs.disconnect();
+          injectSiteVolumeSlider();
+        }
+      }, 500);
+    });
+    const obsTarget = parentEl.parentElement || document.body;
+    reObs.observe(obsTarget, { childList: true, subtree: true });
+
+    alwaysLog('사이트 음량 슬라이더 교체 완료 (렉 방지)');
+  }
+
+  /** 사이트에 주입된 음량 슬라이더 값을 동기화합니다. */
+  function syncSiteVolumeSlider(volume) {
+    const track = document.getElementById('bwbr-site-vol-track');
+    const thumb = document.getElementById('bwbr-site-vol-thumb');
+    const tooltip = document.getElementById('bwbr-site-vol-tooltip');
+    const root = document.getElementById('bwbr-site-vol-root');
+    const v = Math.round(Math.max(0, Math.min(1, volume)) * 100);
+    if (track) track.style.width = v + '%';
+    if (thumb) thumb.style.left = v + '%';
+    if (tooltip) tooltip.textContent = v + '%';
+    if (root) root.setAttribute('aria-valuenow', String(v));
   }
 
   // ── 시작 ─────────────────────────────────────────────────

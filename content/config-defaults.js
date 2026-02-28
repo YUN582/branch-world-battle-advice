@@ -147,6 +147,7 @@ window.BWBR_DEFAULTS = {
     debugMode: false,           // 디버그 로그 출력
     sfxVolume: 0.45,            // 확장 프로그램 효과음 볼륨 (0~1)
     siteVolume: 1.0,            // 코코포리아 사이트 음량 (0~1)
+    betterSoundbar: true,       // 더 나은 사운드바 (MUI Slider → 경량 슬라이더 교체)
     language: 'ko'              // UI 언어
   },
 

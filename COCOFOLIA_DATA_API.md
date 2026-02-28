@@ -8,6 +8,7 @@
 >
 > 아래 모듈 ID·프로퍼티명은 **2026-02-16 기준**이며, 변경 시 재탐색이 필요합니다.
 > DOM 구조 레퍼런스는 **2026-02-24 기준** (섹션 11 참조).
+> rooms/roomScenes 엔티티 구조는 **2026-02-27 기준** (섹션 9.1, 9.2, 13 참조).
 
 ---
 
@@ -26,7 +27,9 @@
 10. [Redux Action Type 탐색 기법](#10-redux-action-type-탐색-기법)
 11. [DOM 구조 레퍼런스 (MUI 컴포넌트 매핑)](#11-dom-구조-레퍼런스-mui-컴포넌트-매핑)
     - [11.7 배틀맵 / 씬 계층 구조](#117-배틀맵--씬-계층-구조-foreground--background--zoom--pan)
+    - [11.8 상단 툴바 (MuiAppBar / MuiToolbar)](#118-상단-툴바-muiappbar--muitoolbar)
 12. [특성 시스템 (Traits)](#12-특성-시스템-traits)
+13. [엔티티 전체 목록](#13-엔티티-전체-목록)
 
 ---
 
@@ -83,7 +86,7 @@ store.getState() = {
       members: { ids: [...], entities: {...} }
     }
   },
-  entities: { ... }  // 섹션 2-3 참조
+  entities: { ... }  // 섹션 2-3, 9.1-9.2, 13 참조
 }
 ```
 
@@ -317,7 +320,7 @@ rc.ids.map(id => rc.entities[id]).find(c => c.name?.includes('캐릭터이름'))
   status: [...],                      // ★ 상태바 배열 (아래 참조)
   params: [...],                      // ★ 파라미터 배열 (아래 참조)
   iconUrl: "...",                     // 아이콘 이미지 URL
-  faces: [...],                       // 얼굴 표정 배열
+  faces: [...],                       // 얼굴 표정 배열 [{label, iconUrl}]
   x: 0, y: 0, z: 0,                  // 맵 좌표
   angle: 0,                           // 회전 각도
   width: 4, height: 4,                // 토큰 크기
@@ -368,21 +371,31 @@ status와 마찬가지로 방의 시스템 설정에 따라 자유롭게 정의�
 params: [
   { label: "STR",    value: "14" },
   { label: "DEX",    value: "12" },
-  { label: "CON",    value: "10" },
-  { label: "INT",    value: "8"  },
-  { label: "WIS",    value: "13" },
-  { label: "CHA",    value: "16" },
-  { label: "이름",   value: "캐릭터이름" },
   // ... 방마다 항목이 다름
 ]
 ```
 
 **주의**: value는 항상 **문자열(string)**입니다! 숫자로 쓰려면 `parseInt()` 또는 `Number()` 변환 필요.
 
+### faces[] — 얼굴 표정 배열
+
+**확인일: 2026-02-28** — 객체 배열 형태 `{label, iconUrl}`.
+
 ```js
-const str = char.params.find(p => p.label === 'STR');
-const strValue = parseInt(str.value, 10);  // 14 (number)
+// 구조: { label: string, iconUrl: string }
+faces: [
+  { label: "@보통",     iconUrl: "https://storage.ccfolia-cdn.net/..." },
+  { label: "@각성",     iconUrl: "https://storage.ccfolia-cdn.net/..." },
+  { label: "@기본후드", iconUrl: "https://storage.ccfolia-cdn.net/..." },
+  { label: "",          iconUrl: "https://storage.ccfolia-cdn.net/..." },  // 빈 라벨도 있음
+]
 ```
+
+- `label`은 `@` 접두사가 붙는 경우가 많음 (예: `@보통`, `@각성`, `@스탠딩`)
+- `label`이 번호인 경우도 있음 (예: `@0`, `@1`)
+- `label`이 빈 문자열인 경우도 있음
+- `iconUrl`은 CDN URL
+- face 인덱스 0은 `iconUrl` (기본 아이콘)을 의미, faces[0]부터가 표정 1번
 
 ---
 
@@ -1002,33 +1015,176 @@ window.dispatchEvent(new CustomEvent('bwbr-deep-snapshot-after'));
 // 예: state.entities.rooms.entities.{roomId}.displayGrid: false → true
 ```
 
-### 9.1 rooms 엔티티 (필드 설정)
+### 9.1 rooms 엔티티 (방 설정 전체)
 
 > 방 설정은 `entities.rooms.entities.{roomId}` 에 Firestore 문서로 저장됩니다.
 > `app.state`가 아닌 `entities.rooms`에 있으므로 변경 시 Firestore 직접 쓰기가 필요합니다.
 >
-> **기준**: 2026-02-24
+> **기준**: 2026-02-27 (진단 bwbr-dump-room 결과)
 
-#### 그리드 표시
+#### 전체 필드 목록 (52개)
 
-| 키 | 경로 | 타입 | 설명 |
-|----|------|------|------|
-| `displayGrid` | `entities.rooms.entities.{roomId}.displayGrid` | boolean | 전경에 그리드 표시 여부 |
+| 필드 | 타입 | 설명 |
+|-------|------|------|
+| `_id` | string | 방 ID |
+| `name` | string | 방 이름 |
+| `owner` | string | 방 주인 UID |
+| **필드/배경** | | |
+| `backgroundUrl` | string\|null | 배경 이미지 URL |
+| `foregroundUrl` | string\|null | 전경 이미지 URL |
+| `fieldObjectFit` | string | 이미지 맞춤 (`cover` 등) |
+| `fieldWidth` | number | 필드 너비 |
+| `fieldHeight` | number | 필드 높이 |
+| `backgroundColor` | string | 배경색 |
+| `mapType` | string | 맵 타입 |
+| **그리드** | | |
+| `displayGrid` | boolean | 그리드 표시 여부 |
+| `gridSize` | number | 그리드 한 칸 크기 |
+| `alignWithGrid` | boolean | 그리드 정렬 |
+| `markers` | array | 마커 목록 |
+| **BGM / 사운드** | | |
+| `soundUrl` | string\|null | BGM URL |
+| `soundVolume` | number | BGM 볼륨 |
+| `soundName` | string\|null | BGM 이름 |
+| `soundRef` | string\|null | BGM 업로드 참조 |
+| `soundRepeat` | boolean | BGM 반복 |
+| `soundMasterToken` | string\|null | 사운드 마스터 토큰 |
+| **미디어 (YouTube 등)** | | |
+| `mediaUrl` | string\|null | 미디어 URL |
+| `mediaVolume` | number | 미디어 볼륨 |
+| `mediaName` | string\|null | 미디어 이름 |
+| `mediaRef` | string\|null | 미디어 업로드 참조 |
+| `mediaRepeat` | boolean | 미디어 반복 |
+| `mediaType` | string\|null | 미디어 타입 |
+| **장면** | | |
+| `sceneId` | string\|null | 현재 적용된 장면 ID |
+| `enableCrossfade` | boolean | 크로스페이드 사용 여부 |
+| `crossfadeDuration` | number | 크로스페이드 지속시간 |
+| **주사위** | | |
+| `diceBotName` | string | 다이스봇 표시명 |
+| `diceBotSystem` | string | 다이스봇 시스템 |
+| `hidden3dDice` | boolean | 3D 주사위 숨김 |
+| **기타** | | |
+| `embedUrl` | string\|null | 임베드 URL |
+| `thumbnailUrl` | string\|null | 썸네일 |
+| `video` | any | 비디오 설정 |
+| `timer` | any | 타이머 (개인 대기실 등) |
+| `variables` | object | 방 변수 |
+| `features` | object | 기능 플래그 |
+| `messageChannels` | array | 메시지 채널 |
+| `messageGroups` | array | 메시지 그룹 |
+| **권한/멤버** | | |
+| `defaultRole` | string | 기본 역할 (`player` 등) |
+| `defaultAnonymousRole` | string\|null | 익명 기본 역할 |
+| `monitored` | boolean | 모니터링 모드 |
+| `underConstruction` | boolean | 공사 중 |
+| `archived` | boolean | 아카이브됨 |
+| **프리미엄/패키지** | | |
+| `appliedExtentionProductIds` | array | 적용된 확장 제품 ID |
+| `parentProductId` | string\|null | 부모 제품 ID |
+| `parentRoomPackageId` | string\|null | 부모 방 패키지 ID |
+| `publishedRoomPackageId` | string\|null | 공개된 방 패키지 ID |
+| `initialSavedata` | any | 초기 세이브데이터 |
+| **타임스탬프** | | |
+| `createdAt` | timestamp | 생성일 |
+| `updatedAt` | number | 마지막 수정 (Date.now()) |
+
+#### 필드 그룹별 Firestore 쓰기 예시
 
 ```js
-// 그리드 상태 읽기
-const state = store.getState();
-const roomId = state.app.state.roomId;
-const displayGrid = state.entities.rooms.entities[roomId].displayGrid;
+// BGM 변경
+const roomRef = sdk.doc(sdk.collection(sdk.db, 'rooms'), roomId);
+await sdk.setDoc(roomRef, {
+  soundUrl: 'https://example.com/bgm.mp3',
+  soundVolume: 0.5,
+  soundName: 'My BGM',
+  updatedAt: Date.now()
+}, { merge: true });
 
-// 그리드 토글 (Firestore 직접 쓰기 — { merge: true } 필수)
-const roomCol = sdk.collection(sdk.db, 'rooms');
-const roomRef = sdk.doc(roomCol, roomId);
-await sdk.setDoc(roomRef, { displayGrid: !displayGrid }, { merge: true });
+// 배경 이미지 변경
+await sdk.setDoc(roomRef, {
+  backgroundUrl: 'https://example.com/bg.jpg',
+  foregroundUrl: null,
+  updatedAt: Date.now()
+}, { merge: true });
 ```
 
 > **주의**: `app.state`에는 `displayGrid` 키가 존재하지 않습니다 (174개 키 중 grid 관련 없음).
 > Redux 상태는 Firestore 실시간 리스너를 통해 자동 동기화됩니다.
+
+### 9.2 roomScenes 엔티티 (장면 목록)
+
+> 장면은 `entities.roomScenes` 에 저장됩니다 (normalized: `{ ids: [...], entities: {...} }`).
+> Firestore 경로: `rooms/{roomId}/scenes/{sceneId}`
+>
+> **기준**: 2026-02-27 (진단 bwbr-dump-scenes 결과)
+
+#### 접근 방법
+
+```js
+const state = store.getState();
+const scenes = state.entities.roomScenes;
+// scenes.ids: ['ErC4TGtUdqhCtNk36nZf', 'BG1jMXevRsJtC489BMat', ...]
+// scenes.entities[id]: { _id, name, backgroundUrl, ... }
+```
+
+#### 장면 필드 (26개)
+
+| 필드 | 타입 | 설명 |
+|-------|------|------|
+| `_id` | string | 장면 ID |
+| `name` | string | 장면 이름 (표시용) |
+| **배경/전경** | | |
+| `backgroundUrl` | string\|null | 배경 이미지 URL |
+| `foregroundUrl` | string\|null | 전경 이미지 URL |
+| `fieldObjectFit` | string | 이미지 맞춤 (`cover` 등) |
+| `fieldWidth` | number | 필드 너비 |
+| `fieldHeight` | number | 필드 높이 |
+| **그리드** | | |
+| `displayGrid` | boolean | 그리드 표시 |
+| `gridSize` | number | 그리드 크기 |
+| `markers` | array | 마커 |
+| **텍스트** | | |
+| `text` | string\|null | 장면 전환 시 표시되는 텍스트 |
+| **BGM** | | |
+| `soundUrl` | string\|null | BGM URL |
+| `soundVolume` | number | BGM 볼륨 |
+| `soundName` | string\|null | BGM 이름 |
+| `soundRef` | string\|null | BGM 업로드 참조 |
+| `soundRepeat` | boolean | BGM 반복 |
+| **미디어** | | |
+| `mediaUrl` | string\|null | 미디어 URL |
+| `mediaVolume` | number | 미디어 볼륨 |
+| `mediaName` | string\|null | 미디어 이름 |
+| `mediaRef` | string\|null | 미디어 업로드 참조 |
+| `mediaRepeat` | boolean | 미디어 반복 |
+| `mediaType` | string\|null | 미디어 타입 |
+| **메타** | | |
+| `locked` | boolean | 잠김 여부 |
+| `order` | number | 정렬 순서 |
+| `createdAt` | timestamp | 생성일 |
+| `updatedAt` | timestamp | 수정일 |
+
+#### 장면 적용 방법
+
+장면의 필드를 방 문서에 복사하는 방식으로 작동합니다:
+
+```js
+// 장면 이름으로 검색
+const scene = Object.values(scenes.entities)
+  .find(s => s.name === '논밭');
+
+// 방 문서에 장면 필드 복사 (blacklist 제외)
+const blacklist = ['_id', 'name', 'locked', 'order', 'createdAt', 'updatedAt'];
+const update = { updatedAt: Date.now() };
+for (const [key, val] of Object.entries(scene)) {
+  if (!blacklist.includes(key)) update[key] = val;
+}
+await sdk.setDoc(roomRef, update, { merge: true });
+```
+
+> **장면 필드와 방 필드는 동일한 이름을 공유**합니다 (`backgroundUrl`, `soundUrl` 등).
+> 장면 적용 = 장면 필드를 방 문서에 덮어쓰기.
 
 ---
 
@@ -1194,6 +1350,55 @@ div.MuiListItemButton-root [role="button"]
 | 캐릭터 아이템 | `.MuiListItemButton-root` 또는 `[role="button"]` | `li[role="option"]`, `[id^="downshift-"][id*="-item"]` |
 | 아바타 이미지 | `.MuiListItemAvatar-root img` | — |
 | 상태 텍스트 | `.MuiListItemText-root` 내 span/p 중 "활성화/비활성화" | — |
+
+---
+
+### 11.1b 룸 변수 편집 다이얼로그
+
+> 메뉴 → 룸 변수 편집으로 열리는 MuiDialog.
+> 확장 프로그램의 트리거 관리 UI가 이 구조를 그대로 복제합니다.
+>
+> **기준**: 2026-02-27 (콘솔 진단)
+
+#### 컨테이너 구조
+
+```
+DIV.MuiDialog-root.MuiModal-root[role="presentation"]
+├─ DIV.MuiBackdrop-root.MuiModal-backdrop
+│    bg: rgba(0,0,0,0.5)
+│    transition: opacity 0.225s cubic-bezier(0.4,0,0.2,1)
+├─ DIV (빈 요소)
+├─ DIV.MuiDialog-container.MuiDialog-scrollPaper[role="presentation"]
+│  └─ DIV.MuiPaper-root.MuiPaper-elevation24.MuiDialog-paper[role="dialog"]
+│     ├─ (MuiDialogTitle 영역) H6  "룸 변수"
+│     │    fontSize: 14px, fontWeight: 700, color: white
+│     ├─ (MuiDialogContent 영역)
+│     │    padding: 20px 24px, overflowY: auto
+│     └─ (MuiDialogActions 영역)  "닫기"
+│          padding: 8px, justifyContent: flex-end
+└─ DIV (빈 요소)
+```
+
+#### Paper 스타일
+
+| 속성 | 값 |
+|------|-----|
+| background | `rgba(44, 44, 44, 0.87)` — **반투명** |
+| color | `rgb(255, 255, 255)` |
+| border-radius | `4px` |
+| width | `600px` |
+| maxWidth | `600px` |
+| margin | `32px` |
+| boxShadow | elevation-24 (0 11px 15px -7px ...) |
+| transition | `box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1)` |
+
+#### 버튼 스타일
+
+| 대상 | 색상 | 배경 | fontSize |
+|------|------|------|----------|
+| 액션 버튼 ("닫기") | `rgb(33, 150, 243)` | transparent | 14px |
+| 아이콘 버튼 (−/+) | — | — | MuiIconButton-edgeEnd |
+| 닫기(×) | — | — | MuiIconButton-sizeSmall |
 
 ---
 
@@ -1554,6 +1759,58 @@ body
 
 ---
 
+### 11.8 상단 툴바 (MuiAppBar / MuiToolbar)
+
+> 방 이름, GM 패널 아이콘, 메뉴 버튼 등이 배치된 최상단 바입니다.
+> 확장 프로그램의 트리거 관리 버튼이 여기에 삽입됩니다.
+>
+> **기준**: 2026-02-27 (콘솔 진단)
+
+#### 컨테이너 구조
+
+```
+body
+└─ div.MuiAppBar-root (rect: 0,0,1972,64)  ← 메인 상단 앱바
+   └─ div.MuiToolbar-root.css-i6s8oy       ← 툴바 컨테이너 (12개 자식)
+      ├─ [0] button     → 방 이름 ("가지세계: ...")
+      ├─ [1] div.sc-ezjsFQ.jjnrsH          → 스페이서 (flex-grow:1)
+      ├─ [2] button (aria-label="내 캐릭터 목록")
+      ├─ [3] button (aria-label="[GM] 스크린 패널 목록")
+      ├─ [4] button (aria-label="[GM] 마커 패널 목록")
+      ├─ [5] button (aria-label="[GM] 시나리오 텍스트 목록")
+      ├─ [6] button (aria-label="[GM] 장면 목록")
+      ├─ [7] button (aria-label="[GM] 컷인 목록")
+      ├─ [★] button#bwbr-toolbar-trigger-btn  ← 확장 프로그램 삽입 (트리거 관리)
+      ├─ [8] button (aria-label="메뉴")     → 3점 메뉴 (다른 sc-* 클래스)
+      ├─ [9] button.MuiIconButton-edgeEnd   → 작은 버튼
+      ├─ [10] div (스페이서)
+      └─ [11] button (사용자 아바타)
+```
+
+#### 아이콘 버튼 스타일 클래스
+
+| 대상 | 클래스 |
+|------|--------|
+| 일반 아이콘 버튼 ([2]~[7]) | `MuiButtonBase-root MuiIconButton-root MuiIconButton-sizeMedium sc-hmvjWG eIQXVN` |
+| 메뉴 버튼 ([8]) | `sc-iiBnab hyDHhC` (별도 styled-components 클래스) |
+
+**핵심 포인트**:
+- 확장 프로그램 버튼은 **일반 아이콘 버튼**의 `className`을 복제하여 네이티브 외관 상속
+- 삽입 위치: `[aria-label="메뉴"]` 버튼 앞 (`insertBefore`)
+- MuiAppBar[0] = 메인 상단 바 (y≈0, width > 500), MuiAppBar[1] = 채팅 드로어 헤더 (y≈1372)
+- SVG 아이콘: viewBox 0 0 24, `MuiSvgIcon-root` 클래스 + `fill:currentColor`
+
+#### 셀렉터 가이드
+
+| 대상 | 셀렉터 |
+|------|--------|
+| 메인 앱바 | `.MuiAppBar-root` (rect.top < 10 && width > 500) |
+| 메뉴 버튼 | `[aria-label="메뉴"]` |
+| 일반 아이콘 버튼 | `button.MuiIconButton-root.MuiIconButton-sizeMedium` |
+| 툴바 컨테이너 | `.MuiToolbar-root` (MuiAppBar 내부) |
+
+---
+
 ## 12. 특성 시스템 (Traits)
 
 > 가지세계 TRPG 합 전투에서 캐릭터에 부여되는 특수 능력/효과입니다.
@@ -1752,3 +2009,34 @@ H4와 H0 (또는 H00)의 상호작용 특성입니다.
 ```
 
 > 사운드(`@발도1` 등)는 `발도1`~`발도3`, `위험1`~`위험3` 중 무작위 선택됩니다.
+
+---
+
+## 13. 엔티티 전체 목록
+
+> `store.getState().entities` 아래의 모든 키 목록입니다.
+>
+> **기준**: 2026-02-27
+
+| 엔티티 키 | 설명 | Firestore 경로 |
+|-----------|------|---------------|
+| `rooms` | 방 설정 (9.1 참조) | `rooms/{roomId}` |
+| `roomCharacters` | 캐릭터 (섹션 3 참조) | `rooms/{roomId}/characters/{charId}` |
+| `roomEffects` | 이펙트 | `rooms/{roomId}/effects/{id}` |
+| `roomDices` | 다이스 프리셋 | `rooms/{roomId}/dices/{id}` |
+| `roomDecks` | 덱 | `rooms/{roomId}/decks/{id}` |
+| `roomItems` | 스크린 패널/아이템 (3.1 참조) | `rooms/{roomId}/items/{id}` |
+| `roomMembers` | 방 멤버 | `rooms/{roomId}/members/{uid}` |
+| `roomMessages` | 채팅 메시지 (섹션 2 참조) | `rooms/{roomId}/messages/{msgId}` |
+| `roomNotes` | 공유 메모 | `rooms/{roomId}/notes/{id}` |
+| `roomSavedatas` | 세이브 데이터 | `rooms/{roomId}/savedatas/{id}` |
+| `roomScenes` | 장면 (9.2 참조) | `rooms/{roomId}/scenes/{sceneId}` |
+| `roomHistories` | 방 히스토리 | — |
+| `userFiles` | 유저 파일 | `users/{uid}/files/{id}` |
+| `userMedia` | 유저 미디어 | `users/{uid}/media/{id}` |
+| `userMediumDirectories` | 미디어 폴더 | `users/{uid}/mediumDirectories/{id}` |
+| `userHistories` | 유저 히스토리 | — |
+| `userSetting` | 유저 설정 | `users/{uid}/setting` |
+| `turboRooms` | Turbo 방 | — |
+
+> 모든 엔티티는 normalized 형태: `{ ids: string[], entities: { [id]: object } }`
