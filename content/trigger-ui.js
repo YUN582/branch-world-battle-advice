@@ -454,9 +454,7 @@
         h += '  <div class="tmgr-sub">' + _esc(t.pattern || '(패턴 없음 — 조건 기반)') + '</div>';
         h += '</div>';
         h += '<span class="tmgr-badge">' + src + '</span>';
-        if (!t.builtin) {
-          h += '<button class="tmgr-ib danger" data-a="delete" title="삭제">' + _svg('del', 16) + '</button>';
-        }
+        h += '<button class="tmgr-ib danger" data-a="delete" title="삭제">' + _svg('del', 16) + '</button>';
         h += '</div>';
       }
     }
@@ -525,7 +523,6 @@
       delay: 300, priority: 0
     };
     if (!d.conditions) d.conditions = { states: [] };
-    var ro = d.builtin === true;
     var h = '';
 
     // 타이틀
@@ -539,11 +536,11 @@
 
     // 이름
     h += '<div class="tmgr-row"><label class="tmgr-lbl">이름</label>';
-    h += '<input class="tmgr-inp" id="tf-name" value="' + _ea(d.name) + '"' + (ro ? ' disabled' : '') + '></div>';
+    h += '<input class="tmgr-inp" id="tf-name" value="' + _ea(d.name) + '"></div>';
 
     // 패턴
     h += '<div class="tmgr-row"><label class="tmgr-lbl">패턴</label>';
-    h += '<input class="tmgr-inp" id="tf-pat" value="' + _ea(d.pattern) + '"' + (ro ? ' disabled' : '') + ' placeholder="예: 《공격》| {대상} 또는 【방어】| {대상} 또는 자유 형식">';
+    h += '<input class="tmgr-inp" id="tf-pat" value="' + _ea(d.pattern) + '" placeholder="예: 《공격》| {대상} 또는 【방어】| {대상} 또는 자유 형식">';
     h += '<div class="tmgr-hint">어떤 형식이든 가능합니다. {파라미터명}으로 파라미터를 정의·추출합니다 (예: {대상}, {값}). 정의한 파라미터는 동작에서 {대상} 같은 형식으로 사용할 수 있습니다. 비워두면 조건만으로 트리거됩니다.</div></div>';
 
     // 감지 대상 + 딜레이 + 우선순위

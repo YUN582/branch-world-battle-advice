@@ -262,33 +262,45 @@
             }
             var saved = result[STORAGE_KEY] || [];
             // 기본 트리거 + 사용자 트리거 병합
-            var builtinIds = {};
-            DEFAULT_TRIGGERS.forEach(function (t) { builtinIds[t.id] = true; });
-            // 사용자가 기본 트리거를 비활성화한 경우를 반영
+            var defaultIds = {};
+            DEFAULT_TRIGGERS.forEach(function (t) { defaultIds[t.id] = true; });
+            // 사용자가 저장한 기본 트리거 (편집/비활성화 반영)
             var userOverrides = {};
             saved.forEach(function (t) {
-              if (builtinIds[t.id]) {
+              if (defaultIds[t.id]) {
                 userOverrides[t.id] = t;
               }
             });
-            // 저장소에 남아있는 삭제된 전투 트리거 정리
+            // 저장소에 남아있는 삭제된 트리거 정리
             var REMOVED_IDS = {
               '_builtin_combat_main': true,
               '_builtin_combat_sub': true,
               '_builtin_combat_start': true,
               '_builtin_combat_end': true,
-              '_builtin_turn_end': true
+              '_builtin_turn_end': true,
+              '_builtin_heal': true,
+              '_builtin_announce': true,
+              '_builtin_char_say': true,
+              '_builtin_token_hide': true
             };
-            var merged = DEFAULT_TRIGGERS.map(function (bt) {
-              if (userOverrides[bt.id]) {
-                // enabled 상태만 사용자 설정을 따름
-                return Object.assign({}, bt, { enabled: userOverrides[bt.id].enabled });
+            // 사용자가 한 번이라도 저장한 적 있으면, 저장소에 없는 기본 트리거는 삭제된 것으로 간주
+            var hasSavedBefore = saved.length > 0;
+            var merged = [];
+            DEFAULT_TRIGGERS.forEach(function (bt) {
+              if (hasSavedBefore && !userOverrides[bt.id]) {
+                // 사용자가 이 기본 트리거를 삭제한 것으로 간주
+                return;
               }
-              return Object.assign({}, bt);
+              if (userOverrides[bt.id]) {
+                // 사용자 편집 내용 전체 반영
+                merged.push(userOverrides[bt.id]);
+              } else {
+                merged.push(Object.assign({}, bt));
+              }
             });
-            // 사용자 정의 트리거 추가 (삭제된 전투 트리거 제외)
+            // 사용자 정의 트리거 추가 (삭제된 트리거 제외)
             saved.forEach(function (t) {
-              if (!builtinIds[t.id] && !REMOVED_IDS[t.id]) merged.push(t);
+              if (!defaultIds[t.id] && !REMOVED_IDS[t.id]) merged.push(t);
             });
             self._triggers = merged;
             self._compileAll();
