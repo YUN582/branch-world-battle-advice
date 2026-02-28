@@ -349,7 +349,7 @@
       if (diceValue != null) {
         triggerEngine.resolvePendingDice(diceValue);
       }
-      const match = triggerEngine.check(text, 'message', diceValue);
+      const match = triggerEngine.check(text, 'message', diceValue, senderName);
       if (match) {
         triggerEngine.execute(match.trigger, match.params, false);
       }

@@ -421,15 +421,11 @@
    *
    * @param {string} text - 채팅 텍스트
    * @param {'input'|'message'} source - 감지 경로
-   * @returns {{ trigger: Object, params: Object }|null}
-   */
-  /**
-   * @param {string} text - 채팅 텍스트
-   * @param {'input'|'message'} source - 감지 경로
    * @param {number|null} [diceValue] - 주사위 결과값 (parseDiceResult 결과)
+   * @param {string|null} [senderName] - 메시지 발신자 이름 (source='message' 전용)
    * @returns {{ trigger: Object, params: Object }|null}
    */
-  TriggerEngine.prototype.check = function (text, source, diceValue) {
+  TriggerEngine.prototype.check = function (text, source, diceValue, senderName) {
     if (!text || this._executing) return null;
 
     var flowState = this._flowStateGetter ? this._flowStateGetter() : 'IDLE';
@@ -467,29 +463,79 @@
         if (!params) continue;
       }
 
-      // 주사위 결과값 자동 파라미터 (영어 + 한국어 별칭)
+      // ── 자동 파라미터 설정 ──
+
+      // 주사위 결과값 (언더스코어 버전 + 순수 한글 버전)
       if (diceValue != null) {
         params._dice = String(diceValue);
-        params['_주사위'] = String(diceValue);
+        params['주사위'] = String(diceValue);
+        params['_주사위'] = String(diceValue); // 하위 호환
       }
 
-      // 전투 캐릭터 이름 자동 파라미터 (영어 + 한국어 별칭)
+      // 전투 차례 캐릭터 이름
       if (this._getCurrentCombatCharName) {
-        var selfName = this._getCurrentCombatCharName();
-        if (selfName) {
-          params._self = selfName;
-          params['_차례'] = selfName;
-          params['_자신'] = selfName; // 스피커 없으면 폴백
+        var combatName = this._getCurrentCombatCharName();
+        if (combatName) {
+          params._self = combatName;
+          params['차례'] = combatName;
+          params['_차례'] = combatName; // 하위 호환
         }
       }
 
-      // 현재 발화(선택) 캐릭터 이름 자동 파라미터
+      // 내캐릭터 = 내가 선택한 발화 캐릭터 (드롭다운에서 선택한 캐릭터)
       if (this._getSpeakerName) {
-        var speakerName = this._getSpeakerName();
-        if (speakerName) {
-          params['_자신'] = speakerName; // NEW: 자신 = 선택 캐릭터
-          params['_화자'] = speakerName;   // 하위 호환
+        var myChar = this._getSpeakerName();
+        if (myChar) {
+          params['내캐릭터'] = myChar;
+          params['자신'] = myChar; // 하위 호환
+          params['_자신'] = myChar; // 하위 호환
         }
+      }
+
+      // 보낸이 = 메시지 발신자 (source='message'일 때만 의미 있음)
+      if (senderName) {
+        params['보낸이'] = senderName;
+        params['화자'] = senderName; // 하위 호환
+        params['_화자'] = senderName; // 하위 호환
+      } else if (this._getSpeakerName) {
+        // input 트리거: 보낸이 = 내캐릭터
+        var fallback = this._getSpeakerName();
+        if (fallback) {
+          params['보낸이'] = fallback;
+          params['화자'] = fallback;
+          params['_화자'] = fallback;
+        }
+      }
+
+      // ── 주사위 조건 사전 평가 (조건 필터) ──
+      // 모든 비조건 동작이 그룹 내(inGroup)일 때, 어떤 조건도 통과하지 못하면
+      // 이 트리거는 실행해도 아무것도 안 하므로 건너뜀
+      var actions = t.actions || [];
+      if (actions.length > 0) {
+        var hasDiceCond = false;
+        var anyDiceCondPasses = false;
+        var allActionsGated = true; // 모든 비조건 동작이 그룹 내인지
+        for (var j = 0; j < actions.length; j++) {
+          var act = actions[j];
+          if (act.type === 'condition_dice') {
+            hasDiceCond = true;
+            var cop = act.op || '>=';
+            // stat_exists/stat_not_exists는 비동기라 사전 평가 불가
+            if (cop !== 'stat_exists' && cop !== 'stat_not_exists') {
+              var cr = evaluateCondition(
+                { field: '_dice', op: cop, value: act.value || '0' }, params
+              );
+              if (cr) anyDiceCondPasses = true;
+            } else {
+              anyDiceCondPasses = true; // 비동기 조건은 통과 가능 가정
+            }
+          } else if (act.type !== 'condition_text') {
+            // 비조건 동작: inGroup !== false면 그룹 내 (기본값 true)
+            if (act.inGroup === false) allActionsGated = false;
+          }
+        }
+        // 주사위 조건만 있고 전부 실패 + 모든 동작이 그룹 내 → 건너뜀
+        if (hasDiceCond && allActionsGated && !anyDiceCondPasses) continue;
       }
 
       return { trigger: t, params: params };
@@ -956,6 +1002,8 @@
     var result = await dicePromise;
     if (result != null) {
       params._dice = String(result);
+      params['주사위'] = String(result);
+      params['_주사위'] = String(result); // 하위 호환
       LOG('주사위 결과 캡처:', result);
     }
   };

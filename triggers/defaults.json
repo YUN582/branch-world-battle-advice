@@ -35,7 +35,7 @@
     "conditions": { "states": [] },
     "actions": [
       { "type": "condition_dice", "op": "==", "value": "20", "inGroup": false },
-      { "type": "message", "template": "🎯 대성공! (주사위 결과: {_주사위})", "inGroup": true }
+      { "type": "message", "template": "🎯 대성공! (주사위 결과: {주사위})", "inGroup": true }
     ],
     "delay": 300,
     "priority": 0
@@ -49,7 +49,7 @@
     "conditions": { "states": [] },
     "actions": [
       { "type": "condition_dice", "op": "==", "value": "1", "inGroup": false },
-      { "type": "message", "template": "💀 대실패... (주사위 결과: {_주사위})", "inGroup": true }
+      { "type": "message", "template": "💀 대실패... (주사위 결과: {주사위})", "inGroup": true }
     ],
     "delay": 300,
     "priority": 0
@@ -78,9 +78,9 @@
     "actions": [
       { "type": "dice", "command": "1d20" },
       { "type": "condition_dice", "op": ">=", "value": "15", "inGroup": false },
-      { "type": "message", "template": "✅ {_자신} 판정 성공! (🎲 {_주사위})", "inGroup": true },
+      { "type": "message", "template": "✅ {내캐릭터} 판정 성공! (🎲 {주사위})", "inGroup": true },
       { "type": "condition_dice", "op": "<", "value": "15", "inGroup": false },
-      { "type": "message", "template": "❌ {_자신} 판정 실패... (🎲 {_주사위})", "inGroup": true }
+      { "type": "message", "template": "❌ {내캐릭터} 판정 실패... (🎲 {주사위})", "inGroup": true }
     ],
     "delay": 300,
     "priority": 0

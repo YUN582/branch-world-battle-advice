@@ -92,15 +92,15 @@
       // 캐릭터 드롭다운 구성
       var activeChars = characters.filter(function (c) { return c.active; });
       var h = '<option value="">캐릭터 선택...</option>';
-      h += '<option value="{_자신}"' + (currentTarget === '{_자신}' || currentTarget === '{_화자}' ? ' selected' : '') + '>자신 (선택 캐릭터)</option>';
-      h += '<option value="{_차례}"' + (currentTarget === '{_차례}' ? ' selected' : '') + '>차례 (현재 차례 캐릭터)</option>';
+      h += '<option value="{내캐릭터}"' + (currentTarget === '{내캐릭터}' || currentTarget === '{_자신}' || currentTarget === '{자신}' || currentTarget === '{_화자}' || currentTarget === '{화자}' ? ' selected' : '') + '>내 캐릭터 (선택한 발화 캐릭터)</option>';
+      h += '<option value="{차례}"' + (currentTarget === '{차례}' || currentTarget === '{_차례}' ? ' selected' : '') + '>차례 캐릭터 (전투 보조 전용)</option>';
       for (var i = 0; i < activeChars.length; i++) {
         var c = activeChars[i];
         var sel = (c.name === currentTarget) ? ' selected' : '';
         h += '<option value="' + _ea(c.name) + '"' + sel + '>' + _esc(c.name) + '</option>';
       }
       // 현재 값이 특수 변수도 아니고 목록에도 없으면 추가
-      if (currentTarget && currentTarget !== '{_자신}' && currentTarget !== '{_차례}' && currentTarget !== '{_화자}') {
+      if (currentTarget && currentTarget !== '{내캐릭터}' && currentTarget !== '{차례}' && currentTarget !== '{_자신}' && currentTarget !== '{_화자}' && currentTarget !== '{자신}' && currentTarget !== '{화자}') {
         var found = activeChars.some(function (c) { return c.name === currentTarget; });
         if (!found) {
           h += '<option value="' + _ea(currentTarget) + '" selected>' + _esc(currentTarget) + ' (직접 입력)</option>';
@@ -691,7 +691,7 @@
     if (item.type === 'condition_dice') {
       var op = item.op || '>=';
       h += '<div class="tmgr-afrow">';
-      h += '<span style="font-size:13px;color:' + T.textSec + ';white-space:nowrap">주사위 결과 ({_주사위})</span>';
+      h += '<span style="font-size:13px;color:' + T.textSec + ';white-space:nowrap">주사위 결과 ({주사위})</span>';
       h += '<select class="tmgr-sel" data-f="op" style="flex:0 0 52px">';
       h += '<option value=">="' + (op === '>=' ? ' selected' : '') + '>≥</option>';
       h += '<option value="<="' + (op === '<=' ? ' selected' : '') + '>≤</option>';
@@ -737,7 +737,7 @@
         break;
       case 'char_message':
         h += '<div class="tmgr-afrow">';
-        h += '<input class="tmgr-inp" data-f="target" value="' + _ea(a.target || '') + '" placeholder="캐릭터 이름 ({_화자} = 선택 캐릭터, {_자신} = 현재 차례)">';
+        h += '<input class="tmgr-inp" data-f="target" value="' + _ea(a.target || '') + '" placeholder="캐릭터 이름 ({내캐릭터} = 선택 캐릭터, {차례} = 전투 차례)">';
         h += '</div>';
         h += '<input class="tmgr-inp" data-f="template" value="' + _ea(a.template || '') + '" placeholder="메시지 ({파라미터명} 사용 가능)">';
         break;
@@ -746,7 +746,7 @@
         break;
       case 'stat':
         h += '<div class="tmgr-afrow">';
-        h += '<input class="tmgr-inp" data-f="target" value="' + _ea(a.target || '') + '" placeholder="캐릭터 이름 ({_화자} = 선택 캐릭터, {_자신} = 현재 차례)">';
+        h += '<input class="tmgr-inp" data-f="target" value="' + _ea(a.target || '') + '" placeholder="캐릭터 이름 ({내캐릭터} = 선택 캐릭터, {차례} = 전투 차례)">';
         h += '</div>';
         h += '<div class="tmgr-afrow">';
         h += '<input class="tmgr-inp" data-f="stat" value="' + _ea(a.stat || '') + '" placeholder="스탯 라벨" style="flex:2">';
@@ -762,7 +762,7 @@
         h += '<option value="-"' + (a.op === '-' ? ' selected' : '') + '>−</option>';
         h += '<option value="="' + (a.op === '=' ? ' selected' : '') + '>=</option>';
         h += '</select>';
-        h += '<input class="tmgr-inp" data-f="value" value="' + _ea(a.value != null ? String(a.value) : '') + '" placeholder="값 ({_주사위} 등 사용 가능)">';
+        h += '<input class="tmgr-inp" data-f="value" value="' + _ea(a.value != null ? String(a.value) : '') + '" placeholder="값 ({주사위} 등 사용 가능)">';
         h += '</div>';
         break;
       case 'stat_all':
@@ -796,10 +796,10 @@
         h += '<option value="-"' + (a.op === '-' ? ' selected' : '') + '>−</option>';
         h += '</select>';
         h += '</div>';
-        h += '<input class="tmgr-inp" data-f="value" value="' + _ea(a.value != null ? String(a.value) : '') + '" placeholder="값 ({_주사위} 등 사용 가능)">';
+        h += '<input class="tmgr-inp" data-f="value" value="' + _ea(a.value != null ? String(a.value) : '') + '" placeholder="값 ({주사위} 등 사용 가능)">';
         break;
       case 'dice':
-        h += '<input class="tmgr-inp" data-f="command" value="' + _ea(a.command || '') + '" placeholder="주사위 명령 (예: 2d6+3). 결과는 {_주사위}에 저장됩니다">';
+        h += '<input class="tmgr-inp" data-f="command" value="' + _ea(a.command || '') + '" placeholder="주사위 명령 (예: 2d6+3). 결과는 {주사위}에 저장됩니다">';
         break;
       case 'face':
         h += '<div class="tmgr-afrow">';

@@ -146,6 +146,22 @@
         } catch (e) {}
       });
 
+      // 초기 발화 캐릭터 즉시 브로드캐스트 (subscribe는 변경 시에만 동작하므로)
+      try {
+        const rc = reduxStore.getState().entities?.roomCharacters;
+        if (rc?.ids) {
+          for (const id of rc.ids) {
+            const c = rc.entities?.[id];
+            if (c?.speaking) {
+              _prevSpeakingName = c.name || null;
+              document.documentElement.setAttribute('data-bwbr-speaker-name', _prevSpeakingName || '');
+              document.dispatchEvent(new CustomEvent('bwbr-speaker-changed'));
+              break;
+            }
+          }
+        }
+      } catch (e) {}
+
       return true;
     }
 
