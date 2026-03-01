@@ -126,6 +126,15 @@
     if (!m) return null;
 
     var params = {};
+    // 이름 있는 캡처 그룹 (정규식 모드: (?<name>...))
+    if (m.groups) {
+      for (var key in m.groups) {
+        if (m.groups.hasOwnProperty(key)) {
+          params[key] = (m.groups[key] || '').trim();
+        }
+      }
+    }
+    // 위치 기반 캡처 그룹 (패턴 모드: {param})
     for (var i = 0; i < compiled.paramNames.length; i++) {
       params[compiled.paramNames[i]] = (m[i + 1] || '').trim();
     }
@@ -142,8 +151,199 @@
   function applyTemplate(template, params) {
     if (!template) return '';
     return template.replace(/\{([^}]+)\}/g, function (match, key) {
+      // {#...!...} 스탯 조회와 {계산:...} 수식은 건너뜀 (resolveTemplate에서 처리)
+      if (key.charAt(0) === '#' || key.indexOf('계산:') === 0) return match;
       return params.hasOwnProperty(key) ? params[key] : match;
     });
+  }
+
+  // ── 안전한 수식 계산기 (CSP 안전 — eval/Function 미사용) ──
+
+  /**
+   * 수학 수식을 안전하게 계산합니다.
+   * 지원: +, -, *, /, %, (), 정수/실수, floor/ceil/round/abs/min/max
+   *
+   * @param {string} expr - 수식 문자열
+   * @returns {number} - 계산 결과 (실패 시 NaN)
+   */
+  function safeCalc(expr) {
+    expr = String(expr).trim();
+    if (!expr) return NaN;
+
+    var pos = 0;
+    function peek() { return pos < expr.length ? expr[pos] : ''; }
+    function consume() { return expr[pos++]; }
+    function skipSpaces() { while (pos < expr.length && expr[pos] === ' ') pos++; }
+
+    function parseExpr() {
+      skipSpaces();
+      var left = parseTerm();
+      skipSpaces();
+      while (peek() === '+' || peek() === '-') {
+        var op = consume();
+        skipSpaces();
+        var right = parseTerm();
+        left = op === '+' ? left + right : left - right;
+        skipSpaces();
+      }
+      return left;
+    }
+
+    function parseTerm() {
+      var left = parseUnary();
+      skipSpaces();
+      while (peek() === '*' || peek() === '/' || peek() === '%') {
+        var op = consume();
+        skipSpaces();
+        var right = parseUnary();
+        if (op === '*') left *= right;
+        else if (op === '/') left = right !== 0 ? left / right : NaN;
+        else left = right !== 0 ? left % right : NaN;
+        skipSpaces();
+      }
+      return left;
+    }
+
+    function parseUnary() {
+      skipSpaces();
+      if (peek() === '-') { consume(); return -parseUnary(); }
+      if (peek() === '+') { consume(); return parseUnary(); }
+      return parsePrimary();
+    }
+
+    function parsePrimary() {
+      skipSpaces();
+      // 숫자
+      if ((peek() >= '0' && peek() <= '9') || peek() === '.') return parseNum();
+      // 괄호
+      if (peek() === '(') {
+        consume();
+        var val = parseExpr();
+        skipSpaces();
+        if (peek() === ')') consume();
+        return val;
+      }
+      // 함수: floor, ceil, round, abs, min, max
+      var funcs = ['floor', 'ceil', 'round', 'abs', 'min', 'max'];
+      for (var fi = 0; fi < funcs.length; fi++) {
+        var fn = funcs[fi];
+        if (expr.substr(pos, fn.length) === fn && expr[pos + fn.length] === '(') {
+          pos += fn.length;
+          consume(); // (
+          var args = [parseExpr()];
+          skipSpaces();
+          while (peek() === ',') { consume(); args.push(parseExpr()); skipSpaces(); }
+          if (peek() === ')') consume();
+          return Math[fn].apply(null, args);
+        }
+      }
+      return NaN;
+    }
+
+    function parseNum() {
+      var start = pos;
+      while (pos < expr.length && ((expr[pos] >= '0' && expr[pos] <= '9') || expr[pos] === '.')) pos++;
+      var n = parseFloat(expr.slice(start, pos));
+      return isNaN(n) ? 0 : n;
+    }
+
+    try {
+      var result = parseExpr();
+      skipSpaces();
+      if (pos < expr.length) return NaN; // 잔여 문자
+      return result;
+    } catch (e) {
+      return NaN;
+    }
+  }
+
+  // ── 스탯 값 조회 (크로스-월드 비동기) ──
+
+  /**
+   * 캐릭터의 스탯/이니셔티브 값을 Redux에서 조회합니다.
+   * {#캐릭터명!스탯라벨} 또는 {#캐릭터명!이니셔티브} 형식.
+   * .max 접미사로 최대값 조회 가능 (예: {#홍길동!HP.max}).
+   *
+   * @param {string} charName - 캐릭터 이름
+   * @param {string} statLabel - 스탯 라벨 또는 '이니셔티브'
+   * @returns {Promise<{found:boolean, value:number}|null>}
+   */
+  function getStatValue(charName, statLabel) {
+    return new Promise(function (resolve) {
+      var timeout = setTimeout(function () {
+        window.removeEventListener('bwbr-get-stat-value-result', handler);
+        resolve(null);
+      }, 3000);
+
+      function handler() {
+        clearTimeout(timeout);
+        window.removeEventListener('bwbr-get-stat-value-result', handler);
+        var raw = document.documentElement.getAttribute('data-bwbr-get-stat-value-result');
+        document.documentElement.removeAttribute('data-bwbr-get-stat-value-result');
+        if (!raw) { resolve(null); return; }
+        try { resolve(JSON.parse(raw)); }
+        catch (e) { resolve(null); }
+      }
+
+      window.addEventListener('bwbr-get-stat-value-result', handler);
+      document.documentElement.setAttribute('data-bwbr-get-stat-value',
+        JSON.stringify({ charName: charName, statLabel: statLabel }));
+      window.dispatchEvent(new CustomEvent('bwbr-get-stat-value'));
+    });
+  }
+
+  // ── 비동기 템플릿 해석 ──
+
+  /**
+   * 템플릿 문자열을 완전히 해석합니다 (비동기).
+   * 1단계: 일반 {param} 치환 (applyTemplate)
+   * 2단계: {#캐릭터!스탯} → 크로스-월드 스탯 값 조회
+   * 3단계: {계산:수식} → 안전한 수식 계산
+   *
+   * 특수 패턴이 없으면 동기적으로 즉시 반환합니다.
+   *
+   * @param {string} template - 템플릿 문자열
+   * @param {Object} params - 파라미터 딕셔너리
+   * @returns {Promise<string>}
+   */
+  async function resolveTemplate(template, params) {
+    if (!template) return '';
+
+    // 1단계: 일반 파라미터 치환
+    var text = applyTemplate(template, params);
+
+    // Fast path: 특수 패턴 없으면 즉시 반환
+    if (text.indexOf('{#') === -1 && text.indexOf('{계산:') === -1) return text;
+
+    // 2단계: {#캐릭터!스탯} 스탯 값 조회
+    var statRefPattern = /\{#([^!}]+)!([^}]+)\}/g;
+    var statRefs = [];
+    var m;
+    while ((m = statRefPattern.exec(text)) !== null) {
+      statRefs.push({ full: m[0], charPart: m[1], statPart: m[2] });
+    }
+
+    for (var i = 0; i < statRefs.length; i++) {
+      var ref = statRefs[i];
+      // charPart가 파라미터명일 수 있음 → 파라미터 값으로 대체
+      var charName = params.hasOwnProperty(ref.charPart) ? String(params[ref.charPart]) : ref.charPart;
+      var result = await getStatValue(charName, ref.statPart);
+      if (result && result.found && result.value !== undefined) {
+        text = text.split(ref.full).join(String(result.value));
+      } else {
+        LOG('스탯 조회 실패:', charName, ref.statPart, result);
+        text = text.split(ref.full).join('0');
+      }
+    }
+
+    // 3단계: {계산:수식} 계산
+    text = text.replace(/\{계산:([^}]+)\}/g, function (match, expr) {
+      var val = safeCalc(expr);
+      if (isNaN(val)) return match;
+      return val === Math.floor(val) ? String(val) : val.toFixed(2);
+    });
+
+    return text;
   }
 
   /**
@@ -337,7 +537,7 @@
     this._compiled.clear();
     for (var i = 0; i < this._triggers.length; i++) {
       var t = this._triggers[i];
-      var c = compilePattern(t.pattern);
+      var c = t.isRegex ? compileRegex(t.pattern) : compilePattern(t.pattern);
       if (c) this._compiled.set(t.id, c);
     }
   };
@@ -357,7 +557,7 @@
     if (!trigger.delay) trigger.delay = 300;
     if (!trigger.priority) trigger.priority = 0;
     this._triggers.push(trigger);
-    var c = compilePattern(trigger.pattern);
+    var c = trigger.isRegex ? compileRegex(trigger.pattern) : compilePattern(trigger.pattern);
     if (c) this._compiled.set(trigger.id, c);
     this.save();
     return trigger;
@@ -368,9 +568,10 @@
     for (var i = 0; i < this._triggers.length; i++) {
       if (this._triggers[i].id === id) {
         Object.assign(this._triggers[i], updates);
-        // 패턴이 바뀌면 재컴파일
-        if (updates.pattern !== undefined) {
-          var c = compilePattern(this._triggers[i].pattern);
+        // 패턴이나 isRegex가 바뀌면 재컴파일
+        if (updates.pattern !== undefined || updates.isRegex !== undefined) {
+          var t = this._triggers[i];
+          var c = t.isRegex ? compileRegex(t.pattern) : compilePattern(t.pattern);
           if (c) this._compiled.set(id, c);
           else this._compiled.delete(id);
         }
@@ -650,7 +851,10 @@
       case 'sound':        await this._actionSound(action, params); break;
       case 'load_scene':   await this._actionLoadScene(action, params); break;
       case 'stat_all':      await this._actionStatAll(action, params); break;
-      case 'wait':          await _delay(parseInt(action.ms || '0', 10)); break;
+      case 'wait':
+        var _waitMs = parseInt(await resolveTemplate(String(action.ms || '0'), params), 10);
+        await _delay(_waitMs || 0);
+        break;
       default:
         LOG('알 수 없는 동작 타입:', action.type);
     }
@@ -658,7 +862,7 @@
 
   /** 시스템 메시지 전송 */
   TriggerEngine.prototype._actionMessage = async function (action, params) {
-    var text = applyTemplate(action.template, params);
+    var text = await resolveTemplate(action.template, params);
     if (!text) return;
     // 컷인 태그가 포함되어 있으면 그대로 보냄 (@태그 자동 처리됨)
     if (this._chat) {
@@ -669,7 +873,7 @@
 
   /** 컷인 재생 (@태그를 빈 메시지로 보내면 컷인만 재생) */
   TriggerEngine.prototype._actionCutin = async function (action, params) {
-    var tag = applyTemplate(action.tag || '', params);
+    var tag = await resolveTemplate(action.tag || '', params);
     if (!tag) return;
     // sendSystemMessage에 @태그만 보내면 컷인 재생
     if (this._chat) {
@@ -680,10 +884,10 @@
 
   /** 캐릭터 스탯 변경 (bwbr-modify-status 이벤트) */
   TriggerEngine.prototype._actionStat = async function (action, params) {
-    var targetName = applyTemplate(action.target || '', params);
-    var statLabel = applyTemplate(action.stat || '', params);
+    var targetName = await resolveTemplate(action.target || '', params);
+    var statLabel = await resolveTemplate(action.stat || '', params);
     var op = action.op || '+';
-    var rawValue = applyTemplate(String(action.value || '0'), params);
+    var rawValue = await resolveTemplate(String(action.value || '0'), params);
     var numValue = parseInt(rawValue, 10);
     if (isNaN(numValue)) {
       LOG('스탯 변경 실패: 숫자가 아님 →', rawValue);
@@ -733,8 +937,8 @@
 
   /** 캐릭터 메시지 전송 (특정 캐릭터 이름/아이콘으로 RP 메시지) */
   TriggerEngine.prototype._actionCharMessage = async function (action, params) {
-    var targetName = applyTemplate(action.target || '', params);
-    var text = applyTemplate(action.template || '', params);
+    var targetName = await resolveTemplate(action.target || '', params);
+    var text = await resolveTemplate(action.template || '', params);
     if (!text || !targetName) return;
 
     LOG('캐릭터 메시지 요청:', targetName, text.substring(0, 60));
@@ -759,9 +963,9 @@
 
   /** 파라미터 변경 (캐릭터 params[] 배열 수정) */
   TriggerEngine.prototype._actionParam = async function (action, params) {
-    var targetName = applyTemplate(action.target || '', params);
-    var paramLabel = applyTemplate(action.param || '', params);
-    var rawValue = applyTemplate(String(action.value || ''), params);
+    var targetName = await resolveTemplate(action.target || '', params);
+    var paramLabel = await resolveTemplate(action.param || '', params);
+    var rawValue = await resolveTemplate(String(action.value || ''), params);
     var op = action.op || '=';
     if (!targetName || !paramLabel) return;
 
@@ -791,8 +995,8 @@
 
   /** 표정/아이콘 변경 */
   TriggerEngine.prototype._actionFace = async function (action, params) {
-    var targetName = applyTemplate(action.target || '', params);
-    var faceIdx = parseInt(applyTemplate(String(action.faceIndex || '0'), params), 10);
+    var targetName = await resolveTemplate(action.target || '', params);
+    var faceIdx = parseInt(await resolveTemplate(String(action.faceIndex || '0'), params), 10);
     if (!targetName) return;
 
     LOG('표정 변경 요청:', targetName, '인덱스', faceIdx);
@@ -816,9 +1020,9 @@
 
   /** 캐릭터 이동 (맵 좌표) */
   TriggerEngine.prototype._actionMove = async function (action, params) {
-    var targetName = applyTemplate(action.target || '', params);
-    var x = parseInt(applyTemplate(String(action.x || '0'), params), 10);
-    var y = parseInt(applyTemplate(String(action.y || '0'), params), 10);
+    var targetName = await resolveTemplate(action.target || '', params);
+    var x = parseInt(await resolveTemplate(String(action.x || '0'), params), 10);
+    var y = parseInt(await resolveTemplate(String(action.y || '0'), params), 10);
     var relative = action.relative === 'true' || action.relative === true;
     if (!targetName) return;
 
@@ -843,8 +1047,8 @@
 
   /** 이니셔티브 변경 */
   TriggerEngine.prototype._actionInitiative = async function (action, params) {
-    var targetName = applyTemplate(action.target || '', params);
-    var rawValue = applyTemplate(String(action.value || '0'), params);
+    var targetName = await resolveTemplate(action.target || '', params);
+    var rawValue = await resolveTemplate(String(action.value || '0'), params);
     var numValue = parseInt(rawValue, 10);
     if (isNaN(numValue)) return;
     if (!targetName) return;
@@ -870,8 +1074,8 @@
 
   /** 메모 변경 */
   TriggerEngine.prototype._actionMemo = async function (action, params) {
-    var targetName = applyTemplate(action.target || '', params);
-    var text = applyTemplate(action.memo || '', params);
+    var targetName = await resolveTemplate(action.target || '', params);
+    var text = await resolveTemplate(action.memo || '', params);
     if (!targetName) return;
 
     LOG('메모 변경 요청:', targetName, text.substring(0, 40));
@@ -895,7 +1099,7 @@
 
   /** 사운드 재생 (확장 프로그램 내장 사운드) */
   TriggerEngine.prototype._actionSound = async function (action, params) {
-    var file = applyTemplate(action.file || '', params);
+    var file = await resolveTemplate(action.file || '', params);
     if (!file) return;
     LOG('사운드 재생:', file);
     try {
@@ -910,7 +1114,7 @@
 
   /** 네이티브 장면 불러오기 */
   TriggerEngine.prototype._actionLoadScene = async function (action, params) {
-    var sceneName = applyTemplate(action.sceneName || '', params);
+    var sceneName = await resolveTemplate(action.sceneName || '', params);
     if (!sceneName) return;
     var applyOption = action.applyOption || 'all'; // all, noBgm, noText
     LOG('장면 불러오기 요청:', sceneName, '(적용:', applyOption + ')');
@@ -939,9 +1143,9 @@
 
   /** 전체 캐릭터 스탯 일괄 변경 (bwbr-modify-status-all 이벤트) */
   TriggerEngine.prototype._actionStatAll = async function (action, params) {
-    var statLabel = applyTemplate(action.stat || '', params);
+    var statLabel = await resolveTemplate(action.stat || '', params);
     var op = action.op || '=';
-    var rawValue = applyTemplate(String(action.value || '0'), params);
+    var rawValue = await resolveTemplate(String(action.value || '0'), params);
     var numValue = parseInt(rawValue, 10);
     // =max 연산은 value 불필요
     if (op !== '=max' && isNaN(numValue)) {
@@ -992,7 +1196,7 @@
    *   → 부작용 없음 (onInputSubmit 트리거 안 됨)
    */
   TriggerEngine.prototype._actionDice = async function (action, params) {
-    var command = applyTemplate(action.command || '', params);
+    var command = await resolveTemplate(action.command || '', params);
     if (!command) return;
     if (!this._chat) return;
 

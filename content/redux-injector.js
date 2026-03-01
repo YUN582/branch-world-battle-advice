@@ -1439,6 +1439,55 @@
   });
 
   // ================================================================
+  //  스탯 값 조회 (트리거 {#캐릭터!스탯} 구문용)
+  //  Content Script에서 bwbr-get-stat-value 이벤트로 요청
+  // ================================================================
+  window.addEventListener('bwbr-get-stat-value', () => {
+    const raw = document.documentElement.getAttribute('data-bwbr-get-stat-value');
+    document.documentElement.removeAttribute('data-bwbr-get-stat-value');
+    const { charName, statLabel } = raw ? JSON.parse(raw) : {};
+    const respond = (result) => {
+      document.documentElement.setAttribute('data-bwbr-get-stat-value-result', JSON.stringify(result));
+      window.dispatchEvent(new CustomEvent('bwbr-get-stat-value-result'));
+    };
+    try {
+      if (!reduxStore) throw new Error('Redux Store 없음');
+      const state = reduxStore.getState();
+      const rc = state.entities?.roomCharacters;
+      if (!rc) throw new Error('캐릭터 데이터 없음');
+      let target = null;
+      for (const id of (rc.ids || [])) {
+        const c = rc.entities?.[id];
+        if (c && c.name === charName) { target = c; break; }
+      }
+      if (!target) { respond({ found: false, error: 'char not found' }); return; }
+
+      // 이니셔티브 조회
+      if (statLabel === '이니셔티브' || statLabel === 'initiative') {
+        respond({ found: true, value: target.initiative || 0 });
+        return;
+      }
+
+      // .max / .value 접미사 처리
+      let field = 'value';
+      let label = statLabel;
+      if (statLabel.endsWith('.max')) {
+        field = 'max';
+        label = statLabel.slice(0, -4);
+      } else if (statLabel.endsWith('.value')) {
+        label = statLabel.slice(0, -6);
+      }
+
+      const stat = (target.status || []).find(s => s.label === label);
+      if (!stat) { respond({ found: false, error: 'stat not found' }); return; }
+      respond({ found: true, value: stat[field] || 0, max: stat.max || 0 });
+    } catch (err) {
+      console.error('[BWBR] 스탯 값 조회 실패:', err.message);
+      respond({ found: false, error: err.message });
+    }
+  });
+
+  // ================================================================
   //  :# 스테이터스 변경 명령 처리
   //  Content Script에서 bwbr-modify-status 이벤트로 요청
   // ================================================================

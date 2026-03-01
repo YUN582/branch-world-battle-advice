@@ -212,6 +212,7 @@
     c += '.tmgr-inp:focus{border-color:' + T.primary + ';border-width:2px;padding:7.5px 13px}';
     c += '.tmgr-inp::placeholder{color:' + T.textDis + '}';
     c += '.tmgr-inp:disabled{color:' + T.textDis + ';border-color:' + T.divider + '}';
+    c += '.tmgr-textarea{resize:vertical;min-height:56px;max-height:160px;line-height:1.5;font-family:inherit}';
 
     c += '.tmgr-sel{font:inherit;color:currentColor;padding:8.5px 14px;border:1px solid ' + T.border + ';border-radius:4px;background:transparent;outline:none;font-size:14px;cursor:pointer}';
     c += '.tmgr-sel:hover{border-color:rgba(255,255,255,.87)}';
@@ -303,7 +304,8 @@
     up:     'M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z',
     arrowU: 'M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z',
     arrowD: 'M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z',
-    grip:   'M9 7h2v2H9zm4 0h2v2h-2zM9 11h2v2H9zm4 0h2v2h-2zM9 15h2v2H9zm4 0h2v2h-2z'
+    grip:   'M9 7h2v2H9zm4 0h2v2h-2zM9 11h2v2H9zm4 0h2v2h-2zM9 15h2v2H9zm4 0h2v2h-2z',
+    copy:   'M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z'
   };
   function _svg(name, sz) {
     sz = sz || 20;
@@ -451,9 +453,10 @@
         h += '<div class="tmgr-sw' + (t.enabled ? ' on' : '') + '" data-a="toggle"><span class="tmgr-sw-thumb"></span></div>';
         h += '<div class="tmgr-info" data-a="edit">';
         h += '  <div class="tmgr-name">' + _esc(t.name || '(이름 없음)') + '</div>';
-        h += '  <div class="tmgr-sub">' + _esc(t.pattern || '(패턴 없음 — 조건 기반)') + '</div>';
+        h += '  <div class="tmgr-sub">' + _esc(t.pattern || '(패턴 없음 — 조건 기반)') + (t.isRegex ? ' <span style="font-size:10px;opacity:0.6">[정규식]</span>' : '') + '</div>';
         h += '</div>';
         h += '<span class="tmgr-badge">' + src + '</span>';
+        h += '<button class="tmgr-ib" data-a="copy" title="복사">' + _svg('copy', 16) + '</button>';
         h += '<button class="tmgr-ib danger" data-a="delete" title="삭제">' + _svg('del', 16) + '</button>';
         h += '</div>';
       }
@@ -495,6 +498,20 @@
           case 'edit':   if (id) renderEdit(id); break;
           case 'delete':
             if (id && triggerEngine) { triggerEngine.removeTrigger(id); renderList(); _toast('삭제됨'); }
+            break;
+          case 'copy':
+            if (id && triggerEngine) {
+              var list = triggerEngine.getTriggers();
+              var orig = list.find(function (x) { return x.id === id; });
+              if (orig) {
+                var clone = JSON.parse(JSON.stringify(orig));
+                delete clone.id;
+                clone.name = (clone.name || '') + ' (복사)';
+                triggerEngine.addTrigger(clone);
+                renderList();
+                _toast('복사됨');
+              }
+            }
             break;
         }
       });
@@ -540,8 +557,11 @@
 
     // 패턴
     h += '<div class="tmgr-row"><label class="tmgr-lbl">패턴</label>';
-    h += '<input class="tmgr-inp" id="tf-pat" value="' + _ea(d.pattern) + '" placeholder="예: 《공격》| {대상} 또는 【방어】| {대상} 또는 자유 형식">';
-    h += '<div class="tmgr-hint">어떤 형식이든 가능합니다. {파라미터명}으로 파라미터를 정의·추출합니다 (예: {대상}, {값}). 정의한 파라미터는 동작에서 {대상} 같은 형식으로 사용할 수 있습니다. 비워두면 조건만으로 트리거됩니다.</div></div>';
+    h += '<div style="display:flex;gap:8px;align-items:center">';
+    h += '<input class="tmgr-inp" id="tf-pat" value="' + _ea(d.pattern) + '" placeholder="' + (d.isRegex ? '정규식 패턴 (예: ^(?<대상>.+?)에게 공격$)' : '예: 《공격》| {대상} 또는 【방어】| {대상} 또는 자유 형식') + '" style="flex:1">';
+    h += '<label style="display:flex;align-items:center;gap:4px;white-space:nowrap;font-size:12px;color:' + T.textSec + ';cursor:pointer"><input type="checkbox" id="tf-regex"' + (d.isRegex ? ' checked' : '') + '> 정규식</label>';
+    h += '</div>';
+    h += '<div class="tmgr-hint" id="tf-pat-hint">' + (d.isRegex ? '정규식 모드: JavaScript 정규식을 직접 입력합니다. (?&lt;파라미터명&gt;...) 이름 있는 캡처 그룹으로 파라미터를 정의합니다.' : '어떤 형식이든 가능합니다. {파라미터명}으로 파라미터를 정의·추출합니다 (예: {대상}, {값}). 정의한 파라미터는 동작에서 {대상} 같은 형식으로 사용할 수 있습니다. 비워두면 조건만으로 트리거됩니다.') + '</div></div>';
 
     // 감지 대상 + 딜레이 + 우선순위
     h += '<div class="tmgr-row tmgr-row-i">';
@@ -733,13 +753,13 @@
     var h = '';
     switch (a.type) {
       case 'message':
-        h += '<input class="tmgr-inp" data-f="template" value="' + _ea(a.template || '') + '" placeholder="메시지 ({파라미터명} 사용 가능)">';
+        h += '<textarea class="tmgr-inp tmgr-textarea" data-f="template" placeholder="메시지 ({파라미터명} 사용 가능, {#캐릭터!스탯}, {계산:수식} 지원). 여러 줄 입력 가능">' + _esc(a.template || '') + '</textarea>';
         break;
       case 'char_message':
         h += '<div class="tmgr-afrow">';
         h += '<input class="tmgr-inp" data-f="target" value="' + _ea(a.target || '') + '" placeholder="캐릭터 이름 ({내캐릭터} = 선택 캐릭터, {차례} = 전투 차례)">';
         h += '</div>';
-        h += '<input class="tmgr-inp" data-f="template" value="' + _ea(a.template || '') + '" placeholder="메시지 ({파라미터명} 사용 가능)">';
+        h += '<textarea class="tmgr-inp tmgr-textarea" data-f="template" placeholder="메시지 ({파라미터명} 사용 가능, {#캐릭터!스탯}, {계산:수식} 지원). 여러 줄 입력 가능">' + _esc(a.template || '') + '</textarea>';
         break;
       case 'cutin':
         h += '<input class="tmgr-inp" data-f="tag" value="' + _ea(a.tag || '') + '" placeholder="컷인 태그명">';
@@ -823,15 +843,15 @@
         h += '</select>';
         h += '</div>';
         h += '<div class="tmgr-afrow">';
-        h += '<input class="tmgr-inp" data-f="x" type="number" value="' + _ea(a.x != null ? String(a.x) : '0') + '" placeholder="X" style="flex:1">';
-        h += '<input class="tmgr-inp" data-f="y" type="number" value="' + _ea(a.y != null ? String(a.y) : '0') + '" placeholder="Y" style="flex:1">';
+        h += '<input class="tmgr-inp" data-f="x" value="' + _ea(a.x != null ? String(a.x) : '0') + '" placeholder="X ({파라미터} 사용 가능)" style="flex:1">';
+        h += '<input class="tmgr-inp" data-f="y" value="' + _ea(a.y != null ? String(a.y) : '0') + '" placeholder="Y ({파라미터} 사용 가능)" style="flex:1">';
         h += '</div>';
-        h += '<div class="tmgr-hint">상대 좌표: 현재 위치 기준 이동량, 절대 좌표: 맵 좌표 직접 지정</div>';
+        h += '<div class="tmgr-hint">상대 좌표: 현재 위치 기준 이동량, 절대 좌표: 맵 좌표 직접 지정. {파라미터}, {계산:}, {#캐릭터!스탯} 사용 가능</div>';
         break;
       case 'initiative':
         h += '<div class="tmgr-afrow">';
         h += '<input class="tmgr-inp" data-f="target" value="' + _ea(a.target || '') + '" placeholder="캐릭터 이름" style="flex:2">';
-        h += '<input class="tmgr-inp" data-f="value" type="number" value="' + _ea(a.value != null ? String(a.value) : '0') + '" placeholder="이니셔티브 값" style="flex:0 0 120px">';
+        h += '<input class="tmgr-inp" data-f="value" value="' + _ea(a.value != null ? String(a.value) : '0') + '" placeholder="이니셔티브 값 ({파라미터} 사용 가능)" style="flex:0 0 160px">';
         h += '</div>';
         break;
       case 'memo':
@@ -861,7 +881,7 @@
       case 'wait':
         h += '<div class="tmgr-afrow">';
         h += '<span style="font-size:13px;color:' + T.textSec + ';white-space:nowrap">대기 시간</span>';
-        h += '<input class="tmgr-inp" data-f="ms" type="number" min="0" step="50" value="' + _ea(a.ms != null ? String(a.ms) : '300') + '" placeholder="밀리초 (ms)" style="flex:1">';
+        h += '<input class="tmgr-inp" data-f="ms" value="' + _ea(a.ms != null ? String(a.ms) : '300') + '" placeholder="밀리초 ({파라미터} 사용 가능)" style="flex:1">';
         h += '<span style="font-size:12px;color:' + T.textSec + '">ms</span>';
         h += '</div>';
         h += '<div class="tmgr-hint">다음 동작 실행 전 대기할 시간 (1000ms = 1초)</div>';
@@ -881,6 +901,25 @@
     dialogEl.querySelectorAll('[data-a="close"]').forEach(function (b) {
       b.addEventListener('click', function () { closeDialog(); });
     });
+
+    // 정규식 토글 바인딩
+    var regexCb = dialogEl.querySelector('#tf-regex');
+    if (regexCb) {
+      regexCb.addEventListener('change', function () {
+        var patInp = dialogEl.querySelector('#tf-pat');
+        var hintEl = dialogEl.querySelector('#tf-pat-hint');
+        if (patInp) {
+          patInp.placeholder = regexCb.checked
+            ? '정규식 패턴 (예: ^(?<대상>.+?)에게 공격$)'
+            : '예: 《공격》| {대상} 또는 【방어】| {대상} 또는 자유 형식';
+        }
+        if (hintEl) {
+          hintEl.innerHTML = regexCb.checked
+            ? '정규식 모드: JavaScript 정규식을 직접 입력합니다. (?&lt;파라미터명&gt;...) 이름 있는 캡처 그룹으로 파라미터를 정의합니다.'
+            : '어떤 형식이든 가능합니다. {파라미터명}으로 파라미터를 정의·추출합니다 (예: {대상}, {값}). 정의한 파라미터는 동작에서 {대상} 같은 형식으로 사용할 수 있습니다. 비워두면 조건만으로 트리거됩니다.';
+        }
+      });
+    }
 
     // 추가 드롭다운 — paper 밖(overlayEl)으로 이동 (transform 컨텍스트에서 position:fixed 문제 회피)
     var addBtn = dialogEl.querySelector('#tf-add-btn');
@@ -1149,6 +1188,7 @@
 
     var name    = (dialogEl.querySelector('#tf-name')?.value || '').trim();
     var pattern = (dialogEl.querySelector('#tf-pat')?.value || '').trim();
+    var isRegex = dialogEl.querySelector('#tf-regex')?.checked || false;
     var source  = dialogEl.querySelector('#tf-src')?.value || 'input';
     var delay   = parseInt(dialogEl.querySelector('#tf-delay')?.value, 10) || 300;
     var pri     = parseInt(dialogEl.querySelector('#tf-pri')?.value, 10) || 0;
@@ -1186,7 +1226,7 @@
     if (!hasRealAction) { _toast('최소 1개의 동작을 추가하세요'); return; }
 
     var upd = {
-      name: name, pattern: pattern, source: source,
+      name: name, pattern: pattern, isRegex: isRegex, source: source,
       delay: delay, priority: pri, actions: actions,
       conditions: {
         states: (data.conditions && data.conditions.states) || []
