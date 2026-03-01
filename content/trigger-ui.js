@@ -227,7 +227,7 @@
     c += '.tmgr-row-i{display:flex;gap:16px}';
     c += '.tmgr-row-i>div{flex:1}';
 
-    c += '.tmgr-item{display:flex;align-items:flex-start;padding:8px 16px;gap:12px;border-bottom:1px solid ' + T.divider + '}';
+    c += '.tmgr-item{display:flex;align-items:center;padding:8px 16px;gap:12px;border-bottom:1px solid ' + T.divider + '}';
     c += '.tmgr-item:last-child{border-bottom:none}';
 
     c += '.tmgr-sw{display:inline-flex;width:42px;height:24px;padding:0;cursor:pointer;position:relative;flex-shrink:0;border-radius:12px;background:rgba(255,255,255,.3);transition:background .15s}';
