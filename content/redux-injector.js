@@ -959,9 +959,13 @@
         success = await sendDirectMessage(cleanText, overrides);
       }
       // 컷인 트리거 (메시지 전송 성공 또는 텍스트 없이 컷인만 있는 경우)
+      // ★ 순차 실행 + 딜레이: 동시 Firestore 쓰기 시 ccfolia가 일부만 재생하는 문제 방지
       if (success && cutinTags.length > 0) {
-        for (const tag of cutinTags) {
-          triggerCutin(tag);
+        for (let i = 0; i < cutinTags.length; i++) {
+          await triggerCutin(cutinTags[i]);
+          if (i < cutinTags.length - 1) {
+            await new Promise(r => setTimeout(r, 150));
+          }
         }
       }
       // MAIN→ISOLATED: detail 전달 가능

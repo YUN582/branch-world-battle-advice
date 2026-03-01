@@ -46,7 +46,7 @@
 
   function startPolling() {
     if (_pollTimer) return;
-    _pollTimer = setInterval(pollForExportSection, 1000);
+    _pollTimer = setInterval(pollForExportSection, 2000);
   }
 
   /**

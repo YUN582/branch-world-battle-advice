@@ -261,7 +261,7 @@
 
   window.addEventListener('popstate', onUrlChange);
   window.addEventListener('hashchange', onUrlChange);
-  setInterval(onUrlChange, 500);
+  setInterval(onUrlChange, 2000); // MutationObserver on <title> handles most; this is fallback
 
   // 초기 렌더링
   if (document.readyState === 'loading') {

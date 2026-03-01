@@ -126,7 +126,7 @@
     overlay.setStatus(enabled ? 'idle' : 'disabled', enabled ? '대기 중' : '비활성');
 
     // DOM 요소 탐색 (코코포리아 로드 대기)
-    alwaysLog('코코포리아 채팅 DOM 탐색 중...');
+    log('코코포리아 채팅 DOM 탐색 중...');
     const found = await chat.waitForElements(60000, 2000);
     if (!found) {
       alwaysLog('채팅 DOM 요소를 찾을 수 없습니다. 수동 선택자 설정이 필요할 수 있습니다.');
@@ -188,7 +188,7 @@
     }
 
     alwaysLog('초기화 완료! 트리거 대기 중...');
-    alwaysLog(`트리거 정규식: ${config.patterns.triggerRegex}`);
+    log(`트리거 정규식: ${config.patterns.triggerRegex}`);
     } catch (err) {
       console.error('[BWBR] 초기화 실패:', err);
       alwaysLog('초기화 실패: ' + (err.message || err));
@@ -340,7 +340,7 @@
   function onNewMessage(text, element, senderName) {
     if (!enabled) return;
 
-    alwaysLog(`[상태: ${flowState}] 메시지 수신: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"`);
+    log(`[상태: ${flowState}] 메시지 수신: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"`);
 
     // 범용 트리거 엔진 매칭 (source = 'message')
     if (triggerEngine) {
@@ -409,11 +409,9 @@
 
   /** 전투 보조 개시/종료 트리거 감지 */
   async function checkForCombatAssistTrigger(text) {
-    alwaysLog(`[전투 보조] 트리거 체크: "${text.substring(0, 50)}"`);
-    
     // 전투 개시 감지: 《 전투개시 》 또는 《 전투개시 》 @전투
     if (combatEngine.parseCombatStartTrigger(text)) {
-      alwaysLog('[전투 보조] 전투개시 트리거 감지!');
+      log('[전투 보조] 전투개시 트리거 감지!');
       startCombatAssist();
       return;
     }
@@ -428,11 +426,11 @@
     if (flowState === STATE.TURN_COMBAT && combatEngine.parseTurnEndTrigger(text)) {
       const now = Date.now();
       if (now - _lastTurnAdvanceTime < 1000) {
-        alwaysLog('[전투 보조] 차례 종료 중복 감지 — 무시');
+        log('[전투 보조] 차례 종료 중복 감지 — 무시');
         return;
       }
       _lastTurnAdvanceTime = now;
-      alwaysLog('[전투 보조] 차례종료 트리거 감지!');
+      log('[전투 보조] 차례종료 트리거 감지!');
       advanceTurn();
       return;
     }
@@ -450,11 +448,11 @@
         const speakerName = _cachedSpeakerName;
 
         if (!speakerName) {
-          alwaysLog(`[전투 보조] 화자 이름 없음 — 행동 소비 생략`);
+          log(`[전투 보조] 화자 이름 없음 — 행동 소비 생략`);
           return;
         }
 
-        alwaysLog(`[전투 보조] ${actionType} 행동 소비 감지: ${speakerName}`);
+        log(`[전투 보조] ${actionType} 행동 소비 감지: ${speakerName}`);
 
         // 사용자 메시지 도착 대기 후 스탯 차감 (silent: 개별 메시지 억제)
         await _awaitUserMessage();
@@ -506,7 +504,7 @@
       // 디바운스: 1초 내 중복 호출 방지
       const now = Date.now();
       if (now - _lastTurnAdvanceTime < 1000) {
-        alwaysLog('[전투 보조] 차례 종료 중복 감지 — 무시');
+        log('[전투 보조] 차례 종료 중복 감지 — 무시');
         return;
       }
       _lastTurnAdvanceTime = now;
@@ -574,7 +572,7 @@
     const turnOrder = state.turnOrder.map((c, i) => 
       `${i + 1}. ${c.name} (행동력: ${c.initiative})`
     ).join('\n');
-    alwaysLog(`턴 순서:\n${turnOrder}`);
+    log(`턴 순서:\n${turnOrder}`);
 
     // 전체 행동력 초기화 (silent: 개별 메시지 억제) + 묶인 메시지 전송
     await _resetAllActionStats('⚔️ 전투 개시');
@@ -614,7 +612,7 @@
     const nextChar = combatEngine.nextTurn();
     if (!nextChar) {
       // 모든 캐릭터 턴 완료 → 다시 첫 번째로
-      alwaysLog('모든 캐릭터 턴 완료, 처음으로 돌아감');
+      log('모든 캐릭터 턴 완료, 처음으로 돌아감');
     }
 
     // 턴 시작 메시지 + 스탯 리셋은 sendTurnStartMessage에서 처리
@@ -740,7 +738,7 @@
       const data = combatEngine.serializeTurnCombat();
       if (data) {
         chrome.storage.session.set({ bwbr_turnCombat: data });
-        alwaysLog('[턴 전투] 상태 저장됨');
+        log('[턴 전투] 상태 저장됨');
       }
     } catch (e) {
       alwaysLog(`[턴 전투] 상태 저장 실패: ${e.message}`);
@@ -751,7 +749,7 @@
   function _clearTurnCombatState() {
     try {
       chrome.storage.session.remove('bwbr_turnCombat');
-      alwaysLog('[턴 전투] 저장된 상태 삭제');
+      log('[턴 전투] 저장된 상태 삭제');
     } catch (e) {
       // 무시
     }
@@ -797,7 +795,7 @@
       // HP 데이터가 비어있으면 재시도 (Redux 인젝터 초기화 지연 대응)
       _retryRefreshIfMissingHP();
 
-      alwaysLog('[턴 전투] 상태 복원 완료!');
+      log('[턴 전투] 상태 복원 완료!');
       return true;
     } catch (e) {
       alwaysLog(`[턴 전투] 복원 실패: ${e.message}`);
@@ -817,7 +815,7 @@
     const { willValue } = _extractCharInfo(current);
     if (willValue !== null && willValue !== undefined) return; // 이미 있음
 
-    alwaysLog('[턴 전투] HP 데이터 없음 — 재시도 예약');
+    log('[턴 전투] HP 데이터 없음 — 재시도 예약');
     let retries = 0;
     const maxRetries = 5;
     const timer = setInterval(async () => {
@@ -826,7 +824,7 @@
         await _refreshCharacterOriginalData();
         const { willValue: w } = _extractCharInfo(combatEngine.getState().currentCharacter);
         if (w !== null && w !== undefined) {
-          alwaysLog(`[턴 전투] HP 데이터 획득 성공 (${retries}회차)`);
+          log(`[턴 전투] HP 데이터 획득 성공 (${retries}회차)`);
           await refreshTurnUI();
           clearInterval(timer);
         } else if (retries >= maxRetries) {
@@ -884,7 +882,7 @@
     const current = state.currentCharacter;
     
     if (!current) {
-      alwaysLog('현재 차례 캐릭터 없음');
+      log('현재 차례 캐릭터 없음');
       return;
     }
 
@@ -905,7 +903,7 @@
     const cutin = _pickCutin('turnStartSounds');
     if (cutin) turnMsg += cutin;
     
-    alwaysLog(`턴 메시지: ${turnMsg}`);
+    log(`턴 메시지: ${turnMsg}`);
     overlay.addLog(`🎯 ${current.name}의 차례`, 'success');
 
     overlay.updateTurnInfo({
@@ -956,12 +954,9 @@
 
   /** 전투 보조 메시지를 파싱하여 관전자 UI 업데이트 */
   async function processTurnCombatTracking(text) {
-    // DEBUG: 모든 메시지 로깅
-    alwaysLog(`[관전 추적] 메시지 확인: "${text.substring(0, 80)}"`);
-    
     // 1. 전투 개시 감지 → 캐릭터 캐시 업데이트
     if (combatEngine.parseCombatStartTrigger(text)) {
-      alwaysLog('[관전 추적] 전투 개시 감지!');
+      log('[관전 추적] 전투 개시 감지!');
       _turnTrackingActive = true;
       await updateCharacterCache();
       overlay.show();  // 오버레이 표시
@@ -974,7 +969,7 @@
     // 2. 전투 종료 감지 → 추적 종료
     if (combatEngine.parseCombatEndTrigger(text)) {
       if (_turnTrackingActive) {
-        alwaysLog('[관전 추적] 전투 종료 감지');
+        log('[관전 추적] 전투 종료 감지');
         _turnTrackingActive = false;
         _currentTrackedTurn = null;
         overlay.setTurnTrackingMode(false);  // 턴 추적 모드 비활성화
@@ -986,20 +981,17 @@
     }
 
     // 추적이 활성화되지 않았으면 무시
-    if (!_turnTrackingActive) {
-      alwaysLog(`[관전 추적] 추적 비활성 상태 - 무시`);
-      return;
-    }
+    if (!_turnTrackingActive) return;
 
     // 3. 차례 시작 메시지 파싱
     const turnStart = combatEngine.parseTurnStartMessage(text);
-    alwaysLog(`[관전 추적] 차례 시작 파싱 결과: ${JSON.stringify(turnStart)}`);
+    log(`[관전 추적] 차례 시작 파싱 결과: ${JSON.stringify(turnStart)}`);
     if (turnStart) {
-      alwaysLog(`[관전 추적] 차례 시작: ${turnStart.name}`);
+      log(`[관전 추적] 차례 시작: ${turnStart.name}`);
       
       // 캐시가 비어있으면 업데이트 기다림
       if (_characterCache.size === 0) {
-        alwaysLog(`[관전 추적] 캐시 비어있음 - 업데이트 대기`);
+        log(`[관전 추적] 캐시 비어있음 - 업데이트 대기`);
         await updateCharacterCache();
       }
       
@@ -1014,7 +1006,7 @@
     // 4. 행동 소비 메시지 파싱
     const actionConsumed = combatEngine.parseActionConsumedMessage(text);
     if (actionConsumed && _currentTrackedTurn) {
-      alwaysLog(`[관전 추적] ${actionConsumed.actionType} 행동 소비: ${actionConsumed.name}`);
+      log(`[관전 추적] ${actionConsumed.actionType} 행동 소비: ${actionConsumed.name}`);
       // 현재 차례 캐릭터와 같은지 확인
       if (_currentTrackedTurn.name === actionConsumed.name) {
         _currentTrackedTurn.mainActions = actionConsumed.mainActions;
@@ -1028,7 +1020,7 @@
     // 5. 행동 추가 메시지 파싱
     const actionAdded = combatEngine.parseActionAddedMessage(text);
     if (actionAdded && _currentTrackedTurn) {
-      alwaysLog(`[관전 추적] ${actionAdded.actionType} 행동 추가: ${actionAdded.name}`);
+      log(`[관전 추적] ${actionAdded.actionType} 행동 추가: ${actionAdded.name}`);
       // 현재 차례 캐릭터와 같은지 확인
       if (_currentTrackedTurn.name === actionAdded.name) {
         _currentTrackedTurn.mainActions = actionAdded.mainActions;
@@ -1064,7 +1056,7 @@
             status: char.status || []
           });
         }
-        alwaysLog(`[관전 추적] 캐릭터 캐시 업데이트: ${_characterCache.size}명`);
+        log(`[관전 추적] 캐릭터 캐시 업데이트: ${_characterCache.size}명`);
       }
     } catch (e) {
       alwaysLog(`[관전 추적] 캐릭터 캐시 업데이트 실패: ${e.message}`);
@@ -1156,11 +1148,11 @@
     // TURN_COMBAT에서 시작한 경우: 합 종료 후 복귀 플래그 설정
     if (flowState === STATE.TURN_COMBAT) {
       _activeCombatFromTurnCombat = true;
-      alwaysLog('⚔️ 전투 보조 중 능동 합 시작 → 합 종료 후 전투 보조로 복귀 예정');
+      log('⚔️ 전투 보조 중 능동 합 시작 → 합 종료 후 전투 보조로 복귀 예정');
     } else if (_turnTrackingActive) {
       // 관전 추적 중 능동 합 시작 (비호스트)
       _activeCombatFromTurnCombat = true;
-      alwaysLog('⚔️ 전투 관전 중 능동 합 시작 → 합 종료 후 관전 모드로 복귀 예정');
+      log('⚔️ 전투 관전 중 능동 합 시작 → 합 종료 후 관전 모드로 복귀 예정');
     } else {
       _activeCombatFromTurnCombat = false;
     }
@@ -1222,7 +1214,7 @@
 
     // TURN_COMBAT에서 시작한 합이면 전투 보조 모드로 복귀
     if (_activeCombatFromTurnCombat && combatEngine && combatEngine.inCombat) {
-      alwaysLog('⚔️ 합 중지 → 전투 보조 모드로 복귀');
+      log('⚔️ 합 중지 → 전투 보조 모드로 복귀');
       _activeCombatFromTurnCombat = false;
       flowState = STATE.TURN_COMBAT;
       overlay.setStatus('active', '전투 보조 중');
@@ -1232,7 +1224,7 @@
 
     // 관전 추적 중이었으면 관전 UI 복귀 (비호스트)
     if (_activeCombatFromTurnCombat && _turnTrackingActive) {
-      alwaysLog('⚔️ 합 중지 → 전투 관전 모드로 복귀');
+      log('⚔️ 합 중지 → 전투 관전 모드로 복귀');
       _activeCombatFromTurnCombat = false;
       flowState = STATE.IDLE;
       overlay.setTurnTrackingMode(true);
@@ -1293,7 +1285,7 @@
     if (!state?.combat) {
       // 관전 시작 후 3초 이내라면 engine.combat이 null이 되는 것은 비정상 — 무시
       if (_spectatorStartTime > 0 && Date.now() - _spectatorStartTime < 3000) {
-        alwaysLog(`[SPEC] ⚠️ engine.combat=null but within 3s grace period — ignoring (text="${text.substring(0,50)}")`);
+        log(`[SPEC] ⚠️ engine.combat=null but within 3s grace period — ignoring (text="${text.substring(0,50)}")`);
         return;
       }
       endSpectating('no_combat_state');
@@ -1450,7 +1442,7 @@
 
     // 이미 SPECTATING이 아니면 무시 (중복 호출 방지)
     if (flowState !== STATE.SPECTATING) {
-      alwaysLog(`👁️ endSpectating 무시: flowState=${flowState}`);
+      log(`👁️ endSpectating 무시: flowState=${flowState}`);
       return;
     }
     
@@ -1461,7 +1453,7 @@
 
     // TURN_COMBAT에서 시작했고, 전투가 아직 진행 중이면 턴 UI로 복귀
     if (_spectatorFromTurnCombat && combatEngine && combatEngine.inCombat) {
-      alwaysLog('👁️ 합 종료 → 전투 보조 모드로 복귀');
+      log('👁️ 합 종료 → 전투 보조 모드로 복귀');
       flowState = STATE.TURN_COMBAT;
       _spectatorFromTurnCombat = false;
       overlay.addLog('합 종료 — 전투 보조 모드로 복귀', 'info');
@@ -1472,7 +1464,7 @@
 
     // 관전 추적 중이었으면 추적 UI 복귀 (비호스트 사용자)
     if (_spectatorFromTurnCombat && _turnTrackingActive) {
-      alwaysLog('👁️ 합 종료 → 전투 관전 모드로 복귀');
+      log('👁️ 합 종료 → 전투 관전 모드로 복귀');
       flowState = STATE.IDLE;
       _spectatorFromTurnCombat = false;
       overlay.setTurnTrackingMode(true);
@@ -1515,7 +1507,7 @@
 
     // 그 외 상태(헤더, 결과처리 등)는 예약만 → 굴림까지 진행 후 자동 멈춤
     _pauseRequested = true;
-    alwaysLog('⏸ 일시정지 예약 (주사위 굴림 후 적용)');
+    log('⏸ 일시정지 예약 (주사위 굴림 후 적용)');
     overlay.setPaused(true);
     overlay.setStatus('active', '주사위 굴림 후 일시정지...');
     overlay.addLog('주사위 굴림 후 일시정지됩니다.', 'warning');
@@ -1593,11 +1585,11 @@
 
     const manualValue = await overlay.showManualInput(who, emoji, playerName);
     if (manualValue === null) {
-      alwaysLog('수동 입력: 취소됨');
+      log('수동 입력: 취소됨');
       return;
     }
 
-    alwaysLog(`수동 입력 (재개): ${who} = ${manualValue}`);
+    log(`수동 입력 (재개): ${who} = ${manualValue}`);
     overlay.addLog(`${emoji} ${playerName}: ${manualValue} (수동 입력)`, 'info');
 
     if (flowState === STATE.WAITING_ATTACKER_RESULT) {
@@ -1740,7 +1732,7 @@
     flowState = STATE.PROCESSING_RESULT;
     clearTimeout(resultTimeoutId);
     overlay.hideManualInput(); // 채팅에서 인식되면 수동입력 숨김
-    alwaysLog(`공격자 결과: ${value}`);
+    log(`공격자 결과: ${value}`);
     engine.setAttackerRoll(value);
 
     // N0 연격 보너스 포함된 결과 → 원본 주사위 값으로 크리/펌블 판정
@@ -1806,7 +1798,7 @@
     flowState = STATE.PROCESSING_RESULT;
     clearTimeout(resultTimeoutId);
     overlay.hideManualInput(); // 채팅에서 인식되면 수동입력 숨김
-    alwaysLog(`방어자 결과: ${value}`);
+    log(`방어자 결과: ${value}`);
     engine.setDefenderRoll(value);
 
     // N0 연격 보너스 포함된 결과 → 원본 주사위 값으로 크리/펌블 판정
@@ -1838,7 +1830,7 @@
       const result = engine.processRoundResult(config.general.manualMode);
       if (!result) {
         // 중복 호출로 이미 처리된 경우 → 상태 변경 없이 무시
-        alwaysLog('⚠️ processRoundResult: 이미 처리됨 (중복 호출 무시)');
+        log('⚠️ processRoundResult: 이미 처리됨 (중복 호출 무시)');
         return;
       }
 
@@ -2055,7 +2047,7 @@
 
     // TURN_COMBAT에서 시작한 합이면 전투 보조 모드로 복귀
     if (_activeCombatFromTurnCombat && combatEngine && combatEngine.inCombat) {
-      alwaysLog('⚔️ 합 종료 → 전투 보조 모드로 복귀');
+      log('⚔️ 합 종료 → 전투 보조 모드로 복귀');
       _activeCombatFromTurnCombat = false;
       flowState = STATE.TURN_COMBAT;
       overlay.addLog('합 종료 — 전투 보조 모드로 복귀', 'info');
@@ -2066,7 +2058,7 @@
 
     // 관전 추적 중이었으면 관전 UI 복귀 (비호스트)
     if (_activeCombatFromTurnCombat && _turnTrackingActive) {
-      alwaysLog('⚔️ 합 종료 → 전투 관전 모드로 복귀');
+      log('⚔️ 합 종료 → 전투 관전 모드로 복귀');
       _activeCombatFromTurnCombat = false;
       flowState = STATE.IDLE;
       overlay.setTurnTrackingMode(true);
@@ -2129,11 +2121,11 @@
     }
 
     if (manualValue === null) {
-      alwaysLog('수동 입력: 취소됨 (전투 중지)');
+      log('수동 입력: 취소됨 (전투 중지)');
       return;
     }
 
-    alwaysLog(`수동 입력: ${who} = ${manualValue}`);
+    log(`수동 입력: ${who} = ${manualValue}`);
     overlay.addLog(`${emoji} ${playerName}: ${manualValue} (수동 입력)`, 'info');
 
     if (flowState === STATE.WAITING_ATTACKER_RESULT) {
@@ -2167,11 +2159,11 @@
     resultTimeoutId = setTimeout(async () => {
       // 라운드가 바뀌었으면 무시 (stale timeout)
       if (engine.round !== expectedRound) {
-        alwaysLog(`${who} 타임아웃 무시 (라운드 변경: ${expectedRound} → ${engine.round})`);
+        log(`${who} 타임아웃 무시 (라운드 변경: ${expectedRound} → ${engine.round})`);
         return;
       }
 
-      alwaysLog(`${who} 결과 타임아웃 → 수동 입력 요청`);
+      log(`${who} 결과 타임아웃 → 수동 입력 요청`);
       overlay.addLog(`${who} 결과를 자동 인식하지 못했습니다. 도우미에 직접 입력해주세요.`, 'warning');
 
       const state = engine.getState();
@@ -2192,11 +2184,11 @@
       const manualValue = await overlay.showManualInput(who, emoji, playerName);
       if (manualValue === null) {
         // 수동 입력 취소됨 (채팅에서 인식되었거나 전투 중지)
-        alwaysLog('수동 입력: 취소됨 (채팅 인식 또는 중지)');
+        log('수동 입력: 취소됨 (채팅 인식 또는 중지)');
         return;
       }
 
-      alwaysLog(`수동 입력: ${who} = ${manualValue}`);
+      log(`수동 입력: ${who} = ${manualValue}`);
       overlay.addLog(`${emoji} ${playerName}: ${manualValue} (수동 입력)`, 'info');
 
       if (flowState === STATE.WAITING_ATTACKER_RESULT) {
@@ -3308,7 +3300,7 @@ ${rows.join('\n')}
           try {
             const data = JSON.parse(raw);
             if (data.success && data.characters) {
-              alwaysLog(`캐릭터 데이터 수신: ${data.characters.length}명`);
+              log(`캐릭터 데이터 수신: ${data.characters.length}명`);
               resolve(data.characters);
               return;
             }
