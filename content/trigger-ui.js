@@ -34,13 +34,13 @@
     text:      'rgb(255,255,255)',
     textSec:   'rgba(255,255,255,0.7)',
     textDis:   'rgba(255,255,255,0.5)',
-    divider:   'rgba(255,255,255,0.12)',
+    divider:   'rgba(255,255,255,0.08)',
     border:    'rgba(255,255,255,0.23)',
     primary:   'rgb(33,150,243)',
     primaryHi: 'rgb(144,202,249)',
     error:     '#f44336',
     warn:      '#ff9800',
-    font:      'inherit'
+    font:      '"Noto Sans KR"'
   };
 
   function _sampleOnce() {
@@ -187,25 +187,26 @@
     c += 'transition:opacity .225s cubic-bezier(.4,0,.2,1),transform .225s cubic-bezier(.4,0,.2,1);overflow:hidden}';
     c += '.tmgr-paper.open{opacity:1;transform:scale(1)}';
 
-    c += '.tmgr-title{display:flex;align-items:center;padding:16px 24px;font-size:14px;font-weight:700;flex-shrink:0}';
-    c += '.tmgr-title-text{flex:1}';
+    c += '.tmgr-title{display:flex;align-items:center;padding:0 24px;height:64px;min-height:64px;flex-shrink:0;background:rgb(33,33,33);box-shadow:0 2px 4px -1px rgba(0,0,0,.2),0 4px 5px rgba(0,0,0,.14),0 1px 10px rgba(0,0,0,.12)}';
+    c += '.tmgr-title-text{flex:1;font-size:20px;font-weight:700;font-family:Roboto,Helvetica,Arial,sans-serif;letter-spacing:.19px;line-height:30px}';
     c += '.tmgr-title-actions{display:flex;gap:4px;align-items:center}';
+    c += '.tmgr-title .tmgr-ib{color:' + T.text + '}';
 
     c += '.tmgr-content{flex:1;overflow-y:auto;padding:20px 24px}';
 
-    c += '.tmgr-actions{display:flex;align-items:center;padding:8px;flex-shrink:0}';
+    c += '.tmgr-actions{display:flex;align-items:center;justify-content:flex-end;padding:8px;flex-shrink:0;gap:8px}';
 
-    c += '.tmgr-btn{display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:500;min-width:64px;padding:6px 8px;border-radius:4px;border:none;cursor:pointer;font-family:inherit;background:transparent;color:' + T.primary + ';transition:background .15s;text-transform:none}';
+    c += '.tmgr-btn{display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;min-width:64px;padding:6px 8px;border-radius:4px;border:none;cursor:pointer;font-family:Roboto,Helvetica,Arial,sans-serif;background:transparent;color:' + T.primary + ';transition:background-color .25s cubic-bezier(.4,0,.2,1),box-shadow .25s cubic-bezier(.4,0,.2,1),border-color .25s cubic-bezier(.4,0,.2,1),color .25s cubic-bezier(.4,0,.2,1);text-transform:uppercase;letter-spacing:.4px;line-height:24.5px}';
     c += '.tmgr-btn:hover{background:rgba(33,150,243,.08)}';
     c += '.tmgr-btn-c{background:' + T.primary + ';color:rgba(0,0,0,.87);padding:6px 16px}';
     c += '.tmgr-btn-c:hover{background:rgb(25,118,210)}';
     c += '.tmgr-btn-sm{min-width:auto;padding:4px 8px;font-size:12px}';
 
-    c += '.tmgr-ib{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;border:none;background:transparent;color:' + T.textSec + ';cursor:pointer;transition:background .15s;padding:0}';
+    c += '.tmgr-ib{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:50%;border:none;background:transparent;color:' + T.textSec + ';cursor:pointer;transition:background-color .15s cubic-bezier(.4,0,.2,1);padding:8px}';
     c += '.tmgr-ib:hover{background:rgba(255,255,255,.08);color:' + T.text + '}';
     c += '.tmgr-ib.danger:hover{color:' + T.error + ';background:rgba(244,67,54,.08)}';
-    c += '.tmgr-ib-close{width:28px;height:28px}';
-    c += '.tmgr-ib-sm{width:24px;height:24px}';
+    c += '.tmgr-ib-close{width:48px;height:48px;padding:12px;margin:0 -12px 0 0}';
+    c += '.tmgr-ib-sm{width:32px;height:32px;padding:4px}';
 
     c += '.tmgr-inp{font:inherit;color:currentColor;padding:8.5px 14px;box-sizing:border-box;width:100%;border:1px solid ' + T.border + ';border-radius:4px;background:transparent;outline:none;font-size:14px}';
     c += '.tmgr-inp:hover{border-color:rgba(255,255,255,.87)}';
@@ -226,7 +227,7 @@
     c += '.tmgr-row-i{display:flex;gap:16px}';
     c += '.tmgr-row-i>div{flex:1}';
 
-    c += '.tmgr-item{display:flex;align-items:center;padding:6px 0;gap:12px;border-bottom:1px solid ' + T.divider + '}';
+    c += '.tmgr-item{display:flex;align-items:flex-start;padding:8px 16px;gap:12px;border-bottom:1px solid ' + T.divider + '}';
     c += '.tmgr-item:last-child{border-bottom:none}';
 
     c += '.tmgr-sw{display:inline-flex;width:42px;height:24px;padding:0;cursor:pointer;position:relative;flex-shrink:0;border-radius:12px;background:rgba(255,255,255,.3);transition:background .15s}';
@@ -236,8 +237,8 @@
 
     c += '.tmgr-info{flex:1;min-width:0;cursor:pointer}';
     c += '.tmgr-info:hover .tmgr-name{color:' + T.primaryHi + '}';
-    c += '.tmgr-name{font-size:14px;font-weight:500;transition:color .15s}';
-    c += '.tmgr-sub{font-size:12px;color:' + T.textSec + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis}';
+    c += '.tmgr-name{font-size:14px;font-weight:700;font-family:Roboto,Helvetica,Arial,sans-serif;letter-spacing:.1px;line-height:22px;color:rgb(224,224,224);transition:color .15s}';
+    c += '.tmgr-sub{font-size:14px;font-family:Roboto,Helvetica,Arial,sans-serif;letter-spacing:.15px;line-height:20px;color:' + T.text + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis}';
 
     c += '.tmgr-badge{font-size:10px;font-weight:500;padding:2px 6px;border-radius:4px;background:rgba(33,150,243,.12);color:' + T.primaryHi + ';flex-shrink:0}';
 
@@ -349,17 +350,30 @@
     btn.innerHTML = '<svg class="MuiSvgIcon-root MuiSvgIcon-fontSizeMedium" focusable="false" aria-hidden="true" viewBox="0 0 24 24" width="24" height="24" style="fill:currentColor;width:1em;height:1em;font-size:1.5rem"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>';
 
     var tip = null;
+    var _tipTimer = null;
     btn.addEventListener('mouseenter', function () {
-      if (tip) return;
-      tip = document.createElement('div');
-      tip.textContent = '[GM] 트리거 목록';
-      tip.style.cssText = 'position:fixed;z-index:1500;background:rgba(97,97,97,.92);color:#fff;padding:4px 8px;border-radius:4px;font-size:11px;font-family:inherit;pointer-events:none;white-space:nowrap';
-      document.body.appendChild(tip);
-      var r = btn.getBoundingClientRect();
-      tip.style.left = (r.left + r.width / 2 - tip.offsetWidth / 2) + 'px';
-      tip.style.top  = (r.bottom + 8) + 'px';
+      if (tip || _tipTimer) return;
+      // MUI enterDelay (~100ms) 재현
+      _tipTimer = setTimeout(function () {
+        _tipTimer = null;
+        tip = document.createElement('div');
+        tip.textContent = '[GM] 트리거 목록';
+        tip.style.cssText = 'position:fixed;z-index:1500;background:rgb(22,22,22);color:#fff;padding:4px 8px;border-radius:4px;font-size:12px;font-weight:500;font-family:Roboto,Helvetica,Arial,sans-serif;pointer-events:none;white-space:nowrap;max-width:300px;word-wrap:break-word;box-shadow:rgba(0,0,0,0.2) 0px 1px 3px 0px,rgba(0,0,0,0.14) 0px 1px 1px 0px,rgba(0,0,0,0.12) 0px 2px 1px -1px;opacity:0;transition:opacity 0.2s cubic-bezier(0.4,0,0.2,1)';
+        document.body.appendChild(tip);
+        var r = btn.getBoundingClientRect();
+        tip.style.left = (r.left + r.width / 2 - tip.offsetWidth / 2) + 'px';
+        tip.style.top  = (r.bottom + 14) + 'px';
+        requestAnimationFrame(function () { requestAnimationFrame(function () { if (tip) tip.style.opacity = '1'; }); });
+      }, 100);
     });
-    btn.addEventListener('mouseleave', function () { if (tip) { tip.remove(); tip = null; } });
+    btn.addEventListener('mouseleave', function () {
+      if (_tipTimer) { clearTimeout(_tipTimer); _tipTimer = null; }
+      if (tip) {
+        var _t = tip; tip = null;
+        _t.style.opacity = '0';
+        setTimeout(function () { _t.remove(); }, 200);
+      }
+    });
 
     btn.addEventListener('click', function (e) {
       e.stopPropagation();
@@ -437,7 +451,7 @@
     h += '<div class="tmgr-title">';
     h += '  <span class="tmgr-title-text">트리거 관리</span>';
     h += '  <div class="tmgr-title-actions">';
-    h += '    <button class="tmgr-ib tmgr-ib-close" data-a="close" title="닫기">' + _svg('close', 18) + '</button>';
+    h += '    <button class="tmgr-ib tmgr-ib-close" data-a="close" title="닫기">' + _svg('close', 24) + '</button>';
     h += '  </div>';
     h += '</div>';
 
@@ -456,8 +470,8 @@
         h += '  <div class="tmgr-sub">' + _esc(t.pattern || '(패턴 없음 — 조건 기반)') + (t.isRegex ? ' <span style="font-size:10px;opacity:0.6">[정규식]</span>' : '') + '</div>';
         h += '</div>';
         h += '<span class="tmgr-badge">' + src + '</span>';
-        h += '<button class="tmgr-ib" data-a="copy" title="복사">' + _svg('copy', 16) + '</button>';
-        h += '<button class="tmgr-ib danger" data-a="delete" title="삭제">' + _svg('del', 16) + '</button>';
+        h += '<button class="tmgr-ib tmgr-ib-sm" data-a="copy" title="복사">' + _svg('copy', 16) + '</button>';
+        h += '<button class="tmgr-ib tmgr-ib-sm danger" data-a="delete" title="삭제">' + _svg('del', 16) + '</button>';
         h += '</div>';
       }
     }
@@ -544,9 +558,9 @@
 
     // 타이틀
     h += '<div class="tmgr-title">';
-    h += '  <button class="tmgr-ib" data-a="back">' + _svg('back') + '</button>';
+    h += '  <button class="tmgr-ib" data-a="back">' + _svg('back', 24) + '</button>';
     h += '  <span class="tmgr-title-text" style="margin-left:8px">' + (id ? '트리거 편집' : '새 트리거') + '</span>';
-    h += '  <div class="tmgr-title-actions"><button class="tmgr-ib tmgr-ib-close" data-a="close">' + _svg('close', 18) + '</button></div>';
+    h += '  <div class="tmgr-title-actions"><button class="tmgr-ib tmgr-ib-close" data-a="close">' + _svg('close', 24) + '</button></div>';
     h += '</div>';
 
     h += '<div class="tmgr-content">';

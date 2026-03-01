@@ -13,6 +13,10 @@
 
   let reduxStore = null;
 
+  // ── 토큰 바인딩 캐시 (ISOLATED world에서 동기화) ──
+  let _tokenBindings = {};      // { panelId: charId }
+  let _tokenBindingsRoomId = null;
+
   // ── 디버그 모드 (ISOLATED world에서 전달) ──
   let _debugMode = false;
   function _dbg(...args) {
@@ -2345,9 +2349,121 @@
   });
 
   // ================================================================
+  //  토큰 바인딩: ISOLATED → MAIN 바인딩 맵 동기화
+  //  DOM attr data-bwbr-token-bindings 는 영구 유지 (삭제 안 함)
+  //  push event + 온디맨드 DOM 읽기 이중 보장
+  // ================================================================
+  function _readBindingsFromDOM() {
+    try {
+      const raw = document.documentElement.getAttribute('data-bwbr-token-bindings');
+      if (!raw) return;
+      const { roomId, bindings } = JSON.parse(raw);
+      _tokenBindingsRoomId = roomId;
+      _tokenBindings = bindings || {};
+    } catch (e) { /* ignore */ }
+  }
+
+  // push 이벤트 수신 (즉시 캐시 갱신)
+  document.addEventListener('bwbr-sync-token-bindings', () => {
+    _readBindingsFromDOM();
+    console.log(`%c[BWBR]%c 토큰 바인딩 동기화: ${Object.keys(_tokenBindings).length}개`,
+      'color: #ab47bc; font-weight: bold;', 'color: inherit;');
+  });
+  // window 이벤트로도 수신 (크로스-월드 호환성)
+  window.addEventListener('bwbr-sync-token-bindings', () => {
+    _readBindingsFromDOM();
+  });
+
+  // ================================================================
+  //  토큰 바인딩: 패널 속성으로 roomItem 식별
+  //  bwbr-identify-panel (DOM attr: data-bwbr-panel-props)
+  //  → bwbr-panel-identified (DOM attr: data-bwbr-panel-result)
+  // ================================================================
+  document.addEventListener('bwbr-identify-panel', () => {
+    const el = document.documentElement;
+    const raw = el.getAttribute('data-bwbr-panel-props');
+    el.removeAttribute('data-bwbr-panel-props');
+
+    const respond = (data) => {
+      el.setAttribute('data-bwbr-panel-result', JSON.stringify(data));
+      document.dispatchEvent(new CustomEvent('bwbr-panel-identified'));
+    };
+
+    try {
+      const props = JSON.parse(raw);
+      if (!reduxStore) return respond({ success: false });
+
+      const state = reduxStore.getState();
+      const ri = state.entities?.roomItems;
+      if (!ri?.ids) return respond({ success: false });
+
+      // ── 방법 1: imageUrl 정확 매칭 (가장 신뢰) ──
+      const trackedUrl = props._trackedImageUrl || '';
+      if (trackedUrl) {
+        function extractPath(url) {
+          try { return new URL(url).pathname; } catch (e) { return url; }
+        }
+        const trackedPath = extractPath(trackedUrl);
+
+        for (const id of ri.ids) {
+          const item = ri.entities?.[id];
+          if (!item || !item.imageUrl) continue;
+          if (item.imageUrl === trackedUrl || extractPath(item.imageUrl) === trackedPath) {
+            console.log(`%c[BWBR]%c 패널 식별 (imageUrl): "${item._id}"`,
+              'color: #ab47bc; font-weight: bold;', 'color: inherit;');
+            return respond({ success: true, panelId: item._id, imageUrl: item.imageUrl });
+          }
+        }
+        console.log(`%c[BWBR]%c imageUrl 매칭 실패, 스코어링 폴백`,
+          'color: #ab47bc; font-weight: bold;', 'color: inherit;');
+      }
+
+      // ── 방법 2: 속성 스코어링 (폴백) ──
+      let bestMatch = null;
+      let bestScore = 0;
+
+      for (const id of ri.ids) {
+        const item = ri.entities?.[id];
+        if (!item) continue;
+
+        let score = 0;
+        if (String(item.width ?? '') === String(props.width ?? '')) score += 2;
+        if (String(item.height ?? '') === String(props.height ?? '')) score += 2;
+        if (String(item.z ?? 0) === String(props.z ?? 0)) score += 1;
+        if ((item.memo || '') === (props.memo || '')) score += 3;
+        if ((item.clickAction || 'none') === (props.clickAction || 'none')) score += 1;
+        const pLocked = props.locked === true || props.locked === 'on';
+        const pFreezed = props.freezed === true || props.freezed === 'on';
+        const pPlane = props.plane === true || props.plane === 'on';
+        if (Boolean(item.locked) === pLocked) score += 1;
+        if (Boolean(item.freezed) === pFreezed) score += 1;
+        if ((item.type === 'plane') === pPlane) score += 1;
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = item;
+        }
+      }
+
+      if (bestMatch && bestScore >= 8) {
+        console.log(`%c[BWBR]%c 패널 식별 (스코어링): "${bestMatch._id}" (점수 ${bestScore}/12)`,
+          'color: #ab47bc; font-weight: bold;', 'color: inherit;');
+        respond({ success: true, panelId: bestMatch._id, imageUrl: bestMatch.imageUrl || '' });
+      } else {
+        console.log(`%c[BWBR]%c 패널 식별 실패 (최고 점수 ${bestScore}/12)`,
+          'color: #ab47bc; font-weight: bold;', 'color: inherit;');
+        respond({ success: false });
+      }
+    } catch (e) {
+      respond({ success: false });
+    }
+  });
+
+  // ================================================================
   //  전투 이동: 토큰 imageUrl로 roomItem → 캐릭터 데이터 조회
   //  bwbr-request-char-for-move (DOM attr: data-bwbr-move-imageurl)
   //  → bwbr-char-move-data { success, item, char }
+  //  ★ 바인딩 맵을 우선 확인, 없으면 memo 〔이름〕 폴백
   // ================================================================
   window.addEventListener('bwbr-request-char-for-move', () => {
     const el = document.documentElement;
@@ -2376,7 +2492,6 @@
       const it = ri.entities?.[id];
       if (!it || !it.active) continue;
       if (!it.imageUrl) continue;
-      // 정확히 일치 또는 경로 일치 (쿼리 파라미터 무시)
       if (it.imageUrl === imageUrl || extractPath(it.imageUrl) === clickedPath) {
         item = it;
         break;
@@ -2387,7 +2502,53 @@
       return fail();
     }
 
-    // 2) memo에서 〔캐릭터이름〕 파싱
+    // ── 성공 응답 헬퍼 ──
+    const succeed = (charObj) => {
+      console.log(`[BWBR Move] 매칭: item "${item._id}" → 캐릭터 "${charObj.name}"`);
+      window.dispatchEvent(new CustomEvent('bwbr-char-move-data', {
+        detail: {
+          success: true,
+          item: {
+            _id: item._id,
+            x: item.x ?? 0,
+            y: item.y ?? 0,
+            width: item.width ?? 4,
+            height: item.height ?? 4
+          },
+          char: {
+            _id: charObj._id,
+            name: charObj.name || '',
+            iconUrl: charObj.iconUrl || '',
+            color: charObj.color || '#e0e0e0',
+            params: charObj.params || [],
+            commands: charObj.commands || ''
+          }
+        }
+      }));
+    };
+
+    const rc = state.entities?.roomCharacters;
+
+    // 2) ★ 바인딩 맵 우선 확인 (매번 DOM에서 fresh read)
+    _readBindingsFromDOM();
+    const boundCharId = _tokenBindings[item._id];
+    if (boundCharId) {
+      console.log(`[BWBR Move] 바인딩 확인: item "${item._id}" → charId "${boundCharId}"`);
+    } else {
+      console.log(`[BWBR Move] 바인딩 없음 (item "${item._id}"), 토큰 수: ${Object.keys(_tokenBindings).length}`);
+    }
+    if (boundCharId && rc?.ids) {
+      for (const id of rc.ids) {
+        const ch = rc.entities?.[id];
+        if (ch && (ch._id === boundCharId || id === boundCharId)) {
+          console.log(`[BWBR Move] 바인딩으로 매칭: "${item._id}" → "${ch.name}"`);
+          return succeed(ch);
+        }
+      }
+      console.log(`[BWBR Move] 바인딩 캐릭터 "${boundCharId}" 미발견 — memo 폴백`);
+    }
+
+    // 3) memo에서 〔캐릭터이름〕 파싱 (폴백)
     const memo = item.memo || '';
     const nameMatch = memo.match(/〔(.+?)〕/);
     if (!nameMatch) {
@@ -2396,8 +2557,7 @@
     }
     const charName = nameMatch[1].trim();
 
-    // 3) roomCharacters에서 이름 매칭
-    const rc = state.entities?.roomCharacters;
+    // 4) roomCharacters에서 이름 매칭
     let found = null;
     if (rc?.ids) {
       for (const id of rc.ids) {
@@ -2412,27 +2572,7 @@
       return fail();
     }
 
-    console.log(`[BWBR Move] 매칭: item "${item._id}" → 캐릭터 "${found.name}"`);
-    window.dispatchEvent(new CustomEvent('bwbr-char-move-data', {
-      detail: {
-        success: true,
-        item: {
-          _id: item._id,
-          x: item.x ?? 0,
-          y: item.y ?? 0,
-          width: item.width ?? 4,
-          height: item.height ?? 4
-        },
-        char: {
-          _id: found._id,
-          name: found.name || '',
-          iconUrl: found.iconUrl || '',
-          color: found.color || '#e0e0e0',
-          params: found.params || [],
-          commands: found.commands || ''
-        }
-      }
-    }));
+    succeed(found);
   });
 
   // ================================================================

@@ -9,6 +9,8 @@
 > 아래 모듈 ID·프로퍼티명은 **2026-02-16 기준**이며, 변경 시 재탐색이 필요합니다.
 > DOM 구조 레퍼런스는 **2026-02-24 기준** (섹션 11 참조).
 > rooms/roomScenes 엔티티 구조는 **2026-02-27 기준** (섹션 9.1, 9.2, 13 참조).
+> UI 디자인 시스템(테마 규칙)은 **2026-03-02 기준** (섹션 14 참조).
+> 토큰 바인딩 시스템은 **2026-03-02 기준** (섹션 15 참조).
 
 ---
 
@@ -30,6 +32,8 @@
     - [11.8 상단 툴바 (MuiAppBar / MuiToolbar)](#118-상단-툴바-muiappbar--muitoolbar)
 12. [특성 시스템 (Traits)](#12-특성-시스템-traits)
 13. [엔티티 전체 목록](#13-엔티티-전체-목록)
+14. [UI 디자인 시스템 (테마 규칙)](#14-ui-디자인-시스템-테마-규칙)
+15. [토큰 바인딩 시스템 (스크린 패널 ↔ 캐릭터)](#15-토큰-바인딩-시스템-스크린-패널--캐릭터)
 
 ---
 
@@ -1358,7 +1362,7 @@ div.MuiListItemButton-root [role="button"]
 > 메뉴 → 룸 변수 편집으로 열리는 MuiDialog.
 > 확장 프로그램의 트리거 관리 UI가 이 구조를 그대로 복제합니다.
 >
-> **기준**: 2026-02-27 (콘솔 진단)
+> **기준**: 2026-03-02 (콘솔 진단)
 
 #### 컨테이너 구조
 
@@ -1370,12 +1374,37 @@ DIV.MuiDialog-root.MuiModal-root[role="presentation"]
 ├─ DIV (빈 요소)
 ├─ DIV.MuiDialog-container.MuiDialog-scrollPaper[role="presentation"]
 │  └─ DIV.MuiPaper-root.MuiPaper-elevation24.MuiDialog-paper[role="dialog"]
-│     ├─ (MuiDialogTitle 영역) H6  "룸 변수"
-│     │    fontSize: 14px, fontWeight: 700, color: white
-│     ├─ (MuiDialogContent 영역)
-│     │    padding: 20px 24px, overflowY: auto
-│     └─ (MuiDialogActions 영역)  "닫기"
+│     ├─ HEADER.MuiAppBar-root.MuiAppBar-colorDefault (sticky, top:0)
+│     │    bg: rgb(33,33,33), height: 64px
+│     │    boxShadow: elevation-4
+│     │    └─ DIV.MuiToolbar-root (padding: 0 24px, height: 64px, minHeight: 64px)
+│     │       ├─ P.MuiTypography-body1 (flex:1)
+│     │       │    fontSize: 20px, fontWeight: 700, Roboto, letterSpacing: 0.19px
+│     │       └─ BUTTON.MuiIconButton-edgeEnd.MuiIconButton-sizeLarge (닫기)
+│     │            48×48px, padding: 12px, margin: 0 -12px 0 0, color: #fff
+│     ├─ DIV.MuiDialogContent-root
+│     │    padding: 20px 24px, overflow: auto
+│     │    ├─ DIV.MuiToolbar-dense (height: 48px)
+│     │    │   ├─ H6.MuiTypography-subtitle2
+│     │    │   │    fontSize: 14px, fontWeight: 700, Roboto, letterSpacing: 0.1px
+│     │    │   └─ BUTTON.MuiIconButton-sizeSmall (−/+)
+│     │    ├─ SPAN.MuiTypography-caption
+│     │    │    fontSize: 12px, fontWeight: 400, Roboto, letterSpacing: 0.4px
+│     │    └─ UL.MuiList-root
+│     │       └─ LI.MuiListItem-root
+│     │            padding: 8px 16px, alignItems: flex-start
+│     │            ├─ .MuiListItemText-primary
+│     │            │    fontSize: 14px, fontWeight: 700, color: rgb(224,224,224), Roboto
+│     │            │    letterSpacing: 0.1px, lineHeight: 22px
+│     │            └─ .MuiListItemText-secondary
+│     │                 fontSize: 14px, fontWeight: 400, color: rgb(255,255,255), Roboto
+│     │                 letterSpacing: 0.15px, lineHeight: 20px
+│     └─ DIV.MuiDialogActions-root
 │          padding: 8px, justifyContent: flex-end
+│          └─ BUTTON.MuiButton-textPrimary.MuiButton-fullWidth
+│               color: rgb(33,150,243), fontSize: 14px, fontWeight: 700, Roboto
+│               letterSpacing: 0.4px, textTransform: uppercase, lineHeight: 24.5px
+│               transition: background-color/box-shadow/border-color/color 0.25s
 └─ DIV (빈 요소)
 ```
 
@@ -1385,20 +1414,30 @@ DIV.MuiDialog-root.MuiModal-root[role="presentation"]
 |------|-----|
 | background | `rgba(44, 44, 44, 0.87)` — **반투명** |
 | color | `rgb(255, 255, 255)` |
+| fontFamily | `"Noto Sans KR"` |
+| fontSize | `16px` (base) |
 | border-radius | `4px` |
-| width | `600px` |
-| maxWidth | `600px` |
+| width / maxWidth | `600px` |
+| maxHeight | `calc(100% - 64px)` |
 | margin | `32px` |
+| overflow | `auto` |
 | boxShadow | elevation-24 (0 11px 15px -7px ...) |
 | transition | `box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1)` |
 
-#### 버튼 스타일
+#### 아이콘 버튼 스타일
 
-| 대상 | 색상 | 배경 | fontSize |
-|------|------|------|----------|
-| 액션 버튼 ("닫기") | `rgb(33, 150, 243)` | transparent | 14px |
-| 아이콘 버튼 (−/+) | — | — | MuiIconButton-edgeEnd |
-| 닫기(×) | — | — | MuiIconButton-sizeSmall |
+| 대상 | 크기 | padding | 비고 |
+|------|------|---------|------|
+| MuiIconButton-root (기본) | 40×40px | 8px | transition: bg 0.15s |
+| MuiIconButton-sizeLarge (닫기×) | 48×48px | 12px | margin: 0 -12px 0 0 (edgeEnd) |
+| MuiIconButton-sizeSmall | 28×28px | 5px | content 내부에서 사용 |
+
+#### 디바이더 스타일
+
+| 속성 | 값 |
+|------|-----|
+| borderColor | `rgba(255, 255, 255, 0.08)` |
+| margin | `0px 16px` |
 
 ---
 
@@ -2040,3 +2079,326 @@ H4와 H0 (또는 H00)의 상호작용 특성입니다.
 | `turboRooms` | Turbo 방 | — |
 
 > 모든 엔티티는 normalized 형태: `{ ids: string[], entities: { [id]: object } }`
+
+---
+
+## 14. UI 디자인 시스템 (테마 규칙)
+
+> 코코포리아의 MUI v5 다크 테마 디자인 토큰을 실측 수집하여 정리한 문서입니다.
+> 확장 프로그램이 커스텀 UI를 만들 때 네이티브와 동일한 룩을 적용하기 위한 참조입니다.
+>
+> **기준**: 2026-03-02 (콘솔 진단)
+
+### 14.1 색상 팔레트
+
+| 역할 | 값 | 용도 |
+|------|-----|------|
+| **body background** | `rgb(32, 32, 32)` | 페이지 배경 |
+| **paper / drawer** | `rgba(44, 44, 44, 0.87)` | Dialog, Drawer 반투명 배경 |
+| **appBar (dialog)** | `rgb(33, 33, 33)` | Dialog 내부 AppBar 불투명 배경 |
+| **text primary** | `rgb(255, 255, 255)` | 기본 텍스트 |
+| **text heading** | `rgb(224, 224, 224)` | ListItemText-primary, 굵은 제목 |
+| **text secondary** | `rgba(255, 255, 255, 0.7)` | InputLabel, 보조 텍스트 |
+| **text disabled** | `rgba(255, 255, 255, 0.5)` | 비활성화 텍스트 |
+| **primary** | `rgb(33, 150, 243)` | 버튼, 슬라이더, 링크, 토글 ON |
+| **primary light** | `rgb(144, 202, 249)` | 호버 강조 |
+| **secondary / indicator** | `rgb(245, 0, 87)` | 탭 인디케이터 |
+| **error** | `rgb(220, 0, 78)` | 삭제 버튼 (dialogActionBtn1) |
+| **divider** | `rgba(255, 255, 255, 0.08)` | Divider, 구분선 |
+| **border (input)** | `rgba(255, 255, 255, 0.23)` | OutlinedInput 테두리 |
+| **backdrop** | `rgba(0, 0, 0, 0.5)` | Dialog / Drawer 백드롭 |
+| **switch unchecked track** | `rgb(255, 255, 255)` | opacity로 조절 |
+| **switch unchecked thumb** | `rgb(224, 224, 224)` | 회색 냉 |
+| **tooltip bg** | `rgb(22, 22, 22)` | MUI Tooltip |
+
+### 14.2 타이포그래피
+
+| 요소 | font-family | font-size | font-weight | letter-spacing | line-height |
+|------|------------|-----------|------------|---------------|------------|
+| **body / base** | `"Noto Sans KR"` | 16px | 400 | normal | normal |
+| **dialog title (룸변수)** | Roboto, Helvetica, Arial, sans-serif | 20px | 700 | 0.19px | 30px |
+| **dialog title (캠릭터편집)** | Roboto, Helvetica, Arial, sans-serif | 16px | 400 | 0.15px | 24px |
+| **subtitle2** | Roboto, Helvetica, Arial, sans-serif | 14px | 700 | 0.1px | 22px |
+| **button / tab** | Roboto, Helvetica, Arial, sans-serif | 14px | 700 | 0.4px | 24.5px |
+| **caption** | Roboto, Helvetica, Arial, sans-serif | 12px | 400 | 0.4px | 20px |
+| **ListItemText-primary** | Roboto, Helvetica, Arial, sans-serif | 14px | 700 | 0.1px | 22px |
+| **ListItemText-secondary** | Roboto, Helvetica, Arial, sans-serif | 14px | 400 | 0.15px | 20px |
+| **input label** | Roboto, Helvetica, Arial, sans-serif | 16px | 400 | 0.15px | 23px |
+| **chat textarea** | Roboto, Helvetica, Arial, sans-serif | 16px | 400 | 0.15px | 23px |
+| **tooltip** | Roboto, Helvetica, Arial, sans-serif | 12px | 500 | — | — |
+
+> **규칙**: 본문/컨테이너 기본 폰트는 `"Noto Sans KR"`, 보조 UI 요소(버튼/탭/레이블/리스트/인풋/툴팁)는 `Roboto, Helvetica, Arial, sans-serif`.
+
+### 14.3 컴포넌트 스타일 토큰
+
+#### Dialog / Paper
+
+| 속성 | 값 |
+|------|-----|
+| background | `rgba(44, 44, 44, 0.87)` |
+| color | `rgb(255, 255, 255)` |
+| border-radius | `4px` |
+| width / maxWidth | `600px` |
+| maxHeight | `calc(100% - 64px)` |
+| margin | `32px` |
+| overflow | `auto` |
+| box-shadow | `0 11px 15px -7px rgba(0,0,0,.2), 0 24px 38px 3px rgba(0,0,0,.14), 0 9px 46px 8px rgba(0,0,0,.12)` (elevation-24) |
+| transition | `box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1)` |
+
+#### Dialog AppBar (타이틀 바)
+
+| 속성 | 값 |
+|------|-----|
+| background | `rgb(33, 33, 33)` |
+| height / minHeight | `64px` |
+| box-shadow | `0 2px 4px -1px rgba(0,0,0,.2), 0 4px 5px rgba(0,0,0,.14), 0 1px 10px rgba(0,0,0,.12)` (elevation-4) |
+| position | `sticky`, top: `0` |
+| toolbar padding | `0 24px` |
+
+#### Backdrop
+
+| 속성 | 값 |
+|------|-----|
+| background | `rgba(0, 0, 0, 0.5)` |
+| transition | `opacity 0.225s cubic-bezier(0.4, 0, 0.2, 1)` |
+
+#### Button (Text 스타일 — MuiButton-text)
+
+| 속성 | 값 |
+|------|-----|
+| font | 14px / 700 / Roboto |
+| letter-spacing | `0.4px` |
+| line-height | `24.5px` |
+| padding | `6px 8px` |
+| border-radius | `4px` |
+| text-transform | `uppercase` |
+| color (primary) | `rgb(33, 150, 243)` |
+| color (error) | `rgb(220, 0, 78)` |
+| background | `transparent` |
+| transition | `background-color 0.25s, box-shadow 0.25s, border-color 0.25s, color 0.25s` (all `cubic-bezier(0.4, 0, 0.2, 1)`) |
+| min-width | `64px` |
+
+#### IconButton
+
+| 변형 | 크기 | padding | 기타 |
+|------|------|---------|------|
+| **sizeMedium** (기본) | 40×40px | 8px | 툴바 아이콘 버튼 |
+| **sizeLarge** (edgeEnd) | 48×48px | 12px | 닫기(×) 버튼, margin: `0 -12px 0 0` |
+| **sizeSmall** | 28×28px | 5px | content 내부 미니 버튼 |
+| border-radius | `50%` | — | 원형 |
+| color | `rgb(255, 255, 255)` | — | — |
+| transition | `background-color 0.15s cubic-bezier(0.4, 0, 0.2, 1)` | — | — |
+
+#### Tab
+
+| 속성 | 값 |
+|------|-----|
+| font | 14px / 700 / Roboto |
+| letter-spacing | `0.4px` |
+| text-transform | `uppercase` |
+| height / minHeight | `48px` |
+| padding | `12px 16px` |
+| maxWidth | `360px` |
+| color | `rgb(255, 255, 255)` |
+| indicator bg | `rgb(245, 0, 87)` (secondary) |
+| indicator height | `2px` |
+| indicator transition | `0.3s cubic-bezier(0.4, 0, 0.2, 1)` |
+
+#### Switch
+
+| 속성 | Unchecked | Checked |
+|------|-----------|----------|
+| root size | 58×38px | 동일 |
+| root padding | 12px | 동일 |
+| track size | 34×14px | 동일 |
+| track radius | 7px | 동일 |
+| track bg | `rgb(255,255,255)` (opacity로 조절) | primary |
+| track transition | `opacity/bg 0.15s cubic-bezier(0.4,0,0.2,1)` | 동일 |
+| thumb size | 20×20px | 동일 |
+| thumb bg | `rgb(224, 224, 224)` | `rgb(33, 150, 243)` |
+| thumb shadow | `0 2px 1px -1px rgba(0,0,0,.2), 0 1px 1px rgba(0,0,0,.14), 0 1px 3px rgba(0,0,0,.12)` | 동일 |
+
+#### MuiOutlinedInput / TextField
+
+| 속성 | 값 |
+|------|-----|
+| border | `1px solid rgba(255,255,255,0.23)` |
+| border-radius | `4px` |
+| border :hover | `rgba(255,255,255,0.87)` |
+| border :focus | `2px solid rgb(33,150,243)` (padding 보정 필요) |
+| padding | `8.5px 14px` (→ focus 시 `7.5px 13px`) |
+| font | inherit (14px 권장) |
+| placeholder | `rgba(255,255,255,0.5)` |
+| disabled border | divider 색상 |
+| label color | `rgba(255,255,255,0.7)` |
+| label :focused | primary |
+| label transition | `color/transform/max-width 0.2s cubic-bezier(0,0,0.2,1)` |
+
+#### ListItem / Drawer Item
+
+| 속성 | 값 |
+|------|-----|
+| padding | `8px 16px` |
+| align-items | `flex-start` |
+| primary text | 14px / 700 / `rgb(224,224,224)` / Roboto |
+| secondary text | 14px / 400 / `rgb(255,255,255)` / Roboto |
+| divider color | `rgba(255,255,255,0.08)` |
+| divider margin | `0 16px` |
+
+#### Tooltip
+
+| 속성 | 값 |
+|------|-----|
+| background | `rgb(22, 22, 22)` |
+| color | `#fff` |
+| font | 12px / 500 / Roboto |
+| padding | `4px 8px` |
+| border-radius | `4px` |
+| max-width | `300px` |
+| box-shadow | `0 1px 3px rgba(0,0,0,.2), 0 1px 1px rgba(0,0,0,.14), 0 2px 1px -1px rgba(0,0,0,.12)` |
+| transition | `opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1)` |
+| enterDelay | ~100ms |
+| margin (below) | `14px 2px 2px` |
+| z-index | `1500` |
+
+#### Slider
+
+| 속성 | 값 |
+|------|-----|
+| color | primary `rgb(33,150,243)` |
+| track height | `2px` |
+| track radius | `12px` |
+| thumb size | 12×12px |
+| thumb radius | `50%` |
+| thumb bg | primary |
+| thumb transition | `box-shadow/left/bottom 0.15s cubic-bezier(0.4,0,0.2,1)` |
+
+#### Snackbar / Toast
+
+| 속성 | 값 |
+|------|-----|
+| background | `#323232` |
+| color | `#fff` |
+| padding | `6px 16px` |
+| border-radius | `4px` |
+| min-width | `288px` |
+| box-shadow | `0 3px 5px -1px rgba(0,0,0,.2), 0 6px 10px rgba(0,0,0,.14), 0 1px 18px rgba(0,0,0,.12)` |
+| z-index | `1400` |
+
+### 14.4 공통 트랜지션 규칙
+
+| 용도 | 타이밍 | easing |
+|------|--------|-------|
+| **fade (backdrop/dialog)** | `0.225s` | `cubic-bezier(0.4, 0, 0.2, 1)` |
+| **button hover** | `0.25s` | `cubic-bezier(0.4, 0, 0.2, 1)` |
+| **icon button hover** | `0.15s` | `cubic-bezier(0.4, 0, 0.2, 1)` |
+| **switch track/thumb** | `0.15s` | `cubic-bezier(0.4, 0, 0.2, 1)` |
+| **tooltip fade** | `0.2s` | `cubic-bezier(0.4, 0, 0.2, 1)` |
+| **tab indicator** | `0.3s` | `cubic-bezier(0.4, 0, 0.2, 1)` |
+| **input label** | `0.2s` | `cubic-bezier(0, 0, 0.2, 1)` |
+| **box-shadow (paper)** | `0.3s` | `cubic-bezier(0.4, 0, 0.2, 1)` |
+| **appBar bg** | `0.2s` | `ease-out` |
+
+> **공통 easing**: MUI 기본은 `cubic-bezier(0.4, 0, 0.2, 1)` (standard). Input label만 `cubic-bezier(0, 0, 0.2, 1)` (deceleration).
+
+### 14.5 Elevation (그림자)
+
+| 레벨 | box-shadow | 용도 |
+|------|-----------|------|
+| **elevation-1** | `0 1px 3px rgba(0,0,0,.2), 0 1px 1px rgba(0,0,0,.14), 0 2px 1px -1px rgba(0,0,0,.12)` | Tooltip, Switch thumb |
+| **elevation-4** | `0 2px 4px -1px rgba(0,0,0,.2), 0 4px 5px rgba(0,0,0,.14), 0 1px 10px rgba(0,0,0,.12)` | Dialog AppBar |
+| **elevation-8** | `0 5px 5px -3px rgba(0,0,0,.2), 0 8px 10px 1px rgba(0,0,0,.14), 0 3px 14px 2px rgba(0,0,0,.12)` | 드롭다운 메뉴 |
+| **elevation-24** | `0 11px 15px -7px rgba(0,0,0,.2), 0 24px 38px 3px rgba(0,0,0,.14), 0 9px 46px 8px rgba(0,0,0,.12)` | Dialog Paper |
+
+### 14.6 z-index 스타킹
+
+| 레벨 | 용도 |
+|------|------|
+| `1300` | MuiDialog / MuiModal (Dialog container) |
+| `1400` | Snackbar / Toast |
+| `1500` | Tooltip |
+| `9999` | 커스텀 드롭다운 (trigger-ui 등) |
+
+### 14.7 확장 UI 적용 규칙 요약
+
+확장 프로그램에서 커스텀 UI를 만들 때 네이티브와 일치시키기 위한 체크리스트:
+
+1. **폰트**: 컨테이너/본문은 `"Noto Sans KR"`, 버튼/레이블/리스트/인풋/툴팁은 `Roboto, Helvetica, Arial, sans-serif`
+2. **버튼 텍스트**: `text-transform: uppercase`, `font-weight: 700`, `letter-spacing: 0.4px`
+3. **닫기(×) 버튼**: 48×48px, padding 12px, 오른쪽 배치 시 `margin: 0 -12px 0 0`
+4. **Paper 배경**: 반투명 `rgba(44,44,44,0.87)`, 600px 폭, elevation-24
+5. **타이틀바**: AppBar로 구현, `rgb(33,33,33)` 불투명, 64px 높이, elevation-4
+6. **디바이더**: `rgba(255,255,255,0.08)`, margin `0 16px`
+7. **인풋 테두리**: `rgba(255,255,255,0.23)` → hover `rgba(255,255,255,0.87)` → focus `2px solid primary`
+8. **트랜지션**: 모든 fade/hover는 `cubic-bezier(0.4, 0, 0.2, 1)`, 0.15~0.25s
+9. **리스트 아이템**: padding `8px 16px`, align `flex-start`, primary text `rgb(224,224,224)` bold
+10. **툴팁**: enterDelay ~100ms, `rgb(22,22,22)` 배경, fade `0.2s`
+
+---
+
+## 15. 토큰 바인딩 시스템 (스크린 패널 ↔ 캐릭터)
+
+> **기준**: 2026-03-02
+
+### 15.1 개요
+
+스크린 패널(roomItems)과 캐릭터(roomCharacters)를 1:1 바인딩하여,
+전투 이동 시 memo의 `〔이름〕` 파싱 없이도 캐릭터를 식별합니다.
+
+- **저장소**: `chrome.storage.local` (ISOLATED world에서만 직접 접근)
+- **MAIN world 동기화**: 인메모리 캐시 (`_tokenBindings`) + `bwbr-sync-token-bindings` 이벤트
+- **데이터 모델**: `tokenBindings_{roomId}: { panelId: charId, ... }`
+- **UI 진입점**: 스크린 패널 설정 다이얼로그 → 고급 설정 아코디언 → 캐릭터 바인딩 드롭다운
+
+### 15.2 스크린 패널 설정 다이얼로그 구조 (2026-03-02 확인)
+
+```
+MuiDialog-root
+└─ MuiDialog-paper
+   └─ form (action="/rooms/{roomId}")
+      ├─ MuiDialogTitle → "스크린 패널 설정"
+      ├─ MuiDialogContent
+      │  ├─ input[name="width"]    (text, 칸 단위)
+      │  ├─ input[name="height"]   (text, 칸 단위)
+      │  ├─ input[name="z"]        (text, z-index)
+      │  ├─ input[name="memo"]     (text, 메모)
+      │  ├─ input[name="locked"]   (checkbox, 잠금)
+      │  ├─ input[name="freezed"]  (checkbox, 고정)
+      │  ├─ input[name="plane"]    (checkbox, 배경)
+      │  └─ MuiAccordion "고급 설정"
+      │     ├─ MuiAccordionSummary → "클릭 액션을 설정할 수 있습니다."
+      │     └─ MuiAccordionDetails
+      │        ├─ [INJECTED] bwbr-binding-field (캐릭터 바인딩 드롭다운)
+      │        └─ MuiFormControl → MuiSelect[name="clickAction"]
+      └─ MuiDialogActions
+         ├─ Button(color=error) → "삭제"
+         └─ Button(color=primary) → "저장"
+```
+
+> **패널 _id 획득**: 다이얼로그에서 item._id가 직접 노출되지 않음.
+> 폼 속성(width, height, z, memo, clickAction, locked, freezed, plane)을
+> roomItems와 스코어링 매칭하여 식별 (12점 만점, 8점 이상 확정).
+
+### 15.3 이벤트 페어
+
+| 이벤트 | 방향 | DOM attr | 목적 |
+|--------|------|----------|------|
+| `bwbr-identify-panel` | ISOLATED→MAIN | `data-bwbr-panel-props` / `data-bwbr-panel-result` | 패널 속성으로 roomItem _id 식별 |
+| `bwbr-panel-identified` | MAIN→ISOLATED | `data-bwbr-panel-result` | 식별 결과 { success, panelId, imageUrl } |
+| `bwbr-sync-token-bindings` | ISOLATED→MAIN | `data-bwbr-token-bindings` | 바인딩 맵 전체 동기화 { roomId, bindings } |
+
+### 15.4 캐릭터 조회 우선순위 (전투 이동)
+
+`bwbr-request-char-for-move` 처리 순서:
+1. imageUrl로 roomItem 찾기
+2. **★ 바인딩 맵** 확인 (`_tokenBindings[item._id]` → charId → roomCharacters에서 조회)
+3. memo `〔이름〕` 파싱 (폴백)
+4. roomCharacters 이름 매칭
+
+### 15.5 관련 파일
+
+| 파일 | 역할 |
+|------|------|
+| `content/token-binding.js` | 다이얼로그 감지, 바인딩 UI 주입, chrome.storage.local 관리 |
+| `content/redux-injector.js` | 패널 식별, 바인딩 캐시, 전투 이동 바인딩 조회 |
+| `content/combat-move.js` | 토큰 클릭 → requestCharForMove (기존 코드, 변경 없음) |

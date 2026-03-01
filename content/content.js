@@ -3464,16 +3464,20 @@ ${rows.join('\n')}
           box-shadow: 0 0 0 8px rgba(255,167,38,0.16);
         }
         #bwbr-site-vol-tooltip {
-          position: absolute; top: -32px; left: 50%;
+          position: absolute; top: -36px; left: 50%;
           transform: translateX(-50%);
-          background: #424242; color: #fff; font-size: 11px;
-          padding: 2px 6px; border-radius: 4px;
+          background: rgb(22, 22, 22); color: #fff;
+          font-size: 12px; font-weight: 500;
+          font-family: Roboto, Helvetica, Arial, sans-serif;
+          padding: 4px 8px; border-radius: 4px;
           pointer-events: none; white-space: nowrap;
-          opacity: 0; transition: opacity 0.15s;
+          box-shadow: rgba(0,0,0,0.2) 0px 1px 3px 0px, rgba(0,0,0,0.14) 0px 1px 1px 0px, rgba(0,0,0,0.12) 0px 2px 1px -1px;
+          opacity: 0; transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+          transition-delay: 100ms;
         }
         #bwbr-site-vol-root:hover #bwbr-site-vol-tooltip,
         #bwbr-site-vol-root.bwbr-vol-active #bwbr-site-vol-tooltip {
-          opacity: 1;
+          opacity: 1; transition-delay: 0ms;
         }
       `;
       document.head.appendChild(style);
