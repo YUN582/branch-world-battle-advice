@@ -595,6 +595,7 @@ window.CombatEngine = class CombatEngine {
   // ── 유틸리티 ────────────────────────────────────────────
 
   _log(msg) {
+    if (!window._BWBR_DEBUG) return;
     console.log(`%c[Combat Engine]%c ${msg}`, 'color: #ff5722; font-weight: bold;', 'color: inherit;');
   }
 };

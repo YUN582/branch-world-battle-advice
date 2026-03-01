@@ -69,6 +69,12 @@
     // 설정 로드
     config = await loadConfig();
 
+    // 디버그 모드 플래그 공유 (다른 ISOLATED world 모듈이 참조)
+    window._BWBR_DEBUG = !!(config.general && config.general.debugMode);
+    // MAIN world (redux-injector.js)에 디버그 모드 전달
+    document.documentElement.setAttribute('data-bwbr-debug', String(window._BWBR_DEBUG));
+    document.dispatchEvent(new CustomEvent('bwbr-set-debug'));
+
     // 모듈 초기화
     engine = new window.BattleRollEngine(config);
     combatEngine = new window.CombatEngine(config);
@@ -1838,6 +1844,10 @@
       if (result.description) {
         overlay.addLog(result.description, getResultLogType(result));
 
+        // 효과음 태그 추출 (result.description 끝에 " @soundName" 형태로 포함됨)
+        const soundTagMatch = result.description.match(/ (@\S+)\s*$/);
+        const soundTag = soundTagMatch ? ' ' + soundTagMatch[1] : '';
+
         if (result.winner) {
           const st = engine.getState();
           const wKey = result.winner;
@@ -1862,8 +1872,8 @@
           if (lFumble) loseMsg += ' 💀 대실패!';
           if (lDice < 0) loseMsg += ` 주사위 ${lDice}`;
 
-          // 승자+패자 묶어서 한 번에 전송
-          await chat.sendSystemMessage(winMsg + '\n' + loseMsg);
+          // 승자+패자 묶어서 한 번에 전송 + 효과음 태그 추가
+          await chat.sendSystemMessage(winMsg + '\n' + loseMsg + soundTag);
         } else {
           // 동점 / 쌍방 대성공/대실패 → 기본 색상
           await chat.sendSystemMessage(result.description);

@@ -863,6 +863,7 @@
   }
 
   function log() {
+    if (!window._BWBR_DEBUG) return;
     var a = [].slice.call(arguments);
     a.unshift('color:inherit'); a.unshift('color:#82b1ff;font-weight:bold'); a.unshift('%c' + LOG + '%c');
     console.log.apply(console, a);

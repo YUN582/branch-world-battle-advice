@@ -860,6 +860,7 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
   _delay(ms) { return new Promise(r => setTimeout(r, ms)); }
   _asArray(v) { return Array.isArray(v) ? v : (v ? [v] : []); }
   _log(msg) {
+    if (!window._BWBR_DEBUG) return;
     console.log(`%c[BWBR Chat]%c ${msg}`, 'color: #4a7cff; font-weight: bold;', 'color: inherit;');
   }
 };

@@ -23,6 +23,7 @@
   var LOG_STYLE = 'color:#2196f3;font-weight:bold';
 
   function LOG() {
+    if (!window._BWBR_DEBUG) return;
     var args = [LOG_PREFIX, LOG_STYLE, 'color:inherit'];
     for (var i = 0; i < arguments.length; i++) args.push(arguments[i]);
     console.log.apply(console, args);

@@ -209,6 +209,9 @@
     $('pat-diceResultRegex').value = cfg.patterns.diceResultRegex;
     $('pat-cancelRegex').value = cfg.patterns.cancelRegex;
 
+    // 디버그 모드 (일반 탭 + 고급 탭 양쪽)
+    $('toggle-debugMode').checked = cfg.general.debugMode;
+
     // 기타
     $('gen-autoScroll').checked = cfg.general.autoScroll;
     $('gen-showOverlay').checked = cfg.general.showOverlay;
@@ -270,10 +273,12 @@
     cfg.patterns.diceResultRegex = $('pat-diceResultRegex').value;
     cfg.patterns.cancelRegex = $('pat-cancelRegex').value;
 
+    // 디버그 모드 (일반 탭 우선)
+    cfg.general.debugMode = $('toggle-debugMode').checked;
+
     // 기타
     cfg.general.autoScroll = $('gen-autoScroll').checked;
     cfg.general.showOverlay = $('gen-showOverlay').checked;
-    cfg.general.debugMode = $('gen-debugMode').checked;
     cfg.general.sfxVolume = parseFloat($('gen-sfxVolume').value) || 0.45;
     cfg.general.betterSoundbar = $('toggle-betterSoundbar').checked;
 
@@ -306,6 +311,14 @@
     // 더 나은 사운드바 토글 (즉시 적용)
     $('toggle-betterSoundbar').addEventListener('change', (e) => {
       sendToContent({ type: 'BWBR_SET_BETTER_SOUNDBAR', betterSoundbar: e.target.checked });
+    });
+
+    // 디버그 모드 토글 양방향 동기화 (일반 탭 ↔ 고급 탭)
+    $('toggle-debugMode').addEventListener('change', (e) => {
+      $('gen-debugMode').checked = e.target.checked;
+    });
+    $('gen-debugMode').addEventListener('change', (e) => {
+      $('toggle-debugMode').checked = e.target.checked;
     });
 
     // 활성화 토글

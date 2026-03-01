@@ -13,6 +13,18 @@
 
   let reduxStore = null;
 
+  // ── 디버그 모드 (ISOLATED world에서 전달) ──
+  let _debugMode = false;
+  function _dbg(...args) {
+    if (!_debugMode) return;
+    console.log(...args);
+  }
+  document.addEventListener('bwbr-set-debug', () => {
+    _debugMode = document.documentElement.getAttribute('data-bwbr-debug') === 'true';
+  });
+  // 초기 값 (이미 설정된 경우)
+  if (document.documentElement.getAttribute('data-bwbr-debug') === 'true') _debugMode = true;
+
   // ================================================================
   //  Firestore 직접 메시지 전송 설정
   //  코코포리아 업데이트 시 아래 값들을 COCOFOLIA_DATA_API.md 섹션 8 참조하여 갱신
@@ -98,7 +110,7 @@
         });
       }
 
-      console.log(`%c[BWBR Redux]%c 사이드바 캐릭터 ${characters.length}명 선택됨`, 
+      _dbg(`%c[BWBR Redux]%c 사이드바 캐릭터 ${characters.length}명 선택됨`, 
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
 
       return characters;
@@ -340,7 +352,7 @@
           if (!_messageStructureLogged) {
             _messageStructureLogged = true;
             try {
-              console.log('%c[BWBR Redux]%c 📋 메시지 엔티티 구조:',
+              _dbg('%c[BWBR Redux]%c 📋 메시지 엔티티 구조:',
                 'color: #4caf50; font-weight: bold;', 'color: inherit;',
                 '\n  키:', Object.keys(entity),
                 '\n  전체:', JSON.parse(JSON.stringify(entity)));
@@ -667,7 +679,7 @@
     }
 
     if (!effectId) {
-      console.log(`%c[BWBR]%c ⚠️ 컷인 이펙트 없음: "${tag}"`,
+      console.log(`%c[BWBR]%c 🔔 컷인 이펙트 없음: "${tag}"`,
         'color: #ff9800; font-weight: bold;', 'color: inherit;');
       return;
     }
@@ -676,7 +688,7 @@
       const effectsCol = sdk.collection(sdk.db, 'rooms', roomId, 'effects');
       const effectRef = sdk.doc(effectsCol, effectId);
       await sdk.setDoc(effectRef, { playTime: Date.now() }, { merge: true });
-      console.log(`%c[BWBR]%c 🔊 컷인 재생: "${tag}" (${effectId})`,
+      _dbg(`%c[BWBR]%c 🔊 컷인 재생: "${tag}" (${effectId})`,
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
     } catch (e) {
       console.error('[BWBR] 컷인 재생 실패:', e);
@@ -1045,7 +1057,7 @@
 
     try {
       // 주사위 표기법 파싱: NdM 또는 NdM+B
-      const diceMatch = notation.match(/^(\d+)[dD](\d+)(?:\+(\d+))?$/);
+      const diceMatch = notation.match(/^(\d+)[dD](\d+)(?:([+\-])(\d+))?$/);
       if (!diceMatch) {
         window.dispatchEvent(new CustomEvent('bwbr-dice-char-result', {
           detail: { success: false, error: 'invalid-notation', notation }
@@ -1054,7 +1066,7 @@
       }
       const count = parseInt(diceMatch[1], 10);
       const sides = parseInt(diceMatch[2], 10);
-      const bonus = diceMatch[3] ? parseInt(diceMatch[3], 10) : 0;
+      const bonus = diceMatch[4] ? parseInt(diceMatch[4], 10) * (diceMatch[3] === '-' ? -1 : 1) : 0;
 
       // 주사위 굴림
       const dices = [];
@@ -1146,7 +1158,7 @@
 
       await sdk.setDoc(newRef, msg);
 
-      console.log(`%c[BWBR]%c 🎲 ${charName}: ${text} → ${resultStr}`,
+      _dbg(`%c[BWBR]%c 🎲 ${charName}: ${text} → ${resultStr}`,
         'color:#ffa726;font-weight:bold', 'color:inherit');
 
       window.dispatchEvent(new CustomEvent('bwbr-dice-char-result', {
@@ -1344,7 +1356,7 @@
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
 
-    console.log(`%c[BWBR]%c 🔄 발화 캐릭터 변경: ${name}`,
+    _dbg(`%c[BWBR]%c 🔄 발화 캐릭터 변경: ${name}`,
       'color: #82b1ff; font-weight: bold;', 'color: inherit;');
   });
 
@@ -1492,7 +1504,7 @@
       const targetRef = sdk.doc(charsCol, targetId);
       await sdk.setDoc(targetRef, { status: newStatus, updatedAt: Date.now() }, { merge: true });
 
-      console.log(`%c[BWBR]%c ✅ ${targetName} ${statusLabel}: ${oldVal} → ${newVal}`,
+      _dbg(`%c[BWBR]%c ✅ ${targetName} ${statusLabel}: ${oldVal} → ${newVal}`,
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
       respond({ success: true, target: targetName, status: statusLabel, oldVal, newVal });
 
@@ -1584,7 +1596,7 @@
 
       if (affected > 0) {
         const opLabel = operation === '=max' ? '최대치 충전' : `${operation}${value}`;
-        console.log(`%c[BWBR]%c ✅ 전체 ${statusLabel} ${opLabel}: ${affected}명`,
+        _dbg(`%c[BWBR]%c ✅ 전체 ${statusLabel} ${opLabel}: ${affected}명`,
           'color: #4caf50; font-weight: bold;', 'color: inherit;');
         // 일괄 변경 시스템 메시지 (silent 미적용 시만)
         if (!silent) {
@@ -1696,7 +1708,7 @@
       const charRef = sdk.doc(charsCol, char.__id);
       await sdk.setDoc(charRef, { params: newParams, updatedAt: Date.now() }, { merge: true });
 
-      console.log(`%c[BWBR]%c ✅ ${targetName} ${paramLabel}: ${oldVal} → ${newVal}`,
+      _dbg(`%c[BWBR]%c ✅ ${targetName} ${paramLabel}: ${oldVal} → ${newVal}`,
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
       respond({ success: true, target: targetName, param: paramLabel, oldVal, newVal });
 
@@ -1777,7 +1789,7 @@
       }
 
       await sdk.setDoc(charRef, update, { merge: true });
-      console.log(`%c[BWBR]%c ✅ ${targetName} ${field} 변경 완료`,
+      _dbg(`%c[BWBR]%c ✅ ${targetName} ${field} 변경 완료`,
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
       respond({ success: true, target: targetName, field });
 
@@ -3065,7 +3077,7 @@
         const curVal = grid ? grid.value : false;
         if (curVal !== _prevDisplayGrid) {
           _prevDisplayGrid = curVal;
-          console.log(`%c[BWBR]%c displayGrid 변경 감지: ${curVal}`,
+          _dbg(`%c[BWBR]%c displayGrid 변경 감지: ${curVal}`,
             'color: #4caf50; font-weight: bold;', 'color: inherit;');
           window.dispatchEvent(new CustomEvent('bwbr-display-grid-changed', {
             detail: { value: curVal }
@@ -3082,7 +3094,7 @@
       if (reduxStore) {
         clearInterval(_watchInterval);
         watchDisplayGrid();
-        console.log('%c[BWBR]%c displayGrid 감시 시작',
+        _dbg('%c[BWBR]%c displayGrid 감시 시작',
           'color: #4caf50; font-weight: bold;', 'color: inherit;');
       }
     }, 500);

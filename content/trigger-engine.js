@@ -9,6 +9,7 @@
   var LOG_TAG = '%c[BWBR 트리거]%c';
   var LOG_STYLE = ['color: #e040fb; font-weight: bold;', 'color: inherit;'];
   function LOG() {
+    if (!window._BWBR_DEBUG) return;
     var args = [LOG_TAG].concat(LOG_STYLE);
     for (var i = 0; i < arguments.length; i++) args.push(arguments[i]);
     console.log.apply(console, args);
@@ -426,7 +427,9 @@
    * @returns {{ trigger: Object, params: Object }|null}
    */
   TriggerEngine.prototype.check = function (text, source, diceValue, senderName) {
-    if (!text || this._executing) return null;
+    if (!text) return null;
+    // ★ _executing 가드는 execute()에서만 적용 — check()에서는 패턴 매칭 허용
+    //    (이전: _executing 중에는 check()도 null 반환 → 실행 중 새 트리거 입력이 누락됨)
 
     var flowState = this._flowStateGetter ? this._flowStateGetter() : 'IDLE';
 
@@ -510,9 +513,11 @@
       // ── 주사위 조건 사전 평가 (조건 필터) ──
       // 모든 비조건 동작이 그룹 내(inGroup)일 때, 어떤 조건도 통과하지 못하면
       // 이 트리거는 실행해도 아무것도 안 하므로 건너뜀
+      // 단, dice 동작이 있으면 실행 시점에 주사위 값이 생산되므로 사전 평가 불가
       var actions = t.actions || [];
       if (actions.length > 0) {
         var hasDiceCond = false;
+        var hasDiceAction = false; // dice 동작이 주사위 값을 생산하는지
         var anyDiceCondPasses = false;
         var allActionsGated = true; // 모든 비조건 동작이 그룹 내인지
         for (var j = 0; j < actions.length; j++) {
@@ -532,10 +537,13 @@
           } else if (act.type !== 'condition_text') {
             // 비조건 동작: inGroup !== false면 그룹 내 (기본값 true)
             if (act.inGroup === false) allActionsGated = false;
+            // dice 동작은 주사위 값을 생산하므로 그룹 외 취급
+            if (act.type === 'dice') hasDiceAction = true;
           }
         }
         // 주사위 조건만 있고 전부 실패 + 모든 동작이 그룹 내 → 건너뜀
-        if (hasDiceCond && allActionsGated && !anyDiceCondPasses) continue;
+        // (단, dice 동작이 있으면 실행 시 주사위 값이 생산되므로 건너뛰지 않음)
+        if (hasDiceCond && !hasDiceAction && allActionsGated && !anyDiceCondPasses) continue;
       }
 
       return { trigger: t, params: params };
@@ -976,17 +984,45 @@
     });
   };
 
-  /** 주사위 굴림 (사용자 캐릭터로 메시지 전송, 결과 캡처) */
+  /**
+   * 주사위 굴림 (Firestore 직접 전송 → textarea 폴백)
+   * ★ Firestore 직접: textarea 경유 없이 바로 Firestore에 기록
+   *   → 안정적 (UI 상태에 의존하지 않음)
+   *   → 빠름 (textarea 조작 + delay 체인 불필요)
+   *   → 부작용 없음 (onInputSubmit 트리거 안 됨)
+   */
   TriggerEngine.prototype._actionDice = async function (action, params) {
     var command = applyTemplate(action.command || '', params);
     if (!command) return;
     if (!this._chat) return;
 
-    // 주사위 결과 캡처 프로미스 설정
+    // 주사위 표기법 파싱: NdM, NdM+B, NdM-B
+    var diceMatch = command.match(/^(\d+[dD]\d+(?:[+\-]\d+)?)\s*([\s\S]*)$/);
+
+    // ★ Firestore 직접 전송 시도 (sendDiceAsCharacter)
+    if (diceMatch && this._chat.sendDiceAsCharacter) {
+      var notation = diceMatch[1];
+      var label = (diceMatch[2] || '').trim();
+      var charName = this._getSpeakerName ? (this._getSpeakerName() || '') : '';
+
+      LOG('주사위 굴림 (Firestore 직접):', notation, label || '', charName ? 'as ' + charName : '');
+
+      var result = await this._chat.sendDiceAsCharacter(notation, label, charName);
+
+      if (result && result.success && result.total != null) {
+        params._dice = String(result.total);
+        params['주사위'] = String(result.total);
+        params['_주사위'] = String(result.total);
+        LOG('주사위 결과:', result.total);
+        return;
+      }
+      LOG('⚠️ Firestore 직접 전송 실패 → textarea 폴백');
+    }
+
+    // Firestore 직접 전송 불가 또는 실패 → textarea 폴백
     var self = this;
     var dicePromise = new Promise(function (resolve) {
       self._pendingDiceResolve = resolve;
-      // 타임아웃 5초
       setTimeout(function () {
         if (self._pendingDiceResolve === resolve) {
           self._pendingDiceResolve = null;
@@ -996,15 +1032,14 @@
     });
 
     await this._chat.sendMessage(command);
-    LOG('주사위 굴림:', command);
+    LOG('주사위 굴림 (textarea 폴백):', command);
 
-    // 결과 대기 (content.js onNewMessage에서 resolvePendingDice 호출)
-    var result = await dicePromise;
-    if (result != null) {
-      params._dice = String(result);
-      params['주사위'] = String(result);
-      params['_주사위'] = String(result); // 하위 호환
-      LOG('주사위 결과 캡처:', result);
+    var diceResult = await dicePromise;
+    if (diceResult != null) {
+      params._dice = String(diceResult);
+      params['주사위'] = String(diceResult);
+      params['_주사위'] = String(diceResult);
+      LOG('주사위 결과 캡처:', diceResult);
     }
   };
 

@@ -764,8 +764,8 @@ window.BattleRollEngine = class BattleRollEngine {
     });
   }
 
-  /** 항상 출력되는 로그 */
   _log(msg) {
+    if (!window._BWBR_DEBUG) return;
     console.log(`%c[BWBR Engine]%c ${msg}`, 'color: #e91e63; font-weight: bold;', 'color: inherit;');
   }
 };

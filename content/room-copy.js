@@ -21,6 +21,7 @@
   const LOG_RESET = 'color: inherit;';
 
   function log(...args) {
+    if (!window._BWBR_DEBUG) return;
     console.log(LOG_PREFIX, LOG_STYLE, LOG_RESET, ...args);
   }
 
