@@ -348,7 +348,16 @@
 
       <!-- 모듈 관리 탭 -->
       <div class="tab-panel" id="tab-modules">
-        <div class="section-desc">설치된 데이터 모듈을 관리합니다. 모듈을 비활성화하면 해당 기능이 꺼집니다.</div>
+        <div class="section-desc">데이터 모듈을 관리합니다. 모듈을 비활성화하면 해당 기능이 꺼집니다.</div>
+
+        <!-- 모듈 가져오기 버튼 -->
+        <div class="module-actions-bar">
+          <button type="button" id="btn-import-module" class="btn-module-action" title="JSON 모듈 파일 가져오기">
+            📥 모듈 가져오기
+          </button>
+          <input type="file" id="module-file-input" accept=".json" style="display:none">
+        </div>
+
         <div id="module-list" class="module-list">
           <div class="module-loading">모듈 목록 로드 중...</div>
         </div>

@@ -131,7 +131,7 @@ Combat stat deduction (주 행동🔺, 보조 행동🔹, etc.) is implemented d
 | `room-copy.js` | Room copy functionality |
 | `trigger-engine.js` | Pattern matching + action chain execution |
 | `trigger-ui.js` | Trigger management modal UI |
-| `module-loader.js` | **모듈 로더** — data 모듈 JSON 로드, 활성/비활성 관리 (`BWBR_ModuleLoader`) |
+| `module-loader.js` | **모듈 로더** — 내장+사용자 data 모듈 JSON 로드, 활성/비활성 관리, 가져오기/내보내기/삭제 (`BWBR_ModuleLoader`) |
 | `combat-controller.js` | **전투 모듈** — 합/턴제/관전 전체 전투 로직 (`BWBR_CombatController`) |
 | `content.js` | **Main controller** — 설정 로드, 채팅 감시, 트리거 분배, 로그 추출 |
 
@@ -165,6 +165,7 @@ Combat stat deduction (주 행동🔺, 보조 행동🔹, etc.) is implemented d
 |---|---|
 | `COCOFOLIA_DATA_API.md` | Reverse-engineered ccfolia internals (Redux, Firestore, DOM, webpack modules) |
 | `ARCHITECTURE.md` | Modularization architecture design document |
+| `MODULE_DEV_GUIDE.md` | Module development guide (manifest format, triggers, config, examples) |
 | `HANDOFF.md` | Trigger system implementation status and data model |
 | `README.md` | User-facing documentation with architecture section |
 

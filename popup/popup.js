@@ -758,6 +758,10 @@
   ];
 
   const MODULE_STORAGE_KEY = 'bwbr_modules';
+  const USER_MODULES_KEY = 'bwbr_user_modules';
+
+  // 모듈 매니페스트 필수 필드
+  const REQUIRED_MODULE_FIELDS = ['id', 'name', 'version', 'type'];
 
   /**
    * 모듈 목록 로드 및 UI 렌더링
@@ -780,24 +784,46 @@
             modules.push(mod);
           }
         } catch (e) {
-          console.warn('[BWBR Popup] 모듈 로드 실패:', path, e);
+          console.warn('[CE Popup] 모듈 로드 실패:', path, e);
         }
       }
 
-      // 2. 활성 상태 로드
+      // 2. 사용자 모듈 로드 (chrome.storage.local)
+      const userMods = await new Promise(resolve => {
+        chrome.storage.local.get(USER_MODULES_KEY, result => {
+          resolve((result && result[USER_MODULES_KEY]) || {});
+        });
+      });
+      for (const id of Object.keys(userMods)) {
+        try {
+          const mod = JSON.parse(JSON.stringify(userMods[id]));
+          // 내장 모듈과 중복 ID 방지
+          if (modules.some(m => m.id === mod.id)) continue;
+          mod._builtin = false;
+          mod._user = true;
+          modules.push(mod);
+        } catch (e) {
+          console.warn('[CE Popup] 사용자 모듈 파싱 오류:', id, e);
+        }
+      }
+
+      // 3. 활성 상태 로드
       const enabledState = await new Promise(resolve => {
         chrome.storage.sync.get(MODULE_STORAGE_KEY, result => {
           resolve((result && result[MODULE_STORAGE_KEY]) || {});
         });
       });
 
-      // 3. 렌더링
+      // 4. 렌더링
       renderModuleList(container, modules, enabledState);
 
     } catch (e) {
       container.innerHTML = '<div class="module-loading">모듈 목록을 불러올 수 없습니다.</div>';
-      console.error('[BWBR Popup] 모듈 로드 오류:', e);
+      console.error('[CE Popup] 모듈 로드 오류:', e);
     }
+
+    // 5. 가져오기 버튼 이벤트 바인딩
+    setupModuleImport();
   }
 
   /**
@@ -813,6 +839,7 @@
 
     modules.forEach(mod => {
       const enabled = enabledState[mod.id] !== undefined ? enabledState[mod.id] : true;
+      const isUser = !!mod._user;
 
       const card = document.createElement('div');
       card.className = 'module-card' + (enabled ? '' : ' disabled');
@@ -820,7 +847,7 @@
       const info = document.createElement('div');
       info.className = 'module-info';
 
-      // 헤더 (이름 + 버전 + 타입)
+      // 헤더 (이름 + 버전 + 타입 + 출처 배지)
       const header = document.createElement('div');
       header.className = 'module-header';
 
@@ -843,6 +870,12 @@
         header.appendChild(type);
       }
 
+      // 내장/사용자 배지
+      const originBadge = document.createElement('span');
+      originBadge.className = 'module-origin-badge' + (isUser ? ' user' : ' builtin');
+      originBadge.textContent = isUser ? '사용자' : '내장';
+      header.appendChild(originBadge);
+
       info.appendChild(header);
 
       // 설명
@@ -853,20 +886,33 @@
         info.appendChild(desc);
       }
 
-      // 태그
+      // 작성자 + 태그 행
+      const meta = document.createElement('div');
+      meta.className = 'module-meta';
+
+      if (mod.author) {
+        const author = document.createElement('span');
+        author.className = 'module-author';
+        author.textContent = '👤 ' + mod.author;
+        meta.appendChild(author);
+      }
+
       if (mod.tags && mod.tags.length > 0) {
-        const tags = document.createElement('div');
-        tags.className = 'module-tags';
         mod.tags.forEach(t => {
           const tag = document.createElement('span');
           tag.className = 'module-tag';
           tag.textContent = t;
-          tags.appendChild(tag);
+          meta.appendChild(tag);
         });
-        info.appendChild(tags);
       }
 
+      if (meta.childElementCount > 0) info.appendChild(meta);
+
       card.appendChild(info);
+
+      // 액션 영역 (토글 + 내보내기/삭제 버튼)
+      const actions = document.createElement('div');
+      actions.className = 'module-actions';
 
       // 토글 스위치
       const toggle = document.createElement('div');
@@ -884,7 +930,34 @@
       label.appendChild(cb);
       label.appendChild(slider);
       toggle.appendChild(label);
-      card.appendChild(toggle);
+      actions.appendChild(toggle);
+
+      // 버튼 행 (내보내기 + 삭제)
+      const btnRow = document.createElement('div');
+      btnRow.className = 'module-btn-row';
+
+      // 내보내기 버튼
+      const exportBtn = document.createElement('button');
+      exportBtn.type = 'button';
+      exportBtn.className = 'btn-module-small';
+      exportBtn.title = 'JSON 파일로 내보내기';
+      exportBtn.textContent = '📤';
+      exportBtn.addEventListener('click', () => exportModule(mod));
+      btnRow.appendChild(exportBtn);
+
+      // 사용자 모듈만 삭제 버튼 표시
+      if (isUser) {
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'btn-module-small danger';
+        deleteBtn.title = '모듈 삭제';
+        deleteBtn.textContent = '🗑️';
+        deleteBtn.addEventListener('click', () => removeModule(mod.id, enabledState));
+        btnRow.appendChild(deleteBtn);
+      }
+
+      actions.appendChild(btnRow);
+      card.appendChild(actions);
 
       container.appendChild(card);
     });
@@ -902,10 +975,157 @@
     data[MODULE_STORAGE_KEY] = enabledState;
     chrome.storage.sync.set(data, () => {
       if (chrome.runtime.lastError) {
-        console.warn('[BWBR Popup] 모듈 상태 저장 실패:', chrome.runtime.lastError.message);
+        console.warn('[CE Popup] 모듈 상태 저장 실패:', chrome.runtime.lastError.message);
         return;
       }
       showToast(enabled ? '모듈 활성화됨 — 새로고침 후 적용' : '모듈 비활성화됨 — 새로고침 후 적용');
+    });
+  }
+
+  /**
+   * 모듈 JSON 파일 내보내기
+   */
+  function exportModule(mod) {
+    try {
+      const clean = JSON.parse(JSON.stringify(mod));
+      delete clean._builtin;
+      delete clean._user;
+      delete clean._path;
+      const json = JSON.stringify(clean, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = (mod.id || 'module') + '.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('모듈 내보내기 완료: ' + a.download);
+    } catch (e) {
+      showToast('내보내기 실패: ' + e.message);
+    }
+  }
+
+  /**
+   * 사용자 모듈 삭제
+   */
+  async function removeModule(id, enabledState) {
+    if (!confirm('모듈 "' + id + '"을(를) 삭제하시겠습니까?')) return;
+
+    try {
+      // storage.local에서 제거
+      const store = await new Promise(resolve => {
+        chrome.storage.local.get(USER_MODULES_KEY, result => {
+          resolve((result && result[USER_MODULES_KEY]) || {});
+        });
+      });
+      delete store[id];
+      await new Promise(resolve => {
+        const data = {};
+        data[USER_MODULES_KEY] = store;
+        chrome.storage.local.set(data, resolve);
+      });
+
+      // 활성 상태에서도 제거
+      delete enabledState[id];
+      await new Promise(resolve => {
+        const data = {};
+        data[MODULE_STORAGE_KEY] = enabledState;
+        chrome.storage.sync.set(data, resolve);
+      });
+
+      showToast('모듈 삭제됨 — 새로고침 후 적용');
+      loadModules(); // UI 새로고침
+    } catch (e) {
+      showToast('모듈 삭제 실패: ' + e.message);
+    }
+  }
+
+  /**
+   * 모듈 가져오기 (파일 입력) 설정
+   */
+  function setupModuleImport() {
+    const importBtn = document.getElementById('btn-import-module');
+    const fileInput = document.getElementById('module-file-input');
+    if (!importBtn || !fileInput) return;
+
+    // 이벤트 중복 방지
+    if (importBtn._bound) return;
+    importBtn._bound = true;
+
+    importBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      fileInput.value = ''; // 동일 파일 재선택 허용
+
+      try {
+        const text = await file.text();
+        let json;
+        try {
+          json = JSON.parse(text);
+        } catch (pe) {
+          showToast('유효하지 않은 JSON 파일입니다.');
+          return;
+        }
+
+        // 유효성 검증
+        const errors = [];
+        REQUIRED_MODULE_FIELDS.forEach(f => {
+          if (!json[f]) errors.push('필수 필드 누락: ' + f);
+        });
+        if (json.id && !/^[a-zA-Z0-9_-]+$/.test(json.id)) {
+          errors.push('모듈 ID는 영문, 숫자, 하이픈, 밑줄만 허용됩니다.');
+        }
+        if (json.type && json.type !== 'data') {
+          errors.push('현재 "data" 타입만 가져올 수 있습니다.');
+        }
+
+        // 내장 모듈 ID 충돌 검사
+        const builtinIds = [];
+        for (const path of BUILTIN_MODULE_PATHS) {
+          try {
+            const res = await fetch(chrome.runtime.getURL(path));
+            if (res.ok) {
+              const m = await res.json();
+              builtinIds.push(m.id);
+            }
+          } catch (_) { /* skip */ }
+        }
+        if (builtinIds.includes(json.id)) {
+          errors.push('내장 모듈과 ID가 충돌합니다: ' + json.id);
+        }
+
+        if (errors.length > 0) {
+          alert('모듈 검증 실패:\n\n' + errors.join('\n'));
+          return;
+        }
+
+        // 기존 사용자 모듈과 중복 시 교체 확인
+        const store = await new Promise(resolve => {
+          chrome.storage.local.get(USER_MODULES_KEY, result => {
+            resolve((result && result[USER_MODULES_KEY]) || {});
+          });
+        });
+        if (store[json.id]) {
+          if (!confirm('동일 ID의 모듈이 이미 존재합니다.\n기존 모듈을 교체하시겠습니까?')) return;
+        }
+
+        // 저장
+        store[json.id] = json;
+        await new Promise(resolve => {
+          const data = {};
+          data[USER_MODULES_KEY] = store;
+          chrome.storage.local.set(data, resolve);
+        });
+
+        showToast('모듈 가져오기 완료: ' + (json.name || json.id) + ' — 새로고침 후 적용');
+        loadModules(); // UI 새로고침
+
+      } catch (e) {
+        showToast('모듈 가져오기 실패: ' + e.message);
+      }
     });
   }
 
