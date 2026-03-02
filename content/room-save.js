@@ -1,5 +1,5 @@
 /**
- * room-save.js — 방 입장 시 방 이름 + 방문 시간을 chrome.storage.local에 저장
+ * [CORE] room-save.js — 방 입장 시 방 이름 + 방문 시간을 chrome.storage.local에 저장
  * 코코포리아 방(/rooms/*) 페이지에서만 실행됩니다.
  */
 (async function () {

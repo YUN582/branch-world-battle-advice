@@ -1,4 +1,4 @@
-// log-export-dialog.js
+// [CORE] log-export-dialog.js
 // 더 나은 로그 출력 — 설정 다이얼로그 + 필터링 + 스타일링 + 미리보기 + 내보내기
 // ISOLATED world content script
 (function () {

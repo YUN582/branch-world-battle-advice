@@ -1,5 +1,5 @@
 // ============================================================
-// Grid Overlay - cocofolia native grid design replacement
+// [COMBAT] Grid Overlay - cocofolia native grid design replacement
 //
 // cocofolia "jeongyeong-e geurideu pyosi" (displayGrid) on/off
 // native grid -> hidden, custom overlay shown.

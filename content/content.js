@@ -1,16 +1,21 @@
 // ============================================================
 // Branch World Battle Roll - 메인 컨트롤러 (Content Script)
 // 전투 상태 머신, 채팅 감시, 자동 처리 오케스트레이션
+//
+// [모듈 분류 가이드]
+//   [CORE]    = 범용 코코포리아 확장 기능 (TRPG 시스템 무관)
+//   [COMBAT]  = 가지세계 전투 모듈 (합/턴제/관전)
+//   [TRIGGER] = 범용 트리거 자동화 모듈
 // ============================================================
 
 (function () {
   'use strict';
 
-  // ── 전역 상태 ────────────────────────────────────────────
+  // ── [CORE + COMBAT] 전역 상태 ────────────────────────────
 
-  /** 전투 흐름 상태 */
+  /** 전투 흐름 상태  [COMBAT] IDLE/TURN_COMBAT 외 모든 상태는 전투 모듈 전용 */
   const STATE = {
-    IDLE: 'IDLE',
+    IDLE: 'IDLE',                                  // [CORE]
     COMBAT_STARTED: 'COMBAT_STARTED',
     ROUND_HEADER_SENT: 'ROUND_HEADER_SENT',
     WAITING_ATTACKER_RESULT: 'WAITING_ATTACKER_RESULT',
@@ -23,13 +28,18 @@
     TURN_COMBAT: 'TURN_COMBAT'
   };
 
+  // [CORE] 코어 변수
   let config = null;        // 현재 설정
-  let engine = null;        // BattleRollEngine (합 처리)
-  let combatEngine = null;  // CombatEngine (전투 보조)
   let chat = null;          // CocoforiaChatInterface
-  let overlay = null;       // BattleRollOverlay
   let flowState = STATE.IDLE;
   let enabled = true;
+  let _userMessagePendingPromise = null; // 사용자 메시지 도착 대기 프라미스 (메시지 순서 보장)
+  let _cachedSpeakerName = null; // 현재 발화(선택) 캐릭터 이름
+
+  // [COMBAT] 전투 모듈 변수
+  let engine = null;        // BattleRollEngine (합 처리)
+  let combatEngine = null;  // CombatEngine (전투 보조)
+  let overlay = null;       // BattleRollOverlay
   let resultTimeoutId = null;
   let paused = false;
   let _pauseRequested = false;
@@ -44,23 +54,23 @@
   let _spectatorFromTurnCombat = false; // 합 관전이 TURN_COMBAT에서 시작되었는지
   let _spectatorStartTime = 0;           // 관전 시작 시각 (premature end 방지용)
   let _activeCombatFromTurnCombat = false; // 능동 합 진행이 TURN_COMBAT에서 시작되었는지
-  let _userMessagePendingPromise = null; // 사용자 메시지 도착 대기 프라미스 (메시지 순서 보장)
-  let triggerEngine = null; // TriggerEngine 인스턴스 (범용 트리거 시스템)
-  let _cachedSpeakerName = null; // 현재 발화(선택) 캐릭터 이름
 
-  // Redux speaking 캐릭터 변경 감시 (redux-injector.js의 store.subscribe에서 push)
+  // [TRIGGER] 트리거 모듈 변수
+  let triggerEngine = null; // TriggerEngine 인스턴스 (범용 트리거 시스템)
+
+  // [CORE] Redux speaking 캐릭터 변경 감시 (redux-injector.js의 store.subscribe에서 push)
   document.addEventListener('bwbr-speaker-changed', () => {
     const name = document.documentElement.getAttribute('data-bwbr-speaker-name');
     if (name) _cachedSpeakerName = name;
   });
 
-  // char-shortcut.js Alt+숫자 전환 시 캐시 선행 갱신 (Redux 반영 전)
+  // [CORE] char-shortcut.js Alt+숫자 전환 시 캐시 선행 갱신 (Redux 반영 전)
   window.addEventListener('bwbr-switch-character', (e) => {
     const name = e.detail?.name;
     if (name) _cachedSpeakerName = name;
   });
 
-  // ── 초기화 ───────────────────────────────────────────────
+  // ── [CORE] 초기화 ────────────────────────────────────────────
 
   async function init() {
     try {
@@ -201,7 +211,7 @@
     }
   }
 
-  // ── 설정 로드 ────────────────────────────────────────────
+  // ── [CORE] 설정 로드 ────────────────────────────────────────
 
   async function loadConfig() {
     return new Promise((resolve) => {
@@ -260,7 +270,9 @@
     return result;
   }
 
-  // ── 사용자 메시지 도착 대기 ───────────────────────
+  // ── [CORE] 사용자 메시지 도착 대기 ─────────────────────
+
+  // ── [COMBAT] 효과음 헬퍼 ───────────────────────────────
 
   /** 설정된 사운드 배열에서 무작위 하나를 @sound 형식으로 반환. 비어있으면 빈 문자열. */
   function _pickCutin(soundsKey) {
@@ -301,7 +313,9 @@
     }
   }
 
-  // ── 사용자 입력 감지 (Enter 키) ───────────────────
+  // ── [CORE] 사용자 입력 감지 (Enter 키) ───────────────
+  // ↳ 내부에서 [COMBAT] checkForCombatAssistTrigger, checkForTrigger, checkForCancel 호출
+  // ↳ 내부에서 [TRIGGER] triggerEngine.check/execute 호출
 
   function onInputSubmit(text) {
     if (!enabled) return;
@@ -341,7 +355,9 @@
     checkForCancel(text);
   }
 
-  // ── 채팅 로그 메시지 처리 ───────────────────────
+  // ── [CORE] 채팅 로그 메시지 처리 ─────────────────
+  // ↳ switch(flowState)로 [COMBAT] 처리기로 분배
+  // ↳ [TRIGGER] triggerEngine.check/execute 호출────
 
   function onNewMessage(text, element, senderName) {
     if (!enabled) return;
@@ -413,7 +429,7 @@
   // 전투 보조 시스템 (턴 관리)
   // ══════════════════════════════════════════════════════════
 
-  /** 전투 보조 개시/종료 트리거 감지 */
+  // [COMBAT] 전투 보조 개시/종료 트리거 감지
   async function checkForCombatAssistTrigger(text) {
     // 전투 개시 감지: 《 전투개시 》 또는 《 전투개시 》 @전투
     if (combatEngine.parseCombatStartTrigger(text)) {
@@ -625,7 +641,7 @@
     sendTurnStartMessage();
   }
 
-  // ── 스탯 변경 헬퍼 ──────────────────────────────
+  // ── [COMBAT] 스탯 변경 헬퍼 ────────────────────────────
 
   /** 개별 캐릭터 스탯 변경 이벤트 발송 (Promise 반환, silent 지원) */
   function _modifyCharStat(characterName, statLabel, operation, value, silent) {
@@ -735,7 +751,7 @@
     }
   }
 
-  // ── 턴 전투 상태 영속성 (새로고침 복원) ──────────────────
+  // ── [COMBAT] 턴 전투 상태 영속성 (새로고침 복원) ──────────────
 
   /** 현재 턴 전투 상태를 chrome.storage.session에 저장합니다. */
   function _saveTurnCombatState() {
@@ -955,7 +971,8 @@
   }
 
   // ══════════════════════════════════════════════════════════
-  // 전투 보조 관전 추적 (진행자가 아닌 사용자용)
+  // [COMBAT] 전투 보조 관전 추적 (진행자가 아닌 사용자용)
+  // → 모듈화 시 modules/bw-combat/controller.js로 이동
   // ══════════════════════════════════════════════════════════
 
   /** 전투 보조 메시지를 파싱하여 관전자 UI 업데이트 */
@@ -1131,10 +1148,11 @@
   }
 
   // ══════════════════════════════════════════════════════════
-  // 합 (근접전) 시스템
+  // [COMBAT] 합 (근접전) 시스템
+  // → 모듈화 시 modules/bw-combat/controller.js로 이동
   // ══════════════════════════════════════════════════════════
 
-  // ── 합 개시 트리거 감지 ──────────────────────────────────
+  // ── [COMBAT] 합 개시 트리거 감지 ──────────────────────────
 
   function checkForTrigger(text) {
     const triggerData = engine.parseTrigger(text);
@@ -1176,7 +1194,7 @@
     startNextRound();
   }
 
-  // ── 전투 중지 감지 ───────────────────────────────────────
+  // ── [COMBAT] 전투 중지 감지 ─────────────────────────────────
 
   function checkForCancel(text) {
     if (engine.parseCancelTrigger(text)) {
@@ -1245,7 +1263,7 @@
     overlay.updateCombatState(engine.getState());
   }
 
-  // ── 관전 모드 ────────────────────────────────────────────
+  // ── [COMBAT] 관전 모드 ────────────────────────────────────
 
   function checkForSpectatorTrigger(text) {
     const triggerData = engine.parseTrigger(text);
@@ -1488,7 +1506,7 @@
     setTimeout(() => overlay.updateCombatState(engine.getState()), 5000);
   }
 
-  // ── 일시정지/재개 ──────────────────────────────────
+  // ── [COMBAT] 일시정지/재개 ────────────────────────────
 
   function togglePause() {
     if (paused || _pauseRequested) {
@@ -1623,7 +1641,7 @@
     }
   }
 
-  // ── 라운드 진행 ──────────────────────────────────────────
+  // ── [COMBAT] 라운드 진행 ──────────────────────────────────
 
   async function startNextRound() {
     engine.incrementRound();
@@ -1826,7 +1844,7 @@
     setTimeout(() => processRoundResult(), config.timing.beforeRoundResult);
   }
 
-  // ── 라운드 결과 처리 ─────────────────────────────────────
+  // ── [COMBAT] 라운드 결과 처리 ───────────────────────────────
 
   async function processRoundResult() {
     flowState = STATE.PROCESSING_RESULT;
@@ -2034,7 +2052,7 @@
     }
   }
 
-  // ── 승리 선언 ────────────────────────────────────────────
+  // ── [COMBAT] 승리 선언 ────────────────────────────────────
 
   async function announceVictory() {
     flowState = STATE.COMBAT_END;
@@ -2087,7 +2105,7 @@
     }, 5000);
   }
 
-  // ── 수동 모드: 주사위 결과 직접 입력 ──────────────────
+  // ── [COMBAT] 수동 모드: 주사위 결과 직접 입력 ────────────
 
   async function processManualDiceInput(who) {
     const state = engine.getState();
@@ -2161,7 +2179,7 @@
     }
   }
 
-  // ── 타임아웃 → 수동 입력 요청 ──────────────────────
+  // ── [COMBAT] 타임아웃 → 수동 입력 요청 ────────────────
 
   function setResultTimeout(who) {
     clearTimeout(resultTimeoutId);
@@ -2225,7 +2243,9 @@
     }, config.timing.resultTimeout);
   }
 
-  // ── 확장 프로그램 메시지 처리 ────────────────────────────
+  // ── [CORE] 확장 프로그램 메시지 처리 ────────────────
+  // ↳ BWBR_SET_MANUAL_MODE, BWBR_SET_AUTO_CONSUME_ACTIONS 등은 [COMBAT] 전용
+  // ↳ BWBR_SET_AUTO_COMPLETE, BWBR_SET_BETTER_SOUNDBAR 등은 [CORE]────────
 
   function onExtensionMessage(message, sender, sendResponse) {
     switch (message.type) {
@@ -2339,7 +2359,7 @@
     }
   }
 
-  // ── 로그 추출 ────────────────────────────────────────────
+  // ── [CORE] 로그 추출 ────────────────────────────────────
 
   let _logExportBusy = false;
 
@@ -3213,7 +3233,7 @@ ${rows.join('\n')}
   }
   function _pad(n) { return n < 10 ? '0' + n : '' + n; }
 
-  // ── 유틸리티 ─────────────────────────────────────────────
+  // ── [CORE] 유틸리티 ─────────────────────────────────────────
 
   function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -3256,7 +3276,7 @@ ${rows.join('\n')}
     }
   }
 
-  // ── Redux Store 접근 (캐릭터 데이터용) ───────────────────
+  // ── [CORE] Redux Store 접근 (캐릭터 데이터용) ─────────────
 
   /** 
    * 페이지 컨텍스트(MAIN world)에 스크립트를 주입하여 Redux Store를 획득합니다.
@@ -3325,7 +3345,7 @@ ${rows.join('\n')}
     });
   }
 
-  // ── aria-hidden 포커스 충돌 완화 (ccfolia MUI 버그) ───────
+  // ── [CORE] aria-hidden 포커스 충돌 완화 (ccfolia MUI 버그) ───
 
   /**
    * MUI Popover/Dialog/Menu가 닫힐 때 aria-hidden="true"가 설정되면서
@@ -3372,7 +3392,7 @@ ${rows.join('\n')}
     obs.observe(document.body, { attributes: true, attributeFilter: ['aria-hidden'], subtree: true });
   })();
 
-  // ── 사이트 음량 컨트롤러 ─────────────────────────────────
+  // ── [CORE] 사이트 음량 컨트롤러 ───────────────────────────
 
   /** 사이트 음량을 변경합니다. (site-volume.js의 페이지 스크립트로 전달) */
   function applySiteVolume(volume) {
@@ -3617,7 +3637,7 @@ ${rows.join('\n')}
     if (root) root.setAttribute('aria-valuenow', String(v));
   }
 
-  // ── 시작 ─────────────────────────────────────────────────
+  // ── [CORE] 시작 ─────────────────────────────────────────────
 
   // 페이지 로드 후 초기화
   if (document.readyState === 'complete') {

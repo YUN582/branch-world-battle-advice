@@ -2,6 +2,12 @@
 // Redux Store Injector - 페이지 컨텍스트에서 Redux Store 획득
 // MAIN world에서 실행되어 React internals에 접근
 // Content Script와 CustomEvent로 통신
+//
+// [모듈 분류 가이드]
+//   [CORE]    = 범용 코코포리아 확장 (채팅, 캐릭터, 컷인, 로그, 방복사)
+//   [COMBAT]  = 가지세계 전투 모듈 (스탯변경, 토큰바인딩, 그리드, 이동)
+//   [TRIGGER] = 트리거 자동화 모듈 (패널조작, 씨/룸필드, 체릭터필드)
+//   [DEBUG]   = 진단/디버그 전용 (덤프, 스냅샷, 로깅)
 // ============================================================
 
 (function() {
@@ -13,7 +19,7 @@
 
   let reduxStore = null;
 
-  // ── 토큰 바인딩 캐시 (ISOLATED world에서 동기화) ──
+  // ── [COMBAT] 토큰 바인딩 캐시 (ISOLATED world에서 동기화) ──
   let _tokenBindings = {};      // { panelId: charId }
   let _tokenBindingsRoomId = null;
 
@@ -934,6 +940,10 @@
     return id;
   }
 
+  // ================================================================
+  //  [CORE] Firestore 직접 메시지 전송
+  // ================================================================
+
   // Firestore 직접 전송 이벤트 수신
   // ★ ISOLATED→MAIN에서는 CustomEvent.detail이 전달되지 않으므로
   //    DOM attribute(data-bwbr-send-text)를 통해 텍스트를 받습니다.
@@ -1237,6 +1247,12 @@
   });
 
   // Content Script에서 캐릭터 데이터 요청 시 처리
+  // ================================================================
+  //  [CORE] 캐릭터 데이터 조회 / 전환
+  //  bwbr-request-characters, bwbr-request-all-characters,
+  //  bwbr-switch-character, bwbr-request-speaking-character,
+  //  bwbr-request-cutins
+  // ================================================================
   window.addEventListener('bwbr-request-characters', () => {
     let result;
     if (!reduxStore) {
@@ -1289,7 +1305,7 @@
   });
 
   // ================================================================
-  //  캐릭터 단축키: 이미지 URL로 캐릭터 식별
+  //  [COMBAT] 캐릭터 이미지 식별
   // ================================================================
   window.addEventListener('bwbr-identify-character-by-image', (e) => {
     const targetUrl = e.detail?.imageUrl;
@@ -1495,6 +1511,10 @@
   //  :# 스테이터스 변경 명령 처리
   //  Content Script에서 bwbr-modify-status 이벤트로 요청
   // ================================================================
+  // ================================================================
+  //  [COMBAT] 스탯 수정 (bwbr-modify-status, bwbr-modify-status-all)
+  //  → 트리거 모듈도 사용하므로 코어 유지 검토 필요
+  // ================================================================
   window.addEventListener('bwbr-modify-status', async (e) => {
     // DOM 속성 브릿지 (크로스-월드 안정성)
     const _raw = document.documentElement.getAttribute('data-bwbr-modify-status');
@@ -1672,6 +1692,10 @@
   // ================================================================
   //  트리거: 캐릭터 메시지 (특정 캐릭터 이름/아이콘으로 전송)
   //  Content Script에서 bwbr-trigger-char-msg 이벤트로 요청
+  // ================================================================
+  // ================================================================
+  //  [TRIGGER] 트리거 액션: 캐릭터 메시지/필드/파람 수정
+  //  bwbr-trigger-char-msg, bwbr-modify-param, bwbr-trigger-char-field
   // ================================================================
   window.addEventListener('bwbr-trigger-char-msg', async (e) => {
     // DOM 속성 브릿지 (크로스-월드 안정성)
@@ -2052,6 +2076,9 @@
   //  채팅 로그 전체 추출 (Firestore 직접 쿼리)
   //  ISOLATED world에서 bwbr-export-log 이벤트로 요청
   // ================================================================
+  // ================================================================
+  //  [CORE] 로그 내보내기 (bwbr-export-log)
+  // ================================================================
   window.addEventListener('bwbr-export-log', async () => {
     const respond = (data) => {
       window.dispatchEvent(new CustomEvent('bwbr-export-log-result', { detail: data }));
@@ -2185,6 +2212,9 @@
       || window.location.pathname.match(/rooms\/([^/]+)/)?.[1] || null;
   }
 
+  // ================================================================
+  //  [CORE] 캐릭터 편집/저장/복사/삭제 (char-shortcut)
+  // ================================================================
   // ── 편집: Redux state에서 openRoomCharacterId 설정 → 네이티브 편집 다이얼로그 ──
   window.addEventListener('bwbr-character-edit', (e) => {
     const name = e.detail?.name;
@@ -2364,6 +2394,10 @@
   }
 
   // push 이벤트 수신 (즉시 캐시 갱신)
+  // ================================================================
+  //  [COMBAT] 토큰 바인딩 + 패널 식별
+  //  bwbr-sync-token-bindings, bwbr-identify-panel
+  // ================================================================
   document.addEventListener('bwbr-sync-token-bindings', () => {
     _readBindingsFromDOM();
     console.log(`%c[BWBR]%c 토큰 바인딩 동기화: ${Object.keys(_tokenBindings).length}개`,
@@ -2464,6 +2498,9 @@
   //  bwbr-request-char-for-move (DOM attr: data-bwbr-move-imageurl)
   //  → bwbr-char-move-data { success, item, char }
   //  ★ 바인딩 맵을 우선 확인, 없으면 memo 〔이름〕 폴백
+  // ================================================================
+  // ================================================================
+  //  [COMBAT] 전투 이동 (bwbr-request-char-for-move, bwbr-move-item)
   // ================================================================
   window.addEventListener('bwbr-request-char-for-move', () => {
     const el = document.documentElement;
@@ -2617,6 +2654,9 @@
   //  target: 〔태그〕 형식의 메모 태그로 패널 식별 (예: target="문A" → memo에 〔문A〕포함)
   //  panelType: 'object'(스크린) | 'plane'(마커) — create 시 필수, 기존 조작 시 검색 필터
   //  op: 'move' | 'rotate' | 'copy' | 'delete' | 'create'
+  // ================================================================
+  // ================================================================
+  //  [TRIGGER] 패널 조작 (bwbr-trigger-panel-op, bwbr-request-panel-tags)
   // ================================================================
   window.addEventListener('bwbr-trigger-panel-op', async (e) => {
     const _raw = document.documentElement.getAttribute('data-bwbr-trigger-panel-op');
@@ -2843,6 +2883,9 @@
   // ================================================================
   let _bwbrPickerActive = false;
 
+  // ================================================================
+  //  [CORE] 네이티브 이미지 피커 (bwbr-open-native-image-picker)
+  // ================================================================
   window.addEventListener('bwbr-open-native-image-picker', () => {
     if (!reduxStore || _bwbrPickerActive) return;
     _bwbrPickerActive = true;
@@ -2919,9 +2962,12 @@
   });
 
   // ================================================================
-  //  진단: Redux 상태 구조 덤프
-  //  콘솔: window.dispatchEvent(new CustomEvent('bwbr-dump-redux-keys'))
+  //  [DEBUG] 진단/덤프 핸들러
+  //  bwbr-dump-redux-keys, bwbr-dump-room, bwbr-dump-items,
+  //  bwbr-log-actions, bwbr-snapshot-*, bwbr-deep-snapshot-*
   // ================================================================
+  // ── 진단: Redux 상태 구조 덤프 ──
+  //  콘솔: window.dispatchEvent(new CustomEvent('bwbr-dump-redux-keys'))
   window.addEventListener('bwbr-dump-redux-keys', () => {
     if (!reduxStore) {
       console.error('[BWBR 진단] Redux Store 없음');
@@ -2995,9 +3041,8 @@
   });
 
   // ================================================================
-  //  트리거: 방 설정 변경 (BGM, 장면 이미지 등)
-  //  Content Script에서 bwbr-trigger-room-field 이벤트로 요청
-  //  field: 방 문서의 필드명 (예: soundUrl, backgroundImageUrl, ...)
+  //  [TRIGGER] 방 설정 변경 + 장면 로드
+  //  bwbr-trigger-room-field, bwbr-dump-scenes, bwbr-load-native-scene
   // ================================================================
   window.addEventListener('bwbr-trigger-room-field', async (e) => {
     const detail = e.detail || {};
@@ -3489,7 +3534,7 @@
   })();
 
   // ================================================================
-  //  네이티브 그리드 상태 감시 (displayGrid)
+  //  [COMBAT] 네이티브 그리드 상태 감시 (displayGrid)
   //  Firestore: rooms/{roomId}.displayGrid (boolean)
   //  Redux:    entities.rooms.entities.{roomId}.displayGrid
   //
@@ -3755,9 +3800,8 @@
   });
 
   // ================================================================
-  //  룸 복사: 내보내기 (bwbr-room-export)
-  //  ISOLATED world에서 bwbr-room-export 이벤트로 요청
-  //  Redux 상태에서 방 설정 + 캐릭터 + 아이템을 수집하여 반환
+  //  [CORE] 룸 복사: 내보내기/가져오기
+  //  bwbr-room-export, bwbr-room-import
   // ================================================================
 
   window.addEventListener('bwbr-room-export', () => {
