@@ -301,6 +301,25 @@ input[type="checkbox"]:checked + .toggle-slider.small::after {
   flex-shrink: 0;
 }
 
+.module-type-badge.script {
+  color: #69f0ae;
+  background: rgba(105,240,174,0.12);
+}
+
+.module-dep-warning {
+  font-size: 10px;
+  color: #ff8a65;
+  margin-top: 3px;
+  line-height: 1.3;
+}
+
+.module-dep-info {
+  font-size: 10px;
+  color: #666;
+  margin-top: 3px;
+  line-height: 1.3;
+}
+
 .module-desc {
   font-size: 11px;
   color: #999;

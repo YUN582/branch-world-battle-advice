@@ -985,8 +985,8 @@
 
       if (mod.type) {
         const type = document.createElement('span');
-        type.className = 'module-type-badge';
-        type.textContent = mod.type;
+        type.className = 'module-type-badge' + (mod.type === 'script' ? ' script' : '');
+        type.textContent = mod.type === 'script' ? '⚡ script' : mod.type;
         header.appendChild(type);
       }
 
@@ -1027,6 +1027,22 @@
       }
 
       if (meta.childElementCount > 0) info.appendChild(meta);
+
+      // 의존성 경고 표시
+      if (mod.depWarning && mod.depWarning.length > 0) {
+        const depWarn = document.createElement('div');
+        depWarn.className = 'module-dep-warning';
+        depWarn.textContent = '⚠️ 필요한 모듈: ' + mod.depWarning.join(', ');
+        info.appendChild(depWarn);
+      }
+
+      // 의존성 목록 표시 (선택적)
+      if (mod.dependencies && mod.dependencies.length > 0 && !mod.depWarning) {
+        const depInfo = document.createElement('div');
+        depInfo.className = 'module-dep-info';
+        depInfo.textContent = '🔗 의존: ' + mod.dependencies.join(', ');
+        info.appendChild(depInfo);
+      }
 
       // 설정 가능 모듈은 클릭 안내 표시
       const hasSettings = (mod.id === 'branch-world' || mod.id === 'triggers');
@@ -1215,8 +1231,20 @@
         if (json.id && !/^[a-zA-Z0-9_-]+$/.test(json.id)) {
           errors.push('모듈 ID는 영문, 숫자, 하이픈, 밑줄만 허용됩니다.');
         }
-        if (json.type && json.type !== 'data') {
-          errors.push('현재 "data" 타입만 가져올 수 있습니다.');
+        if (json.type && json.type !== 'data' && json.type !== 'script') {
+          errors.push('지원되는 타입: "data", "script" (받은 값: ' + json.type + ')');
+        }
+
+        // script 모듈 추가 검증
+        if (json.type === 'script') {
+          if (!json.script) {
+            errors.push('script 타입 모듈에는 "script" 필드가 필요합니다.');
+          } else if (!json.script.code && !json.script.file) {
+            errors.push('script 필드에 "code" 또는 "file"이 필요합니다.');
+          }
+          if (json.script && json.script.file) {
+            errors.push('사용자 script 모듈은 "file" 대신 "code"를 사용해야 합니다.');
+          }
         }
 
         // 내장 모듈 ID 충돌 검사

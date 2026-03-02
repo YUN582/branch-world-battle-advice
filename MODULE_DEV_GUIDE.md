@@ -1,13 +1,13 @@
 # Ccofolia Extension — 모듈 개발 가이드
 
-> **대상 버전**: CE v1.2.52+  
-> **최종 갱신**: 2026-03-03
+> **대상 버전**: CE v1.2.55+  
+> **최종 갱신**: 2026-03-04
 
 ---
 
 ## 1. 개요
 
-Ccofolia Extension(CE)은 **데이터 모듈** 시스템을 통해 기능을 확장할 수 있습니다. 모듈은 JSON 파일 하나로 구성되며, 전투 규칙·메시지 템플릿·트리거 프리셋 등을 코어 엔진에 제공합니다.
+Ccofolia Extension(CE)은 **모듈 시스템**을 통해 기능을 확장할 수 있습니다. 모듈은 JSON 파일 하나로 구성되며, 데이터 모듈(`type: "data"`)과 스크립트 모듈(`type: "script"`) 두 가지 타입을 지원합니다.
 
 ### 모듈이 할 수 있는 것
 
@@ -15,13 +15,14 @@ Ccofolia Extension(CE)은 **데이터 모듈** 시스템을 통해 기능을 확
 |------|------|
 | **전투 설정 제공** | 주사위 규칙, 메시지 템플릿, 타이밍, 효과음, 종족 특성 등 |
 | **트리거 프리셋 제공** | 패턴 매칭 → 액션 체인 (메시지, 스탯 변경, 컷인, 주사위 등) |
-| **두 가지 동시 제공** | 전투 설정 + 트리거를 하나의 모듈에 포함 가능 |
+| **JavaScript 코드 실행** | MAIN/ISOLATED world에서 스크립트 실행 (⚡ script 모듈) |
+| **모듈 의존성** | `dependencies` 필드로 다른 모듈에 대한 의존성 선언 및 로드 순서 보장 |
+| **복합 모듈** | 전투 설정 + 트리거 + 스크립트를 하나의 모듈에 포함 가능 |
 
-### 모듈이 할 수 없는 것 (현재 버전)
+### 모듈이 할 수 없는 것
 
-- JavaScript 코드 실행 (script 타입 모듈은 향후 v2.1에서 지원 예정)
 - 코어 UI 변경
-- 다른 모듈의 설정 수정
+- 다른 모듈의 설정 직접 수정
 
 ---
 
@@ -49,7 +50,7 @@ Ccofolia Extension(CE)은 **데이터 모듈** 시스템을 통해 기능을 확
 | `id` | `string` | 고유 식별자. 영문·숫자·하이픈·밑줄만 허용. 예: `my-combat-rules` |
 | `name` | `string` | 표시 이름. 한글/영문 모두 가능 |
 | `version` | `string` | SemVer 형식. 예: `1.0.0` |
-| `type` | `string` | 현재 `"data"`만 지원 |
+| `type` | `string` | `"data"` 또는 `"script"` |
 
 ### 선택 필드
 
@@ -61,6 +62,8 @@ Ccofolia Extension(CE)은 **데이터 모듈** 시스템을 통해 기능을 확
 | `minCoreVersion` | `string` | 최소 코어 버전 요구사항 |
 | `config` | `object` | 설정 기본값 제공 (§3 참조) |
 | `triggers` | `array` | 트리거 프리셋 제공 (§4 참조) |
+| `dependencies` | `string[]` | 의존하는 모듈 ID 목록 (§5.1 참조) |
+| `script` | `object` | 스크립트 모듈 설정 (§5.2 참조, `type: "script"` 전용) |
 
 ---
 
@@ -301,9 +304,105 @@ Ccofolia Extension(CE)은 **데이터 모듈** 시스템을 통해 기능을 확
 
 ---
 
-## 5. 완전한 모듈 예시
+## 5. 의존성 & 스크립트 모듈
 
-### 5.1 전투 규칙 모듈 (간단한 D6 시스템)
+### 5.1 모듈 의존성 (dependencies)
+
+`dependencies` 필드를 사용하면 다른 모듈의 로드 순서를 보장할 수 있습니다.
+
+```json
+{
+  "id": "my-addon",
+  "name": "내 애드온",
+  "version": "1.0.0",
+  "type": "data",
+  "dependencies": ["branch-world"]
+}
+```
+
+**동작 방식:**
+
+- 의존 모듈이 먼저 로드됩니다 (위상 정렬/Kahn's algorithm)
+- 의존 모듈이 **설치되지 않거나 비활성화**되어 있으면 ⚠️ 경고가 팝업에 표시됩니다
+- 의존성 미충족 시에도 모듈은 **로드됩니다** (경고만, 완전 차단 안 함)
+- 순환 의존성은 자동 감지되며 순서 무시 후 로드됩니다
+
+**제한사항:**
+
+- `dependencies`는 문자열 배열이어야 합니다
+- 각 요소는 다른 모듈의 `id` 값입니다
+
+### 5.2 스크립트 모듈 (type: "script")
+
+JavaScript 코드를 실행하는 모듈입니다. 데이터 모듈(`config`, `triggers`)의 기능도 함께 사용할 수 있습니다.
+
+```json
+{
+  "id": "my-script-mod",
+  "name": "내 스크립트 모듈",
+  "version": "1.0.0",
+  "type": "script",
+  "script": {
+    "code": "console.log('Hello from MAIN world!');",
+    "world": "main"
+  }
+}
+```
+
+**script 필드 구조:**
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `code` | `string` | 실행할 JavaScript 코드 (사용자 모듈 필수) |
+| `file` | `string` | 스크립트 파일 경로 (내장 모듈 전용, `web_accessible_resources` 필요) |
+| `world` | `string` | 실행 컨텍스트: `"main"` (기본값) 또는 `"isolated"` |
+
+**world 옵션:**
+
+| World | 설명 | 접근 가능 |
+|-------|------|-----------|
+| `main` | 페이지 컨텍스트에서 실행 (`<script>` 태그 삽입) | Redux, Firestore, 페이지 `window` |
+| `isolated` | 콘텐츠 스크립트 컨텍스트에서 실행 (blob URL + `import()`) | Chrome API, CE 전역 변수 (`BWBR_*`) |
+
+**사용자 모듈 제한:**
+
+- 사용자 스크립트 모듈은 `code` 필드만 사용 가능 (`file` 불가)
+- MV3 보안 정책에 의해 `eval()`, `new Function()`은 사용할 수 없습니다
+- MAIN world 코드는 IIFE로 자동 래핑되어 실행됩니다
+
+**예시: ISOLATED world에서 CE API 확장**
+
+```json
+{
+  "id": "custom-greeting",
+  "name": "커스텀 인사",
+  "version": "1.0.0",
+  "type": "script",
+  "dependencies": ["branch-world"],
+  "script": {
+    "code": "window.MY_CUSTOM_GREETING = function(name) { return '안녕하세요, ' + name + '!'; };",
+    "world": "isolated"
+  },
+  "triggers": [
+    {
+      "id": "usr_greet",
+      "name": "인사",
+      "enabled": true,
+      "pattern": "《인사》| {대상}",
+      "source": "input",
+      "actions": [
+        { "type": "message", "template": "👋 {대상}님, 환영합니다!" }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## 6. 완전한 모듈 예시
+
+## 6.1 전투 규칙 모듈 (간단한 D6 시스템)
 
 ```json
 {
@@ -371,7 +470,7 @@ Ccofolia Extension(CE)은 **데이터 모듈** 시스템을 통해 기능을 확
 }
 ```
 
-### 5.2 트리거 프리셋 모듈
+### 6.2 트리거 프리셋 모듈
 
 ```json
 {
@@ -418,7 +517,7 @@ Ccofolia Extension(CE)은 **데이터 모듈** 시스템을 통해 기능을 확
 
 ---
 
-## 6. 모듈 설치 / 관리
+## 7. 모듈 설치 / 관리
 
 ### 설치 방법
 
@@ -442,7 +541,7 @@ Ccofolia Extension(CE)은 **데이터 모듈** 시스템을 통해 기능을 확
 
 ---
 
-## 7. ID 규칙
+## 8. ID 규칙
 
 | 구분 | 접두사 | 예시 |
 |------|--------|------|
@@ -455,7 +554,7 @@ Ccofolia Extension(CE)은 **데이터 모듈** 시스템을 통해 기능을 확
 
 ---
 
-## 8. 주의사항
+## 9. 주의사항
 
 1. **config.namespace가 `"combat"`인 모듈은 하나만 활성화**: 두 전투 모듈이 동시에 활성화되면 나중에 로드된 모듈이 이전 모듈의 설정을 덮어씁니다.
 
@@ -469,10 +568,10 @@ Ccofolia Extension(CE)은 **데이터 모듈** 시스템을 통해 기능을 확
 
 ---
 
-## 9. 향후 계획
+## 10. 향후 계획
 
-- **v2.1**: `"type": "script"` 모듈 지원 — JavaScript 코드를 포함하는 모듈
-- **모듈 의존성**: `dependencies` 필드로 다른 모듈에 대한 의존성 선언
+- ~~`"type": "script"` 모듈 지원~~ → **v1.2.55에서 구현 완료**
+- ~~모듈 의존성 (`dependencies`)~~ → **v1.2.55에서 구현 완료**
 - **모듈 레지스트리**: 온라인 모듈 저장소에서 검색·설치
 
 ---

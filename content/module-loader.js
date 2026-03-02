@@ -1,6 +1,6 @@
 // ============================================================
 // Ccofolia Extension - Module Loader
-// 내장 + 사용자 데이터 모듈(JSON)을 로드하여 설정/트리거를 코어에 등록
+// 내장 + 사용자 데이터/스크립트 모듈(JSON)을 로드하여 설정/트리거/코드를 코어에 등록
 //
 // 모듈 JSON 포맷은 MODULE_DEV_GUIDE.md 참조.
 // 내장 모듈은 modules/ 폴더에 위치하며 chrome.runtime.getURL로 접근.
@@ -19,6 +19,7 @@
 //     .addUserModule(json)             → Promise<{success, error?}>  (사용자 모듈 추가)
 //     .removeUserModule(id)            → Promise<{success, error?}>  (사용자 모듈 삭제)
 //     .exportModule(id)                → string|null  (JSON 문자열 내보내기)
+//     .getDependencyWarnings()         → Array<{moduleId, missing}>
 // ============================================================
 
 (function () {
@@ -53,6 +54,7 @@
     this._configNamespaces = {};  // { namespace: defaults } — 활성 모듈만
     this._triggers = [];          // 활성 모듈의 트리거 합산
     this._loaded = false;
+    this._depWarnings = [];       // 의존성 경고 [{moduleId, missing:[]}]
   }
 
   // ── loadAll: 내장 + 사용자 모듈 전부 로드 + 활성 상태 적용 ─
@@ -141,19 +143,21 @@
             }
           });
 
-          // 최종 집계 + BWBR_DEFAULTS 재구성
+          // 의존성 검사 + 적용 + 스크립트 실행 + BWBR_DEFAULTS 재구성
+          self._applyAllWithDeps();
           self._saveEnabledState();
-          self._rebuildDefaults();
 
           LOG('전체 모듈 로드 완료:', self._modules.length, '개,',
               'active:', self._modules.filter(function (m) { return self._enabledState[m.id]; }).length);
+          if (self._depWarnings.length > 0) {
+            LOG('⚠️ 의존성 경고:', self._depWarnings.length, '건');
+          }
           resolve();
         });
       } catch (e) {
         LOG('사용자 모듈 storage 접근 실패:', e.message);
-        // 내장 모듈 기준으로 마무리
+        self._applyAllWithDeps();
         self._saveEnabledState();
-        self._rebuildDefaults();
         resolve();
       }
     });
@@ -169,10 +173,8 @@
       this._enabledState[mod.id] = true;
     }
 
-    // 활성 모듈만 적용
-    if (this._enabledState[mod.id]) {
-      this._applyModule(mod);
-    }
+    // 활성 모듈만 적용 (의존성 검사는 _applyAllWithDeps에서 일괄 처리)
+    // 여기서는 단순 등록만, 적용은 _applyAllWithDeps()에서
   };
 
   // ── 내부: 단일 모듈 JSON fetch ────────────────────────────
@@ -197,7 +199,7 @@
     }
   };
 
-  // ── 내부: 모듈 적용 (설정 + 트리거 등록) ──────────────────
+  // ── 내부: 모듈 적용 (설정 + 트리거 + 스크립트 등록) ──────────────────
 
   ModuleLoader.prototype._applyModule = function (mod) {
     // config.defaults → 네임스페이스별 설정 등록
@@ -206,7 +208,6 @@
       this._configNamespaces[ns] = JSON.parse(JSON.stringify(mod.config.defaults));
 
       // 특수 처리: 'combat' 네임스페이스 → window.BWBR_COMBAT_DEFAULTS
-      // 기존 코드(loadConfig, combat-controller 등)와의 하위 호환 유지
       if (ns === 'combat') {
         window.BWBR_COMBAT_DEFAULTS = JSON.parse(JSON.stringify(mod.config.defaults));
         window.BWBR_COMBAT_KEYS = Object.keys(mod.config.defaults);
@@ -218,6 +219,168 @@
       this._triggers = this._triggers.concat(
         JSON.parse(JSON.stringify(mod.triggers))
       );
+    }
+
+    // script 모듈 → 스크립트 실행 (MAIN world 삽입)
+    if (mod.type === 'script' && mod.script) {
+      this._executeScript(mod);
+    }
+  };
+
+  // ── 내부: 의존성 검사 + 적용 (모듈 등록 후 일괄 호출) ───
+
+  ModuleLoader.prototype._applyAllWithDeps = function () {
+    var self = this;
+    this._depWarnings = [];
+    this._configNamespaces = {};
+    this._triggers = [];
+
+    // 활성 모듈 목록
+    var allIds = {};
+    this._modules.forEach(function (m) { allIds[m.id] = true; });
+    var enabledIds = {};
+    this._modules.forEach(function (m) {
+      if (self._enabledState[m.id]) enabledIds[m.id] = true;
+    });
+
+    // 위상 정렬 (dependencies 기반)
+    var sorted = this._topoSort(this._modules);
+
+    sorted.forEach(function (mod) {
+      if (!self._enabledState[mod.id]) return;
+
+      // 의존성 검사
+      if (mod.dependencies && Array.isArray(mod.dependencies)) {
+        var missing = mod.dependencies.filter(function (depId) {
+          return !allIds[depId] || !enabledIds[depId];
+        });
+        if (missing.length > 0) {
+          self._depWarnings.push({ moduleId: mod.id, moduleName: mod.name || mod.id, missing: missing });
+          LOG('⚠️ 모듈 "' + mod.id + '" 의존성 미충족:', missing.join(', '),
+              '→ 해당 모듈 기능 제한될 수 있음');
+        }
+      }
+
+      // 의존성 미충족이어도 적용은 시도 (경고만 표시, 완전 차단 안 함)
+      self._applyModule(mod);
+    });
+
+    // BWBR_DEFAULTS 재구성
+    this._rebuildDefaults();
+  };
+
+  // ── 내부: 위상 정렬 (Kahn's algorithm) ────────────────────
+
+  ModuleLoader.prototype._topoSort = function (modules) {
+    var idToMod = {};
+    var inDegree = {};
+    var graph = {}; // depId -> [modules that depend on it]
+
+    modules.forEach(function (m) {
+      idToMod[m.id] = m;
+      inDegree[m.id] = 0;
+      graph[m.id] = [];
+    });
+
+    // 간선 구성: dep -> module (dep가 먼저 로드되어야 함)
+    modules.forEach(function (m) {
+      if (m.dependencies && Array.isArray(m.dependencies)) {
+        m.dependencies.forEach(function (depId) {
+          if (idToMod[depId]) {
+            graph[depId].push(m.id);
+            inDegree[m.id]++;
+          }
+        });
+      }
+    });
+
+    // BFS
+    var queue = [];
+    var result = [];
+    for (var id in inDegree) {
+      if (inDegree[id] === 0) queue.push(id);
+    }
+    while (queue.length > 0) {
+      var current = queue.shift();
+      if (idToMod[current]) result.push(idToMod[current]);
+      (graph[current] || []).forEach(function (next) {
+        inDegree[next]--;
+        if (inDegree[next] === 0) queue.push(next);
+      });
+    }
+
+    // 순환 의존성 방지: 정렬에 포함되지 않은 모듈 추가
+    if (result.length < modules.length) {
+      modules.forEach(function (m) {
+        if (!result.some(function (r) { return r.id === m.id; })) {
+          LOG('⚠️ 순환 의존성 감지, 순서 무시:', m.id);
+          result.push(m);
+        }
+      });
+    }
+
+    return result;
+  };
+
+  // ── 내부: 스크립트 모듈 실행 (MAIN world 삽입) ────────────
+
+  ModuleLoader.prototype._executeScript = function (mod) {
+    if (!mod.script) return;
+
+    var code = '';
+    var world = (mod.script.world || 'main').toLowerCase();
+
+    if (mod.script.code) {
+      code = mod.script.code;
+    } else if (mod.script.file && mod._builtin) {
+      // 내장 모듈: 파일 경로에서 로드 (web_accessible_resources 필요)
+      var basePath = mod._path ? mod._path.replace(/\/[^/]+$/, '/') : '';
+      var scriptUrl = chrome.runtime.getURL(basePath + mod.script.file);
+      LOG('스크립트 모듈 파일 로드:', mod.id, scriptUrl);
+      var scriptEl = document.createElement('script');
+      scriptEl.src = scriptUrl;
+      scriptEl.dataset.bwbrModule = mod.id;
+      (document.head || document.documentElement).appendChild(scriptEl);
+      return;
+    } else {
+      LOG('스크립트 모듈 코드 없음:', mod.id);
+      return;
+    }
+
+    if (world === 'main') {
+      // MAIN world: <script> 태그로 삽입 (페이지 컨텍스트에서 실행)
+      LOG('스크립트 모듈 실행 (MAIN):', mod.id);
+      try {
+        var wrapper = '(function(){"use strict";\n/* BWBR Module: ' + mod.id + ' */\n' + code + '\n})();';
+        var el = document.createElement('script');
+        el.textContent = wrapper;
+        el.dataset.bwbrModule = mod.id;
+        (document.head || document.documentElement).appendChild(el);
+      } catch (e) {
+        LOG('스크립트 모듈 실행 오류 (MAIN):', mod.id, e.message);
+      }
+    } else if (world === 'isolated') {
+      // ISOLATED world: Function constructor는 MV3에서 차단됨
+      // blob URL + dynamic import 사용
+      LOG('스크립트 모듈 실행 (ISOLATED):', mod.id);
+      try {
+        var blob = new Blob(
+          ['/* BWBR Module: ' + mod.id + ' */\n' + code],
+          { type: 'text/javascript' }
+        );
+        var url = URL.createObjectURL(blob);
+        import(url).then(function () {
+          URL.revokeObjectURL(url);
+          LOG('스크립트 모듈 실행 완료 (ISOLATED):', mod.id);
+        }).catch(function (e) {
+          URL.revokeObjectURL(url);
+          LOG('스크립트 모듈 실행 오류 (ISOLATED):', mod.id, e.message);
+        });
+      } catch (e) {
+        LOG('스크립트 모듈 실행 오류 (ISOLATED):', mod.id, e.message);
+      }
+    } else {
+      LOG('알 수 없는 스크립트 world:', world, '(', mod.id, ')');
     }
   };
 
@@ -285,6 +448,8 @@
   ModuleLoader.prototype.getModules = function () {
     var self = this;
     return this._modules.map(function (mod) {
+      // 의존성 경고 확인
+      var depWarning = self._depWarnings.find(function (w) { return w.moduleId === mod.id; });
       return {
         id: mod.id,
         name: mod.name || mod.id,
@@ -293,6 +458,8 @@
         type: mod.type || 'data',
         tags: mod.tags || [],
         author: mod.author || '',
+        dependencies: mod.dependencies || [],
+        depWarning: depWarning ? depWarning.missing : null,
         enabled: !!self._enabledState[mod.id],
         builtin: !!mod._builtin,
         user: !!mod._user
@@ -370,6 +537,14 @@
     return this._loaded;
   };
 
+  /**
+   * 의존성 경고 목록 반환
+   * @returns {Array<{moduleId, moduleName, missing: string[]}>}
+   */
+  ModuleLoader.prototype.getDependencyWarnings = function () {
+    return this._depWarnings;
+  };
+
   // ══════════════════════════════════════════════════════════
   //  사용자 모듈 관리 API
   // ══════════════════════════════════════════════════════════
@@ -394,8 +569,31 @@
       errors.push('모듈 ID는 영문, 숫자, 하이픈, 밑줄만 허용됩니다: ' + json.id);
     }
 
-    if (json.type && json.type !== 'data') {
-      errors.push('현재 "data" 타입만 지원됩니다. (받은 값: ' + json.type + ')');
+    if (json.type && json.type !== 'data' && json.type !== 'script') {
+      errors.push('지원되는 타입: "data", "script" (받은 값: ' + json.type + ')');
+    }
+
+    // script 모듈 검증
+    if (json.type === 'script') {
+      if (!json.script) {
+        errors.push('script 타입 모듈에는 "script" 필드가 필요합니다.');
+      } else if (!json.script.code && !json.script.file) {
+        errors.push('script 필드에 "code" 또는 "file"이 필요합니다.');
+      }
+      if (json.script && json.script.file && !json._builtin) {
+        errors.push('사용자 script 모듈은 "file" 대신 "code"를 사용해야 합니다.');
+      }
+    }
+
+    // 의존성 필드 검증
+    if (json.dependencies) {
+      if (!Array.isArray(json.dependencies)) {
+        errors.push('dependencies는 문자열 배열이어야 합니다.');
+      } else {
+        json.dependencies.forEach(function (dep) {
+          if (typeof dep !== 'string') errors.push('dependencies 요소는 문자열이어야 합니다: ' + dep);
+        });
+      }
     }
 
     // 내장 모듈 ID와 충돌 검사
