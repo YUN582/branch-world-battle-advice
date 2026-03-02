@@ -348,13 +348,20 @@
     }
 
     if (world === 'main') {
-      // MAIN world: <script> 태그로 삽입 (페이지 컨텍스트에서 실행)
+      // MAIN world: blob URL → <script src> 로 삽입 (인라인은 CSP에 차단됨)
       LOG('스크립트 모듈 실행 (MAIN):', mod.id);
       try {
         var wrapper = '(function(){"use strict";\n/* BWBR Module: ' + mod.id + ' */\n' + code + '\n})();';
+        var blob = new Blob([wrapper], { type: 'text/javascript' });
+        var blobUrl = URL.createObjectURL(blob);
         var el = document.createElement('script');
-        el.textContent = wrapper;
+        el.src = blobUrl;
         el.dataset.bwbrModule = mod.id;
+        el.onload = function () { URL.revokeObjectURL(blobUrl); };
+        el.onerror = function () {
+          URL.revokeObjectURL(blobUrl);
+          LOG('스크립트 모듈 실행 오류 (MAIN):', mod.id);
+        };
         (document.head || document.documentElement).appendChild(el);
       } catch (e) {
         LOG('스크립트 모듈 실행 오류 (MAIN):', mod.id, e.message);
