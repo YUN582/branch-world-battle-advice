@@ -1,7 +1,7 @@
-# 가지세계 도우미 (Branch World Battle Roll)
+# Ccofolia Extension (CE)
 
 코코포리아(ccfolia.com) GM 보조 Chrome 확장 프로그램.  
-근접전 합(라운드) 처리를 자동화하고, 채팅 입력을 보조합니다.
+전투 자동화, 채팅 보조, 모듈 시스템을 제공합니다.
 
 ---
 

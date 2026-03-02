@@ -1,5 +1,5 @@
 // ============================================================
-// [COMBAT] Branch World Battle Roll - 임베디드 전투 패널
+// [COMBAT] Ccofolia Extension - 임베디드 전투 패널
 // 코코포리아 채팅 패널 헤더 아래에 삽입되는 전투 UI
 // ============================================================
 
@@ -50,7 +50,7 @@ window.BattleRollOverlay = class BattleRollOverlay {
       <div id="bwbr-toggle">
         <div class="bwbr-toggle-left">
           <span class="bwbr-toggle-icon">⚔️</span>
-          <span class="bwbr-toggle-title">가지세계 도우미</span>
+          <span class="bwbr-toggle-title">Ccofolia Extension</span>
           <span class="bwbr-dot idle" id="bwbr-dot"></span>
           <span class="bwbr-status-text" id="bwbr-status-text">대기 중</span>
         </div>

@@ -29,7 +29,7 @@
 
 ## Project Info
 
-- Chrome Extension MV3 ("가지세계 도우미" / Branch World Advice, for ccfolia.com TRPG)
+- Chrome Extension MV3 ("Ccofolia Extension" / CE, for ccfolia.com TRPG)
 - Content Scripts run in ISOLATED world (content/*.js)
 - MAIN world access: redux-injector.js (communicates via CustomEvent between MAIN ↔ ISOLATED)
 - Target site UI framework: MUI v5 + styled-components + React + Redux + Firebase (Firestore)

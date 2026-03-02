@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "data",
   "description": "기본 트리거 프리셋 — 피해, 스탯 설정, 판정, 장면 전환 등 코코포리아 범용 자동화",
-  "author": "BWAD",
+  "author": "CE",
   "minCoreVersion": "1.2.0",
   "tags": ["triggers", "automation"],
 

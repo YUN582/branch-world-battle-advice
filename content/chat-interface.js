@@ -1,5 +1,5 @@
 // ============================================================
-// [CORE] Branch World Battle Roll - 코코포리아 채팅 인터페이스 v8
+// [CORE] Ccofolia Extension - 코코포리아 채팅 인터페이스 v8
 //
 // === 핵심 설계 (Redux 기반) ===
 // 1) Redux store.subscribe()로 roomMessages 변화를 실시간 감지

@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "data",
   "description": "가지세계 TRPG 합(合) 전투 규칙, 메시지 템플릿, 종족 특성, 효과음, 패턴 설정",
-  "author": "BWAD",
+  "author": "CE",
   "minCoreVersion": "1.2.0",
   "tags": ["combat", "branch-world", "melee"],
 

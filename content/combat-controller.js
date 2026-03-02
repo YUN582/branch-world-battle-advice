@@ -1,5 +1,5 @@
 // ============================================================
-// Branch World Combat Controller
+// Ccofolia Extension - Combat Controller
 // 가지세계 전투 모듈 — 합(合)/턴제/관전 모든 전투 로직
 //
 // content.js에서 추출된 [COMBAT] 코드를 하나의 모듈로 캡슐화합니다.

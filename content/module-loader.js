@@ -1,5 +1,5 @@
 // ============================================================
-// Branch World Module Loader
+// Ccofolia Extension - Module Loader
 // 데이터 모듈(JSON)을 로드하여 설정/트리거를 코어에 등록
 //
 // 모듈 JSON 포맷은 ARCHITECTURE.md §5 참조.

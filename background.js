@@ -1,5 +1,5 @@
 // ============================================================
-// Branch World Battle Roll - Background Service Worker
+// Ccofolia Extension - Background Service Worker
 // 확장 프로그램 설치, 설정 초기화, 메시지 라우팅, 업데이트 확인
 // ============================================================
 

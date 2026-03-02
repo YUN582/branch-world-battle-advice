@@ -1,5 +1,5 @@
 // ============================================================
-// Branch World Battle Roll - 메인 컨트롤러 (Content Script)
+// Ccofolia Extension - 메인 컨트롤러 (Content Script)
 // 설정 로드, 채팅 감시, 확장 메시지 처리, 로그 추출 오케스트레이션
 // 전투 로직은 combat-controller.js (BWBR_CombatController)에 위임
 //
@@ -1576,7 +1576,7 @@ ${rows.join('\n')}
     // ── 커스텀 슬라이더 구조 생성 ──
     const root = document.createElement('div');
     root.id = 'bwbr-site-vol-root';
-    root.title = '가지세계 도우미 — 사이트 음량 (렉 방지)';
+    root.title = 'Ccofolia Extension — 사이트 음량 (렉 방지)';
 
     const rail = document.createElement('div');
     rail.id = 'bwbr-site-vol-rail';
