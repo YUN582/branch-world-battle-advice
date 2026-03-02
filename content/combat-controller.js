@@ -214,6 +214,7 @@
   function _scheduleStatRefreshUI(ms) {
     clearTimeout(_statRefreshTimer);
     _statRefreshTimer = setTimeout(async () => {
+      if (flowState !== STATE.TURN_COMBAT) return; // 합 전환 등으로 상태 변경 시 무시
       await _refreshCharacterOriginalData();
       await refreshTurnUI();
     }, ms != null ? ms : 800);
@@ -776,21 +777,25 @@
     overlay.addLog('전투가 중지되었습니다.', 'warning');
 
     if (_activeCombatFromTurnCombat && combatEngine && combatEngine.inCombat) {
-      _log('⚔️ 합 중지 → 전투 보조 모드로 복귀');
       _activeCombatFromTurnCombat = false;
-      flowState = STATE.TURN_COMBAT;
-      overlay.setStatus('active', '전투 보조 중');
-      overlay.smoothTransition(() => refreshTurnUI());
+      setTimeout(() => {
+        _log('⚔️ 합 중지 → 전투 보조 모드로 복귀');
+        flowState = STATE.TURN_COMBAT;
+        overlay.setStatus('active', '전투 보조 중');
+        overlay.smoothTransition(() => refreshTurnUI());
+      }, 4000);
       return;
     }
 
     if (_activeCombatFromTurnCombat && _turnTrackingActive) {
-      _log('⚔️ 합 중지 → 전투 관전 모드로 복귀');
       _activeCombatFromTurnCombat = false;
-      flowState = STATE.IDLE;
-      overlay.setTurnTrackingMode(true);
-      overlay.setStatus('active', '👁 전투 관전 중');
-      overlay.smoothTransition(() => updateTrackedTurnUI());
+      setTimeout(() => {
+        _log('⚔️ 합 중지 → 전투 관전 모드로 복귀');
+        flowState = STATE.IDLE;
+        overlay.setTurnTrackingMode(true);
+        overlay.setStatus('active', '👁 전투 관전 중');
+        overlay.smoothTransition(() => updateTrackedTurnUI());
+      }, 4000);
       return;
     }
 
@@ -938,8 +943,12 @@
     if (text.includes('쌍방')) { overlay.addLog(cleanText, text.includes('대성공') ? 'crit' : 'fumble'); return; }
     if (text.includes('무승부') || text.includes('재굴림')) { overlay.playTie(); overlay.addLog(cleanText, 'warning'); return; }
     if (text.includes('→') && text.includes('승리')) {
-      if (text.includes('⚔')) overlay.playRoundWin('attacker');
-      else if (text.includes('🛡')) overlay.playRoundWin('defender');
+      // 승리 줄만 검사 (패자 줄에도 상대 아이콘이 있으므로 전체 텍스트 검사 불가)
+      const winLine = text.split('\n').find(l => l.includes('→') && l.includes('승리'));
+      if (winLine) {
+        if (winLine.includes('⚔')) overlay.playRoundWin('attacker');
+        else if (winLine.includes('🛡')) overlay.playRoundWin('defender');
+      }
       overlay.addLog(cleanText, 'info');
       return;
     }
@@ -960,23 +969,30 @@
     overlay.setSpectatorMode(false);
 
     if (_spectatorFromTurnCombat && combatEngine && combatEngine.inCombat) {
-      _log('👁️ 합 종료 → 전투 보조 모드로 복귀');
-      flowState = STATE.TURN_COMBAT;
+      const wasFromTurn = true;
       _spectatorFromTurnCombat = false;
-      overlay.addLog('합 종료 — 전투 보조 모드로 복귀', 'info');
-      overlay.setStatus('active', '전투 보조 중');
-      overlay.smoothTransition(() => refreshTurnUI());
+      // 결과 확인 시간 4초 후 전투 보조로 복귀
+      setTimeout(() => {
+        _log('👁️ 합 종료 → 전투 보조 모드로 복귀');
+        flowState = STATE.TURN_COMBAT;
+        overlay.addLog('합 종료 — 전투 보조 모드로 복귀', 'info');
+        overlay.setStatus('active', '전투 보조 중');
+        overlay.smoothTransition(() => refreshTurnUI());
+      }, 4000);
       return;
     }
 
     if (_spectatorFromTurnCombat && _turnTrackingActive) {
-      _log('👁️ 합 종료 → 전투 관전 모드로 복귀');
-      flowState = STATE.IDLE;
       _spectatorFromTurnCombat = false;
-      overlay.setTurnTrackingMode(true);
-      overlay.addLog('합 종료 — 전투 관전 모드로 복귀', 'info');
-      overlay.setStatus('active', '👁 전투 관전 중');
-      overlay.smoothTransition(() => updateTrackedTurnUI());
+      // 결과 확인 시간 4초 후 관전 모드로 복귀
+      setTimeout(() => {
+        _log('👁️ 합 종료 → 전투 관전 모드로 복귀');
+        flowState = STATE.IDLE;
+        overlay.setTurnTrackingMode(true);
+        overlay.addLog('합 종료 — 전투 관전 모드로 복귀', 'info');
+        overlay.setStatus('active', '👁 전투 관전 중');
+        overlay.smoothTransition(() => updateTrackedTurnUI());
+      }, 4000);
       return;
     }
 
@@ -1449,23 +1465,29 @@
     engine.reset();
 
     if (_activeCombatFromTurnCombat && combatEngine && combatEngine.inCombat) {
-      _log('⚔️ 합 종료 → 전투 보조 모드로 복귀');
       _activeCombatFromTurnCombat = false;
-      flowState = STATE.TURN_COMBAT;
-      overlay.addLog('합 종료 — 전투 보조 모드로 복귀', 'info');
-      overlay.setStatus('active', '전투 보조 중');
-      overlay.smoothTransition(() => refreshTurnUI());
+      // 결과 확인 시간 4초 후 전투 보조로 복귀
+      setTimeout(() => {
+        _log('⚔️ 합 종료 → 전투 보조 모드로 복귀');
+        flowState = STATE.TURN_COMBAT;
+        overlay.addLog('합 종료 — 전투 보조 모드로 복귀', 'info');
+        overlay.setStatus('active', '전투 보조 중');
+        overlay.smoothTransition(() => refreshTurnUI());
+      }, 4000);
       return;
     }
 
     if (_activeCombatFromTurnCombat && _turnTrackingActive) {
-      _log('⚔️ 합 종료 → 전투 관전 모드로 복귀');
       _activeCombatFromTurnCombat = false;
-      flowState = STATE.IDLE;
-      overlay.setTurnTrackingMode(true);
-      overlay.addLog('합 종료 — 전투 관전 모드로 복귀', 'info');
-      overlay.setStatus('active', '👁 전투 관전 중');
-      overlay.smoothTransition(() => updateTrackedTurnUI());
+      // 결과 확인 시간 4초 후 관전 모드로 복귀
+      setTimeout(() => {
+        _log('⚔️ 합 종료 → 전투 관전 모드로 복귀');
+        flowState = STATE.IDLE;
+        overlay.setTurnTrackingMode(true);
+        overlay.addLog('합 종료 — 전투 관전 모드로 복귀', 'info');
+        overlay.setStatus('active', '👁 전투 관전 중');
+        overlay.smoothTransition(() => updateTrackedTurnUI());
+      }, 4000);
       return;
     }
 
