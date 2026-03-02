@@ -197,6 +197,7 @@
     // ── 일반 탭 (항상 존재) ──
     $('gen-sfxVolume').value = cfg.general.sfxVolume ?? 0.45;
     $('gen-sfxVolume-val').textContent = Math.round((cfg.general.sfxVolume ?? 0.45) * 100) + '%';
+    $('toggle-autoScroll').checked = cfg.general.autoScroll !== false;
     $('toggle-autoComplete').checked = cfg.general.autoComplete !== false;
     $('toggle-charShortcuts').checked = cfg.general.charShortcuts !== false;
     $('toggle-betterSoundbar').checked = cfg.general.betterSoundbar !== false;
@@ -217,6 +218,7 @@
 
     // ── 일반 탭 (항상 존재) ──
     cfg.general.sfxVolume = parseFloat($('gen-sfxVolume').value) || 0.45;
+    cfg.general.autoScroll = $('toggle-autoScroll').checked;
     cfg.general.autoComplete = $('toggle-autoComplete').checked;
     cfg.general.charShortcuts = $('toggle-charShortcuts').checked;
     cfg.general.betterSoundbar = $('toggle-betterSoundbar').checked;
