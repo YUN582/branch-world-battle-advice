@@ -426,6 +426,115 @@ input[type="checkbox"]:checked + .toggle-slider.small::after {
   color: #ef5350;
 }
 
+/* ── 모듈 슬라이드 패널 ───────────────────────── */
+
+.module-slide-container {
+  position: relative;
+  overflow: hidden;
+}
+
+.module-slide-view {
+  transition: transform 0.25s ease, opacity 0.2s ease;
+}
+
+#module-list-view {
+  /* default visible */
+}
+
+#module-list-view.slide-out {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  transform: translateX(-100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+#module-settings-view {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  transform: translateX(100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+#module-settings-view.slide-in {
+  position: relative;
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.module-settings-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.btn-module-back {
+  background: none;
+  border: 1px solid #444;
+  color: #aaa;
+  padding: 4px 10px;
+  border-radius: 5px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.btn-module-back:hover {
+  background: #333;
+  border-color: #666;
+  color: #fff;
+}
+
+.module-settings-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+/* 모듈 설정 섹션 */
+.mod-settings-section {
+  margin-bottom: 16px;
+}
+
+.mod-settings-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffab40;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(255,171,64,0.2);
+}
+
+/* 모듈 카드를 클릭 가능하게 */
+.module-card.clickable {
+  cursor: pointer;
+}
+
+.module-card.clickable:hover {
+  border-color: #ffab40;
+  background: #2e2e32;
+}
+
+.module-card .module-settings-indicator {
+  font-size: 10px;
+  color: #666;
+  margin-top: 2px;
+}
+
+.module-card.clickable .module-settings-indicator {
+  color: #ffab40;
+}
+
 .section-desc {
   font-size: 11px;
   color: #666;

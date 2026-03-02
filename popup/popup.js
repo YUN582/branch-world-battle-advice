@@ -97,6 +97,7 @@
   const COMBAT_KEYS = ['templates', 'timing', 'sounds', 'rules', 'patterns', 'traits'];
 
   let currentConfig = null;
+  let _moduleSettingsOpen = null; // 현재 열린 모듈 설정 ID (null이면 닫김)
 
   // ── 초기화 ───────────────────────────────────────────────
 
@@ -195,133 +196,54 @@
 
   /** 설정 데이터로 UI 필드를 채웁니다 */
   function populateUI(cfg) {
-    // 활성화
+    // ── 일반 탭 (항상 존재) ──
     $('toggle-enabled').checked = cfg.general.enabled;
-
-    // 수동 모드
-    $('toggle-manualMode').checked = cfg.general.manualMode || false;
-    const hint = document.getElementById('manual-mode-hint');
-    if (hint) hint.style.display = cfg.general.manualMode ? '' : 'none';
-
-    // 전투 로그
-    $('toggle-showBattleLog').checked = cfg.general.showBattleLog || false;
-
-    // 자동완성
     $('toggle-autoComplete').checked = cfg.general.autoComplete !== false;
-
-    // 행동 자동 소모
-    $('toggle-autoConsumeActions').checked = cfg.general.autoConsumeActions !== false;
-
-    // 방문 기록
-    $('toggle-showVisitHistory').checked = cfg.general.showVisitHistory !== false;
-
-    // 캐릭터 단축키
-    $('toggle-charShortcuts').checked = cfg.general.charShortcuts !== false;
-
-    // 맞춤법 검사 — 제거됨
-
-    // 타이밍
-    setTimingField('time-beforeFirstRoll', cfg.timing.beforeFirstRoll);
-    setTimingField('time-betweenRolls', cfg.timing.betweenRolls);
-    setTimingField('time-beforeRoundResult', cfg.timing.beforeRoundResult);
-    setTimingField('time-beforeNextRound', cfg.timing.beforeNextRound);
-    setTimingField('time-beforeVictory', cfg.timing.beforeVictory);
-    setTimingField('time-resultTimeout', cfg.timing.resultTimeout);
-
-    // 효과음 (코코포리아 컷인)
-    renderTagList('sound-combatStart-list', cfg.sounds.combatStartSounds || ['합'], 'combatStartSounds');
-    renderTagList('sound-roundHeader-list', cfg.sounds.roundHeaderSounds || [], 'roundHeaderSounds');
-    renderTagList('sound-resultNormal-list', cfg.sounds.resultNormalSounds || [], 'resultNormalSounds');
-    renderTagList('sound-resultSpecial-list', cfg.sounds.resultSpecialSounds || ['챙4'], 'resultSpecialSounds');
-    renderTagList('sound-victory-list', cfg.sounds.victorySounds || ['합'], 'victorySounds');
-
-    // 전투 보조 (턴제) 효과음
-    renderTagList('sound-battleStart-list', cfg.sounds.battleStartSounds || [], 'battleStartSounds');
-    renderTagList('sound-turnStart-list', cfg.sounds.turnStartSounds || [], 'turnStartSounds');
-    renderTagList('sound-actionConsume-list', cfg.sounds.actionConsumeSounds || ['발도1'], 'actionConsumeSounds');
-    renderTagList('sound-actionAdd-list', cfg.sounds.actionAddSounds || ['발도2'], 'actionAddSounds');
-    renderTagList('sound-battleEnd-list', cfg.sounds.battleEndSounds || [], 'battleEndSounds');
-
-    // 로컬 효과음 (커스텀 롤 사운드)
-    loadCustomRollSounds();
-
-    // 패턴
-    $('pat-triggerRegex').value = cfg.patterns.triggerRegex;
-    $('pat-diceResultRegex').value = cfg.patterns.diceResultRegex;
-    $('pat-cancelRegex').value = cfg.patterns.cancelRegex;
-
-    // 디버그 모드 (일반 탭 + 고급 탭 양쪽)
-    $('toggle-debugMode').checked = cfg.general.debugMode;
-
-    // 기타
     $('gen-autoScroll').checked = cfg.general.autoScroll;
     $('gen-showOverlay').checked = cfg.general.showOverlay;
-    $('gen-debugMode').checked = cfg.general.debugMode;
+    $('toggle-showVisitHistory').checked = cfg.general.showVisitHistory !== false;
+    $('toggle-charShortcuts').checked = cfg.general.charShortcuts !== false;
+    $('toggle-betterSoundbar').checked = cfg.general.betterSoundbar !== false;
     $('gen-sfxVolume').value = cfg.general.sfxVolume ?? 0.45;
     $('gen-sfxVolume-val').textContent = Math.round((cfg.general.sfxVolume ?? 0.45) * 100) + '%';
-    $('toggle-betterSoundbar').checked = cfg.general.betterSoundbar !== false;
+    $('toggle-debugMode').checked = cfg.general.debugMode;
+
+    // ── 로컬 효과음 (커스텀 롤 사운드) ──
+    loadCustomRollSounds();
+
+    // ── 모듈 설정 패널 (열려 있으면 갱신) ──
+    if (_moduleSettingsOpen) {
+      populateModuleSettings(cfg);
+    }
   }
 
   /** UI 필드에서 설정 데이터를 수집합니다 */
   function collectFromUI() {
     const cfg = JSON.parse(JSON.stringify(DEFAULTS));
 
-    // 활성화
+    // ── 일반 탭 (항상 존재) ──
     cfg.general.enabled = $('toggle-enabled').checked;
-
-    // 수동 모드
-    cfg.general.manualMode = $('toggle-manualMode').checked;
-
-    // 전투 로그
-    cfg.general.showBattleLog = $('toggle-showBattleLog').checked;
-
-    // 자동완성
     cfg.general.autoComplete = $('toggle-autoComplete').checked;
-
-    // 행동 자동 소모
-    cfg.general.autoConsumeActions = $('toggle-autoConsumeActions').checked;
-
-    // 방문 기록
-    cfg.general.showVisitHistory = $('toggle-showVisitHistory').checked;
-
-    // 캐릭터 단축키
-    cfg.general.charShortcuts = $('toggle-charShortcuts').checked;
-
-    // 맞춤법 검사 — 제거됨
-
-    // 타이밍
-    cfg.timing.beforeFirstRoll = getTimingValue('time-beforeFirstRoll');
-    cfg.timing.betweenRolls = getTimingValue('time-betweenRolls');
-    cfg.timing.beforeRoundResult = getTimingValue('time-beforeRoundResult');
-    cfg.timing.beforeNextRound = getTimingValue('time-beforeNextRound');
-    cfg.timing.beforeVictory = getTimingValue('time-beforeVictory');
-    cfg.timing.resultTimeout = getTimingValue('time-resultTimeout');
-
-    // 효과음 (코코포리아 컷인)
-    cfg.sounds.combatStartSounds = collectTags('sound-combatStart-list');
-    cfg.sounds.roundHeaderSounds = collectTags('sound-roundHeader-list');
-    cfg.sounds.resultNormalSounds = collectTags('sound-resultNormal-list');
-    cfg.sounds.resultSpecialSounds = collectTags('sound-resultSpecial-list');
-    cfg.sounds.victorySounds = collectTags('sound-victory-list');
-    cfg.sounds.battleStartSounds = collectTags('sound-battleStart-list');
-    cfg.sounds.turnStartSounds = collectTags('sound-turnStart-list');
-    cfg.sounds.actionConsumeSounds = collectTags('sound-actionConsume-list');
-    cfg.sounds.actionAddSounds = collectTags('sound-actionAdd-list');
-    cfg.sounds.battleEndSounds = collectTags('sound-battleEnd-list');
-
-    // 패턴
-    cfg.patterns.triggerRegex = $('pat-triggerRegex').value;
-    cfg.patterns.diceResultRegex = $('pat-diceResultRegex').value;
-    cfg.patterns.cancelRegex = $('pat-cancelRegex').value;
-
-    // 디버그 모드 (일반 탭 우선)
-    cfg.general.debugMode = $('toggle-debugMode').checked;
-
-    // 기타
     cfg.general.autoScroll = $('gen-autoScroll').checked;
     cfg.general.showOverlay = $('gen-showOverlay').checked;
-    cfg.general.sfxVolume = parseFloat($('gen-sfxVolume').value) || 0.45;
+    cfg.general.showVisitHistory = $('toggle-showVisitHistory').checked;
+    cfg.general.charShortcuts = $('toggle-charShortcuts').checked;
     cfg.general.betterSoundbar = $('toggle-betterSoundbar').checked;
+    cfg.general.sfxVolume = parseFloat($('gen-sfxVolume').value) || 0.45;
+    cfg.general.debugMode = $('toggle-debugMode').checked;
+
+    // ── 전투 모듈 설정 (동적 패널 열려 있으면 수집, 아니면 현재 값 유지) ──
+    if (_moduleSettingsOpen === 'branch-world') {
+      collectModuleSettings(cfg);
+    } else if (currentConfig) {
+      // 패널이 닫혀 있으면 현재 설정 유지
+      cfg.general.manualMode = currentConfig.general.manualMode || false;
+      cfg.general.showBattleLog = currentConfig.general.showBattleLog || false;
+      cfg.general.autoConsumeActions = currentConfig.general.autoConsumeActions !== false;
+      COMBAT_KEYS.forEach(k => {
+        if (currentConfig[k]) cfg[k] = JSON.parse(JSON.stringify(currentConfig[k]));
+      });
+    }
 
     return cfg;
   }
@@ -334,16 +256,6 @@
       btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
 
-    // 타이밍 슬라이더 ↔ 숫자 입력 동기화
-    document.querySelectorAll('.field-range').forEach(range => {
-      const numId = range.id + '-num';
-      const numInput = $(numId);
-      if (numInput) {
-        range.addEventListener('input', () => { numInput.value = range.value; });
-        numInput.addEventListener('input', () => { range.value = numInput.value; });
-      }
-    });
-
     // 효과음 볼륨 슬라이더 실시간 표시
     $('gen-sfxVolume').addEventListener('input', (e) => {
       $('gen-sfxVolume-val').textContent = Math.round(e.target.value * 100) + '%';
@@ -354,86 +266,14 @@
       sendToContent({ type: 'BWBR_SET_BETTER_SOUNDBAR', betterSoundbar: e.target.checked });
     });
 
-    // 디버그 모드 토글 양방향 동기화 (일반 탭 ↔ 고급 탭)
-    $('toggle-debugMode').addEventListener('change', (e) => {
-      $('gen-debugMode').checked = e.target.checked;
-    });
-    $('gen-debugMode').addEventListener('change', (e) => {
-      $('toggle-debugMode').checked = e.target.checked;
-    });
-
     // 활성화 토글
     $('toggle-enabled').addEventListener('change', (e) => {
       sendToContent({ type: 'BWBR_SET_ENABLED', enabled: e.target.checked });
     });
 
-    // 수동 모드 토글
-    $('toggle-manualMode').addEventListener('change', (e) => {
-      const hint = document.getElementById('manual-mode-hint');
-      if (hint) hint.style.display = e.target.checked ? '' : 'none';
-      sendToContent({ type: 'BWBR_SET_MANUAL_MODE', manualMode: e.target.checked });
-    });
-
-    // 전투 로그 표시 토글 (즉시 적용)
-    $('toggle-showBattleLog').addEventListener('change', (e) => {
-      sendToContent({ type: 'BWBR_SET_SHOW_BATTLE_LOG', showBattleLog: e.target.checked });
-    });
-
     // 자동완성 토글 (즉시 적용)
     $('toggle-autoComplete').addEventListener('change', (e) => {
       sendToContent({ type: 'BWBR_SET_AUTO_COMPLETE', autoComplete: e.target.checked });
-    });
-
-    // 행동 자동 소모 토글 (즉시 적용)
-    $('toggle-autoConsumeActions').addEventListener('change', (e) => {
-      sendToContent({ type: 'BWBR_SET_AUTO_CONSUME_ACTIONS', autoConsumeActions: e.target.checked });
-    });
-
-    // 코코포리아 컷인 효과음 태그 추가
-    const soundTagConfigs = [
-      { list: 'sound-combatStart-list', input: 'sound-combatStart-input', add: 'sound-combatStart-add', key: 'combatStartSounds' },
-      { list: 'sound-roundHeader-list', input: 'sound-roundHeader-input', add: 'sound-roundHeader-add', key: 'roundHeaderSounds' },
-      { list: 'sound-resultNormal-list', input: 'sound-resultNormal-input', add: 'sound-resultNormal-add', key: 'resultNormalSounds' },
-      { list: 'sound-resultSpecial-list', input: 'sound-resultSpecial-input', add: 'sound-resultSpecial-add', key: 'resultSpecialSounds' },
-      { list: 'sound-victory-list', input: 'sound-victory-input', add: 'sound-victory-add', key: 'victorySounds' },
-      { list: 'sound-battleStart-list', input: 'sound-battleStart-input', add: 'sound-battleStart-add', key: 'battleStartSounds' },
-      { list: 'sound-turnStart-list', input: 'sound-turnStart-input', add: 'sound-turnStart-add', key: 'turnStartSounds' },
-      { list: 'sound-actionConsume-list', input: 'sound-actionConsume-input', add: 'sound-actionConsume-add', key: 'actionConsumeSounds' },
-      { list: 'sound-actionAdd-list', input: 'sound-actionAdd-input', add: 'sound-actionAdd-add', key: 'actionAddSounds' },
-      { list: 'sound-battleEnd-list', input: 'sound-battleEnd-input', add: 'sound-battleEnd-add', key: 'battleEndSounds' }
-    ];
-    soundTagConfigs.forEach(({ list, input, add, key }) => {
-      $(add).addEventListener('click', () => addTag(list, input, key));
-      $(input).addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') addTag(list, input, key);
-      });
-    });
-
-    // 로컬 효과음 파일 추가
-    $('btn-add-roll-sound').addEventListener('click', () => {
-      $('roll-sound-file').click();
-    });
-    $('roll-sound-file').addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      try {
-        const dataUrl = await readFileAsDataUrl(file);
-        const name = file.name.replace(/\.[^.]+$/, '');
-        const result = await chrome.storage.local.get('bwbr_custom_roll_sounds');
-        const sounds = result.bwbr_custom_roll_sounds || [];
-        if (sounds.some(s => s.name === name)) {
-          showToast('같은 이름의 사운드가 이미 있습니다.', 'error');
-          e.target.value = '';
-          return;
-        }
-        sounds.push({ name, dataUrl, fileName: file.name });
-        await chrome.storage.local.set({ bwbr_custom_roll_sounds: sounds });
-        renderCustomRollSounds(sounds);
-        showToast(`"${name}" 사운드가 추가되었습니다.`, 'success');
-      } catch (err) {
-        showToast('파일 읽기 오류: ' + err.message, 'error');
-      }
-      e.target.value = '';
     });
 
     // 저장
@@ -449,44 +289,15 @@
     $('btn-reset').addEventListener('click', async () => {
       if (!confirm('모든 설정을 기본값으로 초기화하시겠습니까?')) return;
       currentConfig = JSON.parse(JSON.stringify(DEFAULTS));
-      await saveConfig(null);  // null = 기본값 사용
+      await saveConfig(null);
       populateUI(currentConfig);
+      if (_moduleSettingsOpen) closeModuleSettings();
       sendToContent({ type: 'BWBR_UPDATE_CONFIG', config: currentConfig });
       showToast('설정이 초기화되었습니다.', 'success');
     });
 
-    // 내보내기
-    $('btn-export').addEventListener('click', () => {
-      const cfg = collectFromUI();
-      const json = JSON.stringify(cfg, null, 2);
-      const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'bwbr-config.json';
-      a.click();
-      URL.revokeObjectURL(url);
-      showToast('설정을 내보냈습니다.', 'success');
-    });
-
-    // 가져오기
-    $('btn-import').addEventListener('click', () => {
-      $('import-file').click();
-    });
-    $('import-file').addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      try {
-        const text = await file.text();
-        const cfg = JSON.parse(text);
-        currentConfig = deepMerge(DEFAULTS, cfg);
-        populateUI(currentConfig);
-        showToast('설정을 가져왔습니다. "저장"을 눌러 적용하세요.', 'success');
-      } catch (err) {
-        showToast('파일 파싱 오류: ' + err.message, 'error');
-      }
-      e.target.value = '';
-    });
+    // 모듈 설정 패널 뒤로가기
+    $('btn-module-back').addEventListener('click', () => closeModuleSettings());
   }
 
   // ── 탭 전환 ──────────────────────────────────────────────
@@ -509,7 +320,7 @@
     text.textContent = '확인 중...';
 
     sendToContent({ type: 'BWBR_GET_STATUS' }, (response) => {
-      if (chrome.runtime.lastError || !response) {
+      if (chrome.runtime.lastError || !response || response.error) {
         dot.className = 'status-dot disconnected';
         text.textContent = '미연결';
         return;
@@ -537,6 +348,7 @@
 
   function renderTagList(listId, tags, dataKey) {
     const list = $(listId);
+    if (!list) return;
     list.innerHTML = '';
     tags.forEach((tag, i) => {
       const item = document.createElement('span');
@@ -568,6 +380,7 @@
 
   function collectTags(listId) {
     const list = $(listId);
+    if (!list) return [];
     return Array.from(list.querySelectorAll('.tag-item')).map(item => {
       return item.textContent.replace('×', '').trim();
     });
@@ -748,6 +561,326 @@
   }
 
   // ══════════════════════════════════════════════════════════
+  //  모듈 설정 슬라이드 패널
+  // ══════════════════════════════════════════════════════════
+
+  /** 모듈 설정 패널 열기 */
+  function openModuleSettings(mod) {
+    const body = $('module-settings-body');
+    const title = $('module-settings-title');
+    title.textContent = (mod.name || mod.id) + ' 설정';
+
+    // 모듈별 설정 HTML 생성
+    if (mod.id === 'branch-world') {
+      body.innerHTML = generateBranchWorldHTML();
+    } else if (mod.id === 'triggers') {
+      body.innerHTML = '<div class="section-desc">트리거 관리는 코코포리아 방 내부의 트리거 패널(💡 버튼)에서 할 수 있습니다.</div>';
+    } else {
+      body.innerHTML = '<div class="section-desc">이 모듈에는 설정 가능한 항목이 없습니다.</div>';
+    }
+
+    // 슬라이드 전환
+    $('module-list-view').classList.add('slide-out');
+    $('module-settings-view').classList.add('slide-in');
+    _moduleSettingsOpen = mod.id;
+
+    // 모듈 설정 값 채우기
+    if (currentConfig) populateModuleSettings(currentConfig);
+
+    // 이벤트 바인딩
+    if (mod.id === 'branch-world') bindBranchWorldEvents();
+  }
+
+  /** 모듈 설정 패널 닫기 */
+  function closeModuleSettings() {
+    $('module-list-view').classList.remove('slide-out');
+    $('module-settings-view').classList.remove('slide-in');
+    _moduleSettingsOpen = null;
+  }
+
+  /** 모듈 설정 값 채우기 (패널이 열려 있을 때) */
+  function populateModuleSettings(cfg) {
+    if (_moduleSettingsOpen === 'branch-world') {
+      populateBranchWorldSettings(cfg);
+    }
+  }
+
+  /** 모듈 설정 값 수집 (패널이 열려 있을 때) */
+  function collectModuleSettings(cfg) {
+    if (_moduleSettingsOpen === 'branch-world') {
+      collectBranchWorldSettings(cfg);
+    }
+  }
+
+  // ── 가지세계 모듈 설정 ─────────────────────────────────
+
+  function generateBranchWorldHTML() {
+    return `
+      <!-- 전투 토글 설정 -->
+      <div class="mod-settings-section">
+        <div class="mod-settings-section-title">전투 설정</div>
+        <div class="field-group">
+          <label class="toggle-label inline">
+            <span>수동 모드</span>
+            <input type="checkbox" id="mod-manualMode">
+            <span class="toggle-slider small"></span>
+          </label>
+          <div class="toggle-hint" id="mod-manual-mode-hint" style="display:none;font-size:11px;color:#82b1ff;padding:2px 0 4px;">주사위 결과를 사용자가 직접 입력합니다. H0는 수동 발동만 가능합니다.</div>
+        </div>
+        <div class="field-group">
+          <label class="toggle-label inline">
+            <span>행동 자동 소모</span>
+            <input type="checkbox" id="mod-autoConsumeActions" checked>
+            <span class="toggle-slider small"></span>
+          </label>
+          <div class="toggle-hint" style="font-size:11px;color:#888;padding:2px 0 4px;">전투 보조 중 《...》 【...】 채팅 감지 시 주/보조 행동 자동 소모</div>
+        </div>
+        <div class="field-group">
+          <label class="toggle-label inline">
+            <span>전투 로그 표시</span>
+            <input type="checkbox" id="mod-showBattleLog">
+            <span class="toggle-slider small"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- 사운드 설정 -->
+      <div class="mod-settings-section">
+        <div class="mod-settings-section-title">코코포리아 컷인 사운드</div>
+        <div class="section-desc">코코포리아 세션에 등록된 컷인 사운드 이름을 입력합니다. 여러 개 시 무작위 재생.</div>
+
+        ${soundTagField('합 개시', 'combatStart')}
+        ${soundTagField('합 헤더', 'roundHeader')}
+        ${soundTagField('합 결과', 'resultNormal')}
+        ${soundTagField('대성공/대실패', 'resultSpecial')}
+        ${soundTagField('승리', 'victory')}
+      </div>
+
+      <div class="mod-settings-section">
+        <div class="mod-settings-section-title">전투 보조 (턴제) 사운드</div>
+
+        ${soundTagField('전투 개시', 'battleStart')}
+        ${soundTagField('차례 시작', 'turnStart')}
+        ${soundTagField('행동 소비', 'actionConsume')}
+        ${soundTagField('행동 추가', 'actionAdd')}
+        ${soundTagField('전투 종료', 'battleEnd')}
+      </div>
+
+      <div class="mod-settings-section">
+        <div class="mod-settings-section-title">로컬 사운드</div>
+        <div class="field-group">
+          <label class="field-label">합 주사위 굴림 사운드</label>
+          <div id="local-roll-sounds-list" class="tag-list"></div>
+          <div class="tag-add-row">
+            <button class="btn-small" id="btn-add-roll-sound" title="오디오 파일을 선택하여 추가합니다">+ 파일 추가</button>
+          </div>
+          <div class="section-desc" style="font-size:10px;color:#888;margin-top:4px;">sounds/ 폴더의 기본 사운드가 포함됩니다.</div>
+          <input type="file" id="roll-sound-file" accept="audio/*" style="display:none;">
+        </div>
+      </div>
+
+      <!-- 타이밍 설정 -->
+      <div class="mod-settings-section">
+        <div class="mod-settings-section-title">타이밍</div>
+        <div class="section-desc">각 단계 사이의 대기 시간 (ms)</div>
+
+        ${timingField('합 헤더 → 첫 번째 굴림', 'beforeFirstRoll', 0, 5000, 100)}
+        ${timingField('공격자 결과 → 방어자 굴림', 'betweenRolls', 0, 5000, 100)}
+        ${timingField('방어자 결과 → 결과 출력', 'beforeRoundResult', 0, 5000, 100)}
+        ${timingField('결과 출력 → 다음 합', 'beforeNextRound', 0, 5000, 100)}
+        ${timingField('마지막 합 → 승리 선언', 'beforeVictory', 0, 5000, 100)}
+        ${timingField('결과 대기 타임아웃', 'resultTimeout', 3000, 30000, 1000)}
+      </div>
+    `;
+  }
+
+  /** 사운드 태그 필드 HTML */
+  function soundTagField(label, key) {
+    return `
+      <div class="field-group">
+        <label class="field-label">${label} 사운드</label>
+        <div id="sound-${key}-list" class="tag-list"></div>
+        <div class="tag-add-row">
+          <input type="text" class="field-input tag-input" id="sound-${key}-input" placeholder="사운드 이름 입력">
+          <button class="btn-small" id="sound-${key}-add">추가</button>
+        </div>
+      </div>`;
+  }
+
+  /** 타이밍 필드 HTML */
+  function timingField(label, key, min, max, step) {
+    return `
+      <div class="field-group">
+        <label class="field-label">${label}</label>
+        <div class="field-row">
+          <input type="range" class="field-range" id="time-${key}" min="${min}" max="${max}" step="${step}">
+          <input type="number" class="field-number" id="time-${key}-num" min="${min}" max="${max * 2}" step="${step}">
+          <span class="field-unit">ms</span>
+        </div>
+      </div>`;
+  }
+
+  /** 가지세계 설정 값 채우기 */
+  function populateBranchWorldSettings(cfg) {
+    const el = (id) => document.getElementById(id);
+
+    // 전투 토글
+    const mm = el('mod-manualMode');
+    if (mm) mm.checked = cfg.general.manualMode || false;
+    const mmHint = el('mod-manual-mode-hint');
+    if (mmHint) mmHint.style.display = (cfg.general.manualMode ? '' : 'none');
+    const aca = el('mod-autoConsumeActions');
+    if (aca) aca.checked = cfg.general.autoConsumeActions !== false;
+    const sbl = el('mod-showBattleLog');
+    if (sbl) sbl.checked = cfg.general.showBattleLog || false;
+
+    // 사운드 태그
+    const s = cfg.sounds || {};
+    renderTagList('sound-combatStart-list', s.combatStartSounds || ['합'], 'combatStartSounds');
+    renderTagList('sound-roundHeader-list', s.roundHeaderSounds || [], 'roundHeaderSounds');
+    renderTagList('sound-resultNormal-list', s.resultNormalSounds || [], 'resultNormalSounds');
+    renderTagList('sound-resultSpecial-list', s.resultSpecialSounds || ['챙4'], 'resultSpecialSounds');
+    renderTagList('sound-victory-list', s.victorySounds || ['합'], 'victorySounds');
+    renderTagList('sound-battleStart-list', s.battleStartSounds || [], 'battleStartSounds');
+    renderTagList('sound-turnStart-list', s.turnStartSounds || [], 'turnStartSounds');
+    renderTagList('sound-actionConsume-list', s.actionConsumeSounds || ['발도1'], 'actionConsumeSounds');
+    renderTagList('sound-actionAdd-list', s.actionAddSounds || ['발도2'], 'actionAddSounds');
+    renderTagList('sound-battleEnd-list', s.battleEndSounds || [], 'battleEndSounds');
+
+    // 로컬 롤 사운드
+    loadCustomRollSounds();
+
+    // 타이밍
+    const t = cfg.timing || {};
+    setTimingField('time-beforeFirstRoll', t.beforeFirstRoll);
+    setTimingField('time-betweenRolls', t.betweenRolls);
+    setTimingField('time-beforeRoundResult', t.beforeRoundResult);
+    setTimingField('time-beforeNextRound', t.beforeNextRound);
+    setTimingField('time-beforeVictory', t.beforeVictory);
+    setTimingField('time-resultTimeout', t.resultTimeout);
+  }
+
+  /** 가지세계 설정 값 수집 */
+  function collectBranchWorldSettings(cfg) {
+    const el = (id) => document.getElementById(id);
+
+    // 전투 토글
+    const mm = el('mod-manualMode');
+    if (mm) cfg.general.manualMode = mm.checked;
+    const aca = el('mod-autoConsumeActions');
+    if (aca) cfg.general.autoConsumeActions = aca.checked;
+    const sbl = el('mod-showBattleLog');
+    if (sbl) cfg.general.showBattleLog = sbl.checked;
+
+    // 사운드 태그
+    cfg.sounds.combatStartSounds = collectTags('sound-combatStart-list');
+    cfg.sounds.roundHeaderSounds = collectTags('sound-roundHeader-list');
+    cfg.sounds.resultNormalSounds = collectTags('sound-resultNormal-list');
+    cfg.sounds.resultSpecialSounds = collectTags('sound-resultSpecial-list');
+    cfg.sounds.victorySounds = collectTags('sound-victory-list');
+    cfg.sounds.battleStartSounds = collectTags('sound-battleStart-list');
+    cfg.sounds.turnStartSounds = collectTags('sound-turnStart-list');
+    cfg.sounds.actionConsumeSounds = collectTags('sound-actionConsume-list');
+    cfg.sounds.actionAddSounds = collectTags('sound-actionAdd-list');
+    cfg.sounds.battleEndSounds = collectTags('sound-battleEnd-list');
+
+    // 타이밍
+    cfg.timing.beforeFirstRoll = getTimingValue('time-beforeFirstRoll');
+    cfg.timing.betweenRolls = getTimingValue('time-betweenRolls');
+    cfg.timing.beforeRoundResult = getTimingValue('time-beforeRoundResult');
+    cfg.timing.beforeNextRound = getTimingValue('time-beforeNextRound');
+    cfg.timing.beforeVictory = getTimingValue('time-beforeVictory');
+    cfg.timing.resultTimeout = getTimingValue('time-resultTimeout');
+  }
+
+  /** 가지세계 모듈 설정 이벤트 바인딩 */
+  function bindBranchWorldEvents() {
+    // 수동 모드 힌트 토글
+    const mm = document.getElementById('mod-manualMode');
+    if (mm) {
+      mm.addEventListener('change', (e) => {
+        const hint = document.getElementById('mod-manual-mode-hint');
+        if (hint) hint.style.display = e.target.checked ? '' : 'none';
+        sendToContent({ type: 'BWBR_SET_MANUAL_MODE', manualMode: e.target.checked });
+      });
+    }
+
+    // 전투 로그 즉시 적용
+    const sbl = document.getElementById('mod-showBattleLog');
+    if (sbl) {
+      sbl.addEventListener('change', (e) => {
+        sendToContent({ type: 'BWBR_SET_SHOW_BATTLE_LOG', showBattleLog: e.target.checked });
+      });
+    }
+
+    // 행동 자동 소모 즉시 적용
+    const aca = document.getElementById('mod-autoConsumeActions');
+    if (aca) {
+      aca.addEventListener('change', (e) => {
+        sendToContent({ type: 'BWBR_SET_AUTO_CONSUME_ACTIONS', autoConsumeActions: e.target.checked });
+      });
+    }
+
+    // 사운드 태그 추가
+    const soundKeys = [
+      'combatStart', 'roundHeader', 'resultNormal', 'resultSpecial', 'victory',
+      'battleStart', 'turnStart', 'actionConsume', 'actionAdd', 'battleEnd'
+    ];
+    soundKeys.forEach(key => {
+      const addBtn = document.getElementById('sound-' + key + '-add');
+      const input = document.getElementById('sound-' + key + '-input');
+      if (addBtn && input) {
+        addBtn.addEventListener('click', () => addTag('sound-' + key + '-list', 'sound-' + key + '-input', key + 'Sounds'));
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') addTag('sound-' + key + '-list', 'sound-' + key + '-input', key + 'Sounds');
+        });
+      }
+    });
+
+    // 타이밍 슬라이더 ↔ 숫자 동기화
+    const body = $('module-settings-body');
+    if (body) {
+      body.querySelectorAll('.field-range').forEach(range => {
+        const numId = range.id + '-num';
+        const numInput = document.getElementById(numId);
+        if (numInput) {
+          range.addEventListener('input', () => { numInput.value = range.value; });
+          numInput.addEventListener('input', () => { range.value = numInput.value; });
+        }
+      });
+    }
+
+    // 로컬 효과음 파일 추가
+    const addRollBtn = document.getElementById('btn-add-roll-sound');
+    const rollFile = document.getElementById('roll-sound-file');
+    if (addRollBtn && rollFile) {
+      addRollBtn.addEventListener('click', () => rollFile.click());
+      rollFile.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+          const dataUrl = await readFileAsDataUrl(file);
+          const name = file.name.replace(/\.[^.]+$/, '');
+          const result = await chrome.storage.local.get('bwbr_custom_roll_sounds');
+          const sounds = result.bwbr_custom_roll_sounds || [];
+          if (sounds.some(s => s.name === name)) {
+            showToast('같은 이름의 사운드가 이미 있습니다.', 'error');
+            e.target.value = '';
+            return;
+          }
+          sounds.push({ name, dataUrl, fileName: file.name });
+          await chrome.storage.local.set({ bwbr_custom_roll_sounds: sounds });
+          renderCustomRollSounds(sounds);
+          showToast(`"${name}" 사운드가 추가되었습니다.`, 'success');
+        } catch (err) {
+          showToast('파일 읽기 오류: ' + err.message, 'error');
+        }
+        e.target.value = '';
+      });
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════
   //  모듈 관리
   // ══════════════════════════════════════════════════════════
 
@@ -908,11 +1041,28 @@
 
       if (meta.childElementCount > 0) info.appendChild(meta);
 
+      // 설정 가능 모듈은 클릭 안내 표시
+      const hasSettings = (mod.id === 'branch-world' || mod.id === 'triggers');
+      if (hasSettings) {
+        const settingsHint = document.createElement('div');
+        settingsHint.className = 'module-settings-indicator';
+        settingsHint.textContent = '⚙️ 클릭하여 설정 열기';
+        info.appendChild(settingsHint);
+        card.classList.add('clickable');
+      }
+
+      // info 영역 클릭 → 설정 열기
+      info.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (hasSettings) openModuleSettings(mod);
+      });
+
       card.appendChild(info);
 
-      // 액션 영역 (토글 + 내보내기/삭제 버튼)
+      // 액션 영역 (토글 + 내보내기/삭제 버튼) — 클릭 이벤트 버블링 차단
       const actions = document.createElement('div');
       actions.className = 'module-actions';
+      actions.addEventListener('click', (e) => e.stopPropagation());
 
       // 토글 스위치
       const toggle = document.createElement('div');

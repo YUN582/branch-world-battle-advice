@@ -12,7 +12,6 @@
     <!-- ── 헤더 ────────────────────────────────── -->
     <header class="popup-header">
       <div class="header-title">
-        <span class="header-icon">⚔️</span>
         <div>
           <h1>Ccofolia Extension</h1>
           <span class="header-version" id="header-version"></span>
@@ -72,10 +71,7 @@
     <!-- ── 탭 네비게이션 ───────────────────────── -->
     <nav class="tab-nav">
       <button class="tab-btn active" data-tab="general">일반</button>
-      <button class="tab-btn" data-tab="sounds">사운드</button>
-      <button class="tab-btn" data-tab="timing">타이밍</button>
       <button class="tab-btn" data-tab="modules">모듈</button>
-      <button class="tab-btn" data-tab="advanced">고급</button>
     </nav>
 
     <!-- ── 탭 콘텐츠 ──────────────────────────── -->
@@ -93,37 +89,27 @@
 
         <div class="field-group">
           <label class="toggle-label inline">
-            <span>수동 모드</span>
-            <input type="checkbox" id="toggle-manualMode">
-            <span class="toggle-slider small"></span>
-          </label>
-          <div class="toggle-hint" id="manual-mode-hint" style="display:none;font-size:11px;color:#82b1ff;padding:2px 0 4px;">주사위 결과를 사용자가 직접 입력합니다. H0는 수동 발동만 가능합니다.</div>
-        </div>
-
-        <div class="field-group">
-          <label class="toggle-label inline">
-            <span>행동 자동 소모</span>
-            <input type="checkbox" id="toggle-autoConsumeActions" checked>
-            <span class="toggle-slider small"></span>
-          </label>
-          <div class="toggle-hint" style="font-size:11px;color:#888;padding:2px 0 4px;">전투 보조 중 《...》 【...】 채팅 감지 시 주/보조 행동 자동 소모</div>
-        </div>
-
-        <div class="field-group">
-          <label class="toggle-label inline">
-            <span>전투 로그 표시</span>
-            <input type="checkbox" id="toggle-showBattleLog">
-            <span class="toggle-slider small"></span>
-          </label>
-        </div>
-
-        <div class="field-group">
-          <label class="toggle-label inline">
             <span>채팅 자동완성</span>
             <input type="checkbox" id="toggle-autoComplete" checked>
             <span class="toggle-slider small"></span>
           </label>
           <div class="toggle-hint" style="font-size:11px;color:#888;padding:2px 0 4px;">"" '' () 「」 『』 【】 《》 자동 닫기 + Tab 순환 / Shift+Tab 역순환</div>
+        </div>
+
+        <div class="field-group">
+          <label class="toggle-label inline">
+            <span>자동 스크롤</span>
+            <input type="checkbox" id="gen-autoScroll">
+            <span class="toggle-slider small"></span>
+          </label>
+        </div>
+
+        <div class="field-group">
+          <label class="toggle-label inline">
+            <span>오버레이 표시</span>
+            <input type="checkbox" id="gen-showOverlay">
+            <span class="toggle-slider small"></span>
+          </label>
         </div>
 
         <div class="field-group">
@@ -154,6 +140,11 @@
         </div>
 
         <div class="field-group">
+          <label class="field-label">효과음 볼륨 <span id="gen-sfxVolume-val" style="color:#82b1ff;font-weight:700">45%</span></label>
+          <input type="range" class="field-range" id="gen-sfxVolume" min="0" max="1" step="0.05" value="0.45">
+        </div>
+
+        <div class="field-group">
           <label class="toggle-label inline">
             <span>디버그 모드</span>
             <input type="checkbox" id="toggle-debugMode">
@@ -163,287 +154,51 @@
         </div>
 
       </div>
-      <!-- 사운드 설정 탭 -->
-      <div class="tab-panel" id="tab-sounds">
-
-        <!-- 코코포리아 컷인 사운드 -->
-        <div class="section-desc" style="font-weight:700;color:#ffab40;">코코포리아 컷인 사운드</div>
-        <div class="section-desc">코코포리아 세션에 등록된 컷인 사운드 이름을 입력합니다. 여러 개 등록 시 무작위 재생됩니다.</div>
-
-        <div class="field-group">
-          <label class="field-label">합 개시 사운드</label>
-          <div id="sound-combatStart-list" class="tag-list"></div>
-          <div class="tag-add-row">
-            <input type="text" class="field-input tag-input" id="sound-combatStart-input" placeholder="사운드 이름 입력">
-            <button class="btn-small" id="sound-combatStart-add">추가</button>
-          </div>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">합 헤더 사운드</label>
-          <div id="sound-roundHeader-list" class="tag-list"></div>
-          <div class="tag-add-row">
-            <input type="text" class="field-input tag-input" id="sound-roundHeader-input" placeholder="사운드 이름 입력">
-            <button class="btn-small" id="sound-roundHeader-add">추가</button>
-          </div>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">합 결과 사운드</label>
-          <div id="sound-resultNormal-list" class="tag-list"></div>
-          <div class="tag-add-row">
-            <input type="text" class="field-input tag-input" id="sound-resultNormal-input" placeholder="사운드 이름 입력">
-            <button class="btn-small" id="sound-resultNormal-add">추가</button>
-          </div>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">대성공/대실패 사운드</label>
-          <div id="sound-resultSpecial-list" class="tag-list"></div>
-          <div class="tag-add-row">
-            <input type="text" class="field-input tag-input" id="sound-resultSpecial-input" placeholder="사운드 이름 입력">
-            <button class="btn-small" id="sound-resultSpecial-add">추가</button>
-          </div>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">승리 사운드</label>
-          <div id="sound-victory-list" class="tag-list"></div>
-          <div class="tag-add-row">
-            <input type="text" class="field-input tag-input" id="sound-victory-input" placeholder="사운드 이름 입력">
-            <button class="btn-small" id="sound-victory-add">추가</button>
-          </div>
-        </div>
-
-        <hr style="border:0;border-top:1px solid #333;margin:16px 0">
-
-        <!-- 전투 보조 (턴제) 사운드 -->
-        <div class="section-desc" style="font-weight:700;color:#ffab40;">전투 보조 (턴제) 사운드</div>
-        <div class="section-desc">전투 보조 모드에서 사용되는 컷인 사운드입니다.</div>
-
-        <div class="field-group">
-          <label class="field-label">전투 개시 사운드</label>
-          <div id="sound-battleStart-list" class="tag-list"></div>
-          <div class="tag-add-row">
-            <input type="text" class="field-input tag-input" id="sound-battleStart-input" placeholder="사운드 이름 입력">
-            <button class="btn-small" id="sound-battleStart-add">추가</button>
-          </div>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">차례 시작 사운드</label>
-          <div id="sound-turnStart-list" class="tag-list"></div>
-          <div class="tag-add-row">
-            <input type="text" class="field-input tag-input" id="sound-turnStart-input" placeholder="사운드 이름 입력">
-            <button class="btn-small" id="sound-turnStart-add">추가</button>
-          </div>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">행동 소비 사운드</label>
-          <div id="sound-actionConsume-list" class="tag-list"></div>
-          <div class="tag-add-row">
-            <input type="text" class="field-input tag-input" id="sound-actionConsume-input" placeholder="사운드 이름 입력">
-            <button class="btn-small" id="sound-actionConsume-add">추가</button>
-          </div>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">행동 추가 사운드</label>
-          <div id="sound-actionAdd-list" class="tag-list"></div>
-          <div class="tag-add-row">
-            <input type="text" class="field-input tag-input" id="sound-actionAdd-input" placeholder="사운드 이름 입력">
-            <button class="btn-small" id="sound-actionAdd-add">추가</button>
-          </div>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">전투 종료 사운드</label>
-          <div id="sound-battleEnd-list" class="tag-list"></div>
-          <div class="tag-add-row">
-            <input type="text" class="field-input tag-input" id="sound-battleEnd-input" placeholder="사운드 이름 입력">
-            <button class="btn-small" id="sound-battleEnd-add">추가</button>
-          </div>
-        </div>
-
-        <hr style="border:0;border-top:1px solid #333;margin:16px 0">
-
-        <!-- 사운드 설정 -->
-        <div class="section-desc" style="font-weight:700;color:#82b1ff;">사운드 설정</div>
-
-        <div class="field-group">
-          <label class="field-label">로컬 사운드 볼륨 <span id="gen-sfxVolume-val" style="color:#82b1ff;font-weight:700">45%</span></label>
-          <input type="range" class="field-range" id="gen-sfxVolume" min="0" max="1" step="0.05" value="0.45">
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">합 주사위 굴림 사운드</label>
-          <div id="local-roll-sounds-list" class="tag-list"></div>
-          <div class="tag-add-row">
-            <button class="btn-small" id="btn-add-roll-sound" title="오디오 파일을 선택하여 추가합니다">+ 파일 추가</button>
-          </div>
-          <div class="section-desc" style="font-size:10px;color:#888;margin-top:4px;">sounds/ 폴더의 기본 사운드가 포함됩니다. 위 버튼으로 커스텀 오디오 파일을 추가할 수 있습니다.</div>
-          <input type="file" id="roll-sound-file" accept="audio/*" style="display:none;">
-        </div>
-      </div>
-
-      <!-- 타이밍 설정 탭 -->
-      <div class="tab-panel" id="tab-timing">
-        <div class="section-desc">각 단계 사이의 대기 시간을 밀리초(ms) 단위로 설정합니다.</div>
-
-        <div class="field-group">
-          <label class="field-label">합 헤더 → 첫 번째 굴림</label>
-          <div class="field-row">
-            <input type="range" class="field-range" id="time-beforeFirstRoll" min="0" max="5000" step="100">
-            <input type="number" class="field-number" id="time-beforeFirstRoll-num" min="0" max="10000" step="100">
-            <span class="field-unit">ms</span>
-          </div>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">공격자 결과 → 방어자 굴림</label>
-          <div class="field-row">
-            <input type="range" class="field-range" id="time-betweenRolls" min="0" max="5000" step="100">
-            <input type="number" class="field-number" id="time-betweenRolls-num" min="0" max="10000" step="100">
-            <span class="field-unit">ms</span>
-          </div>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">방어자 결과 → 결과 출력</label>
-          <div class="field-row">
-            <input type="range" class="field-range" id="time-beforeRoundResult" min="0" max="5000" step="100">
-            <input type="number" class="field-number" id="time-beforeRoundResult-num" min="0" max="10000" step="100">
-            <span class="field-unit">ms</span>
-          </div>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">결과 출력 → 다음 합</label>
-          <div class="field-row">
-            <input type="range" class="field-range" id="time-beforeNextRound" min="0" max="5000" step="100">
-            <input type="number" class="field-number" id="time-beforeNextRound-num" min="0" max="10000" step="100">
-            <span class="field-unit">ms</span>
-          </div>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">마지막 합 → 승리 선언</label>
-          <div class="field-row">
-            <input type="range" class="field-range" id="time-beforeVictory" min="0" max="5000" step="100">
-            <input type="number" class="field-number" id="time-beforeVictory-num" min="0" max="10000" step="100">
-            <span class="field-unit">ms</span>
-          </div>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">결과 대기 타임아웃</label>
-          <div class="field-row">
-            <input type="range" class="field-range" id="time-resultTimeout" min="3000" max="30000" step="1000">
-            <input type="number" class="field-number" id="time-resultTimeout-num" min="1000" max="60000" step="1000">
-            <span class="field-unit">ms</span>
-          </div>
-        </div>
-      </div>
-
       <!-- 모듈 관리 탭 -->
       <div class="tab-panel" id="tab-modules">
-        <div class="section-desc">데이터 모듈을 관리합니다. 모듈을 비활성화하면 해당 기능이 꺼집니다.</div>
+        <div class="module-slide-container">
 
-        <!-- 모듈 가져오기 버튼 -->
-        <div class="module-actions-bar">
-          <button type="button" id="btn-import-module" class="btn-module-action" title="JSON 모듈 파일 가져오기">
-            📥 모듈 가져오기
-          </button>
-          <input type="file" id="module-file-input" accept=".json" style="display:none">
+          <!-- 모듈 목록 뷰 -->
+          <div class="module-slide-view" id="module-list-view">
+            <div class="section-desc">데이터 모듈을 관리합니다. 모듈 카드를 클릭하면 설정을 볼 수 있습니다.</div>
+
+            <div class="module-actions-bar">
+              <button type="button" id="btn-import-module" class="btn-module-action" title="JSON 모듈 파일 가져오기">
+                📥 모듈 가져오기
+              </button>
+              <input type="file" id="module-file-input" accept=".json" style="display:none">
+            </div>
+
+            <div id="module-list" class="module-list">
+              <div class="module-loading">모듈 목록 로드 중...</div>
+            </div>
+            <div class="section-desc" style="margin-top:12px;font-size:11px;color:#888;">
+              모듈 변경 후 코코포리아 탭을 새로고침해야 적용됩니다.
+            </div>
+          </div>
+
+          <!-- 모듈 설정 뷰 (슬라이드) -->
+          <div class="module-slide-view" id="module-settings-view">
+            <div class="module-settings-header">
+              <button type="button" class="btn-module-back" id="btn-module-back">← 목록</button>
+              <span class="module-settings-title" id="module-settings-title"></span>
+            </div>
+            <div id="module-settings-body"></div>
+          </div>
+
         </div>
-
-        <div id="module-list" class="module-list">
-          <div class="module-loading">모듈 목록 로드 중...</div>
-        </div>
-        <div class="section-desc" style="margin-top:12px;font-size:11px;color:#888;">
-          모듈 변경 후 코코포리아 탭을 새로고침해야 적용됩니다.
-        </div>
-      </div>
-
-      <!-- 고급 설정 탭 -->
-      <div class="tab-panel" id="tab-advanced">
-        <div class="section-desc">정규식 패턴을 설정합니다. 코코포리아 업데이트로 인해 동작하지 않을 경우 수정하세요.</div>
-
-        <details class="advanced-section">
-          <summary>정규식 패턴</summary>
-
-          <div class="field-group">
-            <label class="field-label">
-              합 개시 트리거 패턴
-              <span class="field-hint">캡처그룹: (공격자명)(주사위)(대성공)(대실패)(방어자명)(주사위)(대성공)(대실패)</span>
-            </label>
-            <textarea class="field-input field-mono" id="pat-triggerRegex" rows="3"></textarea>
-          </div>
-
-          <div class="field-group">
-            <label class="field-label">
-              주사위 결과 감지 패턴
-              <span class="field-hint">캡처그룹 1 = 결과 값</span>
-            </label>
-            <input type="text" class="field-input field-mono" id="pat-diceResultRegex">
-          </div>
-
-          <div class="field-group">
-            <label class="field-label">전투 중지 감지 패턴</label>
-            <input type="text" class="field-input field-mono" id="pat-cancelRegex">
-          </div>
-        </details>
-
-
-
-        <details class="advanced-section">
-          <summary>기타 설정</summary>
-
-          <div class="field-group">
-            <label class="toggle-label inline">
-              <span>자동 스크롤</span>
-              <input type="checkbox" id="gen-autoScroll">
-              <span class="toggle-slider small"></span>
-            </label>
-          </div>
-
-          <div class="field-group">
-            <label class="toggle-label inline">
-              <span>오버레이 표시</span>
-              <input type="checkbox" id="gen-showOverlay">
-              <span class="toggle-slider small"></span>
-            </label>
-          </div>
-
-          <div class="field-group">
-            <label class="toggle-label inline">
-              <span>디버그 모드</span>
-              <input type="checkbox" id="gen-debugMode">
-              <span class="toggle-slider small"></span>
-            </label>
-          </div>
-        </details>
-
-
       </div>
 
     </div>
 
     <!-- ── 하단 버튼 ───────────────────────────── -->
     <footer class="popup-footer">
-      <div class="footer-left">
-        <button class="btn btn-secondary" id="btn-import">가져오기</button>
-        <button class="btn btn-secondary" id="btn-export">내보내기</button>
-      </div>
+      <div class="footer-left"></div>
       <div class="footer-right">
         <button class="btn btn-danger" id="btn-reset">초기화</button>
         <button class="btn btn-primary" id="btn-save">저장</button>
       </div>
     </footer>
-
-    <!-- 숨겨진 파일 입력 -->
-    <input type="file" id="import-file" accept=".json" style="display:none;">
 
     <!-- 토스트 메시지 -->
     <div class="toast" id="toast"></div>

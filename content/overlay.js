@@ -50,7 +50,7 @@ window.BattleRollOverlay = class BattleRollOverlay {
       <div id="bwbr-toggle">
         <div class="bwbr-toggle-left">
           <span class="bwbr-toggle-icon">⚔️</span>
-          <span class="bwbr-toggle-title">Ccofolia Extension</span>
+          <span class="bwbr-toggle-title">가지세계</span>
           <span class="bwbr-dot idle" id="bwbr-dot"></span>
           <span class="bwbr-status-text" id="bwbr-status-text">대기 중</span>
         </div>
