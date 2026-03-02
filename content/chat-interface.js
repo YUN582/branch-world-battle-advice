@@ -229,7 +229,7 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
         try {
           this.messageCallback(text, null, detail.name || '');
         } catch (err) {
-          console.error('[BWBR Chat]', err);
+          console.error('[CE Chat]', err);
         }
       }
 
@@ -429,7 +429,7 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
       }
       this._log(`  [NEW] "${text.substring(0, 100)}"`);
       if (this.messageCallback) {
-        try { this.messageCallback(text, null); } catch (e) { console.error('[BWBR]', e); }
+        try { this.messageCallback(text, null); } catch (e) { console.error('[CE]', e); }
       }
     }
   }
@@ -888,6 +888,6 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
 
   _log(msg) {
     if (!window._BWBR_DEBUG) return;
-    console.log(`%c[BWBR Chat]%c ${msg}`, 'color: #4a7cff; font-weight: bold;', 'color: inherit;');
+    console.log(`%c[CE Chat]%c ${msg}`, 'color: #4a7cff; font-weight: bold;', 'color: inherit;');
   }
 };

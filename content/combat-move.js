@@ -19,7 +19,7 @@
   'use strict';
 
   var CELL_PX = 24;
-  var LOG_PREFIX = '%c[BWBR Move]%c';
+  var LOG_PREFIX = '%c[Branch Move]%c';
   var LOG_STYLE = 'color:#2196f3;font-weight:bold';
 
   function LOG() {

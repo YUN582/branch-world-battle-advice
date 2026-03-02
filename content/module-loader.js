@@ -39,7 +39,7 @@
 
   function LOG() {
     if (window._BWBR_DEBUG) {
-      var args = ['[BWBR ModuleLoader]'].concat(Array.prototype.slice.call(arguments));
+      var args = ['[CE Module]'].concat(Array.prototype.slice.call(arguments));
       console.log.apply(console, args);
     }
   }
@@ -191,7 +191,7 @@
         LOG('모듈 로드:', json.id, '(' + json.name + ')');
         return json;
       }).catch(function (e) {
-        console.warn('[BWBR ModuleLoader] 모듈 로드 실패 (' + path + '):', e.message);
+        console.warn('[CE Module] 모듈 로드 실패 (' + path + '):', e.message);
         return null;
       });
     } catch (e) {

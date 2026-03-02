@@ -72,7 +72,7 @@ window.BWBR_Bridge = (() => {
         if (settled) return;
         settled = true;
         listenTarget.removeEventListener(resEvent, handler);
-        reject(new Error(`[BWBR Bridge] timeout: ${resEvent} (${timeout}ms)`));
+        reject(new Error(`[CE Bridge] timeout: ${resEvent} (${timeout}ms)`));
       }, timeout);
 
       listenTarget.addEventListener(resEvent, handler);

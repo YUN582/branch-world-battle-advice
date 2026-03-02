@@ -979,7 +979,7 @@
       if (e.detail?.success) {
         // 성공 시 토스트 없음 (시스템 메시지로 확인 가능)
       } else {
-        console.warn('[BWBR] 스테이터스 변경 실패:', e.detail?.error);
+        console.warn('[CE] 스테이터스 변경 실패:', e.detail?.error);
         _showToast(`⚠️ ${e.detail?.error || '알 수 없는 오류'}`, 'error');
       }
     };

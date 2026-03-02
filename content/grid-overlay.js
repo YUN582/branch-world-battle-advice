@@ -19,7 +19,7 @@
 
   const LOG = (...a) => {
     if (!window._BWBR_DEBUG) return;
-    console.log('%c[BWBR Grid]%c', 'color:#4caf50;font-weight:bold', 'color:inherit', ...a);
+    console.log('%c[CE Grid]%c', 'color:#4caf50;font-weight:bold', 'color:inherit', ...a);
   };
 
   // -- state --

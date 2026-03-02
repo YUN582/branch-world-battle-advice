@@ -6,7 +6,7 @@
   'use strict';
 
   var STORAGE_KEY = 'bwbr_charShortcuts';
-  var LOG = '[BWBR 단축키]';
+  var LOG = '[CE 단축키]';
 
   var CODE_TO_DIGIT = {
     Digit0: '0', Numpad0: '0', Digit1: '1', Numpad1: '1',
@@ -59,7 +59,7 @@
   }
   async function saveBindings() {
     try { await chrome.storage.sync.set({ [STORAGE_KEY]: bindings }); }
-    catch (e) { console.warn('[BWBR char-shortcut] saveBindings 실패:', e); }
+    catch (e) { console.warn('[CE char-shortcut] saveBindings 실패:', e); }
   }
   async function loadEnabled() {
     try { var d = await chrome.storage.sync.get('bwbr_core'); enabled = d.bwbr_core?.general?.charShortcuts !== false; }

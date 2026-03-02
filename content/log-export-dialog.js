@@ -1416,7 +1416,7 @@
         exportMessages = applyImageMap(filtered, imageMap);
         if (progressEl) progressEl.textContent = '이미지 임베드 완료 — HTML 생성 중...';
       } catch (err) {
-        console.warn('[BWBR] 이미지 임베드 실패:', err);
+        console.warn('[CE] 이미지 임베드 실패:', err);
         if (progressEl) progressEl.textContent = '이미지 임베드 실패 — URL 유지로 진행';
       }
     }
@@ -1430,7 +1430,7 @@
     try {
       htmlParts = generateExportHtml(exportMessages, title, false);
     } catch (genErr) {
-      console.error('[BWBR] HTML 생성 실패:', genErr);
+      console.error('[CE] HTML 생성 실패:', genErr);
       if (progressEl) progressEl.textContent = '';
       alert('HTML 생성 중 오류가 발생했습니다: ' + (genErr.message || genErr));
       return;
@@ -1459,7 +1459,7 @@
         if (progressEl) progressEl.textContent = '';
         alert('HTML이 클립보드에 복사되었습니다!\n블로그 HTML 편집기에 붙여넣기 하세요.');
       } catch (clipErr) {
-        console.warn('[BWBR] Clipboard write failed:', clipErr);
+        console.warn('[CE] Clipboard write failed:', clipErr);
         if (progressEl) progressEl.textContent = '';
         if (confirm('클립보드 복사에 실패했습니다.\nHTML 파일로 다운로드할까요?')) {
           var fn = 'log_' + title.replace(/[^a-zA-Z0-9가-힣_-]/g, '_') + '_' + fmtDateFile(new Date()) + '.html';
@@ -1486,7 +1486,7 @@
         if (progressEl) progressEl.textContent = '';
         alert(filtered.length + '건 로그를 ' + filename + '으로 내보냈습니다!');
       } catch (dlErr) {
-        console.error('[BWBR] 내보내기 실패:', dlErr);
+        console.error('[CE] 내보내기 실패:', dlErr);
         if (progressEl) progressEl.textContent = '';
         alert('내보내기 중 오류가 발생했습니다.\n메시지 수가 너무 많거나 이미지 임베드로 인해 메모리가 부족할 수 있습니다.\n\n이미지 임베드를 끄고 다시 시도해 주세요.\n\n오류: ' + (dlErr.message || dlErr));
       }

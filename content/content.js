@@ -158,7 +158,7 @@
     alwaysLog('초기화 완료! 트리거 대기 중...');
     log(`트리거 정규식: ${config.patterns.triggerRegex}`);
     } catch (err) {
-      console.error('[BWBR] 초기화 실패:', err);
+      console.error('[CE] 초기화 실패:', err);
       alwaysLog('초기화 실패: ' + (err.message || err));
     }
   }
@@ -1353,13 +1353,13 @@ ${rows.join('\n')}
 
   /** 항상 출력되는 핵심 로그 */
   function alwaysLog(msg) {
-    console.log(`%c[BWBR]%c ${msg}`, 'color: #ff9800; font-weight: bold;', 'color: inherit;');
+    console.log(`%c[CE]%c ${msg}`, 'color: #ff9800; font-weight: bold;', 'color: inherit;');
   }
 
   /** 디버그 모드에서만 출력 */
   function log(msg) {
     if (config && config.general && config.general.debugMode) {
-      console.log(`[BWBR] ${msg}`);
+      console.log(`[CE] ${msg}`);
     }
   }
 
@@ -1711,9 +1711,9 @@ ${rows.join('\n')}
 
   // 페이지 로드 후 초기화
   if (document.readyState === 'complete') {
-    init().catch(e => console.error('[BWBR] init 미처리 거부:', e));
+    init().catch(e => console.error('[CE] init 미처리 거부:', e));
   } else {
-    window.addEventListener('load', () => init().catch(e => console.error('[BWBR] init 미처리 거부:', e)));
+    window.addEventListener('load', () => init().catch(e => console.error('[CE] init 미처리 거부:', e)));
   }
 
 })();

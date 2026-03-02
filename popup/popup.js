@@ -934,7 +934,25 @@
         });
       });
 
-      // 4. 렌더링
+      // 4. 의존성 경고 계산
+      const allIds = new Set(modules.map(m => m.id));
+      modules.forEach(mod => {
+        if (mod.dependencies && Array.isArray(mod.dependencies)) {
+          const enabled = enabledState[mod.id] !== undefined ? enabledState[mod.id] : true;
+          if (enabled) {
+            const missing = mod.dependencies.filter(depId => {
+              if (!allIds.has(depId)) return true; // 미설치
+              const depEnabled = enabledState[depId] !== undefined ? enabledState[depId] : true;
+              return !depEnabled; // 비활성화
+            });
+            if (missing.length > 0) {
+              mod.depWarning = missing;
+            }
+          }
+        }
+      });
+
+      // 5. 렌더링
       renderModuleList(container, modules, enabledState);
 
     } catch (e) {
@@ -942,7 +960,7 @@
       console.error('[CE Popup] 모듈 로드 오류:', e);
     }
 
-    // 5. 가져오기 버튼 이벤트 바인딩
+    // 6. 가져오기 버튼 이벤트 바인딩
     setupModuleImport();
   }
 

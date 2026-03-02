@@ -1427,7 +1427,7 @@
       await startNextRound();
 
     } catch (e) {
-      console.error('[BWBR] 결과 처리 오류:', e);
+      console.error('[Branch] 결과 처리 오류:', e);
       overlay.addLog(`오류: ${e.message}`, 'error');
       overlay.setStatus('error', '처리 오류');
       flowState = STATE.IDLE;

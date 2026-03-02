@@ -16,7 +16,7 @@
   if (window.__BWBR_ROOM_COPY_LOADED) return;
   window.__BWBR_ROOM_COPY_LOADED = true;
 
-  const LOG_PREFIX = '%c[BWBR 룸복사]%c';
+  const LOG_PREFIX = '%c[CE 룸복사]%c';
   const LOG_STYLE = 'color: #ce93d8; font-weight: bold;';
   const LOG_RESET = 'color: inherit;';
 

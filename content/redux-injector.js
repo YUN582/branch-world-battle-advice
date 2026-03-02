@@ -120,12 +120,12 @@
         });
       }
 
-      _dbg(`%c[BWBR Redux]%c 사이드바 캐릭터 ${characters.length}명 선택됨`, 
+      _dbg(`%c[CE Redux]%c 사이드바 캐릭터 ${characters.length}명 선택됨`, 
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
 
       return characters;
     } catch (e) {
-      console.error('[BWBR Redux] 캐릭터 데이터 추출 실패:', e);
+      console.error('[CE Redux] 캐릭터 데이터 추출 실패:', e);
       return null;
     }
   }
@@ -140,7 +140,7 @@
       const chars = getCharacterData();
       const charCount = chars?.length || 0;
       
-      console.log('%c[BWBR Redux]%c ✅ Store 획득 성공! 캐릭터 수: ' + charCount, 
+      console.log('%c[CE Redux]%c ✅ Store 획득 성공! 캐릭터 수: ' + charCount, 
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
 
       // Content Script에 성공 알림
@@ -200,7 +200,7 @@
       if (setupStore() || attempts >= maxAttempts) {
         clearInterval(interval);
         if (attempts >= maxAttempts && !reduxStore) {
-          console.log('%c[BWBR Redux]%c ⚠️ Store를 찾을 수 없습니다.', 
+          console.log('%c[CE Redux]%c ⚠️ Store를 찾을 수 없습니다.', 
             'color: #ff9800; font-weight: bold;', 'color: inherit;');
           window.dispatchEvent(new CustomEvent('bwbr-redux-ready', {
             detail: { success: false }
@@ -295,7 +295,7 @@
     const state = reduxStore.getState();
     const rm = state.entities?.roomMessages;
     if (!rm) {
-      console.log('%c[BWBR Redux]%c ⚠️ roomMessages를 찾을 수 없습니다.',
+      console.log('%c[CE Redux]%c ⚠️ roomMessages를 찾을 수 없습니다.',
         'color: #ff9800; font-weight: bold;', 'color: inherit;');
       return false;
     }
@@ -362,7 +362,7 @@
           if (!_messageStructureLogged) {
             _messageStructureLogged = true;
             try {
-              _dbg('%c[BWBR Redux]%c 📋 메시지 엔티티 구조:',
+              _dbg('%c[CE Redux]%c 📋 메시지 엔티티 구조:',
                 'color: #4caf50; font-weight: bold;', 'color: inherit;',
                 '\n  키:', Object.keys(entity),
                 '\n  전체:', JSON.parse(JSON.stringify(entity)));
@@ -371,7 +371,7 @@
 
           let text = extractMessageText(entity);
           if (!text) {
-            console.log('%c[BWBR Redux]%c ⚠️ 텍스트 필드 없음:',
+            console.log('%c[CE Redux]%c ⚠️ 텍스트 필드 없음:',
               'color: #ff9800; font-weight: bold;', 'color: inherit;',
               Object.keys(entity));
             continue;
@@ -403,11 +403,11 @@
           }));
         }
       } catch (e) {
-        console.error('[BWBR Redux] 메시지 관찰 오류:', e);
+        console.error('[CE Redux] 메시지 관찰 오류:', e);
       }
     });
 
-    console.log('%c[BWBR Redux]%c ✅ 메시지 관찰 시작 (기존 %d개 등록)',
+    console.log('%c[CE Redux]%c ✅ 메시지 관찰 시작 (기존 %d개 등록)',
       'color: #4caf50; font-weight: bold;', 'color: inherit;', _prevMessageIdSet.size);
 
     return true;
@@ -420,7 +420,7 @@
       _storeUnsubscribe = null;
     }
     _prevMessageIdSet.clear();
-    console.log('%c[BWBR Redux]%c 메시지 관찰 중지',
+    console.log('%c[CE Redux]%c 메시지 관찰 중지',
       'color: #4caf50; font-weight: bold;', 'color: inherit;');
   }
 
@@ -492,7 +492,7 @@
     }
     if (!setDocFn) return null;
 
-    console.log(`%c[BWBR]%c ✅ Firestore 함수 자동 발견: collection=${collectionKey}, doc=${docKey}, setDoc=${setDocKey}`,
+    console.log(`%c[CE]%c ✅ Firestore 함수 자동 발견: collection=${collectionKey}, doc=${docKey}, setDoc=${setDocKey}`,
       'color: #4caf50; font-weight: bold;', 'color: inherit;');
     return { collection: collectionFn, doc: docFn, setDoc: setDocFn, getDocs: null };
   }
@@ -508,7 +508,7 @@
 
     const req = acquireWebpackRequire();
     if (!req) {
-      console.warn('[BWBR] webpack require 획득 실패');
+      console.warn('[CE] webpack require 획득 실패');
       return null;
     }
 
@@ -516,8 +516,8 @@
     let fsMod = null;
     try { fsMod = req(_FS_CONFIG.firestoreModId); } catch (e) {}
     if (!fsMod || typeof fsMod !== 'object') {
-      console.error('[BWBR] Firestore 모듈 로드 실패 (모듈 ID: ' + _FS_CONFIG.firestoreModId + ')');
-      console.error('[BWBR] → 콘솔에서 실행: window.dispatchEvent(new CustomEvent("bwbr-discover-firestore"))');
+      console.error('[CE] Firestore 모듈 로드 실패 (모듈 ID: ' + _FS_CONFIG.firestoreModId + ')');
+      console.error('[CE] → 콘솔에서 실행: window.dispatchEvent(new CustomEvent("bwbr-discover-firestore"))');
       return null;
     }
 
@@ -525,7 +525,7 @@
     let db = null;
     try { db = req(_FS_CONFIG.dbModId)?.[_FS_CONFIG.dbKey]; } catch (e) {}
     if (!db) {
-      console.error('[BWBR] Firestore DB 인스턴스 획득 실패 (모듈: ' + _FS_CONFIG.dbModId + ', 키: ' + _FS_CONFIG.dbKey + ')');
+      console.error('[CE] Firestore DB 인스턴스 획득 실패 (모듈: ' + _FS_CONFIG.dbModId + ', 키: ' + _FS_CONFIG.dbKey + ')');
       return null;
     }
 
@@ -544,7 +544,7 @@
             db, setDoc: setDocFn, doc: docFn, collection: collectionFn,
             getDocs: typeof getDocsFn === 'function' ? getDocsFn : null
           };
-          console.log('%c[BWBR]%c ✅ Firestore SDK 획득 성공 (알려진 키)',
+          console.log('%c[CE]%c ✅ Firestore SDK 획득 성공 (알려진 키)',
             'color: #4caf50; font-weight: bold;', 'color: inherit;');
           return _firestoreSDK;
         }
@@ -552,7 +552,7 @@
     }
 
     // 2차: 자동 탐색
-    console.log('%c[BWBR]%c 알려진 키 실패 → 자동 탐색 시작...',
+    console.log('%c[CE]%c 알려진 키 실패 → 자동 탐색 시작...',
       'color: #ff9800; font-weight: bold;', 'color: inherit;');
     const discovered = autoDiscoverFirestoreFunctions(fsMod, db);
     if (discovered) {
@@ -565,8 +565,8 @@
       return _firestoreSDK;
     }
 
-    console.error('[BWBR] Firestore SDK 자동 탐색 실패!');
-    console.error('[BWBR] → 콘솔에서 실행: window.dispatchEvent(new CustomEvent("bwbr-discover-firestore"))');
+    console.error('[CE] Firestore SDK 자동 탐색 실패!');
+    console.error('[CE] → 콘솔에서 실행: window.dispatchEvent(new CustomEvent("bwbr-discover-firestore"))');
     return null;
   }
 
@@ -651,7 +651,7 @@
       };
     }
 
-    console.warn('[BWBR] getMessageContext: uid=' + uid +
+    console.warn('[CE] getMessageContext: uid=' + uid +
       ', 메시지 수=' + (rm?.ids?.length || 0) +
       ', speaking=' + (speakingChar?.name || 'none'));
     return null;
@@ -689,7 +689,7 @@
     }
 
     if (!effectId) {
-      console.log(`%c[BWBR]%c 🔔 컷인 이펙트 없음: "${tag}"`,
+      console.log(`%c[CE]%c 🔔 컷인 이펙트 없음: "${tag}"`,
         'color: #ff9800; font-weight: bold;', 'color: inherit;');
       return;
     }
@@ -698,10 +698,10 @@
       const effectsCol = sdk.collection(sdk.db, 'rooms', roomId, 'effects');
       const effectRef = sdk.doc(effectsCol, effectId);
       await sdk.setDoc(effectRef, { playTime: Date.now() }, { merge: true });
-      _dbg(`%c[BWBR]%c 🔊 컷인 재생: "${tag}" (${effectId})`,
+      _dbg(`%c[CE]%c 🔊 컷인 재생: "${tag}" (${effectId})`,
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
     } catch (e) {
-      console.error('[BWBR] 컷인 재생 실패:', e);
+      console.error('[CE] 컷인 재생 실패:', e);
     }
   }
 
@@ -757,7 +757,7 @@
     if (!ctx) {
       // 컨텍스트 없어도 시스템 메시지는 최소한의 정보만으로 전송 가능
       if (!overrides) {
-        console.warn('[BWBR] 메시지 컨텍스트 없음 (아직 메시지를 보낸 적 없음?)');
+        console.warn('[CE] 메시지 컨텍스트 없음 (아직 메시지를 보낸 적 없음?)');
         return false;
       }
     }
@@ -766,7 +766,7 @@
     const roomId = state.app?.state?.roomId ||
       window.location.pathname.match(/rooms\/([^/]+)/)?.[1];
     if (!roomId) {
-      console.warn('[BWBR] roomId를 찾을 수 없음');
+      console.warn('[CE] roomId를 찾을 수 없음');
       return false;
     }
 
@@ -797,7 +797,7 @@
 
       return true;
     } catch (e) {
-      console.error('[BWBR] Firestore 직접 전송 실패:', e);
+      console.error('[CE] Firestore 직접 전송 실패:', e);
       return false;
     }
   }
@@ -924,7 +924,7 @@
       // 커스텀 탭이지만 매핑 실패 → other 폴백
       return { channel: 'other', channelName: 'other' };
     } catch (e) {
-      console.warn('[BWBR] _detectCurrentChannel error:', e);
+      console.warn('[CE] _detectCurrentChannel error:', e);
       return null;
     }
   }
@@ -954,7 +954,7 @@
     el.removeAttribute('data-bwbr-send-text');
     el.removeAttribute('data-bwbr-send-type');
     if (!text) {
-      console.warn('[BWBR] bwbr-send-message-direct: 텍스트 없음 (data-bwbr-send-text 비어있음)');
+      console.warn('[CE] bwbr-send-message-direct: 텍스트 없음 (data-bwbr-send-text 비어있음)');
       window.dispatchEvent(new CustomEvent('bwbr-send-message-result', {
         detail: { success: false, text: '', error: 'no-text' }
       }));
@@ -999,7 +999,7 @@
         detail: { success, text }
       }));
     } catch (err) {
-      console.error('[BWBR] Direct send error:', err);
+      console.error('[CE] Direct send error:', err);
       window.dispatchEvent(new CustomEvent('bwbr-send-message-result', {
         detail: { success: false, text, error: err.message }
       }));
@@ -1045,7 +1045,7 @@
         detail: { success, text }
       }));
     } catch (err) {
-      console.error('[BWBR] char-msg send error:', err);
+      console.error('[CE] char-msg send error:', err);
       window.dispatchEvent(new CustomEvent('bwbr-char-msg-result', {
         detail: { success: false, text, error: err.message }
       }));
@@ -1172,14 +1172,14 @@
 
       await sdk.setDoc(newRef, msg);
 
-      _dbg(`%c[BWBR]%c 🎲 ${charName}: ${text} → ${resultStr}`,
+      _dbg(`%c[CE]%c 🎲 ${charName}: ${text} → ${resultStr}`,
         'color:#ffa726;font-weight:bold', 'color:inherit');
 
       window.dispatchEvent(new CustomEvent('bwbr-dice-char-result', {
         detail: { success: true, total, resultStr, text, charName }
       }));
     } catch (err) {
-      console.error('[BWBR] dice-as-char error:', err);
+      console.error('[CE] dice-as-char error:', err);
       window.dispatchEvent(new CustomEvent('bwbr-dice-char-result', {
         detail: { success: false, error: err.message }
       }));
@@ -1357,7 +1357,7 @@
     );
 
     if (!input) {
-      console.warn('[BWBR] 캐릭터 이름 입력 필드를 찾을 수 없습니다');
+      console.warn('[CE] 캐릭터 이름 입력 필드를 찾을 수 없습니다');
       return;
     }
 
@@ -1376,7 +1376,7 @@
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
 
-    _dbg(`%c[BWBR]%c 🔄 발화 캐릭터 변경: ${name}`,
+    _dbg(`%c[CE]%c 🔄 발화 캐릭터 변경: ${name}`,
       'color: #82b1ff; font-weight: bold;', 'color: inherit;');
   });
 
@@ -1453,7 +1453,7 @@
       const found = (target.status || []).some(s => s.label === statLabel);
       respond({ exists: found, charFound: true });
     } catch (err) {
-      console.error('[BWBR] 스탯 존재 확인 실패:', err.message);
+      console.error('[CE] 스탯 존재 확인 실패:', err.message);
       respond({ exists: false, charFound: false, error: err.message });
     }
   });
@@ -1502,7 +1502,7 @@
       if (!stat) { respond({ found: false, error: 'stat not found' }); return; }
       respond({ found: true, value: stat[field] || 0, max: stat.max || 0 });
     } catch (err) {
-      console.error('[BWBR] 스탯 값 조회 실패:', err.message);
+      console.error('[CE] 스탯 값 조회 실패:', err.message);
       respond({ found: false, error: err.message });
     }
   });
@@ -1577,7 +1577,7 @@
       const targetRef = sdk.doc(charsCol, targetId);
       await sdk.setDoc(targetRef, { status: newStatus, updatedAt: Date.now() }, { merge: true });
 
-      _dbg(`%c[BWBR]%c ✅ ${targetName} ${statusLabel}: ${oldVal} → ${newVal}`,
+      _dbg(`%c[CE]%c ✅ ${targetName} ${statusLabel}: ${oldVal} → ${newVal}`,
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
       respond({ success: true, target: targetName, status: statusLabel, oldVal, newVal });
 
@@ -1590,7 +1590,7 @@
       }
 
     } catch (err) {
-      console.error('[BWBR] 스테이터스 변경 실패:', err.message);
+      console.error('[CE] 스테이터스 변경 실패:', err.message);
       respond({ success: false, error: err.message });
     }
   });
@@ -1669,7 +1669,7 @@
 
       if (affected > 0) {
         const opLabel = operation === '=max' ? '최대치 충전' : `${operation}${value}`;
-        _dbg(`%c[BWBR]%c ✅ 전체 ${statusLabel} ${opLabel}: ${affected}명`,
+        _dbg(`%c[CE]%c ✅ 전체 ${statusLabel} ${opLabel}: ${affected}명`,
           'color: #4caf50; font-weight: bold;', 'color: inherit;');
         // 일괄 변경 시스템 메시지 (silent 미적용 시만)
         if (!silent) {
@@ -1684,7 +1684,7 @@
       respond({ success: true, affected, label: statusLabel, changes });
 
     } catch (err) {
-      console.error('[BWBR] 전체 스테이터스 변경 실패:', err.message);
+      console.error('[CE] 전체 스테이터스 변경 실패:', err.message);
       respond({ success: false, error: err.message });
     }
   });
@@ -1727,7 +1727,7 @@
       const success = await sendDirectMessage(text, overrides);
       respond({ success, text });
     } catch (err) {
-      console.error('[BWBR] 캐릭터 메시지 실패:', err.message);
+      console.error('[CE] 캐릭터 메시지 실패:', err.message);
       respond({ success: false, error: err.message });
     }
   });
@@ -1785,12 +1785,12 @@
       const charRef = sdk.doc(charsCol, char.__id);
       await sdk.setDoc(charRef, { params: newParams, updatedAt: Date.now() }, { merge: true });
 
-      _dbg(`%c[BWBR]%c ✅ ${targetName} ${paramLabel}: ${oldVal} → ${newVal}`,
+      _dbg(`%c[CE]%c ✅ ${targetName} ${paramLabel}: ${oldVal} → ${newVal}`,
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
       respond({ success: true, target: targetName, param: paramLabel, oldVal, newVal });
 
     } catch (err) {
-      console.error('[BWBR] 파라미터 변경 실패:', err.message);
+      console.error('[CE] 파라미터 변경 실패:', err.message);
       respond({ success: false, error: err.message });
     }
   });
@@ -1866,12 +1866,12 @@
       }
 
       await sdk.setDoc(charRef, update, { merge: true });
-      _dbg(`%c[BWBR]%c ✅ ${targetName} ${field} 변경 완료`,
+      _dbg(`%c[CE]%c ✅ ${targetName} ${field} 변경 완료`,
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
       respond({ success: true, target: targetName, field });
 
     } catch (err) {
-      console.error(`[BWBR] 캐릭터 필드(${field}) 변경 실패:`, err.message);
+      console.error(`[CE] 캐릭터 필드(${field}) 변경 실패:`, err.message);
       respond({ success: false, error: err.message });
     }
   });
@@ -1882,19 +1882,19 @@
   // ================================================================
   window.addEventListener('bwbr-dump-messages', () => {
     if (!reduxStore) {
-      console.log('%c[BWBR 진단]%c ❌ Redux Store 없음', 'color: #f44336; font-weight: bold;', 'color: inherit;');
+      console.log('%c[CE 진단]%c ❌ Redux Store 없음', 'color: #f44336; font-weight: bold;', 'color: inherit;');
       return;
     }
     try {
       const rm = reduxStore.getState().entities?.roomMessages;
       if (!rm || !rm.ids || rm.ids.length === 0) {
-        console.log('%c[BWBR 진단]%c ⚠️ roomMessages가 비어있음. 채팅 메시지를 보낸 뒤 다시 시도하세요.',
+        console.log('%c[CE 진단]%c ⚠️ roomMessages가 비어있음. 채팅 메시지를 보낸 뒤 다시 시도하세요.',
           'color: #ff9800; font-weight: bold;', 'color: inherit;');
         return;
       }
       const lastId = rm.ids[rm.ids.length - 1];
       const lastEntity = rm.entities[lastId];
-      console.log('%c[BWBR 진단]%c ===== roomMessages 구조 =====',
+      console.log('%c[CE 진단]%c ===== roomMessages 구조 =====',
         'color: #2196f3; font-weight: bold;', 'color: inherit;');
       console.log('총 메시지 수:', rm.ids.length);
       console.log('마지막 메시지 ID:', lastId);
@@ -1906,10 +1906,10 @@
         console.log(`\n--- ${id} ---`);
         console.log(JSON.parse(JSON.stringify(e)));
       }
-      console.log('%c[BWBR 진단]%c ===========================',
+      console.log('%c[CE 진단]%c ===========================',
         'color: #2196f3; font-weight: bold;', 'color: inherit;');
     } catch (e) {
-      console.error('[BWBR 진단] 오류:', e);
+      console.error('[CE 진단] 오류:', e);
     }
   });
 
@@ -1918,7 +1918,7 @@
   //  콘솔에서 실행: window.dispatchEvent(new CustomEvent('bwbr-detect-channel'))
   // ================================================================
   window.addEventListener('bwbr-detect-channel', () => {
-    console.log('%c[BWBR 진단]%c ===== 채널 탐지 테스트 =====',
+    console.log('%c[CE 진단]%c ===== 채널 탐지 테스트 =====',
       'color: #2196f3; font-weight: bold;', 'color: inherit;');
     // Redux app state 덤프
     if (reduxStore) {
@@ -1978,7 +1978,7 @@
     // 함수 결과
     const result = _detectCurrentChannel();
     console.log('_detectCurrentChannel() 결과:', result);
-    console.log('%c[BWBR 진단]%c ===========================',
+    console.log('%c[CE 진단]%c ===========================',
       'color: #2196f3; font-weight: bold;', 'color: inherit;');
   });
 
@@ -1987,17 +1987,17 @@
   //  콘솔에서 실행: window.dispatchEvent(new CustomEvent('bwbr-discover-firestore'))
   // ================================================================
   window.addEventListener('bwbr-discover-firestore', () => {
-    console.log('%c[BWBR 진단]%c ===== Firestore SDK 탐색 =====',
+    console.log('%c[CE 진단]%c ===== Firestore SDK 탐색 =====',
       'color: #2196f3; font-weight: bold;', 'color: inherit;');
 
     const req = acquireWebpackRequire();
     if (!req) {
-      console.error('[BWBR 진단] webpack require 획득 실패');
+      console.error('[CE 진단] webpack require 획득 실패');
       return;
     }
 
     // 1. Firestore 함수 포함 모듈 후보 찾기
-    console.log('[BWBR 진단] 모듈 스캔 중...');
+    console.log('[CE 진단] 모듈 스캔 중...');
     const candidates = [];
     for (const id of Object.keys(req.m)) {
       try {
@@ -2017,11 +2017,11 @@
         if (fsCount >= 3) candidates.push({ id, fsCount, totalKeys: Object.keys(mod).length, funcKeys });
       } catch (e) {}
     }
-    console.log('[BWBR 진단] Firestore 모듈 후보:');
+    console.log('[CE 진단] Firestore 모듈 후보:');
     console.table(candidates);
 
     // 2. DB 인스턴스 찾기
-    console.log('[BWBR 진단] DB 인스턴스 탐색 중...');
+    console.log('[CE 진단] DB 인스턴스 탐색 중...');
     let dbInfo = null;
     for (const id of Object.keys(req.m)) {
       try {
@@ -2037,38 +2037,38 @@
       } catch (e) {}
     }
     if (dbInfo) {
-      console.log(`[BWBR 진단] ✅ DB 인스턴스: 모듈=${dbInfo.moduleId}, 키=${dbInfo.key}`);
+      console.log(`[CE 진단] ✅ DB 인스턴스: 모듈=${dbInfo.moduleId}, 키=${dbInfo.key}`);
     } else {
-      console.error('[BWBR 진단] ❌ DB 인스턴스를 찾을 수 없음');
+      console.error('[CE 진단] ❌ DB 인스턴스를 찾을 수 없음');
     }
 
     // 3. 최고 후보로 함수 자동 매칭
     if (candidates.length > 0 && dbInfo) {
       const best = candidates.sort((a, b) => b.fsCount - a.fsCount)[0];
-      console.log(`[BWBR 진단] 최고 후보 모듈: ${best.id} (Firestore 함수 ${best.fsCount}개)`);
+      console.log(`[CE 진단] 최고 후보 모듈: ${best.id} (Firestore 함수 ${best.fsCount}개)`);
 
       try {
         const fsMod = req(best.id);
         const db = req(dbInfo.moduleId)[dbInfo.key];
         const result = autoDiscoverFirestoreFunctions(fsMod, db);
         if (result) {
-          console.log('%c[BWBR 진단]%c ✅ 자동 매칭 성공!', 'color: #4caf50; font-weight: bold;', 'color: inherit;');
-          console.log('[BWBR 진단] _FS_CONFIG 업데이트 값:');
+          console.log('%c[CE 진단]%c ✅ 자동 매칭 성공!', 'color: #4caf50; font-weight: bold;', 'color: inherit;');
+          console.log('[CE 진단] _FS_CONFIG 업데이트 값:');
           console.log(JSON.stringify({
             firestoreModId: Number(best.id),
             dbModId: Number(dbInfo.moduleId),
             dbKey: dbInfo.key
           }, null, 2));
         } else {
-          console.warn('[BWBR 진단] ⚠️ 자동 매칭 실패 — 수동 확인 필요');
-          console.log('[BWBR 진단] 후보 모듈 ' + best.id + '의 함수 키:', best.funcKeys);
+          console.warn('[CE 진단] ⚠️ 자동 매칭 실패 — 수동 확인 필요');
+          console.log('[CE 진단] 후보 모듈 ' + best.id + '의 함수 키:', best.funcKeys);
         }
       } catch (e) {
-        console.error('[BWBR 진단] 오류:', e);
+        console.error('[CE 진단] 오류:', e);
       }
     }
 
-    console.log('%c[BWBR 진단]%c ===============================',
+    console.log('%c[CE 진단]%c ===============================',
       'color: #2196f3; font-weight: bold;', 'color: inherit;');
   });
 
@@ -2112,7 +2112,7 @@
         || state.entities?.room?.name
         || document.title?.replace(' - ココフォリア', '') || '';
 
-      console.log('%c[BWBR]%c 📜 로그 추출 시작... (roomId: ' + roomId + ')',
+      console.log('%c[CE]%c 📜 로그 추출 시작... (roomId: ' + roomId + ')',
         'color: #2196f3; font-weight: bold;', 'color: inherit;');
 
       // Firestore에서 전체 메시지 컬렉션 조회
@@ -2159,13 +2159,13 @@
       // 시간순 정렬
       messages.sort((a, b) => a.createdAt - b.createdAt);
 
-      console.log(`%c[BWBR]%c 📜 로그 추출 완료: ${messages.length}건`,
+      console.log(`%c[CE]%c 📜 로그 추출 완료: ${messages.length}건`,
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
 
       respond({ success: true, messages, roomId, roomName });
 
     } catch (e) {
-      console.error('[BWBR] 로그 추출 실패:', e);
+      console.error('[CE] 로그 추출 실패:', e);
       respond({ success: false, error: e.message });
     }
   });
@@ -2239,13 +2239,13 @@
 
       const check = reduxStore.getState().app?.state;
       if (check?.openRoomCharacter === true && check?.openRoomCharacterId === char.__id) {
-        console.log(`%c[BWBR]%c ✅ ${name} 편집 다이얼로그 열림 (ID: ${char.__id})`,
+        console.log(`%c[CE]%c ✅ ${name} 편집 다이얼로그 열림 (ID: ${char.__id})`,
           'color: #4caf50; font-weight: bold;', 'color: inherit;');
       } else {
         respondAction(name + ': 편집 다이얼로그 열기 실패');
       }
     } catch (err) {
-      console.error('[BWBR] 편집 실패:', err);
+      console.error('[CE] 편집 실패:', err);
       respondAction('편집 실패: ' + err.message);
     }
   });
@@ -2292,7 +2292,7 @@
                 item.click();
                 hideStyle.remove();
                 respondAction(name + ' → ' + actionLabel);
-                console.log(`%c[BWBR]%c ✅ ${name} 네이티브 ${actionLabel} (메뉴: "${t}")`,
+                console.log(`%c[CE]%c ✅ ${name} 네이티브 ${actionLabel} (메뉴: "${t}")`,
                   'color: #4caf50; font-weight: bold;', 'color: inherit;');
                 setTimeout(broadcastCharacterList, 500);
                 return;
@@ -2310,11 +2310,11 @@
           if (lastPop) {
             const foundItems = lastPop.querySelectorAll('li[role="menuitem"]');
             const labels = [...foundItems].map(el => `"${(el.textContent||'').trim()}"`);
-            console.warn(`[BWBR] ${actionLabel} 실패: 메뉴 항목 미발견\n  찾은 항목: [${labels.join(', ')}]\n  검색 키워드: [${menuKeywords.join(', ')}]`);
+            console.warn(`[CE] ${actionLabel} 실패: 메뉴 항목 미발견\n  찾은 항목: [${labels.join(', ')}]\n  검색 키워드: [${menuKeywords.join(', ')}]`);
             const bd = lastPop.querySelector('.MuiBackdrop-root');
             if (bd) bd.click(); else document.body.click();
           } else {
-            console.warn(`[BWBR] ${actionLabel} 실패: MuiPopover-root 자체가 없음`);
+            console.warn(`[CE] ${actionLabel} 실패: MuiPopover-root 자체가 없음`);
           }
           respondAction(name + ': ' + actionLabel + ' 실패 — 메뉴 항목을 찾을 수 없습니다');
         }
@@ -2323,7 +2323,7 @@
     } catch (err) {
       const hs = document.getElementById('bwbr-hide-native-menu');
       if (hs) hs.remove();
-      console.error(`[BWBR] ${actionLabel} 실패:`, err);
+      console.error(`[CE] ${actionLabel} 실패:`, err);
       respondAction(actionLabel + ' 실패: ' + err.message);
     }
   }
@@ -2354,11 +2354,11 @@
         await sdk.setDoc(charRef, { active: true, updatedAt: Date.now() }, { merge: true });
 
         respondAction(name + ' → 꺼내기');
-        console.log(`%c[BWBR]%c ✅ ${name} 꺼내기 (Firestore direct)`,
+        console.log(`%c[CE]%c ✅ ${name} 꺼내기 (Firestore direct)`,
           'color: #4caf50; font-weight: bold;', 'color: inherit;');
         setTimeout(broadcastCharacterList, 500);
       } catch (err) {
-        console.error('[BWBR] 꺼내기 실패:', err);
+        console.error('[CE] 꺼내기 실패:', err);
         respondAction('꺼내기 실패: ' + err.message);
       }
     }
@@ -2400,7 +2400,7 @@
   // ================================================================
   document.addEventListener('bwbr-sync-token-bindings', () => {
     _readBindingsFromDOM();
-    console.log(`%c[BWBR]%c 토큰 바인딩 동기화: ${Object.keys(_tokenBindings).length}개`,
+    console.log(`%c[CE]%c 토큰 바인딩 동기화: ${Object.keys(_tokenBindings).length}개`,
       'color: #ab47bc; font-weight: bold;', 'color: inherit;');
   });
   // window 이벤트로도 수신 (크로스-월드 호환성)
@@ -2443,12 +2443,12 @@
           const item = ri.entities?.[id];
           if (!item || !item.imageUrl) continue;
           if (item.imageUrl === trackedUrl || extractPath(item.imageUrl) === trackedPath) {
-            console.log(`%c[BWBR]%c 패널 식별 (imageUrl): "${item._id}"`,
+            console.log(`%c[CE]%c 패널 식별 (imageUrl): "${item._id}"`,
               'color: #ab47bc; font-weight: bold;', 'color: inherit;');
             return respond({ success: true, panelId: item._id, imageUrl: item.imageUrl });
           }
         }
-        console.log(`%c[BWBR]%c imageUrl 매칭 실패, 스코어링 폴백`,
+        console.log(`%c[CE]%c imageUrl 매칭 실패, 스코어링 폴백`,
           'color: #ab47bc; font-weight: bold;', 'color: inherit;');
       }
 
@@ -2480,11 +2480,11 @@
       }
 
       if (bestMatch && bestScore >= 8) {
-        console.log(`%c[BWBR]%c 패널 식별 (스코어링): "${bestMatch._id}" (점수 ${bestScore}/12)`,
+        console.log(`%c[CE]%c 패널 식별 (스코어링): "${bestMatch._id}" (점수 ${bestScore}/12)`,
           'color: #ab47bc; font-weight: bold;', 'color: inherit;');
         respond({ success: true, panelId: bestMatch._id, imageUrl: bestMatch.imageUrl || '' });
       } else {
-        console.log(`%c[BWBR]%c 패널 식별 실패 (최고 점수 ${bestScore}/12)`,
+        console.log(`%c[CE]%c 패널 식별 실패 (최고 점수 ${bestScore}/12)`,
           'color: #ab47bc; font-weight: bold;', 'color: inherit;');
         respond({ success: false });
       }
@@ -2535,13 +2535,13 @@
       }
     }
     if (!item) {
-      console.log(`[BWBR Move] roomItem imageUrl 매칭 실패: "${imageUrl.substring(0, 80)}..."`);
+      console.log(`[Branch Move] roomItem imageUrl 매칭 실패: "${imageUrl.substring(0, 80)}..."`);
       return fail();
     }
 
     // ── 성공 응답 헬퍼 ──
     const succeed = (charObj) => {
-      console.log(`[BWBR Move] 매칭: item "${item._id}" → 캐릭터 "${charObj.name}"`);
+      console.log(`[Branch Move] 매칭: item "${item._id}" → 캐릭터 "${charObj.name}"`);
       window.dispatchEvent(new CustomEvent('bwbr-char-move-data', {
         detail: {
           success: true,
@@ -2570,26 +2570,26 @@
     _readBindingsFromDOM();
     const boundCharId = _tokenBindings[item._id];
     if (boundCharId) {
-      console.log(`[BWBR Move] 바인딩 확인: item "${item._id}" → charId "${boundCharId}"`);
+      console.log(`[Branch Move] 바인딩 확인: item "${item._id}" → charId "${boundCharId}"`);
     } else {
-      console.log(`[BWBR Move] 바인딩 없음 (item "${item._id}"), 토큰 수: ${Object.keys(_tokenBindings).length}`);
+      console.log(`[Branch Move] 바인딩 없음 (item "${item._id}"), 토큰 수: ${Object.keys(_tokenBindings).length}`);
     }
     if (boundCharId && rc?.ids) {
       for (const id of rc.ids) {
         const ch = rc.entities?.[id];
         if (ch && (ch._id === boundCharId || id === boundCharId)) {
-          console.log(`[BWBR Move] 바인딩으로 매칭: "${item._id}" → "${ch.name}"`);
+          console.log(`[Branch Move] 바인딩으로 매칭: "${item._id}" → "${ch.name}"`);
           return succeed(ch);
         }
       }
-      console.log(`[BWBR Move] 바인딩 캐릭터 "${boundCharId}" 미발견 — memo 폴백`);
+      console.log(`[Branch Move] 바인딩 캐릭터 "${boundCharId}" 미발견 — memo 폴백`);
     }
 
     // 3) memo에서 〔캐릭터이름〕 파싱 (폴백)
     const memo = item.memo || '';
     const nameMatch = memo.match(/〔(.+?)〕/);
     if (!nameMatch) {
-      console.log(`[BWBR Move] memo에 〔이름〕 없음: "${memo}"`);
+      console.log(`[Branch Move] memo에 〔이름〕 없음: "${memo}"`);
       return fail();
     }
     const charName = nameMatch[1].trim();
@@ -2605,7 +2605,7 @@
       }
     }
     if (!found) {
-      console.log(`[BWBR Move] 캐릭터 "${charName}" 미발견`);
+      console.log(`[Branch Move] 캐릭터 "${charName}" 미발견`);
       return fail();
     }
 
@@ -2637,11 +2637,11 @@
       const itemRef = sdk.doc(itemsCol, itemId);
       await sdk.setDoc(itemRef, { x, y, updatedAt: Date.now() }, { merge: true });
 
-      console.log(`%c[BWBR]%c ✅ 아이템 이동: ${itemId} → (${x}, ${y})`,
+      console.log(`%c[CE]%c ✅ 아이템 이동: ${itemId} → (${x}, ${y})`,
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
       respond({ success: true, itemId, x, y });
     } catch (err) {
-      console.error('[BWBR] 아이템 이동 실패:', err);
+      console.error('[CE] 아이템 이동 실패:', err);
       respond({ success: false, error: err.message });
     }
   });
@@ -2714,7 +2714,7 @@
           updatedAt: Date.now()
         };
         await sdk.addDoc(itemsCol, newItem);
-        _dbg(`%c[BWBR]%c ✅ 패널 생성: 〔${tgt}〕 (${pt})`,
+        _dbg(`%c[CE]%c ✅ 패널 생성: 〔${tgt}〕 (${pt})`,
           'color: #4caf50; font-weight: bold;', 'color: inherit;');
         respond({ success: true, op, target: tgt, panelType: pt });
         return;
@@ -2775,7 +2775,7 @@
             ny = detail.y != null ? detail.y : (found.y || 0);
           }
           await sdk.setDoc(itemRef, { x: nx, y: ny, updatedAt: Date.now() }, { merge: true });
-          _dbg(`%c[BWBR]%c ✅ 패널 이동: 〔${tgt}〕 → (${nx}, ${ny})`,
+          _dbg(`%c[CE]%c ✅ 패널 이동: 〔${tgt}〕 → (${nx}, ${ny})`,
             'color: #4caf50; font-weight: bold;', 'color: inherit;');
           respond({ success: true, op, target: tgt, x: nx, y: ny });
           break;
@@ -2790,7 +2790,7 @@
             angle = detail.angle != null ? detail.angle : 0;
           }
           await sdk.setDoc(itemRef, { angle, updatedAt: Date.now() }, { merge: true });
-          _dbg(`%c[BWBR]%c ✅ 패널 회전: 〔${tgt}〕 → ${angle}°`,
+          _dbg(`%c[CE]%c ✅ 패널 회전: 〔${tgt}〕 → ${angle}°`,
             'color: #4caf50; font-weight: bold;', 'color: inherit;');
           respond({ success: true, op, target: tgt, angle });
           break;
@@ -2806,7 +2806,7 @@
           clone.createdAt = Date.now();
           clone.updatedAt = Date.now();
           await sdk.addDoc(itemsCol, clone);
-          _dbg(`%c[BWBR]%c ✅ 패널 복사: 〔${tgt}〕 (오프셋 ${clone.x - (found.x||0)}, ${clone.y - (found.y||0)})`,
+          _dbg(`%c[CE]%c ✅ 패널 복사: 〔${tgt}〕 (오프셋 ${clone.x - (found.x||0)}, ${clone.y - (found.y||0)})`,
             'color: #4caf50; font-weight: bold;', 'color: inherit;');
           respond({ success: true, op, target: tgt });
           break;
@@ -2815,7 +2815,7 @@
         // ── 삭제 ──
         case 'delete': {
           await sdk.deleteDoc(itemRef);
-          _dbg(`%c[BWBR]%c ✅ 패널 삭제: 〔${tgt}〕`,
+          _dbg(`%c[CE]%c ✅ 패널 삭제: 〔${tgt}〕`,
             'color: #f44336; font-weight: bold;', 'color: inherit;');
           respond({ success: true, op, target: tgt });
           break;
@@ -2829,7 +2829,7 @@
           const tagPart = tagMatch ? tagMatch[0] : '';
           const newMemo = tagPart ? tagPart + '\n' + (detail.memo || '') : (detail.memo || '');
           await sdk.setDoc(itemRef, { memo: newMemo, updatedAt: Date.now() }, { merge: true });
-          _dbg(`%c[BWBR]%c ✅ 패널 메모 변경: 〔${tgt}〕`,
+          _dbg(`%c[CE]%c ✅ 패널 메모 변경: 〔${tgt}〕`,
             'color: #4caf50; font-weight: bold;', 'color: inherit;');
           respond({ success: true, op, target: tgt });
           break;
@@ -2840,7 +2840,7 @@
       }
 
     } catch (err) {
-      console.error(`[BWBR] 패널 조작(${op}) 실패:`, err.message);
+      console.error(`[CE] 패널 조작(${op}) 실패:`, err.message);
       respond({ success: false, error: err.message });
     }
   });
@@ -2970,11 +2970,11 @@
   //  콘솔: window.dispatchEvent(new CustomEvent('bwbr-dump-redux-keys'))
   window.addEventListener('bwbr-dump-redux-keys', () => {
     if (!reduxStore) {
-      console.error('[BWBR 진단] Redux Store 없음');
+      console.error('[CE 진단] Redux Store 없음');
       return;
     }
     const state = reduxStore.getState();
-    console.log('%c[BWBR 진단]%c ===== Redux 상태 구조 =====',
+    console.log('%c[CE 진단]%c ===== Redux 상태 구조 =====',
       'color: #2196f3; font-weight: bold;', 'color: inherit;');
     console.log('Top-level keys:', Object.keys(state));
     console.log('app keys:', Object.keys(state.app || {}));
@@ -3002,7 +3002,7 @@
         console.log(`  app.${key}:`, val);
       }
     }
-    console.log('%c[BWBR 진단]%c ===========================',
+    console.log('%c[CE 진단]%c ===========================',
       'color: #2196f3; font-weight: bold;', 'color: inherit;');
   });
 
@@ -3011,15 +3011,15 @@
   //  콘솔: window.dispatchEvent(new CustomEvent('bwbr-dump-room'))
   // ================================================================
   window.addEventListener('bwbr-dump-room', () => {
-    if (!reduxStore) return console.error('[BWBR 진단] Redux Store 없음');
+    if (!reduxStore) return console.error('[CE 진단] Redux Store 없음');
     const state = reduxStore.getState();
     const roomId = state.app?.state?.roomId
       || window.location.pathname.match(/\/rooms\/([^/]+)/)?.[1];
-    if (!roomId) return console.error('[BWBR 진단] roomId 없음');
+    if (!roomId) return console.error('[CE 진단] roomId 없음');
     const room = state.entities?.rooms?.entities?.[roomId];
-    if (!room) return console.error('[BWBR 진단] room 엔티티 없음');
+    if (!room) return console.error('[CE 진단] room 엔티티 없음');
 
-    console.log('%c[BWBR 진단]%c ===== 방 설정 (rooms entity) =====',
+    console.log('%c[CE 진단]%c ===== 방 설정 (rooms entity) =====',
       'color: #ff9800; font-weight: bold;', 'color: inherit;');
     console.log('모든 키:', Object.keys(room).sort());
 
@@ -3036,7 +3036,7 @@
     }
     console.log('🎵 미디어/장면 관련 필드:', interesting);
     console.log('전체 데이터:', JSON.parse(JSON.stringify(room)));
-    console.log('%c[BWBR 진단]%c ================================',
+    console.log('%c[CE 진단]%c ================================',
       'color: #ff9800; font-weight: bold;', 'color: inherit;');
   });
 
@@ -3070,11 +3070,11 @@
       const roomRef = sdk.doc(roomCol, roomId);
       await sdk.setDoc(roomRef, update, { merge: true });
 
-      console.log(`%c[BWBR]%c ✅ 방 설정 변경:`, 'color: #4caf50; font-weight: bold;', 'color: inherit;',
+      console.log(`%c[CE]%c ✅ 방 설정 변경:`, 'color: #4caf50; font-weight: bold;', 'color: inherit;',
         Object.keys(fields));
       respond({ success: true, fields: Object.keys(fields) });
     } catch (err) {
-      console.error('[BWBR] 방 설정 변경 실패:', err.message);
+      console.error('[CE] 방 설정 변경 실패:', err.message);
       respond({ success: false, error: err.message });
     }
   });
@@ -3084,11 +3084,11 @@
   //  콘솔: window.dispatchEvent(new CustomEvent('bwbr-dump-scenes'))
   // ================================================================
   window.addEventListener('bwbr-dump-scenes', () => {
-    if (!reduxStore) return console.error('[BWBR 진단] Redux Store 없음');
+    if (!reduxStore) return console.error('[CE 진단] Redux Store 없음');
     const state = reduxStore.getState();
 
     // scenes는 entities 아래에 있을 수 있음
-    console.log('%c[BWBR 진단]%c ===== 장면(scene) 탐색 =====',
+    console.log('%c[CE 진단]%c ===== 장면(scene) 탐색 =====',
       'color: #e91e63; font-weight: bold;', 'color: inherit;');
 
     // entities 내 모든 키 나열
@@ -3124,7 +3124,7 @@
       if (room?.sceneId) console.log('현재 sceneId:', room.sceneId);
     }
 
-    console.log('%c[BWBR 진단]%c ==============================',
+    console.log('%c[CE 진단]%c ==============================',
       'color: #e91e63; font-weight: bold;', 'color: inherit;');
   });
 
@@ -3202,11 +3202,11 @@
       const roomRef = sdk.doc(roomCol, roomId);
       await sdk.setDoc(roomRef, update, { merge: true });
 
-      console.log(`%c[BWBR]%c ✅ 장면 적용:`, 'color: #4caf50; font-weight: bold;', 'color: inherit;',
+      console.log(`%c[CE]%c ✅ 장면 적용:`, 'color: #4caf50; font-weight: bold;', 'color: inherit;',
         sceneName, '(' + applyOption + ')', '필드:', Object.keys(update).length);
       respond({ success: true, sceneName: sceneName });
     } catch (err) {
-      console.error('[BWBR] 장면 적용 실패:', err.message);
+      console.error('[CE] 장면 적용 실패:', err.message);
       respond({ success: false, error: err.message });
     }
   });
@@ -3217,16 +3217,16 @@
   // ================================================================
   window.addEventListener('bwbr-dump-items', () => {
     if (!reduxStore) {
-      console.error('[BWBR 진단] Redux Store 없음');
+      console.error('[CE 진단] Redux Store 없음');
       return;
     }
     const state = reduxStore.getState();
     const ri = state.entities.roomItems;
     if (!ri?.ids?.length) {
-      console.log('[BWBR 진단] roomItems: 0건');
+      console.log('[CE 진단] roomItems: 0건');
       return;
     }
-    console.log('%c[BWBR 진단]%c ===== roomItems 상세 =====',
+    console.log('%c[CE 진단]%c ===== roomItems 상세 =====',
       'color: #ff9800; font-weight: bold;', 'color: inherit;');
     console.log('총 아이템 수:', ri.ids.length);
 
@@ -3257,7 +3257,7 @@
         if (activeItems.length > 5) console.log(`    ... 외 ${activeItems.length - 5}건`);
       }
     }
-    console.log('%c[BWBR 진단]%c ============================',
+    console.log('%c[CE 진단]%c ============================',
       'color: #ff9800; font-weight: bold;', 'color: inherit;');
   });
 
@@ -3270,11 +3270,11 @@
 
   window.addEventListener('bwbr-log-actions', () => {
     if (!reduxStore) {
-      console.error('[BWBR] Redux Store 없음');
+      console.error('[CE] Redux Store 없음');
       return;
     }
     if (_origDispatch) {
-      console.log('[BWBR] 이미 Action 로깅 중');
+      console.log('[CE] 이미 Action 로깅 중');
       return;
     }
     _origDispatch = reduxStore.dispatch;
@@ -3294,7 +3294,7 @@
         action?.type || '(no type)', action);
       return _origDispatch.call(this, action);
     };
-    console.log('%c[BWBR]%c ✅ Action 로깅 시작 (thunk 내부 포함) — 조작 후 콘솔을 확인하세요',
+    console.log('%c[CE]%c ✅ Action 로깅 시작 (thunk 내부 포함) — 조작 후 콘솔을 확인하세요',
       'color: #4caf50; font-weight: bold;', 'color: inherit;');
   });
 
@@ -3302,10 +3302,10 @@
     if (_origDispatch) {
       reduxStore.dispatch = _origDispatch;
       _origDispatch = null;
-      console.log('%c[BWBR]%c Action 로깅 해제',
+      console.log('%c[CE]%c Action 로깅 해제',
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
     } else {
-      console.log('[BWBR] 로깅 중이 아닙니다');
+      console.log('[CE] 로깅 중이 아닙니다');
     }
   });
 
@@ -3318,15 +3318,15 @@
   let _stateSnapshot = null;
 
   window.addEventListener('bwbr-snapshot-before', () => {
-    if (!reduxStore) return console.error('[BWBR] Redux Store 없음');
+    if (!reduxStore) return console.error('[CE] Redux Store 없음');
     _stateSnapshot = JSON.parse(JSON.stringify(reduxStore.getState().app?.state || {}));
-    console.log('%c[BWBR]%c 📸 app.state 스냅샷 저장 완료 — 이제 조작하세요',
+    console.log('%c[CE]%c 📸 app.state 스냅샷 저장 완료 — 이제 조작하세요',
       'color: #2196f3; font-weight: bold;', 'color: inherit;');
   });
 
   window.addEventListener('bwbr-snapshot-after', () => {
-    if (!reduxStore) return console.error('[BWBR] Redux Store 없음');
-    if (!_stateSnapshot) return console.error('[BWBR] 먼저 bwbr-snapshot-before 실행하세요');
+    if (!reduxStore) return console.error('[CE] Redux Store 없음');
+    if (!_stateSnapshot) return console.error('[CE] 먼저 bwbr-snapshot-before 실행하세요');
 
     const after = JSON.parse(JSON.stringify(reduxStore.getState().app?.state || {}));
     const allKeys = new Set([...Object.keys(_stateSnapshot), ...Object.keys(after)]);
@@ -3337,7 +3337,7 @@
       if (b !== a) changes[key] = { before: _stateSnapshot[key], after: after[key] };
     }
 
-    console.log('%c[BWBR]%c 📸 app.state 변화:', 'color: #2196f3; font-weight: bold;', 'color: inherit;');
+    console.log('%c[CE]%c 📸 app.state 변화:', 'color: #2196f3; font-weight: bold;', 'color: inherit;');
     if (Object.keys(changes).length === 0) {
       console.log('  (변화 없음)');
     } else {
@@ -3381,32 +3381,32 @@
   }
 
   window.addEventListener('bwbr-deep-snapshot-before', () => {
-    if (!reduxStore) return console.error('[BWBR] Redux Store 없음');
+    if (!reduxStore) return console.error('[CE] Redux Store 없음');
     try {
       _deepSnapshot = JSON.parse(JSON.stringify(reduxStore.getState()));
-      console.log('%c[BWBR]%c 🔬 전체 Redux state 스냅샷 저장됨 (키: %d)',
+      console.log('%c[CE]%c 🔬 전체 Redux state 스냅샷 저장됨 (키: %d)',
         'color: #e91e63; font-weight: bold;', 'color: inherit;',
         Object.keys(_deepSnapshot).length);
     } catch (e) {
-      console.error('[BWBR] 스냅샷 실패 (순환 참조?):', e.message);
+      console.error('[CE] 스냅샷 실패 (순환 참조?):', e.message);
     }
   });
 
   window.addEventListener('bwbr-deep-snapshot-after', () => {
-    if (!reduxStore) return console.error('[BWBR] Redux Store 없음');
-    if (!_deepSnapshot) return console.error('[BWBR] 먼저 bwbr-deep-snapshot-before 실행하세요');
+    if (!reduxStore) return console.error('[CE] Redux Store 없음');
+    if (!_deepSnapshot) return console.error('[CE] 먼저 bwbr-deep-snapshot-before 실행하세요');
 
     let current;
     try {
       current = JSON.parse(JSON.stringify(reduxStore.getState()));
     } catch (e) {
-      return console.error('[BWBR] 현재 상태 직렬화 실패:', e.message);
+      return console.error('[CE] 현재 상태 직렬화 실패:', e.message);
     }
 
     const diffs = [];
     deepDiff(_deepSnapshot, current, 'state', diffs, 0);
 
-    console.log('%c[BWBR]%c 🔬 전체 Redux state 변화 (%d건):',
+    console.log('%c[CE]%c 🔬 전체 Redux state 변화 (%d건):',
       'color: #e91e63; font-weight: bold;', 'color: inherit;', diffs.length);
     if (diffs.length === 0) {
       console.log('  (변화 없음 — Firestore 직접 쓰기일 수 있음)');
@@ -3468,7 +3468,7 @@
                 const origX = appState.roomPointerX;
                 if (safeProbeType(testType, appState, origX)) {
                     _setedActionCreator = val.seted;
-                    console.log(`%c[BWBR]%c ✅ seted action creator 발견: type="${testType}" (module ${ids[mi]}, key "${key}")`,
+                    console.log(`%c[CE]%c ✅ seted action creator 발견: type="${testType}" (module ${ids[mi]}, key "${key}")`,
                       'color: #4caf50; font-weight: bold;', 'color: inherit;');
                     return _setedActionCreator;
                 }
@@ -3477,7 +3477,7 @@
           }
         } catch { /* skip module */ }
       }
-      console.log('[BWBR] webpack 모듈 검색 완료, seted 미발견 → 인터셉터 대기');
+      console.log('[CE] webpack 모듈 검색 완료, seted 미발견 → 인터셉터 대기');
     }
 
     // ── 방법 2: 확장된 type 문자열 브루트포스 ──
@@ -3497,7 +3497,7 @@
           const type = `${sn}/${an}`;
           if (safeProbeType(type, appState, origX)) {
               _setedActionCreator = { type, __synthetic: true };
-              console.log(`%c[BWBR]%c ✅ app.state type 발견 (브루트포스): "${type}"`,
+              console.log(`%c[CE]%c ✅ app.state type 발견 (브루트포스): "${type}"`,
                 'color: #4caf50; font-weight: bold;', 'color: inherit;');
               return _setedActionCreator;
           }
@@ -3505,7 +3505,7 @@
       }
     }
 
-    console.warn('[BWBR] app.state action type 탐색 실패 — 인터셉터로 캡처 대기 중');
+    console.warn('[CE] app.state action type 탐색 실패 — 인터셉터로 캡처 대기 중');
     return null;
   }
 
@@ -3521,7 +3521,7 @@
             if (!_setedActionCreator && p && typeof p === 'object'
               && 'openInspector' in p && 'roomPointerX' in p) {
               _setedActionCreator = { type: innerAction.type, __intercepted: true };
-              console.log(`%c[BWBR]%c ✅ seted action type 캡처됨: "${innerAction.type}"`,
+              console.log(`%c[CE]%c ✅ seted action type 캡처됨: "${innerAction.type}"`,
                 'color: #4caf50; font-weight: bold;', 'color: inherit;');
               reduxStore.dispatch = orig;
             }
@@ -3595,14 +3595,14 @@
       const roomRef = sdk.doc(roomCol, grid.roomId);
       await sdk.setDoc(roomRef, { displayGrid: next }, { merge: true });
 
-      console.log(`%c[BWBR]%c 그리드 토글: displayGrid = ${grid.value} → ${next}`,
+      console.log(`%c[CE]%c 그리드 토글: displayGrid = ${grid.value} → ${next}`,
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
 
       window.dispatchEvent(new CustomEvent('bwbr-toggle-native-grid-result', {
         detail: { success: true, roomId: grid.roomId, value: next }
       }));
     } catch (err) {
-      console.error('[BWBR] 네이티브 그리드 토글 실패:', err);
+      console.error('[CE] 네이티브 그리드 토글 실패:', err);
       window.dispatchEvent(new CustomEvent('bwbr-toggle-native-grid-result', {
         detail: { success: false, reason: 'error', error: err.message }
       }));
@@ -3620,7 +3620,7 @@
         const curVal = grid ? grid.value : false;
         if (curVal !== _prevDisplayGrid) {
           _prevDisplayGrid = curVal;
-          _dbg(`%c[BWBR]%c displayGrid 변경 감지: ${curVal}`,
+          _dbg(`%c[CE]%c displayGrid 변경 감지: ${curVal}`,
             'color: #4caf50; font-weight: bold;', 'color: inherit;');
           window.dispatchEvent(new CustomEvent('bwbr-display-grid-changed', {
             detail: { value: curVal }
@@ -3637,7 +3637,7 @@
       if (reduxStore) {
         clearInterval(_watchInterval);
         watchDisplayGrid();
-        _dbg('%c[BWBR]%c displayGrid 감시 시작',
+        _dbg('%c[CE]%c displayGrid 감시 시작',
           'color: #4caf50; font-weight: bold;', 'color: inherit;');
       }
     }, 500);
@@ -3648,11 +3648,11 @@
   window.addEventListener('bwbr-inspect-native-grid', () => {
     const movable = document.querySelector('.movable');
     if (!movable) {
-      console.error('[BWBR] .movable 없음 — 방에 입장하세요');
+      console.error('[CE] .movable 없음 — 방에 입장하세요');
       return;
     }
     const zoom = movable.parentElement;
-    console.group('%c[BWBR]%c zoom container 자식 목록 (displayGrid 활성 상태에서 실행)',
+    console.group('%c[CE]%c zoom container 자식 목록 (displayGrid 활성 상태에서 실행)',
       'color:#4caf50;font-weight:bold', 'color:inherit');
     for (let i = 0; i < zoom.children.length; i++) {
       const ch = zoom.children[i];
@@ -3736,7 +3736,7 @@
         paper.style.transform = 'translate3d(0, 0, 0)';
       }
 
-      console.log(`%c[BWBR]%c Inspector 이미지 제한: ${nw}×${nh} → ${fitW}×${fitH} (viewport ${vw}×${vh})`,
+      console.log(`%c[CE]%c Inspector 이미지 제한: ${nw}×${nh} → ${fitW}×${fitH} (viewport ${vw}×${vh})`,
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
       return true;
     }
@@ -3787,14 +3787,14 @@
 
       const check = reduxStore.getState().app?.state;
       if (check?.openInspector === true && check?.inspectImageUrl === imageUrl) {
-        console.log('%c[BWBR]%c ✅ 네이티브 확대 보기 열림',
+        console.log('%c[CE]%c ✅ 네이티브 확대 보기 열림',
           'color: #4caf50; font-weight: bold;', 'color: inherit;');
         window.dispatchEvent(new CustomEvent('bwbr-native-zoom-result', { detail: { success: true } }));
       } else {
         window.dispatchEvent(new CustomEvent('bwbr-native-zoom-result', { detail: { success: false } }));
       }
     } catch (err) {
-      console.error('[BWBR] 네이티브 확대 보기 실패:', err);
+      console.error('[CE] 네이티브 확대 보기 실패:', err);
       window.dispatchEvent(new CustomEvent('bwbr-native-zoom-result', { detail: { success: false } }));
     }
   });
@@ -3862,13 +3862,13 @@
         items: items
       };
 
-      console.log(`%c[BWBR]%c 📦 룸 데이터 내보내기: 방 설정 + 캐릭터 ${characters.length}개 + 아이템 ${items.length}개`,
+      console.log(`%c[CE]%c 📦 룸 데이터 내보내기: 방 설정 + 캐릭터 ${characters.length}개 + 아이템 ${items.length}개`,
         'color: #ce93d8; font-weight: bold;', 'color: inherit;');
 
       respond({ success: true, data: exportData, roomName: roomName });
 
     } catch (err) {
-      console.error('[BWBR] 룸 데이터 내보내기 오류:', err);
+      console.error('[CE] 룸 데이터 내보내기 오류:', err);
       respond({ success: false, error: err.message });
     }
   });
@@ -3928,7 +3928,7 @@
       }
       const uid = state.app?.state?.uid || '';
 
-      console.log(`%c[BWBR]%c 📥 룸 데이터 가져오기 시작 (roomId: ${roomId})`,
+      console.log(`%c[CE]%c 📥 룸 데이터 가져오기 시작 (roomId: ${roomId})`,
         'color: #90caf9; font-weight: bold;', 'color: inherit;');
 
       // ── 1. 방 설정 덮어쓰기 (merge) ── (roomSettings가 null이면 건너뜀)
@@ -3953,9 +3953,9 @@
         const roomRef = sdk.doc(roomCol, roomId);
         await sdk.setDoc(roomRef, cleanSettings, { merge: true });
         settingsUpdated = true;
-        console.log('%c[BWBR]%c   방 설정 업데이트 완료', 'color: #90caf9; font-weight: bold;', 'color: inherit;');
+        console.log('%c[CE]%c   방 설정 업데이트 완료', 'color: #90caf9; font-weight: bold;', 'color: inherit;');
       } else {
-        console.log('%c[BWBR]%c   방 설정 건너뜀 (선택 안 됨)', 'color: #90caf9; font-weight: bold;', 'color: #888;');
+        console.log('%c[CE]%c   방 설정 건너뜀 (선택 안 됨)', 'color: #90caf9; font-weight: bold;', 'color: #888;');
       }
 
       // ── 2. 캐릭터 복사 ──
@@ -3977,7 +3977,7 @@
           await sdk.setDoc(charRef, charData);
           charCount++;
         }
-        console.log(`%c[BWBR]%c   캐릭터 ${charCount}개 생성 완료`, 'color: #90caf9; font-weight: bold;', 'color: inherit;');
+        console.log(`%c[CE]%c   캐릭터 ${charCount}개 생성 완료`, 'color: #90caf9; font-weight: bold;', 'color: inherit;');
       }
 
       // ── 3. 아이템/스크린패널 복사 ──
@@ -3997,16 +3997,16 @@
           await sdk.setDoc(itemRef, itemData);
           itemCount++;
         }
-        console.log(`%c[BWBR]%c   아이템 ${itemCount}개 생성 완료`, 'color: #90caf9; font-weight: bold;', 'color: inherit;');
+        console.log(`%c[CE]%c   아이템 ${itemCount}개 생성 완료`, 'color: #90caf9; font-weight: bold;', 'color: inherit;');
       }
 
-      console.log(`%c[BWBR]%c ✅ 룸 데이터 가져오기 완료!`,
+      console.log(`%c[CE]%c ✅ 룸 데이터 가져오기 완료!`,
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
 
       respond({ success: true, settingsUpdated, charCount, itemCount });
 
     } catch (err) {
-      console.error('[BWBR] 룸 데이터 가져오기 오류:', err);
+      console.error('[CE] 룸 데이터 가져오기 오류:', err);
       respond({ success: false, error: err.message });
     }
   });

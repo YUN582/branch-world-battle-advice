@@ -15,12 +15,12 @@ chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONT
 chrome.runtime.onInstalled.addListener((details) => {
 
   if (details.reason === 'install') {
-    console.log('[BWBR] 확장 프로그램 설치 완료');
+    console.log('[CE] 확장 프로그램 설치 완료');
     chrome.storage.sync.remove(['bwbr_config', 'bwbr_core', 'bwbr_combat']);
     // 설치 직후 업데이트 확인
     checkForUpdate();
   } else if (details.reason === 'update') {
-    console.log('[BWBR] 확장 프로그램 업데이트: ' + details.previousVersion + ' → ' + chrome.runtime.getManifest().version);
+    console.log('[CE] 확장 프로그램 업데이트: ' + details.previousVersion + ' → ' + chrome.runtime.getManifest().version);
     // 업데이트 후 이전 알림 초기화
     chrome.storage.local.remove('bwbr_update');
     chrome.action.setBadgeText({ text: '' });
@@ -80,7 +80,7 @@ async function checkForUpdate() {
       chrome.action.setBadgeText({ text: '!' });
       chrome.action.setBadgeBackgroundColor({ color: '#ffab40' });
       
-      console.log('[BWBR] 업데이트 가능: v' + localVersion + ' → v' + remoteVersion);
+      console.log('[CE] 업데이트 가능: v' + localVersion + ' → v' + remoteVersion);
       return updateInfo;
     } else {
       // 최신 버전이면 알림 제거
@@ -89,7 +89,7 @@ async function checkForUpdate() {
       return { available: false, isLatest: true };
     }
   } catch (err) {
-    console.warn('[BWBR] 업데이트 확인 실패:', err.message);
+    console.warn('[CE] 업데이트 확인 실패:', err.message);
     return { available: false, error: err.message };
   }
 }
@@ -164,6 +164,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url && tab.url.includes('ccfolia.com')) {
-    console.log('[BWBR] 코코포리아 탭 감지:', tab.url);
+    console.log('[CE] 코코포리아 탭 감지:', tab.url);
   }
 });

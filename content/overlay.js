@@ -650,7 +650,7 @@ window.BattleRollOverlay = class BattleRollOverlay {
       this._soundBuffers[url] = audioBuffer;
       return audioBuffer;
     } catch (e) {
-      console.warn('[BWBR] sound decode failed:', url, e);
+      console.warn('[Branch] sound decode failed:', url, e);
       return null;
     }
   }
@@ -688,7 +688,7 @@ window.BattleRollOverlay = class BattleRollOverlay {
         this._loadSoundBuffer(url);
       }
     } catch (e) {
-      console.warn('[BWBR] custom roll sounds load failed:', e);
+      console.warn('[Branch] custom roll sounds load failed:', e);
     }
   }
 
@@ -714,7 +714,7 @@ window.BattleRollOverlay = class BattleRollOverlay {
         });
       }
     } catch (e) {
-      console.warn('[BWBR] roll sound error:', e);
+      console.warn('[Branch] roll sound error:', e);
     }
   }
 
@@ -728,9 +728,9 @@ window.BattleRollOverlay = class BattleRollOverlay {
       const url = chrome.runtime.getURL(`sounds/${name}.mp3`);
       const audio = new Audio(url);
       audio.volume = this._getSfxVolume();
-      audio.play().catch(e => console.warn(`[BWBR] ${name} sound play failed:`, e));
+      audio.play().catch(e => console.warn(`[Branch] ${name} sound play failed:`, e));
     } catch (e) {
-      console.warn(`[BWBR] ${name} sound error:`, e);
+      console.warn(`[Branch] ${name} sound error:`, e);
     }
   }
 

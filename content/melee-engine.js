@@ -35,7 +35,7 @@ window.BattleRollEngine = class BattleRollEngine {
     try {
       var pattern = new RegExp(regexStr);
     } catch (e) {
-      console.error('[BWBR Engine] 정규식 오류:', e);
+      console.error('[Branch Engine] 정규식 오류:', e);
       return null;
     }
     const match = text.match(pattern);
@@ -766,6 +766,6 @@ window.BattleRollEngine = class BattleRollEngine {
 
   _log(msg) {
     if (!window._BWBR_DEBUG) return;
-    console.log(`%c[BWBR Engine]%c ${msg}`, 'color: #e91e63; font-weight: bold;', 'color: inherit;');
+    console.log(`%c[Branch Engine]%c ${msg}`, 'color: #e91e63; font-weight: bold;', 'color: inherit;');
   }
 };

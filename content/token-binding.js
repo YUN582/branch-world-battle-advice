@@ -17,7 +17,7 @@
 (function () {
   'use strict';
 
-  const LOG_PREFIX = '%c[BWBR Bind]%c';
+  const LOG_PREFIX = '%c[CE Bind]%c';
   const LOG_STYLE = 'color:#ab47bc;font-weight:bold';
   function LOG(...args) {
     if (!window._BWBR_DEBUG) return;

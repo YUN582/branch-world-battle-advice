@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var LOG_TAG = '%c[BWBR 트리거]%c';
+  var LOG_TAG = '%c[Trigger]%c';
   var LOG_STYLE = ['color: #e040fb; font-weight: bold;', 'color: inherit;'];
   function LOG() {
     if (!window._BWBR_DEBUG) return;

@@ -225,7 +225,7 @@
       document.body.insertBefore(container, document.body.firstChild);
     }
     } catch (e) {
-      console.warn('[BWBR home-display] renderVisitHistory 오류:', e);
+      console.warn('[CE home-display] renderVisitHistory 오류:', e);
     }
   }
 
