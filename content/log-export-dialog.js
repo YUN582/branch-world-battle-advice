@@ -179,14 +179,15 @@
   '  padding:0;flex-shrink:0;',
   '}',
   '.led-tab {',
-  '  padding:12px 16px;font-size:14px;font-weight:700;',
+  '  padding:6px 16px;font-size:14px;font-weight:700;',
   '  font-family:Roboto,Helvetica,Arial,sans-serif;',
   '  letter-spacing:0.4px;text-transform:uppercase;',
   '  color:rgba(255,255,255,0.7);cursor:pointer;',
   '  border-bottom:2px solid transparent;',
-  '  min-height:48px;display:flex;align-items:center;',
+  '  min-height:36px;display:flex;align-items:center;',
   '  transition:color 0.3s cubic-bezier(0.4,0,0.2,1);user-select:none;',
   '}',
+
   '.led-tab:hover { color:rgba(255,255,255,0.9); }',
   '.led-tab.active { color:#fff;border-bottom-color:rgb(33,150,243); }',
 
@@ -307,8 +308,8 @@
   '  display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;',
   '}',
   '.led-date-input {',
-  '  padding:8.5px 14px;font-size:12px;width:115px;box-sizing:border-box;',
-  '  background:transparent;color:#fff;',
+  '  padding:8.5px 14px;font-size:13px;width:100%;box-sizing:border-box;',
+  '  background:transparent;color:#fff;color-scheme:dark;',
   '  border:1px solid rgba(255,255,255,0.23);border-radius:4px;',
   '  outline:none;font-family:inherit;',
   '  transition:border-color 0.2s cubic-bezier(0.4,0,0.2,1);',
@@ -601,7 +602,6 @@
       className: 'led-date-input',
       type: 'time',
       value: currentValue || '00:00',
-      style: { width: '90px' }
     });
   }
 
@@ -870,7 +870,7 @@
     var dateRow = el('div', { className: 'led-date-row' });
 
     // 시작 컬럼 (날짜 + 시간 세로 배치)
-    var fromCol = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px' } });
+    var fromCol = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', flex: '1', minWidth: '0' } });
     var fromInput = el('input', {
       className: 'led-date-input', type: 'date',
       value: settings.dateFrom ? fmtDate(new Date(settings.dateFrom)) : '',
@@ -892,7 +892,7 @@
     dateRow.appendChild(el('span', { style: { alignSelf: 'center', color: 'rgba(255,255,255,0.3)' } }, '~'));
 
     // 종료 컬럼 (날짜 + 시간 세로 배치)
-    var toCol = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px' } });
+    var toCol = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', flex: '1', minWidth: '0' } });
     var toInput = el('input', {
       className: 'led-date-input', type: 'date',
       value: settings.dateTo ? fmtDate(new Date(settings.dateTo)) : '',
@@ -911,36 +911,7 @@
     toCol.appendChild(timeToInput);
     dateRow.appendChild(toCol);
 
-    // 빠른 선택 버튼
-    var quickCol = el('div', { style: { display: 'flex', flexDirection: 'column', gap: '2px', alignSelf: 'center' } });
-    var qAll = el('span', { className: 'led-date-quick' }, '전체');
-    qAll.addEventListener('click', function() {
-      settings.dateFrom = dateMin ? startOfDay(dateMin) : null;
-      settings.dateTo = dateMax ? endOfDay(dateMax) : null;
-      settings.timeFrom = '00:00'; settings.timeTo = '23:59';
-      renderLeftBody(); schedulePreview();
-    });
-    quickCol.appendChild(qAll);
 
-    if (dateMax) {
-      var q7 = el('span', { className: 'led-date-quick' }, '최근 7일');
-      q7.addEventListener('click', function() {
-        settings.dateTo = endOfDay(dateMax);
-        settings.dateFrom = startOfDay(dateMax - 6 * 86400000);
-        settings.timeFrom = '00:00'; settings.timeTo = '23:59';
-        renderLeftBody(); schedulePreview();
-      });
-      quickCol.appendChild(q7);
-      var q30 = el('span', { className: 'led-date-quick' }, '최근 30일');
-      q30.addEventListener('click', function() {
-        settings.dateTo = endOfDay(dateMax);
-        settings.dateFrom = startOfDay(dateMax - 29 * 86400000);
-        settings.timeFrom = '00:00'; settings.timeTo = '23:59';
-        renderLeftBody(); schedulePreview();
-      });
-      quickCol.appendChild(q30);
-    }
-    dateRow.appendChild(quickCol);
     sec3.appendChild(dateRow);
     body.appendChild(sec3);
 
@@ -1381,6 +1352,10 @@
         done++;
       }
       if (progressEl) progressEl.textContent = '이미지 다운로드 중... (' + done + '/' + total + ')';
+      // 매 배치마다 yield하여 UI 응답성 유지 + GC 기회
+      if (start + BATCH < urls.length) {
+        await new Promise(function(r) { setTimeout(r, 10); });
+      }
     }
     return map;
   }
@@ -1406,6 +1381,21 @@
       return;
     }
 
+    // 대량 로그 경고 (2000건 이상 + 이미지 임베드 = 메모리 위험)
+    var LARGE_THRESHOLD = 2000;
+    var IMAGE_THRESHOLD = 5000;
+    if (filtered.length > IMAGE_THRESHOLD && settings.embedImages && settings.exportFormat !== 'clipboard') {
+      if (!confirm('⚠️ ' + filtered.length.toLocaleString() + '건의 대량 로그를 이미지 포함하여 내보내면\n페이지가 멈추거나 크래시될 수 있습니다.\n\n이미지 임베드 없이 URL만 유지하여 내보낼까요?\n(확인 = URL 유지, 취소 = 이미지 포함 시도)')) {
+        // 사용자가 "취소"를 눌러 이미지 포함을 원함 — 한번 더 경고
+        if (!confirm('정말 이미지를 포함하시겠습니까?\n메모리 부족으로 페이지가 크래시될 수 있습니다.')) return;
+      } else {
+        settings.embedImages = false;
+        renderLeftBody(); // 체크박스 상태 반영
+      }
+    } else if (filtered.length > LARGE_THRESHOLD) {
+      if (!confirm(filtered.length.toLocaleString() + '건의 로그를 내보냅니다.\n대량 로그는 시간이 걸릴 수 있습니다. 계속할까요?')) return;
+    }
+
     var progressEl = document.getElementById(DIALOG_ID + '-export-progress');
     var title = settings.title || roomName || '코코포리아';
 
@@ -1413,7 +1403,14 @@
     var exportMessages = filtered;
     var doEmbed = settings.embedImages && settings.exportFormat !== 'clipboard';
     if (doEmbed) {
-      if (progressEl) progressEl.textContent = '이미지 수집 중...';
+      // 이미지 수 체크 — 너무 많으면 배치 크기 축소
+      var uniqueUrls = {};
+      for (var ci = 0; ci < filtered.length; ci++) {
+        if (filtered[ci].iconUrl && filtered[ci].iconUrl.indexOf('data:') !== 0) uniqueUrls[filtered[ci].iconUrl] = true;
+        if (filtered[ci].imageUrl && filtered[ci].imageUrl.indexOf('data:') !== 0) uniqueUrls[filtered[ci].imageUrl] = true;
+      }
+      var imgCount = Object.keys(uniqueUrls).length;
+      if (progressEl) progressEl.textContent = '이미지 수집 중... (고유 ' + imgCount + '개)';
       try {
         var imageMap = await embedAllImages(filtered, progressEl);
         exportMessages = applyImageMap(filtered, imageMap);
@@ -1476,16 +1473,23 @@
         }
       }
     } else {
-      var filename = 'log_' + title.replace(/[^a-zA-Z0-9가-힣_-]/g, '_') + '_' + fmtDateFile(new Date()) + '.html';
-      var blob = new Blob(htmlParts, { type: 'text/html;charset=utf-8' });
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url; a.download = filename;
-      document.body.appendChild(a); a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      if (progressEl) progressEl.textContent = '';
-      alert(filtered.length + '건 로그를 ' + filename + '으로 내보냈습니다!');
+      try {
+        var filename = 'log_' + title.replace(/[^a-zA-Z0-9가-힣_-]/g, '_') + '_' + fmtDateFile(new Date()) + '.html';
+        var blob = new Blob(htmlParts, { type: 'text/html;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a);
+        // revokeObjectURL을 지연하여 다운로드 완료를 보장
+        setTimeout(function() { URL.revokeObjectURL(url); }, 5000);
+        if (progressEl) progressEl.textContent = '';
+        alert(filtered.length + '건 로그를 ' + filename + '으로 내보냈습니다!');
+      } catch (dlErr) {
+        console.error('[BWBR] 내보내기 실패:', dlErr);
+        if (progressEl) progressEl.textContent = '';
+        alert('내보내기 중 오류가 발생했습니다.\n메시지 수가 너무 많거나 이미지 임베드로 인해 메모리가 부족할 수 있습니다.\n\n이미지 임베드를 끄고 다시 시도해 주세요.\n\n오류: ' + (dlErr.message || dlErr));
+      }
     }
   }
 
