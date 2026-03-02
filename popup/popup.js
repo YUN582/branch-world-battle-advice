@@ -753,8 +753,8 @@
 
   // 내장 모듈 경로 (module-loader.js와 동일)
   const BUILTIN_MODULE_PATHS = [
-    'modules/branch-world-combat.json',
-    'modules/branch-world-triggers.json'
+    'modules/branch-world/manifest.json',
+    'modules/triggers/manifest.json'
   ];
 
   const MODULE_STORAGE_KEY = 'bwbr_modules';

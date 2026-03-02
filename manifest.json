@@ -77,7 +77,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["sounds/*", "triggers/*", "modules/*", "content/site-volume-page.js", "content/redux-injector.js"],
+      "resources": ["sounds/*", "modules/*", "content/site-volume-page.js", "content/redux-injector.js"],
       "matches": ["https://ccfolia.com/*"]
     }
   ],

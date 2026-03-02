@@ -21,8 +21,8 @@
 
   // ── 내장 모듈 경로 (Chrome 확장은 디렉토리 열거 불가 → 하드코딩) ──
   var BUILTIN_MODULES = [
-    'modules/branch-world-combat.json',
-    'modules/branch-world-triggers.json'
+    'modules/branch-world/manifest.json',
+    'modules/triggers/manifest.json'
   ];
 
   var STORAGE_KEY = 'bwbr_modules'; // { moduleId: boolean }

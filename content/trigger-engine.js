@@ -35,7 +35,7 @@
       return Promise.resolve();
     }
 
-    var url = chrome.runtime.getURL('triggers/defaults.json');
+    var url = chrome.runtime.getURL('modules/triggers/defaults.json');
     return fetch(url).then(function (res) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
       return res.json();
