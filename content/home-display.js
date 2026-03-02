@@ -11,8 +11,8 @@
 
   // 캐시 프리로드 (즉시 시작, 렌더링 전에 완료되도록)
   try {
-    chrome.storage.sync.get('bwbr_config', function(data) {
-      if (!chrome.runtime.lastError) _cachedConfig = data.bwbr_config || null;
+    chrome.storage.sync.get('bwbr_core', function(data) {
+      if (!chrome.runtime.lastError) _cachedConfig = data.bwbr_core || null;
     });
     chrome.storage.local.get('bwbrRoomHistory', function(data) {
       if (!chrome.runtime.lastError) _cachedRoomData = data.bwbrRoomHistory || {};
@@ -147,7 +147,7 @@
     // 캐시가 있으면 즉시 사용, 없으면 storage에서 읽기
     const settings = _cachedConfig !== undefined
       ? _cachedConfig
-      : await safeStorageGet('sync', 'bwbr_config', null);
+      : await safeStorageGet('sync', 'bwbr_core', null);
     const isVisible = settings?.general?.showVisitHistory !== false;
 
     // 기존 컨테이너 제거
@@ -273,8 +273,8 @@
   // storage 변경 감지 — 캐시도 갱신
   try {
     chrome.storage.onChanged.addListener((changes, areaName) => {
-      if (areaName === 'sync' && changes.bwbr_config) {
-        _cachedConfig = changes.bwbr_config.newValue || null;
+      if (areaName === 'sync' && changes.bwbr_core) {
+        _cachedConfig = changes.bwbr_core.newValue || null;
         if (isHomePage()) renderVisitHistory();
       }
       if (areaName === 'local' && changes.bwbrRoomHistory) {

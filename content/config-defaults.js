@@ -2,143 +2,26 @@
 // Branch World Battle Roll - 설정 기본값
 // 코코포리아 GM 보조 확장 프로그램
 //
-// [모듈 분류 가이드]
-//   [CORE]   = 범용 설정 (TRPG 시스템 무관) → core/config.js
-//   [COMBAT] = 가지세계 전투 전용 → modules/bw-combat/manifest.json
+// [네임스페이스 분류]
+//   BWBR_CORE_DEFAULTS   = 범용 설정 (TRPG 시스템 무관)
+//     - general  : 일반 토글/숫자 설정
+//     - selectors: 코코포리아 DOM 선택자
+//   BWBR_COMBAT_DEFAULTS  = 가지세계 전투 전용 설정
+//     - templates, timing, sounds, rules, patterns, traits
+//
+// 저장소 키:
+//   chrome.storage.sync['bwbr_core']   ← BWBR_CORE_DEFAULTS 오버라이드
+//   chrome.storage.sync['bwbr_combat'] ← BWBR_COMBAT_DEFAULTS 오버라이드
+//   (v1 호환: bwbr_config → 자동 마이그레이션)
+//
+// 런타임 병합:
+//   BWBR_DEFAULTS = { ...BWBR_CORE_DEFAULTS, ...BWBR_COMBAT_DEFAULTS }
+//   → 기존 엔진이 config.templates, config.general 등으로 접근 가능
 // ============================================================
 
-window.BWBR_DEFAULTS = {
-  // ── [COMBAT] 메시지 템플릿 ──────────────────────────────
-  templates: {
-    // 합 개시 트리거 (이 패턴이 채팅에 나타나면 전투 시작)
-    // {attacker}, {defender} = 이름
-    // {atkDice}, {atkCrit}, {atkFumble} = 공격자 주사위/대성공/대실패
-    // {defDice}, {defCrit}, {defFumble} = 방어자 주사위/대성공/대실패
-    combatStart:
-      '《합 개시》| ⚔️ {attacker} - {atkDice}/{atkCrit}/{atkFumble} | 🛡️ {defender} - {defDice}/{defCrit}/{defFumble}',
-
-    // 각 합 헤더
-    roundHeader:
-      '《{round}합》| ⚔️ {attacker} {atkDice} : 🛡️ {defender} {defDice} @{sound}',
-
-    // 공격자 주사위 굴림 명령
-    attackerRoll: '1D20 ⚔️ {attacker}',
-
-    // 방어자 주사위 굴림 명령
-    defenderRoll: '1D20 🛡️ {defender}',
-
-    // 합 결과 메시지
-    roundResultWin:
-      '⚔️ {attacker}【{atkValue}】 vs 🛡️ {defender}【{defValue}】 → {winner} 승리!',
-    roundResultCrit:
-      '💥 {name} 대성공! 【{value}】 → 상대 주사위 파괴 & 주사위 +1',
-    roundResultFumble:
-      '💀 {name} 대실패! 【{value}】 → 자신 주사위 파괴 & 주사위 -1',
-    roundResultBothCrit:
-      '⚡ 쌍방 대성공! ⚔️【{atkValue}】 🛡️【{defValue}】 → 각자 주사위 +1',
-    roundResultTie:
-      '⚖️ 무승부! ⚔️【{atkValue}】 🛡️【{defValue}】 → 재굴림',
-
-    // 합 승리 메시지
-    victory: '《합 승리》\n{winnerIcon} {winner} @{sound}',
-
-    // 합 중지 메시지 (이 패턴 감지 시 전투 중지)
-    combatCancel: '《합 중지》'
-  },
-
-  // ── [COMBAT] 타이밍 설정 (밀리초) ─────────────────────────
-  timing: {
-    beforeFirstRoll: 700,     // 합 헤더 출력 후 → 첫 번째 굴림까지 대기
-    betweenRolls: 700,        // 공격자 결과 확인 후 → 방어자 굴림까지 대기
-    beforeRoundResult: 700,   // 방어자 결과 확인 후 → 결과 출력까지 대기
-    beforeNextRound: 700,     // 결과 출력 후 → 다음 합까지 대기
-    beforeVictory: 700,       // 마지막 합 결과 후 → 승리 선언까지 대기
-    resultTimeout: 3000       // 주사위 결과 대기 타임아웃 (초과 시 재시도)
-  },
-
-  // ── [COMBAT] 효과음 설정 ───────────────────────────────
-  sounds: {
-    combatStartSounds: ['합'],                        // 합 개시 시 효과음
-    roundHeaderSounds: ['챙1', '챙2', '챙3'],          // 합 헤더 시 무작위
-    resultNormalSounds: ['챙1', '챙2', '챙3'],      // 일반 결과 시 무작위
-    resultSpecialSounds: ['챙4'],                   // 대성공/대실패 시 무작위
-    victorySounds: ['합'],                              // 승리 시 무작위
-    // 전투 보조 (턴제) 사운드
-    battleStartSounds: [],                            // 전투 보조 개시 시
-    turnStartSounds: [],                              // 차례 시작 시
-    actionConsumeSounds: ['발도1'],                    // 행동 소비 시
-    actionAddSounds: ['발도2'],                        // 행동 추가 시
-    battleEndSounds: []                               // 전투 보조 종료 시
-  },
-
-  // ── [COMBAT] 전투 규칙 ──────────────────────────────────
-  rules: {
-    diceType: 20,           // D20 (주사위 면 수)
-    criticalValue: 20,      // 대성공 값
-    fumbleValue: 1,         // 대실패 값
-    criticalBonus: 1,       // 대성공 시 추가 주사위 수
-    fumblePenalty: 1,       // 대실패 시 추가 감소 주사위 수
-    tieRule: 'reroll'       // 동점 처리: "reroll" | "bothLose" | "nothing" | "attackerWins" | "defenderWins"
-  },
-
-  // ── [COMBAT] 정규식 패턴 ────────────────────────────────
-  patterns: {
-    // 합 개시 트리거 감지 패턴
-    // 이모지 뒤에 선택적 Variation Selector (U+FE0F)를 허용
-    // 마지막 슬래시 뒤에 선택적 특성 태그 (H0H4 등) 캐처
-    triggerRegex:
-      '《합\\s*개시》\\s*\\|?\\s*⚔\\uFE0F?\\s*(.+?)\\s*-\\s*(\\d+)\\s*/\\s*(\\d+)\\s*/\\s*(\\d+)(?:\\s*/\\s*([A-Za-z0-9]+))?\\s*\\|?\\s*🛡\\uFE0F?\\s*(.+?)\\s*-\\s*(\\d+)\\s*/\\s*(\\d+)\\s*/\\s*(\\d+)(?:\\s*/\\s*([A-Za-z0-9]+))?',
-
-    // 주사위 결과 감지 패턴 (캡처 그룹 1 = 결과 값)
-    diceResultRegex: '1[Dd]20[^0-9]*?[→＞>]\\s*(\\d+)',
-
-    // 전투 중지 감지 패턴
-    cancelRegex: '《합\\s*중지》'
-  },
-
-  // ── [CORE] DOM 선택자 (코코포리아 전용) ─────────────────────
-  selectors: {
-    // 채팅 메시지 컨테이너 (새 메시지를 감시할 부모 요소)
-    chatContainer: [
-      '[class*="MuiList-root"]',
-      '[class*="chat-log"]',
-      '[class*="message-list"]',
-      '[role="log"]',
-      '[class*="scroll"]'
-    ],
-
-    // 개별 채팅 메시지 요소
-    chatMessage: [
-      '[class*="MuiListItem"]',
-      '[class*="message"]',
-      '[class*="chat-item"]'
-    ],
-
-    // 메시지 텍스트를 포함하는 요소 (메시지 안에서)
-    messageText: [
-      '[class*="MuiTypography"]',
-      '[class*="text"]',
-      '[class*="content"]',
-      '[class*="body"]',
-      'p', 'span', 'div'
-    ],
-
-    // 채팅 입력 필드
-    chatInput: [
-      'textarea[name="text"]',
-      'textarea.MuiInputBase-inputMultiline',
-      'textarea',
-      '[contenteditable="true"]'
-    ],
-
-    // 전송 버튼 (코코포리아: form 안의 submit 버튼)
-    sendButton: [
-      'form button[type="submit"]',
-      'button[type="submit"]'
-    ]
-  },
-
-  // ── [CORE] 일반 설정 ──────────────────────────────────
+// ── [CORE] 범용 코코포리아 확장 설정 ─────────────────────────
+window.BWBR_CORE_DEFAULTS = {
+  // ── 일반 설정 ──────────────────────────────────────────
   general: {
     enabled: true,              // 확장 프로그램 활성화
     manualMode: false,          // 수동 모드 (주사위 결과를 사용자가 직접 입력)
@@ -155,7 +38,107 @@ window.BWBR_DEFAULTS = {
     language: 'ko'              // UI 언어
   },
 
-  // ── [COMBAT] 종족 특성 정의 ────────────────────────────
+  // ── DOM 선택자 (코코포리아 전용) ───────────────────────────
+  selectors: {
+    chatContainer: [
+      '[class*="MuiList-root"]',
+      '[class*="chat-log"]',
+      '[class*="message-list"]',
+      '[role="log"]',
+      '[class*="scroll"]'
+    ],
+    chatMessage: [
+      '[class*="MuiListItem"]',
+      '[class*="message"]',
+      '[class*="chat-item"]'
+    ],
+    messageText: [
+      '[class*="MuiTypography"]',
+      '[class*="text"]',
+      '[class*="content"]',
+      '[class*="body"]',
+      'p', 'span', 'div'
+    ],
+    chatInput: [
+      'textarea[name="text"]',
+      'textarea.MuiInputBase-inputMultiline',
+      'textarea',
+      '[contenteditable="true"]'
+    ],
+    sendButton: [
+      'form button[type="submit"]',
+      'button[type="submit"]'
+    ]
+  }
+};
+
+// ── [COMBAT] 가지세계 전투 전용 설정 ──────────────────────────
+window.BWBR_COMBAT_DEFAULTS = {
+  // ── 메시지 템플릿 ──────────────────────────────────────
+  templates: {
+    combatStart:
+      '《합 개시》| ⚔️ {attacker} - {atkDice}/{atkCrit}/{atkFumble} | 🛡️ {defender} - {defDice}/{defCrit}/{defFumble}',
+    roundHeader:
+      '《{round}합》| ⚔️ {attacker} {atkDice} : 🛡️ {defender} {defDice} @{sound}',
+    attackerRoll: '1D20 ⚔️ {attacker}',
+    defenderRoll: '1D20 🛡️ {defender}',
+    roundResultWin:
+      '⚔️ {attacker}【{atkValue}】 vs 🛡️ {defender}【{defValue}】 → {winner} 승리!',
+    roundResultCrit:
+      '💥 {name} 대성공! 【{value}】 → 상대 주사위 파괴 & 주사위 +1',
+    roundResultFumble:
+      '💀 {name} 대실패! 【{value}】 → 자신 주사위 파괴 & 주사위 -1',
+    roundResultBothCrit:
+      '⚡ 쌍방 대성공! ⚔️【{atkValue}】 🛡️【{defValue}】 → 각자 주사위 +1',
+    roundResultTie:
+      '⚖️ 무승부! ⚔️【{atkValue}】 🛡️【{defValue}】 → 재굴림',
+    victory: '《합 승리》\n{winnerIcon} {winner} @{sound}',
+    combatCancel: '《합 중지》'
+  },
+
+  // ── 타이밍 설정 (밀리초) ────────────────────────────────
+  timing: {
+    beforeFirstRoll: 700,
+    betweenRolls: 700,
+    beforeRoundResult: 700,
+    beforeNextRound: 700,
+    beforeVictory: 700,
+    resultTimeout: 3000
+  },
+
+  // ── 효과음 설정 ────────────────────────────────────────
+  sounds: {
+    combatStartSounds: ['합'],
+    roundHeaderSounds: ['챙1', '챙2', '챙3'],
+    resultNormalSounds: ['챙1', '챙2', '챙3'],
+    resultSpecialSounds: ['챙4'],
+    victorySounds: ['합'],
+    battleStartSounds: [],
+    turnStartSounds: [],
+    actionConsumeSounds: ['발도1'],
+    actionAddSounds: ['발도2'],
+    battleEndSounds: []
+  },
+
+  // ── 전투 규칙 ──────────────────────────────────────────
+  rules: {
+    diceType: 20,
+    criticalValue: 20,
+    fumbleValue: 1,
+    criticalBonus: 1,
+    fumblePenalty: 1,
+    tieRule: 'reroll'
+  },
+
+  // ── 정규식 패턴 ────────────────────────────────────────
+  patterns: {
+    triggerRegex:
+      '《합\\s*개시》\\s*\\|?\\s*⚔\\uFE0F?\\s*(.+?)\\s*-\\s*(\\d+)\\s*/\\s*(\\d+)\\s*/\\s*(\\d+)(?:\\s*/\\s*([A-Za-z0-9]+))?\\s*\\|?\\s*🛡\\uFE0F?\\s*(.+?)\\s*-\\s*(\\d+)\\s*/\\s*(\\d+)\\s*/\\s*(\\d+)(?:\\s*/\\s*([A-Za-z0-9]+))?',
+    diceResultRegex: '1[Dd]20[^0-9]*?[→＞>]\\s*(\\d+)',
+    cancelRegex: '《합\\s*중지》'
+  },
+
+  // ── 종족 특성 정의 ─────────────────────────────────────
   traits: {
     H0: { name: '인간 특성', desc: '주사위 0 시 +1 부활, 크리 시 초기화' },
     H00: { name: '인간 특성 (잠재)', desc: '특성 없지만 대성공 시 초기화되어 사용 가능' },
@@ -166,6 +149,58 @@ window.BWBR_DEFAULTS = {
     H40: { name: '피로 새겨진 역사 + 인간', desc: 'H4 스택 초기화 시 인간 특성 발동 → 추가 합 1회' },
     H400: { name: '피로 새겨진 역사 + 인간', desc: '대성공으로 인간 특성 획득 후, H4 초기화 시 발동 → 추가 합 1회' }
   }
+};
+
+// ── 런타임 병합 (하위 호환) ──────────────────────────────────
+// 기존 엔진이 config.templates, config.general 등 평탄한 접근을 유지하도록
+// CORE + COMBAT 기본값을 합쳐서 BWBR_DEFAULTS로 노출한다.
+window.BWBR_DEFAULTS = Object.assign({},
+  JSON.parse(JSON.stringify(window.BWBR_CORE_DEFAULTS)),
+  JSON.parse(JSON.stringify(window.BWBR_COMBAT_DEFAULTS))
+);
+
+// ── 설정 마이그레이션 유틸리티 ───────────────────────────────
+
+/** 코어 네임스페이스 키 목록 */
+window.BWBR_CORE_KEYS = ['general', 'selectors'];
+
+/** 전투 네임스페이스 키 목록 */
+window.BWBR_COMBAT_KEYS = ['templates', 'timing', 'sounds', 'rules', 'patterns', 'traits'];
+
+/**
+ * v1 flat config (bwbr_config) → v2 namespaced (bwbr_core + bwbr_combat) 마이그레이션.
+ * 최초 1회만 실행되고, 완료 후 bwbr_config를 삭제한다.
+ * @param {object} oldConfig - 기존 bwbr_config 값
+ * @returns {Promise<{core: object, combat: object}>}
+ */
+window.BWBR_migrateConfigV1toV2 = function(oldConfig) {
+  var core = {};
+  var combat = {};
+  if (!oldConfig || typeof oldConfig !== 'object') {
+    return Promise.resolve({ core: core, combat: combat });
+  }
+
+  window.BWBR_CORE_KEYS.forEach(function(k) {
+    if (oldConfig[k] !== undefined) core[k] = oldConfig[k];
+  });
+  window.BWBR_COMBAT_KEYS.forEach(function(k) {
+    if (oldConfig[k] !== undefined) combat[k] = oldConfig[k];
+  });
+
+  return new Promise(function(resolve) {
+    try {
+      chrome.storage.sync.set({ bwbr_core: core, bwbr_combat: combat }, function() {
+        // 구 키 삭제
+        chrome.storage.sync.remove('bwbr_config', function() {
+          console.log('[BWBR] 설정 마이그레이션 완료: bwbr_config → bwbr_core + bwbr_combat');
+          resolve({ core: core, combat: combat });
+        });
+      });
+    } catch (e) {
+      console.warn('[BWBR] 마이그레이션 저장 실패:', e);
+      resolve({ core: core, combat: combat });
+    }
+  });
 };
 
 // 한글 숫자 변환 (합 번호에 사용)

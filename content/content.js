@@ -1,59 +1,27 @@
 // ============================================================
 // Branch World Battle Roll - 메인 컨트롤러 (Content Script)
-// 전투 상태 머신, 채팅 감시, 자동 처리 오케스트레이션
+// 설정 로드, 채팅 감시, 확장 메시지 처리, 로그 추출 오케스트레이션
+// 전투 로직은 combat-controller.js (BWBR_CombatController)에 위임
 //
 // [모듈 분류 가이드]
 //   [CORE]    = 범용 코코포리아 확장 기능 (TRPG 시스템 무관)
-//   [COMBAT]  = 가지세계 전투 모듈 (합/턴제/관전)
+//   [COMBAT]  = 전투 제어기 위임 (combat-controller.js)
 //   [TRIGGER] = 범용 트리거 자동화 모듈
 // ============================================================
 
 (function () {
   'use strict';
 
-  // ── [CORE + COMBAT] 전역 상태 ────────────────────────────
+  // ── [CORE] 전역 상태 ─────────────────────────────────────
 
-  /** 전투 흐름 상태  [COMBAT] IDLE/TURN_COMBAT 외 모든 상태는 전투 모듈 전용 */
-  const STATE = {
-    IDLE: 'IDLE',                                  // [CORE]
-    COMBAT_STARTED: 'COMBAT_STARTED',
-    ROUND_HEADER_SENT: 'ROUND_HEADER_SENT',
-    WAITING_ATTACKER_RESULT: 'WAITING_ATTACKER_RESULT',
-    WAITING_DEFENDER_RESULT: 'WAITING_DEFENDER_RESULT',
-    PROCESSING_RESULT: 'PROCESSING_RESULT',
-    COMBAT_END: 'COMBAT_END',
-    PAUSED: 'PAUSED',
-    SPECTATING: 'SPECTATING',
-    // 전투 보조 모드 상태
-    TURN_COMBAT: 'TURN_COMBAT'
-  };
-
-  // [CORE] 코어 변수
   let config = null;        // 현재 설정
   let chat = null;          // CocoforiaChatInterface
-  let flowState = STATE.IDLE;
   let enabled = true;
   let _userMessagePendingPromise = null; // 사용자 메시지 도착 대기 프라미스 (메시지 순서 보장)
   let _cachedSpeakerName = null; // 현재 발화(선택) 캐릭터 이름
 
-  // [COMBAT] 전투 모듈 변수
-  let engine = null;        // BattleRollEngine (합 처리)
-  let combatEngine = null;  // CombatEngine (전투 보조)
-  let overlay = null;       // BattleRollOverlay
-  let resultTimeoutId = null;
-  let paused = false;
-  let _pauseRequested = false;
-  let _stateBeforePause = null;
-  let _spectatorAtkRollSeen = false;
-  let _spectatorDefRollSeen = false;
-  let _spectatorDedup = new Map();  // key → timestamp (중복 메시지 방지)
-  let _lastTurnAdvanceTime = 0;     // 차례 종료 디바운스용 (중복 방지)
-  let _turnTrackingActive = false;  // 관전자용 턴 추적 활성화 여부
-  let _characterCache = new Map();  // 캐릭터 이름 → { iconUrl, ... }
-  let _currentTrackedTurn = null;   // 관전자용 현재 차례 정보
-  let _spectatorFromTurnCombat = false; // 합 관전이 TURN_COMBAT에서 시작되었는지
-  let _spectatorStartTime = 0;           // 관전 시작 시각 (premature end 방지용)
-  let _activeCombatFromTurnCombat = false; // 능동 합 진행이 TURN_COMBAT에서 시작되었는지
+  // [COMBAT] 전투 제어기 (combat-controller.js)
+  let combatCtrl = null;
 
   // [TRIGGER] 트리거 모듈 변수
   let triggerEngine = null; // TriggerEngine 인스턴스 (범용 트리거 시스템)
@@ -86,11 +54,20 @@
     document.dispatchEvent(new CustomEvent('bwbr-set-debug'));
 
     // 모듈 초기화
-    engine = new window.BattleRollEngine(config);
-    combatEngine = new window.CombatEngine(config);
     chat = new window.CocoforiaChatInterface(config);
-    overlay = new window.BattleRollOverlay(config);
-    overlay.preloadRollSounds();
+
+    // 전투 제어기 초기화 (engine, combatEngine, overlay는 내부에서 생성)
+    combatCtrl = window.BWBR_CombatController;
+    combatCtrl.init({
+      config: config,
+      chat: chat,
+      requestCharacterData: () => requestCharacterData(),
+      awaitUserMessage: () => _awaitUserMessage(),
+      getSpeakerName: () => _cachedSpeakerName,
+      log: (msg) => log(msg),
+      alwaysLog: (msg) => alwaysLog(msg),
+      enabled: config.general.enabled
+    });
 
     // Redux Store 가져오기 (전투 보조용 캐릭터 데이터 접근)
     setupReduxStore();
@@ -102,57 +79,18 @@
       window.BWBR_AutoComplete.setEnabled(config.general.autoComplete !== false);
     }
 
-    // 패널 이벤트
-    overlay.onCancel(() => cancelCombat());
-    overlay.onPause(() => togglePause());
-    overlay.setActionClickCallback(async (type, index, action) => {
-      // 행동 슬롯 클릭 → 실제 캐릭터 스탯 변경 (Firestore 경유)
-      const current = combatEngine.getState()?.currentCharacter;
-      if (!current) return;
-      const statLabel = type === 'main' ? '주 행동🔺' : '보조 행동🔹';
-
-      // 수정 전 스탯 조회 (요약 메시지용)
-      const preStats = _extractActionStats(current);
-
-      let result;
-      if (action === 'use') {
-        result = await _modifyCharStat(current.name, statLabel, '-', 1, true);
-      } else if (action === 'restore') {
-        result = await _modifyCharStat(current.name, statLabel, '+', 1, true);
-      } else if (action === 'add') {
-        // 현재 값만 +1 (최대치 초과 허용, max는 변경하지 않음)
-        result = await _modifyCharStat(current.name, statLabel, '+', 1, true);
-      }
-
-      // 요약 시스템 메시지 전송
-      if (result && result.success) {
-        const mainStr = type === 'main'
-          ? `🔺주 행동 ${result.oldVal} → ${result.newVal}개`
-          : `🔺주 행동 ${preStats.mainActions}개`;
-        const subStr = type === 'sub'
-          ? `🔹보조 행동 ${result.oldVal} → ${result.newVal}개`
-          : `🔹보조 행동 ${preStats.subActions}개`;
-        const msg = `〔 ${current.name}의 차례 〕\n${mainStr}, ${subStr} | 이동거리 ${current.movement}`;
-        chat.sendSystemMessage(msg);
-      }
-
-      // 즉시 UI 갱신
-      _scheduleStatRefreshUI(100);
-    });
-    overlay.setStatus(enabled ? 'idle' : 'disabled', enabled ? '대기 중' : '비활성');
-
     // DOM 요소 탐색 (코코포리아 로드 대기)
     log('코코포리아 채팅 DOM 탐색 중...');
     const found = await chat.waitForElements(60000, 2000);
     if (!found) {
       alwaysLog('채팅 DOM 요소를 찾을 수 없습니다. 수동 선택자 설정이 필요할 수 있습니다.');
-      overlay.setStatus('error', 'DOM 탐색 실패');
-      overlay.addLog('채팅 DOM 요소를 찾을 수 없습니다. 확장 프로그램 설정에서 선택자를 확인해주세요.', 'error');
+      combatCtrl.getOverlay().setStatus('error', 'DOM 탐색 실패');
+      combatCtrl.getOverlay().addLog('채팅 DOM 요소를 찾을 수 없습니다. 확장 프로그램 설정에서 선택자를 확인해주세요.', 'error');
       return;
     }
 
     alwaysLog('채팅 DOM 발견! 채팅 관찰 시작...');
-    overlay.addLog('코코포리아 연결 완료', 'success');
+    combatCtrl.getOverlay().addLog('코코포리아 연결 완료', 'success');
 
     // 로그 추출 메뉴 삽입 (톱니바퀴 메뉴에 항목 추가)
     setupLogExportMenu();
@@ -162,10 +100,10 @@
       triggerEngine = new window.TriggerEngine();
       triggerEngine.init({
         chat: chat,
-        getFlowState: () => flowState,
+        getFlowState: () => combatCtrl.getFlowState(),
         awaitUserMessage: () => _awaitUserMessage(),
         getCurrentCombatCharName: () => {
-          const s = combatEngine.getState();
+          const s = combatCtrl.getCombatEngine().getState();
           return s && s.currentCharacter ? s.currentCharacter.name : null;
         },
         getSpeakerName: () => _cachedSpeakerName
@@ -198,7 +136,7 @@
     injectSiteVolumeSlider();
 
     // 저장된 턴 전투 상태 복원 시도 (새로고침 후)
-    const restored = await _tryRestoreTurnCombat();
+    const restored = await combatCtrl.tryRestore();
     if (restored) {
       alwaysLog('턴 전투 상태 복원 완료 — 전투 보조 모드 재개');
     }
@@ -221,19 +159,34 @@
         resolve(JSON.parse(JSON.stringify(window.BWBR_DEFAULTS)));
       }, 5000);
       try {
-        chrome.storage.sync.get('bwbr_config', (result) => {
+        // v2: 네임스페이스 키 + v1 마이그레이션 감지
+        chrome.storage.sync.get(['bwbr_core', 'bwbr_combat', 'bwbr_config'], async (result) => {
           clearTimeout(fallbackTimer);
           if (chrome.runtime.lastError) {
             alwaysLog('설정 로드 오류: ' + chrome.runtime.lastError.message + ' → 기본값 사용');
             resolve(JSON.parse(JSON.stringify(window.BWBR_DEFAULTS)));
             return;
           }
-          if (result.bwbr_config) {
-            // 저장된 설정과 기본값 병합 (새 키 추가 대응)
-            const merged = deepMerge(window.BWBR_DEFAULTS, result.bwbr_config);
+
+          let coreData = result.bwbr_core;
+          let combatData = result.bwbr_combat;
+
+          // v1→v2 마이그레이션: 구 bwbr_config가 있고 새 키가 없으면 자동 변환
+          if (result.bwbr_config && !coreData) {
+            alwaysLog('v1 설정 감지 → v2 마이그레이션 시작...');
+            const migrated = await window.BWBR_migrateConfigV1toV2(result.bwbr_config);
+            coreData = migrated.core;
+            combatData = migrated.combat;
+          }
+
+          if (coreData || combatData) {
+            // 네임스페이스별 기본값과 병합 → 평탄한 런타임 config 생성
+            const mergedCore = deepMerge(window.BWBR_CORE_DEFAULTS, coreData || {});
+            const mergedCombat = deepMerge(window.BWBR_COMBAT_DEFAULTS, combatData || {});
+            const merged = Object.assign({}, mergedCore, mergedCombat);
             // 정규식, 템플릿은 항상 최신 기본값을 사용 (이전 버전 호환)
-            merged.patterns = JSON.parse(JSON.stringify(window.BWBR_DEFAULTS.patterns));
-            merged.templates = JSON.parse(JSON.stringify(window.BWBR_DEFAULTS.templates));
+            merged.patterns = JSON.parse(JSON.stringify(window.BWBR_COMBAT_DEFAULTS.patterns));
+            merged.templates = JSON.parse(JSON.stringify(window.BWBR_COMBAT_DEFAULTS.templates));
             // 효과음: 구 형식(single) → 신 형식(array) 마이그레이션
             migrateSounds(merged.sounds);
             alwaysLog('저장된 설정 로드 (패턴/템플릿은 기본값 사용)');
@@ -272,15 +225,6 @@
 
   // ── [CORE] 사용자 메시지 도착 대기 ─────────────────────
 
-  // ── [COMBAT] 효과음 헬퍼 ───────────────────────────────
-
-  /** 설정된 사운드 배열에서 무작위 하나를 @sound 형식으로 반환. 비어있으면 빈 문자열. */
-  function _pickCutin(soundsKey) {
-    const arr = config?.sounds?.[soundsKey];
-    if (!arr || arr.length === 0) return '';
-    return ' @' + arr[Math.floor(Math.random() * arr.length)];
-  }
-
   /**
    * 사용자의 트리거 메시지가 Firestore/Redux에 도착할 때까지 대기.
    * onInputSubmit은 keydown(Enter) 시점에 발동하므로, 실제 메시지가
@@ -314,24 +258,22 @@
   }
 
   // ── [CORE] 사용자 입력 감지 (Enter 키) ───────────────
-  // ↳ 내부에서 [COMBAT] checkForCombatAssistTrigger, checkForTrigger, checkForCancel 호출
-  // ↳ 내부에서 [TRIGGER] triggerEngine.check/execute 호출
+  // ↳ 전투 제어기(combatCtrl)에 위임
+  // ↳ [TRIGGER] triggerEngine.check/execute 호출
 
   function onInputSubmit(text) {
     if (!enabled) return;
     // @ 컷인 명령은 무시 (절대 전투 트리거가 아님)
     if (text.startsWith('@')) return;
-    log(`[입력 감지] "${text.substring(0, 80)}"`);  // 디버그 모드에서만
-
-    // _cachedSpeakerName는 Redux subscription(bwbr-speaker-changed) + bwbr-switch-character로 실시간 갱신됨
+    log(`[입력 감지] "${text.substring(0, 80)}"`);
 
     // ★ 사용자 메시지가 Firestore에 도착할 때까지 대기할 프라미스 생성
-    // 시스템 메시지(턴 안내, 행동 소비 등)가 사용자 메시지 이후에 전송되도록 보장
     _userMessagePendingPromise = waitForUserMessageDelivery();
 
     // 전투 보조 시스템 트리거는 항상 먼저 체크 (범용 트리거와 독립 실행)
-    if (flowState === STATE.IDLE || flowState === STATE.TURN_COMBAT) {
-      checkForCombatAssistTrigger(text);
+    const fs = combatCtrl.getFlowState();
+    if (fs === 'IDLE' || fs === 'TURN_COMBAT') {
+      combatCtrl.checkForCombatAssistTrigger(text);
     }
 
     // 범용 트리거 엔진 매칭
@@ -339,35 +281,35 @@
       const match = triggerEngine.check(text, 'input');
       if (match) {
         triggerEngine.execute(match.trigger, match.params, true);
-        // 트리거 매칭 후에도 합 개시 체크는 수행 (《합 개시》 등은 트리거와 별개)
-        if (flowState === STATE.IDLE || flowState === STATE.TURN_COMBAT) {
-          checkForTrigger(text);
+        const fs2 = combatCtrl.getFlowState();
+        if (fs2 === 'IDLE' || fs2 === 'TURN_COMBAT') {
+          combatCtrl.checkForTrigger(text);
         }
-        checkForCancel(text);
+        combatCtrl.checkForCancel(text);
         return;
       }
     }
 
     // 합 개시: IDLE 또는 TURN_COMBAT에서 능동 합 진행 시작
-    if (flowState === STATE.IDLE || flowState === STATE.TURN_COMBAT) {
-      checkForTrigger(text);
+    const fs3 = combatCtrl.getFlowState();
+    if (fs3 === 'IDLE' || fs3 === 'TURN_COMBAT') {
+      combatCtrl.checkForTrigger(text);
     }
-    checkForCancel(text);
+    combatCtrl.checkForCancel(text);
   }
 
   // ── [CORE] 채팅 로그 메시지 처리 ─────────────────
-  // ↳ switch(flowState)로 [COMBAT] 처리기로 분배
-  // ↳ [TRIGGER] triggerEngine.check/execute 호출────
+  // ↳ 전투 관련 메시지는 전투 제어기(combatCtrl)에 위임
+  // ↳ [TRIGGER] triggerEngine.check/execute 호출
 
   function onNewMessage(text, element, senderName) {
     if (!enabled) return;
 
-    log(`[상태: ${flowState}] 메시지 수신: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"`);
+    log(`[상태: ${combatCtrl.getFlowState()}] 메시지 수신: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"`);
 
     // 범용 트리거 엔진 매칭 (source = 'message')
     if (triggerEngine) {
       const diceValue = chat.parseDiceResult(text);
-      // 주사위 결과 대기 중이면 캡처 (동작 체인 내 dice 액션용)
       if (diceValue != null) {
         triggerEngine.resolvePendingDice(diceValue);
       }
@@ -377,1862 +319,40 @@
       }
     }
 
-    // 전투 보조 관전 추적 (전투 진행자가 아닌 경우)
-    if (flowState !== STATE.TURN_COMBAT) {
-      processTurnCombatTracking(text).catch(e => {
-        alwaysLog(`[관전 추적] 에러: ${e.message}`);
-      });
-    }
-
-    switch (flowState) {
-      case STATE.IDLE:
-        // 합 개시 트리거는 입력 훅(onInputSubmit)에서 감지
-        // 다른 사용자가 전송한 합 개시 메시지 → 관전 모드
-        checkForSpectatorTrigger(text);
-        checkForCancel(text);
-        break;
-
-      case STATE.TURN_COMBAT:
-        // 전투 보조 모드: 차례 종료, 주 행동 감지
-        processCombatAssistMessage(text, senderName);
-        // 합 개시 감지 (전투 중 합 → 합 관전 모드로 전환)
-        checkForSpectatorTriggerFromTurnCombat(text);
-        break;
-
-      case STATE.SPECTATING:
-        processSpectatorMessage(text);
-        break;
-
-      case STATE.WAITING_ATTACKER_RESULT:
-        checkForAttackerResult(text);
-        checkForCancel(text);
-        break;
-
-      case STATE.WAITING_DEFENDER_RESULT:
-        checkForDefenderResult(text);
-        checkForCancel(text);
-        break;
-
-      case STATE.PAUSED:
-        // 일시정지 중에도 취소는 가능
-        checkForCancel(text);
-        break;
-
-      default:
-        // ROUND_HEADER_SENT, PROCESSING_RESULT, COMBAT_END 등은 타이머로 처리
-        checkForCancel(text);
-        break;
-    }
-  }
-
-  // ══════════════════════════════════════════════════════════
-  // 전투 보조 시스템 (턴 관리)
-  // ══════════════════════════════════════════════════════════
-
-  // [COMBAT] 전투 보조 개시/종료 트리거 감지
-  async function checkForCombatAssistTrigger(text) {
-    // 전투 개시 감지: 《 전투개시 》 또는 《 전투개시 》 @전투
-    if (combatEngine.parseCombatStartTrigger(text)) {
-      log('[전투 보조] 전투개시 트리거 감지!');
-      startCombatAssist();
-      return;
-    }
-
-    // 전투 종료 감지: 《 전투종료 》
-    if (combatEngine.parseCombatEndTrigger && combatEngine.parseCombatEndTrigger(text)) {
-      endCombatAssist();
-      return;
-    }
-
-    // 차례 종료 감지: 《 차례 종료 》 또는 《 차례종료 》
-    if (flowState === STATE.TURN_COMBAT && combatEngine.parseTurnEndTrigger(text)) {
-      const now = Date.now();
-      if (now - _lastTurnAdvanceTime < 1000) {
-        log('[전투 보조] 차례 종료 중복 감지 — 무시');
-        return;
-      }
-      _lastTurnAdvanceTime = now;
-      log('[전투 보조] 차례종료 트리거 감지!');
-      advanceTurn();
-      return;
-    }
-
-    // ── 행동 소비: 전투 중 《...》 또는 【...】 감지 ──
-    if (flowState === STATE.TURN_COMBAT) {
-      const mainMatch = /《[^》]+》/.test(text);
-      const subMatch = /【[^】]+】/.test(text);
-
-      if (mainMatch || subMatch) {
-        const statLabel = mainMatch ? '주 행동🔺' : '보조 행동🔹';
-        const emoji = mainMatch ? '🔺' : '🔹';
-        const actionType = mainMatch ? '주' : '보조';
-        // 행동 소비 대상: 발화(선택) 캐릭터 (입력한 캐릭터)
-        const speakerName = _cachedSpeakerName;
-
-        if (!speakerName) {
-          log(`[전투 보조] 화자 이름 없음 — 행동 소비 생략`);
-          return;
-        }
-
-        log(`[전투 보조] ${actionType} 행동 소비 감지: ${speakerName}`);
-
-        // 사용자 메시지 도착 대기 후 스탯 차감 (silent: 개별 메시지 억제)
-        await _awaitUserMessage();
-        const result = await _modifyCharStat(speakerName, statLabel, '-', 1, true);
-
-        if (result && result.success) {
-          // 묶인 메시지 전송
-          let msg = `〔 ${emoji}${actionType} 행동 소비 〕`;
-          msg += `\n[ ${speakerName} ] ${statLabel} : ${result.oldVal} → ${result.newVal}`;
-          chat.sendSystemMessage(msg);
-
-          // 오버레이 UI 갱신
-          _scheduleStatRefreshUI();
-        } else {
-          alwaysLog(`[전투 보조] 행동 소비 실패: ${result ? result.error : '타임아웃'}`);
-        }
-      }
-    }
-  }
-
-  /** MAIN 월드에서 캐릭터 전투 스탯 조회 (DOM 속성 브릿지) */
-  function _fetchCharStatsFromMain(name) {
-    return BWBR_Bridge.request(
-      'bwbr-get-char-stats', 'bwbr-char-stats-result', name,
-      { sendAttr: 'data-bwbr-get-char-stats', recvAttr: 'data-bwbr-char-stats-result', timeout: 3000 }
-    ).catch(() => null);
-  }
-
-  /** 전투 보조 모드에서 채팅 메시지 처리 (onNewMessage 경유)
-   *  주/보조 행동 소모는 트리거 시스템이 담당하므로 여기서는 차례 종료만 감지합니다. */
-  function processCombatAssistMessage(text, senderName) {
-    if (flowState !== STATE.TURN_COMBAT) return;
-
-    // 차례 종료 감지: 《 차례 종료 》
-    if (combatEngine.parseTurnEndTrigger(text)) {
-      // 디바운스: 1초 내 중복 호출 방지
-      const now = Date.now();
-      if (now - _lastTurnAdvanceTime < 1000) {
-        log('[전투 보조] 차례 종료 중복 감지 — 무시');
-        return;
-      }
-      _lastTurnAdvanceTime = now;
-      advanceTurn();
-      return;
-    }
-
-    // 스탯 변경 알림에 의한 UI 자동 갱신
-    // 행동 소비/추가 시스템 메시지 감지 시 UI 갱신 (〔〕 및 《》 모두 지원)
-    if (/[《〔].*행동\s*(소비|추가)[》〕]/.test(text) || /\]\s*주 행동🔺/.test(text) || /\]\s*보조 행동🔹/.test(text)) {
-      _scheduleStatRefreshUI();
-    }
-  }
-
-  /** 스탯 변경 후 UI 자동 갱신 (디바운스)
-   *  @param {number} [ms=800] 대기 시간 (ms) */
-  let _statRefreshTimer = null;
-  function _scheduleStatRefreshUI(ms) {
-    clearTimeout(_statRefreshTimer);
-    _statRefreshTimer = setTimeout(async () => {
-      // Firestore 반영 대기 후 최신 데이터로 오버레이 갱신
-      await _refreshCharacterOriginalData();
-      await refreshTurnUI();
-    }, ms != null ? ms : 800);
-  }
-
-  /** 전투 보조 시작 */
-  async function startCombatAssist() {
-    alwaysLog('🎲 전투 보조 모드 시작!');
-    
-    overlay.show();
-    overlay.addLog('캐릭터 데이터 로딩 중...', 'info');
-
-    // 페이지 컨텍스트에서 캐릭터 데이터 요청
-    const characters = await requestCharacterData();
-    
-    if (!characters || characters.length === 0) {
-      overlay.addLog('전투 보조 시작 실패 — 캐릭터 데이터를 찾을 수 없습니다.', 'error');
-      return;
-    }
-
-    // 캐릭터 데이터를 Combat Engine에 전달
-    combatEngine.setCharacterData(characters);
-    
-    _doStartCombatAssist();
-  }
-
-  async function _doStartCombatAssist() {
-    const result = combatEngine.startCombat();
-    if (!result.success) {
-      alwaysLog(`전투 보조 시작 실패: ${result.message}`);
-      overlay.show();
-      overlay.addLog(`전투 보조 시작 실패 — ${result.message || '캐릭터 데이터를 찾을 수 없습니다.'}`, 'error');
-      return;
-    }
-
-    flowState = STATE.TURN_COMBAT;
-    
-    overlay.show();
-    overlay.addLog('🎲 전투 보조 모드 시작!', 'success');
-    overlay.setStatus('active', '전투 보조 중');
-
-    // 턴 순서 표시
-    const state = combatEngine.getState();
-    const turnOrder = state.turnOrder.map((c, i) => 
-      `${i + 1}. ${c.name} (행동력: ${c.initiative})`
-    ).join('\n');
-    log(`턴 순서:\n${turnOrder}`);
-
-    // 전체 행동력 초기화 (silent: 개별 메시지 억제) + 묶인 메시지 전송
-    await _resetAllActionStats('⚔️ 전투 개시');
-
-    // 첫 턴 시작 (currentTurnIndex를 -1에서 0으로)
-    combatEngine.nextTurn();
-
-    // 상태 저장
-    _saveTurnCombatState();
-
-    // 첫 턴 시작 메시지 전송
-    sendTurnStartMessage();
-
-    // 전투 개시 컷인 (있으면)
-    const startCutin = _pickCutin('battleStartSounds');
-    if (startCutin) {
-      chat.sendSystemMessage(startCutin);
-    }
-  }
-
-  /** 전체 캐릭터 행동력 초기화 → 묶인 시스템 메시지 전송
-   *  @param {string} headerText - 메시지 헤더 (예: '⚔️ 전투 개시', '🏳️ 전투 종료') */
-  async function _resetAllActionStats(headerText) {
-    await _modifyAllCharStat('취약💥', '=', 0, true);
-    await _modifyAllCharStat('주 행동🔺', '=max', 0, true);
-    await _modifyAllCharStat('보조 행동🔹', '=max', 0, true);
-
-    let msg = `〔 ${headerText} 〕`;
-    msg += `\n모든 캐릭터의 행동력이 초기화되었습니다.`;
-    chat.sendSystemMessage(msg);
-  }
-
-  /** 다음 턴으로 이동 */
-  function advanceTurn() {
-    if (flowState !== STATE.TURN_COMBAT) return;
-
-    const nextChar = combatEngine.nextTurn();
-    if (!nextChar) {
-      // 모든 캐릭터 턴 완료 → 다시 첫 번째로
-      log('모든 캐릭터 턴 완료, 처음으로 돌아감');
-    }
-
-    // 턴 시작 메시지 + 스탯 리셋은 sendTurnStartMessage에서 처리
-    sendTurnStartMessage();
-  }
-
-  // ── [COMBAT] 스탯 변경 헬퍼 ────────────────────────────
-
-  /** 개별 캐릭터 스탯 변경 이벤트 발송 (Promise 반환, silent 지원) */
-  function _modifyCharStat(characterName, statLabel, operation, value, silent) {
-    const detail = {
-      targetName: characterName,
-      statusLabel: statLabel,
-      operation: operation,
-      value: value,
-      valueType: 'value',
-      silent: !!silent
-    };
-    return BWBR_Bridge.request(
-      'bwbr-modify-status', 'bwbr-modify-status-result', detail,
-      { sendAttr: 'data-bwbr-modify-status', recvAttr: 'data-bwbr-modify-status-result', timeout: 5000 }
-    ).catch(() => null);
-  }
-
-  /** 전체 캐릭터 스탯 일괄 변경 (Promise 반환, silent 지원)
-   *  반환: { success, affected, label, changes: [{name, oldVal, newVal}] } */
-  function _modifyAllCharStat(statLabel, operation, value, silent) {
-    const detail = {
-      statusLabel: statLabel,
-      operation: operation,
-      value: value,
-      valueType: 'value',
-      silent: !!silent
-    };
-    return BWBR_Bridge.request(
-      'bwbr-modify-status-all', 'bwbr-modify-status-all-result', detail,
-      { sendAttr: 'data-bwbr-modify-status-all', recvAttr: 'data-bwbr-modify-status-all-result', timeout: 5000 }
-    ).catch(() => null);
-  }
-
-  /** 간단한 딜레이 유틸 */
-  function _delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  /** 턴 전투 UI 갱신 */
-  /** 캐릭터 originalData에서 의지/장갑/이명 정보 추출 */
-  function _extractCharInfo(current) {
-    let willValue = null;
-    let willMax = null;
-    const willStatus = combatEngine.getStatusValue(current.originalData, '의지');
-    if (willStatus) {
-      willValue = willStatus.value;
-      willMax = willStatus.max;
-    } else {
-      const paramWill = combatEngine.getParamValue(current.originalData, '의지');
-      if (paramWill !== null) {
-        willValue = paramWill;
-        willMax = paramWill;
-      }
-    }
-
-    let armorValue = null;
-    const armorStatus = combatEngine.getStatusValue(current.originalData, '장갑');
-    if (armorStatus !== null) {
-      armorValue = armorStatus.value;
-    } else {
-      const paramArmor = combatEngine.getParamValue(current.originalData, '장갑');
-      if (paramArmor !== null) armorValue = paramArmor;
-    }
-
-    const aliasValue = combatEngine.getParamValue(current.originalData, '이명');
-
-    return { willValue, willMax, armorValue, aliasValue };
-  }
-
-  /** Redux에서 최신 캐릭터 데이터를 가져와 엔진의 originalData를 갱신합니다. */
-  async function _refreshCharacterOriginalData() {
-    try {
-      const characters = await requestCharacterData();
-      if (characters && characters.length > 0) {
-        combatEngine.refreshOriginalData(characters);
-      }
-    } catch (e) {
-      alwaysLog(`[전투 보조] 캐릭터 데이터 갱신 실패: ${e.message}`);
-    }
-  }
-
-  // ── [COMBAT] 턴 전투 상태 영속성 (새로고침 복원) ──────────────
-
-  /** 현재 턴 전투 상태를 chrome.storage.session에 저장합니다. */
-  function _saveTurnCombatState() {
-    if (flowState !== STATE.TURN_COMBAT) return;
-    try {
-      const data = combatEngine.serializeTurnCombat();
-      if (data) {
-        chrome.storage.session.set({ bwbr_turnCombat: data });
-        log('[턴 전투] 상태 저장됨');
-      }
-    } catch (e) {
-      alwaysLog(`[턴 전투] 상태 저장 실패: ${e.message}`);
-    }
-  }
-
-  /** chrome.storage.session에서 턴 전투 상태를 삭제합니다. */
-  function _clearTurnCombatState() {
-    try {
-      chrome.storage.session.remove('bwbr_turnCombat');
-      log('[턴 전투] 저장된 상태 삭제');
-    } catch (e) {
-      // 무시
-    }
-  }
-
-  /**
-   * 새로고침 후 저장된 턴 전투 상태를 복원합니다.
-   * init() 말미에서 호출됩니다.
-   */
-  async function _tryRestoreTurnCombat() {
-    try {
-      const result = await chrome.storage.session.get('bwbr_turnCombat');
-      const data = result?.bwbr_turnCombat;
-      if (!data) return false;
-
-      // 10분 이상 지난 상태는 폐기
-      if (data.savedAt && Date.now() - data.savedAt > 10 * 60 * 1000) {
-        alwaysLog('[턴 전투] 저장된 상태가 10분 초과 — 폐기');
-        _clearTurnCombatState();
-        return false;
-      }
-
-      // 엔진에 상태 복원
-      const restored = combatEngine.restoreTurnCombat(data);
-      if (!restored) {
-        alwaysLog('[턴 전투] 엔진 복원 실패');
-        _clearTurnCombatState();
-        return false;
-      }
-
-      // Redux에서 최신 캐릭터 데이터로 originalData 채우기
-      await _refreshCharacterOriginalData();
-
-      // 흐름 상태 & 오버레이 복원
-      flowState = STATE.TURN_COMBAT;
-      overlay.show();
-      overlay.setStatus('active', '전투 보조 중');
-      overlay.addLog('🔄 전투 보조 복원됨 (새로고침)', 'success');
-
-      // 현재 턴 UI 표시
-      await refreshTurnUI();
-
-      // HP 데이터가 비어있으면 재시도 (Redux 인젝터 초기화 지연 대응)
-      _retryRefreshIfMissingHP();
-
-      log('[턴 전투] 상태 복원 완료!');
-      return true;
-    } catch (e) {
-      alwaysLog(`[턴 전투] 복원 실패: ${e.message}`);
-      return false;
-    }
-  }
-
-  /**
-   * 복원 후 HP 정보가 비어있으면 재시도합니다.
-   * Redux 인젝터가 아직 준비되지 않았을 수 있으므로 지연 재시도합니다.
-   */
-  function _retryRefreshIfMissingHP() {
-    const state = combatEngine.getState();
-    const current = state.currentCharacter;
-    if (!current) return;
-
-    const { willValue } = _extractCharInfo(current);
-    if (willValue !== null && willValue !== undefined) return; // 이미 있음
-
-    log('[턴 전투] HP 데이터 없음 — 재시도 예약');
-    let retries = 0;
-    const maxRetries = 5;
-    const timer = setInterval(async () => {
-      retries++;
-      try {
-        await _refreshCharacterOriginalData();
-        const { willValue: w } = _extractCharInfo(combatEngine.getState().currentCharacter);
-        if (w !== null && w !== undefined) {
-          log(`[턴 전투] HP 데이터 획득 성공 (${retries}회차)`);
-          await refreshTurnUI();
-          clearInterval(timer);
-        } else if (retries >= maxRetries) {
-          alwaysLog('[턴 전투] HP 데이터 재시도 한도 초과');
-          clearInterval(timer);
-        }
-      } catch (e) {
-        if (retries >= maxRetries) clearInterval(timer);
-      }
-    }, 2000);
-  }
-
-  /** 캐릭터의 실제 스탯에서 주 행동/보조 행동 값 추출 */
-  function _extractActionStats(current) {
-    const mainStatus = combatEngine.getStatusValue(current.originalData, '주 행동');
-    const subStatus = combatEngine.getStatusValue(current.originalData, '보조 행동');
-    return {
-      mainActions: mainStatus ? parseInt(mainStatus.value) || 0 : current.mainActions,
-      mainActionsMax: mainStatus ? parseInt(mainStatus.max) || 0 : current.mainActionsMax,
-      subActions: subStatus ? parseInt(subStatus.value) || 0 : current.subActions,
-      subActionsMax: subStatus ? parseInt(subStatus.max) || 0 : current.subActionsMax
-    };
-  }
-
-  async function refreshTurnUI() {
-    const state = combatEngine.getState();
-    const current = state.currentCharacter;
-    if (!current) return;
-
-    // Redux에서 최신 캐릭터 데이터 가져와 originalData 갱신
-    await _refreshCharacterOriginalData();
-
-    const { willValue, willMax, armorValue, aliasValue } = _extractCharInfo(current);
-    const actionStats = _extractActionStats(current);
-
-    overlay.updateTurnInfo({
-      name: current.name,
-      iconUrl: current.iconUrl,
-      will: willValue,
-      willMax: willMax,
-      armor: armorValue,
-      alias: aliasValue,
-      mainActions: actionStats.mainActions,
-      mainActionsMax: actionStats.mainActionsMax,
-      subActions: actionStats.subActions,
-      subActionsMax: actionStats.subActionsMax
-    });
-  }
-
-  /** 턴 시작 메시지 전송 + 해당 캐릭터의 주/보조 행동 stat을 최대치로 리셋 */
-  async function sendTurnStartMessage() {
-    // 사용자 트리거 메시지가 먼저 도착하도록 대기
-    await _awaitUserMessage();
-    const state = combatEngine.getState();
-    const current = state.currentCharacter;
-    
-    if (!current) {
-      log('현재 차례 캐릭터 없음');
-      return;
-    }
-
-    // 차례 시작 시: 현재 캐릭터의 주 행동/보조 행동을 최대치로 리셋 (silent)
-    const r1 = await _modifyCharStat(current.name, '주 행동🔺', '=max', 0, true);
-    const r2 = await _modifyCharStat(current.name, '보조 행동🔹', '=max', 0, true);
-
-    // Firestore 반영 대기 후 최신 데이터 가져오기
-    await _delay(400);
-    await _refreshCharacterOriginalData();
-
-    const { willValue, willMax, armorValue, aliasValue } = _extractCharInfo(current);
-    const actionStats = _extractActionStats(current);
-
-    // 묶인 턴 시작 메시지
-    let turnMsg = `〔 ${current.name}의 차례 〕`;
-    turnMsg += `\n🔺주 행동 ${actionStats.mainActions}개, 🔹보조 행동 ${actionStats.subActions}개 | 이동거리 ${current.movement}`;
-    const cutin = _pickCutin('turnStartSounds');
-    if (cutin) turnMsg += cutin;
-    
-    log(`턴 메시지: ${turnMsg}`);
-    overlay.addLog(`🎯 ${current.name}의 차례`, 'success');
-
-    overlay.updateTurnInfo({
-      name: current.name,
-      iconUrl: current.iconUrl,
-      will: willValue,
-      willMax: willMax,
-      armor: armorValue,
-      alias: aliasValue,
-      mainActions: actionStats.mainActions,
-      mainActionsMax: actionStats.mainActionsMax,
-      subActions: actionStats.subActions,
-      subActionsMax: actionStats.subActionsMax
-    });
-
-    // 채팅으로 전송
-    chat.sendSystemMessage(turnMsg);
-  }
-
-  /** 전투 보조 모드 종료 */
-  async function endCombatAssist() {
-    if (flowState !== STATE.TURN_COMBAT) return;
-
-    alwaysLog('🎲 전투 보조 모드 종료');
-
-    // 전체 행동력 초기화 + 묶인 메시지 전송
-    await _resetAllActionStats('🏳️ 전투 종료');
-
-    // 전투 종료 컷인 (있으면)
-    const endCutin = _pickCutin('battleEndSounds');
-    if (endCutin) {
-      chat.sendSystemMessage(endCutin);
-    }
-
-    combatEngine.endCombat();
-    flowState = STATE.IDLE;
-
-    _clearTurnCombatState();
-
-    overlay.updateTurnInfo(null);  // 턴 정보 패널 숨김
-    overlay.addLog('🎲 전투 보조 모드 종료', 'warning');
-    overlay.setStatus('idle', '대기 중');
-  }
-
-  // ══════════════════════════════════════════════════════════
-  // [COMBAT] 전투 보조 관전 추적 (진행자가 아닌 사용자용)
-  // → 모듈화 시 modules/bw-combat/controller.js로 이동
-  // ══════════════════════════════════════════════════════════
-
-  /** 전투 보조 메시지를 파싱하여 관전자 UI 업데이트 */
-  async function processTurnCombatTracking(text) {
-    // 1. 전투 개시 감지 → 캐릭터 캐시 업데이트
-    if (combatEngine.parseCombatStartTrigger(text)) {
-      log('[관전 추적] 전투 개시 감지!');
-      _turnTrackingActive = true;
-      await updateCharacterCache();
-      overlay.show();  // 오버레이 표시
-      overlay.setTurnTrackingMode(true);  // 턴 추적 모드 활성화 → 슬롯 클릭 비활성화
-      overlay.addLog('👁️ 전투 관전 모드', 'info');
-      overlay.setStatus('active', '👁 전투 관전 중');
-      return;
-    }
-
-    // 2. 전투 종료 감지 → 추적 종료
-    if (combatEngine.parseCombatEndTrigger(text)) {
-      if (_turnTrackingActive) {
-        log('[관전 추적] 전투 종료 감지');
-        _turnTrackingActive = false;
-        _currentTrackedTurn = null;
-        overlay.setTurnTrackingMode(false);  // 턴 추적 모드 비활성화
-        overlay.updateTurnInfo(null);
-        overlay.addLog('전투 종료', 'warning');
-        overlay.setStatus('idle', '대기 중');
-      }
-      return;
-    }
-
-    // 추적이 활성화되지 않았으면 무시
-    if (!_turnTrackingActive) return;
-
-    // 3. 차례 시작 메시지 파싱
-    const turnStart = combatEngine.parseTurnStartMessage(text);
-    log(`[관전 추적] 차례 시작 파싱 결과: ${JSON.stringify(turnStart)}`);
-    if (turnStart) {
-      log(`[관전 추적] 차례 시작: ${turnStart.name}`);
-      
-      // 캐시가 비어있으면 업데이트 기다림
-      if (_characterCache.size === 0) {
-        log(`[관전 추적] 캐시 비어있음 - 업데이트 대기`);
-        await updateCharacterCache();
-      }
-      
-      _currentTrackedTurn = {
-        ...turnStart,
-        iconUrl: getCharacterIconUrl(turnStart.name)
-      };
-      updateTrackedTurnUI();
-      return;
-    }
-
-    // 4. 행동 소비 메시지 파싱
-    const actionConsumed = combatEngine.parseActionConsumedMessage(text);
-    if (actionConsumed && _currentTrackedTurn) {
-      log(`[관전 추적] ${actionConsumed.actionType} 행동 소비: ${actionConsumed.name}`);
-      // 현재 차례 캐릭터와 같은지 확인
-      if (_currentTrackedTurn.name === actionConsumed.name) {
-        _currentTrackedTurn.mainActions = actionConsumed.mainActions;
-        _currentTrackedTurn.subActions = actionConsumed.subActions;
-        _currentTrackedTurn.movement = actionConsumed.movement;
-        updateTrackedTurnUI();
-      }
-      return;
-    }
-
-    // 5. 행동 추가 메시지 파싱
-    const actionAdded = combatEngine.parseActionAddedMessage(text);
-    if (actionAdded && _currentTrackedTurn) {
-      log(`[관전 추적] ${actionAdded.actionType} 행동 추가: ${actionAdded.name}`);
-      // 현재 차례 캐릭터와 같은지 확인
-      if (_currentTrackedTurn.name === actionAdded.name) {
-        _currentTrackedTurn.mainActions = actionAdded.mainActions;
-        _currentTrackedTurn.subActions = actionAdded.subActions;
-        // max 값 업데이트 (추가된 경우 max가 늘어남)
-        if (actionAdded.actionType === '주') {
-          _currentTrackedTurn.mainActionsMax = Math.max(
-            _currentTrackedTurn.mainActionsMax || 0, 
-            actionAdded.mainActions
-          );
-        } else {
-          _currentTrackedTurn.subActionsMax = Math.max(
-            _currentTrackedTurn.subActionsMax || 0, 
-            actionAdded.subActions
-          );
-        }
-        updateTrackedTurnUI();
-      }
-      return;
-    }
-  }
-
-  /** 캐릭터 캐시 업데이트 (Redux에서 가져옴) */
-  async function updateCharacterCache() {
-    try {
-      const characters = await requestCharacterData();
-      if (characters && characters.length > 0) {
-        _characterCache.clear();
-        for (const char of characters) {
-          _characterCache.set(char.name, {
-            iconUrl: char.iconUrl || null,
-            params: char.params || [],
-            status: char.status || []
-          });
-        }
-        log(`[관전 추적] 캐릭터 캐시 업데이트: ${_characterCache.size}명`);
-      }
-    } catch (e) {
-      alwaysLog(`[관전 추적] 캐릭터 캐시 업데이트 실패: ${e.message}`);
-    }
-  }
-
-  /** 캐릭터 이름으로 iconUrl 가져오기 */
-  function getCharacterIconUrl(name) {
-    const cached = _characterCache.get(name);
-    return cached?.iconUrl || null;
-  }
-
-  /** 관전 추적 UI 업데이트 */
-  function updateTrackedTurnUI() {
-    if (!_currentTrackedTurn) return;
-
-    const cached = _characterCache.get(_currentTrackedTurn.name);
-    
-    // 의지, 장갑, 이명 정보 가져오기 시도
-    let willValue = null;
-    let willMax = null;
-    let armorValue = null;
-    let aliasValue = null;
-
-    if (cached) {
-      // status에서 의지 찾기
-      const willStatus = cached.status?.find(s => s.label === '의지' || s.label?.includes('의지'));
-      if (willStatus) {
-        willValue = willStatus.value;
-        willMax = willStatus.max;
-      } else {
-        // params에서 의지 찾기
-        const willParam = cached.params?.find(p => p.label === '의지' || p.label?.includes('의지'));
-        if (willParam) {
-          willValue = willParam.value;
-          willMax = willParam.value;
-        }
-      }
-
-      // 장갑 찾기
-      const armorStatus = cached.status?.find(s => s.label === '장갑' || s.label?.includes('장갑'));
-      if (armorStatus) {
-        armorValue = armorStatus.value;
-      } else {
-        const armorParam = cached.params?.find(p => p.label === '장갑' || p.label?.includes('장갑'));
-        if (armorParam) armorValue = armorParam.value;
-      }
-
-      // 이명 찾기
-      const aliasParam = cached.params?.find(p => p.label === '이명');
-      if (aliasParam) aliasValue = aliasParam.value;
-    }
-
-    overlay.updateTurnInfo({
-      name: _currentTrackedTurn.name,
-      iconUrl: _currentTrackedTurn.iconUrl,
-      will: willValue,
-      willMax: willMax,
-      armor: armorValue,
-      alias: aliasValue,
-      mainActions: _currentTrackedTurn.mainActions,
-      mainActionsMax: _currentTrackedTurn.mainActionsMax,
-      subActions: _currentTrackedTurn.subActions,
-      subActionsMax: _currentTrackedTurn.subActionsMax
-    });
-  }
-
-  // ══════════════════════════════════════════════════════════
-  // [COMBAT] 합 (근접전) 시스템
-  // → 모듈화 시 modules/bw-combat/controller.js로 이동
-  // ══════════════════════════════════════════════════════════
-
-  // ── [COMBAT] 합 개시 트리거 감지 ──────────────────────────
-
-  function checkForTrigger(text) {
-    const triggerData = engine.parseTrigger(text);
-    if (!triggerData) return;
-
-    alwaysLog(`✅ 합 개시 감지! ⚔️${triggerData.attacker.name}(${triggerData.attacker.dice}) vs 🛡️${triggerData.defender.name}(${triggerData.defender.dice})`);
-
-    // TURN_COMBAT에서 합 시작 시: 공격자가 현재 차례자이면 주 행동 스탯 소모
-    if (flowState === STATE.TURN_COMBAT) {
-      const currentChar = combatEngine.getState().currentCharacter;
-      if (currentChar && currentChar.name === triggerData.attacker.name) {
-        _modifyCharStat(currentChar.name, '주 행동🔺', '-', 1);
-        _scheduleStatRefreshUI();
-      }
-    }
-
-    // TURN_COMBAT에서 시작한 경우: 합 종료 후 복귀 플래그 설정
-    if (flowState === STATE.TURN_COMBAT) {
-      _activeCombatFromTurnCombat = true;
-      log('⚔️ 전투 보조 중 능동 합 시작 → 합 종료 후 전투 보조로 복귀 예정');
-    } else if (_turnTrackingActive) {
-      // 관전 추적 중 능동 합 시작 (비호스트)
-      _activeCombatFromTurnCombat = true;
-      log('⚔️ 전투 관전 중 능동 합 시작 → 합 종료 후 관전 모드로 복귀 예정');
-    } else {
-      _activeCombatFromTurnCombat = false;
-    }
-
-    // 전투 시작
-    engine.startCombat(triggerData.attacker, triggerData.defender);
-    flowState = STATE.COMBAT_STARTED;
-
-    overlay.clearLog();
-    overlay.addLog('전투 개시!', 'success');
-    overlay.updateCombatState(engine.getState());
-    overlay.setStatus('active', '전투 진행 중');
-
-    // 첫 라운드 시작
-    startNextRound();
-  }
-
-  // ── [COMBAT] 전투 중지 감지 ─────────────────────────────────
-
-  function checkForCancel(text) {
-    if (engine.parseCancelTrigger(text)) {
-      cancelCombat();
-    }
-  }
-
-  function cancelCombat() {
-    // 관전 추적 모드(비호스트)에서 취소
-    if (_turnTrackingActive) {
-      alwaysLog('👁️ 관전 추적 수동 종료');
-      _turnTrackingActive = false;
-      _currentTrackedTurn = null;
-      overlay.setTurnTrackingMode(false);
-      overlay.updateTurnInfo(null);
-      overlay.addLog('관전 종료', 'warning');
-      overlay.setStatus('idle', '대기 중');
-      return;
-    }
-
-    if (flowState === STATE.IDLE) return;
-
-    if (flowState === STATE.SPECTATING) {
-      endSpectating('cancel_combat');
-      return;
-    }
-
-    log('전투 중지');
-    clearTimeout(resultTimeoutId);
-    overlay.hideManualInput();
-    overlay.hideH0Prompt();
-
-    // 일시정지 상태 해제
-    paused = false;
-    _pauseRequested = false;
-    overlay.setPaused(false);
-
-    _stateBeforePause = null;
-    engine.reset();
-    overlay.addLog('전투가 중지되었습니다.', 'warning');
-
-    // TURN_COMBAT에서 시작한 합이면 전투 보조 모드로 복귀
-    if (_activeCombatFromTurnCombat && combatEngine && combatEngine.inCombat) {
-      log('⚔️ 합 중지 → 전투 보조 모드로 복귀');
-      _activeCombatFromTurnCombat = false;
-      flowState = STATE.TURN_COMBAT;
-      overlay.setStatus('active', '전투 보조 중');
-      overlay.smoothTransition(() => refreshTurnUI());
-      return;
-    }
-
-    // 관전 추적 중이었으면 관전 UI 복귀 (비호스트)
-    if (_activeCombatFromTurnCombat && _turnTrackingActive) {
-      log('⚔️ 합 중지 → 전투 관전 모드로 복귀');
-      _activeCombatFromTurnCombat = false;
-      flowState = STATE.IDLE;
-      overlay.setTurnTrackingMode(true);
-      overlay.setStatus('active', '👁 전투 관전 중');
-      overlay.smoothTransition(() => updateTrackedTurnUI());
-      return;
-    }
-
-    _activeCombatFromTurnCombat = false;
-    flowState = STATE.IDLE;
-    overlay.setStatus('idle', '대기 중');
-    overlay.updateCombatState(engine.getState());
-  }
-
-  // ── [COMBAT] 관전 모드 ────────────────────────────────────
-
-  function checkForSpectatorTrigger(text) {
-    const triggerData = engine.parseTrigger(text);
-    if (!triggerData) return;
-    // 관전 추적 중이면 fromTurnCombat=true로 설정 (합 종료 후 관전 UI 복귀)
-    startSpectating(triggerData, _turnTrackingActive);
-  }
-
-  /** 전투 보조 모드에서 합 개시 감지 (TURN_COMBAT → SPECTATING) */
-  function checkForSpectatorTriggerFromTurnCombat(text) {
-    const triggerData = engine.parseTrigger(text);
-    if (!triggerData) return;
-    startSpectating(triggerData, true);
-  }
-
-  function startSpectating(triggerData, fromTurnCombat = false) {
-    alwaysLog(`👁️ 관전 모드 시작! ⚔️${triggerData.attacker.name}(${triggerData.attacker.dice}) vs 🛡️${triggerData.defender.name}(${triggerData.defender.dice})`);
-
-    // TURN_COMBAT에서 시작했는지 기록 (합 종료 후 복귀용)
-    _spectatorFromTurnCombat = fromTurnCombat;
-
-    engine.startCombat(triggerData.attacker, triggerData.defender);
-    engine.round = 1;
-    flowState = STATE.SPECTATING;
-    _spectatorStartTime = Date.now();
-    _spectatorAtkRollSeen = false;
-    _spectatorDefRollSeen = false;
-
-    overlay.show();
-    overlay.clearLog();
-    overlay.addLog('👁️ 관전 모드 — 합 진행을 감지합니다.', 'success');
-    overlay.updateCombatState(engine.getState());
-    overlay.setStatus('active', '👁 관전 중');
-    overlay.setSpectatorMode(true);
-  }
-
-  /**
-   * 관전 모드에서 채팅 메시지를 분석하여 오버레이에 반영합니다.
-   * GM의 확장 프로그램이 보내는 메시지 패턴을 감지해 애니메이션을 재생합니다.
-   */
-  function processSpectatorMessage(text) {
-    const state = engine.getState();
-    if (!state?.combat) {
-      // 관전 시작 후 3초 이내라면 engine.combat이 null이 되는 것은 비정상 — 무시
-      if (_spectatorStartTime > 0 && Date.now() - _spectatorStartTime < 3000) {
-        log(`[SPEC] ⚠️ engine.combat=null but within 3s grace period — ignoring (text="${text.substring(0,50)}")`);
-        return;
-      }
-      endSpectating('no_combat_state');
-      return;
-    }
-
-    // 중복 메시지 방지 (2초 내 같은 텍스트 무시)
-    const now = Date.now();
-    const dedupKey = text.substring(0, 80);
-    if (_spectatorDedup.has(dedupKey) && now - _spectatorDedup.get(dedupKey) < 2000) return;
-    _spectatorDedup.set(dedupKey, now);
-    if (_spectatorDedup.size > 50) {
-      for (const [k, t] of _spectatorDedup) { if (now - t > 5000) _spectatorDedup.delete(k); }
-    }
-
-    // 1. 합 중지
-    if (engine.parseCancelTrigger(text)) {
-      overlay.addLog('전투가 중지되었습니다.', 'warning');
-      endSpectating('cancel_trigger');
-      return;
-    }
-
-    // 2. 합 승리 / 종료
-    if (text.includes('《합 승리》') || text.includes('《합 종료》')) {
-      const cleanText = text.replace(/@\S+/g, '').trim();
-      if (text.includes('⚔')) overlay.playVictory('attacker');
-      else if (text.includes('🛡')) overlay.playVictory('defender');
-      overlay.addLog(cleanText, 'success');
-      overlay.setStatus('idle', '전투 종료');
-      setTimeout(() => endSpectating('victory_timeout'), 2000);
-      return;
-    }
-
-    // 3. 라운드 헤더: 《N합》| ⚔️ name dice : 🛡️ name dice @sound
-    const roundMatch = text.match(/《(\d+)합》/);
-    if (roundMatch) {
-      const roundNum = parseInt(roundMatch[1], 10);
-      engine.round = roundNum;
-
-      // 헤더에서 양측 주사위 수를 파싱하여 상태 동기화
-      const atkNameEsc = state.combat.attacker.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const defNameEsc = state.combat.defender.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const diceRegex = new RegExp(atkNameEsc + '\\s+(\\d+)\\s*:.*?' + defNameEsc + '\\s+(\\d+)');
-      const diceMatch = text.match(diceRegex);
-      if (diceMatch && engine.combat) {
-        engine.combat.attacker.dice = parseInt(diceMatch[1], 10);
-        engine.combat.defender.dice = parseInt(diceMatch[2], 10);
-      }
-
-      _spectatorAtkRollSeen = false;
-      _spectatorDefRollSeen = false;
-
-      overlay.updateCombatState(engine.getState());
-      overlay.playClash();
-      overlay.addLog(`── 제 ${roundNum}합 ──`, 'info');
-      return;
-    }
-
-    // 4. 주사위 결과 (공격자)
-    if (!_spectatorAtkRollSeen) {
-      const atkValue = extractDiceValue(text, state.combat.attacker.name, '⚔');
-      if (atkValue !== null) {
-        _spectatorAtkRollSeen = true;
-        const logType = atkValue >= state.combat.attacker.critThreshold ? 'crit'
-          : atkValue <= state.combat.attacker.fumbleThreshold ? 'fumble' : 'info';
-        overlay.addLog(`⚔️ ${state.combat.attacker.name}: ${atkValue}`, logType);
-        overlay.animateDiceValue('attacker', atkValue);
-        overlay.playAttack('attacker');
-        if (logType === 'crit') overlay.playCrit('attacker');
-        else if (logType === 'fumble') overlay.playFumble('attacker');
-        overlay.playParrySound();
-        return;
-      }
-    }
-
-    // 5. 주사위 결과 (방어자)
-    if (!_spectatorDefRollSeen) {
-      const defValue = extractDiceValue(text, state.combat.defender.name, '🛡');
-      if (defValue !== null) {
-        _spectatorDefRollSeen = true;
-        const logType = defValue >= state.combat.defender.critThreshold ? 'crit'
-          : defValue <= state.combat.defender.fumbleThreshold ? 'fumble' : 'info';
-        overlay.addLog(`🛡️ ${state.combat.defender.name}: ${defValue}`, logType);
-        overlay.animateDiceValue('defender', defValue);
-        overlay.playAttack('defender');
-        if (logType === 'crit') overlay.playCrit('defender');
-        else if (logType === 'fumble') overlay.playFumble('defender');
-        overlay.playParrySound();
-        return;
-      }
-    }
-
-    // 6. 특성 / 결과 메시지 (로그에 표시)
-    const cleanText = text.replace(/@\S+/g, '').trim();
-
-    if (text.includes('인간 특성 발동')) {
-      overlay.addLog(cleanText, 'crit');
-      return;
-    }
-    if (text.includes('피로 새겨진 역사') && text.includes('초기화')) {
-      overlay.addLog(cleanText, 'info');
-      return;
-    }
-    if (text.includes('피로 새겨진 역사')) {
-      overlay.addLog(cleanText, 'warning');
-      return;
-    }
-    if (text.includes('인간 특성 초기화')) {
-      overlay.addLog(cleanText, 'info');
-      return;
-    }
-    // 연격 (N0)
-    if (text.includes('연격') && text.includes('초기화')) {
-      overlay.addLog(cleanText, 'info');
-      return;
-    }
-    if (text.includes('연격')) {
-      overlay.addLog(cleanText, 'warning');
-      return;
-    }
-    // 대성공
-    if (text.includes('대성공') && (text.includes('→') || text.includes('파괴'))) {
-      overlay.addLog(cleanText, 'crit');
-      return;
-    }
-    // 대실패
-    if (text.includes('대실패') && (text.includes('→') || text.includes('파괴'))) {
-      overlay.addLog(cleanText, 'fumble');
-      return;
-    }
-    // 쌍방
-    if (text.includes('쌍방')) {
-      overlay.addLog(cleanText, text.includes('대성공') ? 'crit' : 'fumble');
-      return;
-    }
-    // 무승부 / 재굴림
-    if (text.includes('무승부') || text.includes('재굴림')) {
-      overlay.playTie();
-      overlay.addLog(cleanText, 'warning');
-      return;
-    }
-    // 일반 승리
-    if (text.includes('→') && text.includes('승리')) {
-      // 승자 파악
-      if (text.includes('⚔')) overlay.playRoundWin('attacker');
-      else if (text.includes('🛡')) overlay.playRoundWin('defender');
-      overlay.addLog(cleanText, 'info');
-      return;
-    }
-  }
-
-  function endSpectating(reason = 'unknown') {
-    alwaysLog(`👁️ 관전 모드 종료 (reason=${reason}, flowState=${flowState})`);
-
-    // 이미 SPECTATING이 아니면 무시 (중복 호출 방지)
-    if (flowState !== STATE.SPECTATING) {
-      log(`👁️ endSpectating 무시: flowState=${flowState}`);
-      return;
-    }
-    
-    engine.reset();
-    _spectatorDedup.clear();
-    _spectatorStartTime = 0;
-    overlay.setSpectatorMode(false);
-
-    // TURN_COMBAT에서 시작했고, 전투가 아직 진행 중이면 턴 UI로 복귀
-    if (_spectatorFromTurnCombat && combatEngine && combatEngine.inCombat) {
-      log('👁️ 합 종료 → 전투 보조 모드로 복귀');
-      flowState = STATE.TURN_COMBAT;
-      _spectatorFromTurnCombat = false;
-      overlay.addLog('합 종료 — 전투 보조 모드로 복귀', 'info');
-      overlay.setStatus('active', '전투 보조 중');
-      overlay.smoothTransition(() => refreshTurnUI());
-      return;
-    }
-
-    // 관전 추적 중이었으면 추적 UI 복귀 (비호스트 사용자)
-    if (_spectatorFromTurnCombat && _turnTrackingActive) {
-      log('👁️ 합 종료 → 전투 관전 모드로 복귀');
-      flowState = STATE.IDLE;
-      _spectatorFromTurnCombat = false;
-      overlay.setTurnTrackingMode(true);
-      overlay.addLog('합 종료 — 전투 관전 모드로 복귀', 'info');
-      overlay.setStatus('active', '👁 전투 관전 중');
-      overlay.smoothTransition(() => updateTrackedTurnUI());
-      return;
-    }
-
-    // 일반 관전 종료
-    flowState = STATE.IDLE;
-    _spectatorFromTurnCombat = false;
-    overlay.addLog('관전 종료', 'info');
-    overlay.setStatus('idle', '대기 중');
-    setTimeout(() => overlay.updateCombatState(engine.getState()), 5000);
-  }
-
-  // ── [COMBAT] 일시정지/재개 ────────────────────────────
-
-  function togglePause() {
-    if (paused || _pauseRequested) {
-      resumeCombat();
-    } else {
-      pauseCombat();
-    }
-  }
-
-  /**
-   * 일시정지 — 주사위 굴림(WAITING) 상태에서만 실제 멈춤.
-   * 합 결과나 라운드 헤더 중이면 예약만 걸고, 굴림까지 진행 후 멈춤.
-   */
-  function pauseCombat() {
-    if (flowState === STATE.IDLE || flowState === STATE.COMBAT_END || flowState === STATE.SPECTATING || paused || _pauseRequested) return;
-
-    // 이미 주사위 대기 상태면 즉시 멈춤
-    if (flowState === STATE.WAITING_ATTACKER_RESULT || flowState === STATE.WAITING_DEFENDER_RESULT) {
-      _applyPause();
-      return;
-    }
-
-    // 그 외 상태(헤더, 결과처리 등)는 예약만 → 굴림까지 진행 후 자동 멈춤
-    _pauseRequested = true;
-    log('⏸ 일시정지 예약 (주사위 굴림 후 적용)');
-    overlay.setPaused(true);
-    overlay.setStatus('active', '주사위 굴림 후 일시정지...');
-    overlay.addLog('주사위 굴림 후 일시정지됩니다.', 'warning');
-  }
-
-  /** 실제 일시정지 적용 (내부용) */
-  function _applyPause() {
-    paused = true;
-    _pauseRequested = false;
-    _stateBeforePause = flowState;
-    flowState = STATE.PAUSED;
-    clearTimeout(resultTimeoutId);
-
-    alwaysLog('⏸ 전투 일시정지');
-    overlay.setPaused(true);
-    overlay.setStatus('paused', '일시정지');
-    overlay.addLog('전투가 일시정지되었습니다.', 'warning');
-  }
-
-  /**
-   * 재개 — 즉시 수동 입력창을 띄워서 결과를 받음.
-   * 채팅 인식이 일시정지 후 동작하지 않으므로 수동 입력으로 바로 전환.
-   */
-  function resumeCombat() {
-    // 예약만 걸려있었다면 예약 취소
-    if (_pauseRequested && !paused) {
-      _pauseRequested = false;
-      overlay.setPaused(false);
-      overlay.setStatus('active', '전투 진행 중');
-      overlay.addLog('일시정지가 취소되었습니다.', 'info');
-      return;
-    }
-
-    if (!paused) return;
-
-    paused = false;
-    _pauseRequested = false;
-    const restoreState = _stateBeforePause;
-    _stateBeforePause = null;
-
-    alwaysLog(`▶ 전투 재개 (복원: ${restoreState})`);
-    overlay.setPaused(false);
-    overlay.addLog('전투가 재개되었습니다.', 'success');
-
-    flowState = restoreState;
-
-    // 주사위 대기 상태였으면 → 즉시 수동 입력창 표시
-    if (restoreState === STATE.WAITING_ATTACKER_RESULT || restoreState === STATE.WAITING_DEFENDER_RESULT) {
-      _showManualInputNow(restoreState);
-    } else {
-      overlay.setStatus('active', '전투 진행 중');
-    }
-  }
-
-  /**
-   * 재개 시 즉시 수동 입력창 표시 (타임아웃 없이 바로)
-   */
-  async function _showManualInputNow(waitingState) {
-    const state = engine.getState();
-    if (!state?.combat) return;
-
-    let who, emoji, playerName;
-    if (waitingState === STATE.WAITING_ATTACKER_RESULT) {
-      who = '공격자';
-      emoji = '⚔️';
-      playerName = state.combat.attacker.name;
-    } else {
-      who = '방어자';
-      emoji = '🛡️';
-      playerName = state.combat.defender.name;
-    }
-
-    overlay.setStatus('waiting', `${who} 결과 입력 대기...`);
-    overlay.addLog(`${who} 결과를 입력해주세요.`, 'warning');
-
-    const manualValue = await overlay.showManualInput(who, emoji, playerName);
-    if (manualValue === null) {
-      log('수동 입력: 취소됨');
-      return;
-    }
-
-    log(`수동 입력 (재개): ${who} = ${manualValue}`);
-    overlay.addLog(`${emoji} ${playerName}: ${manualValue} (수동 입력)`, 'info');
-
-    if (flowState === STATE.WAITING_ATTACKER_RESULT) {
-      flowState = STATE.PROCESSING_RESULT;
-      engine.setAttackerRoll(manualValue);
-      const logType = manualValue >= state.combat.attacker.critThreshold ? 'crit'
-        : manualValue <= state.combat.attacker.fumbleThreshold ? 'fumble' : 'info';
-      overlay.addLog(`⚔️ ${state.combat.attacker.name}: ${manualValue}`, logType);
-      overlay.animateDiceValue('attacker', manualValue);
-      overlay.playAttack('attacker');
-      if (logType === 'crit') overlay.playCrit('attacker');
-      else if (logType === 'fumble') overlay.playFumble('attacker');
-      setTimeout(() => rollForDefender(), config.timing.betweenRolls);
-    } else if (flowState === STATE.WAITING_DEFENDER_RESULT) {
-      flowState = STATE.PROCESSING_RESULT;
-      engine.setDefenderRoll(manualValue);
-      const logType = manualValue >= state.combat.defender.critThreshold ? 'crit'
-        : manualValue <= state.combat.defender.fumbleThreshold ? 'fumble' : 'info';
-      overlay.addLog(`🛡️ ${state.combat.defender.name}: ${manualValue}`, logType);
-      overlay.animateDiceValue('defender', manualValue);
-      overlay.playAttack('defender');
-      if (logType === 'crit') overlay.playCrit('defender');
-      else if (logType === 'fumble') overlay.playFumble('defender');
-      setTimeout(() => processRoundResult(), config.timing.beforeRoundResult);
-    }
-  }
-
-  // ── [COMBAT] 라운드 진행 ──────────────────────────────────
-
-  async function startNextRound() {
-    engine.incrementRound();
-    const state = engine.getState();
-    overlay.updateCombatState(state);
-
-    // 충돌 애니메이션 재생
-    overlay.playClash();
-
-    // 라운드 헤더 전송
-    const headerMsg = engine.getRoundHeaderMessage();
-    log(`라운드 ${state.round} 헤더 전송`);
-    overlay.addLog(`── 제 ${state.round}합 ──`, 'info');
-
-    flowState = STATE.ROUND_HEADER_SENT;
-    await chat.sendSystemMessage(headerMsg);
-
-    // 대기 후 공격자 굴림
-    await delay(config.general.manualMode ? 0 : config.timing.beforeFirstRoll);
-    rollForAttacker();
-  }
-
-  async function rollForAttacker() {
-    flowState = STATE.WAITING_ATTACKER_RESULT;
-    overlay.setStatus('waiting', '공격자 결과 대기 중...');
-
-    if (config.general.manualMode) {
-      // 수동 모드: 채팅에 굴림 메시지를 보내지 않고 바로 수동 입력
-      log('수동 모드: 공격자 주사위 결과 입력 대기');
-      overlay.playParrySound();
-      await processManualDiceInput('공격자');
-    } else {
-      const state = engine.getState();
-      const bonus = engine.combat?.attacker?.n0Bonus || 0;
-      const notation = bonus > 0 ? `1D${config.rules.diceType}+${bonus}` : `1D${config.rules.diceType}`;
-      const charName = state.combat.attacker.name;
-      const label = `⚔️ ${charName}`;
-      log(`공격자 주사위 굴림: ${notation} ${label} (${charName} 캐릭터로 직접 전송)`);
-
-      chat.sendDiceAsCharacter(notation, label, charName);
-      overlay.playParrySound();
-
-      // 일시정지 예약이 있으면 여기서 멈춤
-      if (_pauseRequested) {
-        _applyPause();
-        return;
-      }
-
-      // 빠른 응답으로 이미 결과가 처리된 경우 타임아웃 설정 불필요
-      if (flowState === STATE.WAITING_ATTACKER_RESULT) {
-        setResultTimeout('공격자');
-      }
-    }
-  }
-
-  /**
-   * 주사위 결과 값 추출 (이름 기반 패턴)
-   * 그룹된 메시지(textContent에 다른 메시지도 포함)에서도 정확히 추출
-   * - "이름: 숫자" 패턴을 우선 매칭 (라운드 헤더의 "이름 숫자 :" 패턴과 혼동 방지)
-   */
-  function extractDiceValue(text, playerName, emoji) {
-    const nameEsc = playerName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const emojiEsc = emoji.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-    // N0 연격 보너스로 인해 결과가 diceType을 초과할 수 있음
-    const maxDiceVal = config.rules.diceType + 10;
-
-    // Pattern 1: "이름: 숫자" 또는 "이름： 숫자" (코코포리아 주사위 결과 표시)
-    const p1 = new RegExp(nameEsc + '\\s*[：:]\\s*(\\d{1,2})');
-    const m1 = text.match(p1);
-    if (m1) {
-      const v = parseInt(m1[1], 10);
-      if (v >= 1 && v <= maxDiceVal) return v;
-    }
-
-    // Pattern 2: "1D20[+N] [이모지/이름] ... > 숫자" — 이름 또는 이모지가 1D20과 결과값 사이에 있어야 함
-    const p2 = new RegExp('1[Dd]20(?:\\+\\d+)?[^>＞→]*(?:' + emojiEsc + '|' + nameEsc + ')[^>＞→]*[→＞>]\\s*(\\d{1,2})');
-    const m2 = text.match(p2);
-    if (m2) {
-      const v = parseInt(m2[1], 10);
-      if (v >= 1 && v <= maxDiceVal) return v;
-    }
-
-    // Pattern 3: "[이모지/이름]... (1D20[+N]) > 숫자" — 이모지/이름이 1D20 앞에 나오는 패턴
-    const p3 = new RegExp('(?:' + emojiEsc + '|' + nameEsc + ')[^>＞→]*\\(1[Dd]20(?:\\+\\d+)?\\)[^>＞→]*[→＞>]\\s*(\\d{1,2})');
-    const m3 = text.match(p3);
-    if (m3) {
-      const v = parseInt(m3[1], 10);
-      if (v >= 1 && v <= maxDiceVal) return v;
-    }
-
-    // Pattern 4: "결과: 숫자" (이모지 또는 이름 포함 시 — fallback)
-    if (text.includes(emoji) || text.includes(playerName)) {
-      const m4 = text.match(/결과\s*[：:]\s*(\d{1,2})/);
-      if (m4) {
-        const v = parseInt(m4[1], 10);
-        if (v >= 1 && v <= maxDiceVal) return v;
-      }
-    }
-
-    return null;
-  }
-
-  function checkForAttackerResult(text) {
-    const state = engine.getState();
-    if (!state?.combat) return;
-
-    const value = extractDiceValue(text, state.combat.attacker.name, '⚔');
-    if (value === null) return;
-
-    // 즉시 상태 전환 → 중복 감지 차단
-    flowState = STATE.PROCESSING_RESULT;
-    clearTimeout(resultTimeoutId);
-    overlay.hideManualInput(); // 채팅에서 인식되면 수동입력 숨김
-    log(`공격자 결과: ${value}`);
-    engine.setAttackerRoll(value);
-
-    // N0 연격 보너스 포함된 결과 → 원본 주사위 값으로 크리/펌블 판정
-    const atkN0 = state.combat.attacker.n0Bonus || 0;
-    const atkRaw = value - atkN0;
-    const logType = atkRaw >= state.combat.attacker.critThreshold ? 'crit'
-      : atkRaw <= state.combat.attacker.fumbleThreshold ? 'fumble' : 'info';
-    overlay.addLog(`⚔️ ${state.combat.attacker.name}: ${value}${atkN0 > 0 ? ` (${atkRaw}+${atkN0})` : ''}`, logType);
-    overlay.animateDiceValue('attacker', value);
-
-    // 공격 모션 + 이펙트
-    overlay.playAttack('attacker');
-
-    // 크리/펌블 애니메이션
-    if (logType === 'crit') overlay.playCrit('attacker');
-    else if (logType === 'fumble') overlay.playFumble('attacker');
-
-    // 대기 후 방어자 굴림
-    setTimeout(() => rollForDefender(), config.timing.betweenRolls);
-  }
-
-  async function rollForDefender() {
-    flowState = STATE.WAITING_DEFENDER_RESULT;
-    overlay.setStatus('waiting', '방어자 결과 대기 중...');
-
-    if (config.general.manualMode) {
-      // 수동 모드: 채팅에 굴림 메시지를 보내지 않고 바로 수동 입력
-      log('수동 모드: 방어자 주사위 결과 입력 대기');
-      overlay.playParrySound();
-      await processManualDiceInput('방어자');
-    } else {
-      const state = engine.getState();
-      const bonus = engine.combat?.defender?.n0Bonus || 0;
-      const notation = bonus > 0 ? `1D${config.rules.diceType}+${bonus}` : `1D${config.rules.diceType}`;
-      const charName = state.combat.defender.name;
-      const label = `🛡️ ${charName}`;
-      log(`방어자 주사위 굴림: ${notation} ${label} (${charName} 캐릭터로 직접 전송)`);
-
-      chat.sendDiceAsCharacter(notation, label, charName);
-      overlay.playParrySound();
-
-      // 일시정지 예약이 있으면 여기서 멈춤
-      if (_pauseRequested) {
-        _applyPause();
-        return;
-      }
-
-      // 빠른 응답으로 이미 결과가 처리된 경우 타임아웃 설정 불필요
-      if (flowState === STATE.WAITING_DEFENDER_RESULT) {
-        setResultTimeout('방어자');
-      }
-    }
-  }
-
-  function checkForDefenderResult(text) {
-    const state = engine.getState();
-    if (!state?.combat) return;
-
-    const value = extractDiceValue(text, state.combat.defender.name, '🛡');
-    if (value === null) return;
-
-    // 즉시 상태 전환 → 중복 감지 차단
-    flowState = STATE.PROCESSING_RESULT;
-    clearTimeout(resultTimeoutId);
-    overlay.hideManualInput(); // 채팅에서 인식되면 수동입력 숨김
-    log(`방어자 결과: ${value}`);
-    engine.setDefenderRoll(value);
-
-    // N0 연격 보너스 포함된 결과 → 원본 주사위 값으로 크리/펌블 판정
-    const defN0 = state.combat.defender.n0Bonus || 0;
-    const defRaw = value - defN0;
-    const logType = defRaw >= state.combat.defender.critThreshold ? 'crit'
-      : defRaw <= state.combat.defender.fumbleThreshold ? 'fumble' : 'info';
-    overlay.addLog(`🛡️ ${state.combat.defender.name}: ${value}${defN0 > 0 ? ` (${defRaw}+${defN0})` : ''}`, logType);
-    overlay.animateDiceValue('defender', value);
-
-    // 공격 모션 + 이펙트
-    overlay.playAttack('defender');
-
-    // 크리/펌블 애니메이션
-    if (logType === 'crit') overlay.playCrit('defender');
-    else if (logType === 'fumble') overlay.playFumble('defender');
-
-    // 대기 후 결과 처리
-    setTimeout(() => processRoundResult(), config.timing.beforeRoundResult);
-  }
-
-  // ── [COMBAT] 라운드 결과 처리 ───────────────────────────────
-
-  async function processRoundResult() {
-    flowState = STATE.PROCESSING_RESULT;
-    overlay.setStatus('active', '결과 처리 중...');
-
-    try {
-      const result = engine.processRoundResult(config.general.manualMode);
-      if (!result) {
-        // 중복 호출로 이미 처리된 경우 → 상태 변경 없이 무시
-        log('⚠️ processRoundResult: 이미 처리됨 (중복 호출 무시)');
-        return;
-      }
-
-      // 결과 메시지 전송 (승자+패자 한 줄씩 묶어서 전송)
-      if (result.description) {
-        overlay.addLog(result.description, getResultLogType(result));
-
-        // 효과음 태그 추출 (result.description 끝에 " @soundName" 형태로 포함됨)
-        const soundTagMatch = result.description.match(/ (@\S+)\s*$/);
-        const soundTag = soundTagMatch ? ' ' + soundTagMatch[1] : '';
-
-        if (result.winner) {
-          const st = engine.getState();
-          const wKey = result.winner;
-          const lKey = wKey === 'attacker' ? 'defender' : 'attacker';
-          const wIcon = wKey === 'attacker' ? '⚔️' : '🛡️';
-          const lIcon = lKey === 'attacker' ? '⚔️' : '🛡️';
-          const wName = st.combat[wKey].name;
-          const lName = st.combat[lKey].name;
-          const wVal = wKey === 'attacker' ? result.attackerRoll : result.defenderRoll;
-          const lVal = lKey === 'attacker' ? result.attackerRoll : result.defenderRoll;
-          const wCrit = wKey === 'attacker' ? result.attackerCrit : result.defenderCrit;
-          const lFumble = lKey === 'attacker' ? result.attackerFumble : result.defenderFumble;
-          const wDice = wKey === 'attacker' ? result.atkDiceChange : result.defDiceChange;
-          const lDice = lKey === 'attacker' ? result.atkDiceChange : result.defDiceChange;
-
-          let winMsg = `${wIcon} ${wName}【${wVal}】`;
-          if (wCrit) winMsg += ' 💥 대성공!';
-          if (wDice > 0) winMsg += ` 주사위 +${wDice}`;
-          winMsg += ' → 승리!';
-
-          let loseMsg = `${lIcon} ${lName}【${lVal}】`;
-          if (lFumble) loseMsg += ' 💀 대실패!';
-          if (lDice < 0) loseMsg += ` 주사위 ${lDice}`;
-
-          // 승자+패자 묶어서 한 번에 전송 + 효과음 태그 추가
-          await chat.sendSystemMessage(winMsg + '\n' + loseMsg + soundTag);
-        } else {
-          // 동점 / 쌍방 대성공/대실패 → 기본 색상
-          await chat.sendSystemMessage(result.description);
-        }
-      }
-
-      // 특성 이벤트 로그 + 채팅 전송 (비대화형 이벤트는 묶어서 전송)
-      let manualH0ExtraRound = false;  // 수동 모드 H40/H400 추가 합 플래그
-      const traitChatLines = [];       // 묶어서 보낼 특성 메시지 모음
-      if (result.traitEvents && result.traitEvents.length > 0) {
-        for (const te of result.traitEvents) {
-          const icon = te.who === 'attacker' ? '⚔️' : '🛡️';
-          let logMsg = '';
-          let logType = 'info';
-          let chatMsg = '';
-
-          if (['H0', 'H00', 'H40', 'H400'].includes(te.trait) && te.event === 'resurrect') {
-            const snd = '발도' + (Math.floor(Math.random() * 3) + 1);
-            logMsg = `🔥 ${te.name}: 인간 특성 발동! 주사위 +1 부활`;
-            chatMsg = `🔥 인간 특성 발동! | ${icon} ${te.name} 부활! 주사위 +1 @${snd}`;
-            logType = 'crit';
-          } else if (['H0', 'H00', 'H40', 'H400'].includes(te.trait) && te.event === 'reset') {
-            const snd = '발도' + (Math.floor(Math.random() * 3) + 1);
-            logMsg = `✨ ${te.name}: 인간 특성 초기화 (재사용 가능)`;
-            chatMsg = `✨ 인간 특성 초기화 | ${icon} ${te.name} 재사용 가능 @${snd}`;
-          } else if (te.trait === 'H4' && te.event === 'stack') {
-            const snd = '위험' + (Math.floor(Math.random() * 3) + 1);
-            logMsg = `📜 ${te.name}: 피로 새겨진 역사 +${te.bonus} (대성공 ${te.threshold}+)`;
-            chatMsg = `📜 피로 새겨진 역사 | ${icon} ${te.name} 대성공 범위 +${te.bonus} (${te.threshold}+) @${snd}`;
-            logType = 'warning';
-          } else if (te.trait === 'H4' && te.event === 'reset') {
-            logMsg = `📜 ${te.name}: 피로 새겨진 역사 초기화`;
-            chatMsg = `📜 피로 새겨진 역사 초기화 | ${icon} ${te.name}`;
-          } else if ((te.trait === 'H40' || te.trait === 'H400') && te.event === 'h0_extra_round') {
-            const snd = '발도' + (Math.floor(Math.random() * 3) + 1);
-            logMsg = `🔥📜 ${te.name}: 인간 특성 발동! 역사(+${te.bonus}) 유지, 추가 합 진행`;
-            chatMsg = `🔥📜 인간 특성 발동! | ${icon} ${te.name} 역사(+${te.bonus}) 유지 → 추가 합! @${snd}`;
-            logType = 'crit';
-          }
-          // ── N0 특성: 연격 보너스 ──
-          else if (te.trait === 'N0' && te.event === 'stack') {
-            logMsg = `⚡ ${te.name}: 연격! 다음 판정 보너스 +${te.bonus}`;
-            chatMsg = `⚡ 연격 | ${icon} ${te.name} 다음 판정 +${te.bonus}`;
-            logType = 'warning';
-          } else if (te.trait === 'N0' && te.event === 'reset') {
-            logMsg = `⚡ ${te.name}: 연격 보너스 초기화`;
-            chatMsg = `⚡ 연격 초기화 | ${icon} ${te.name}`;
-          }
-          // ── 수동 모드: H0 발동 사용자 확인 ──
-          else if (te.event === 'h0_available') {
-            // 대화형 → 묶지 않고 즉시 처리
-            if (traitChatLines.length > 0) {
-              await chat.sendSystemMessage(traitChatLines.join('\n'));
-              traitChatLines.length = 0;
-            }
-            overlay.addLog(`❓ ${te.name}: 인간 특성 발동 가능 — 확인 대기 중`, 'warning');
-            const confirmed = await overlay.showH0Prompt(te.who, te.name);
-            if (confirmed) {
-              const h0Result = engine.applyManualH0(te.who);
-              if (h0Result) {
-                const snd = '발도' + (Math.floor(Math.random() * 3) + 1);
-                logMsg = `🔥 ${te.name}: 인간 특성 발동! 주사위 +1 부활`;
-                chatMsg = `🔥 인간 특성 발동! | ${icon} ${te.name} 부활! 주사위 +1 @${snd}`;
-                logType = 'crit';
-              }
-            } else {
-              logMsg = `⚫ ${te.name}: 인간 특성 미발동`;
-            }
-          }
-          // ── 수동 모드: H40/H400 발동 사용자 확인 ──
-          else if (te.event === 'h40_h0_available') {
-            // 대화형 → 묶지 않고 즉시 처리
-            if (traitChatLines.length > 0) {
-              await chat.sendSystemMessage(traitChatLines.join('\n'));
-              traitChatLines.length = 0;
-            }
-            overlay.addLog(`❓ ${te.name}: 인간 특성 발동 가능 (역사+${te.bonus} 유지) — 확인 대기 중`, 'warning');
-            const confirmed = await overlay.showH0Prompt(te.who, te.name, true);
-            if (confirmed) {
-              const h40Result = engine.applyManualH40H0(te.who);
-              if (h40Result) {
-                const snd = '발도' + (Math.floor(Math.random() * 3) + 1);
-                logMsg = `🔥📜 ${te.name}: 인간 특성 발동! 역사(+${te.bonus}) 유지, 추가 합 진행`;
-                chatMsg = `🔥📜 인간 특성 발동! | ${icon} ${te.name} 역사(+${te.bonus}) 유지 → 추가 합! @${snd}`;
-                logType = 'crit';
-                manualH0ExtraRound = true;
-              }
-            } else {
-              engine.declineH40H0(te.who);
-              logMsg = `📜 ${te.name}: 피로 새겨진 역사 초기화 (인간 특성 미발동)`;
-              chatMsg = `📜 피로 새겨진 역사 초기화 | ${icon} ${te.name}`;
-            }
-          }
-
-          if (logMsg) overlay.addLog(logMsg, logType);
-          if (chatMsg) traitChatLines.push(chatMsg);
-        }
-        // 남은 특성 메시지 묶어서 전송
-        if (traitChatLines.length > 0) {
-          await chat.sendSystemMessage(traitChatLines.join('\n'));
-        }
-      }
-
-      // 상태 업데이트 (DOM 갱신 먼저, 애니메이션은 그 다음)
-      overlay.updateCombatState(engine.getState());
-
-      // 합 결과 애니메이션: 승리/동점 (DOM 갱신 후 재생해야 클래스가 유지됨)
-      if (result.type === 'tie') {
-        overlay.playTie();
-      } else if (result.winner) {
-        overlay.playRoundWin(result.winner);
-      }
-
-      // 동점 재굴림 처리 (재굴림도 합 1회로 카운트)
-      if (result.needsReroll) {
-        overlay.addLog('동점! 재굴림합니다.', 'warning');
-        await delay(config.general.manualMode ? 0 : config.timing.beforeNextRound);
-        await startNextRound();
-        return;
-      }
-
-      // H40/H400 추가 합 처리 (인간 특성 발동으로 H4 유지, 합 1회 추가)
-      if (manualH0ExtraRound || result.traitEvents?.some(te => (te.trait === 'H40' || te.trait === 'H400') && te.event === 'h0_extra_round')) {
-        overlay.addLog('인간 특성 발동! 추가 합 진행...', 'crit');
-        await delay(config.general.manualMode ? 0 : config.timing.beforeNextRound);
-        await startNextRound();
-        return;
-      }
-
-      // 승리 확인
-      if (engine.isVictory()) {
-        await delay(config.general.manualMode ? 0 : config.timing.beforeVictory);
-        await announceVictory();
-        return;
-      }
-
-      // 다음 라운드
-      await delay(config.general.manualMode ? 0 : config.timing.beforeNextRound);
-      await startNextRound();
-
-    } catch (e) {
-      console.error('[BWBR] 결과 처리 오류:', e);
-      overlay.addLog(`오류: ${e.message}`, 'error');
-      overlay.setStatus('error', '처리 오류');
-      flowState = STATE.IDLE;
-    }
-  }
-
-  function getResultLogType(result) {
-    switch (result.type) {
-      case 'crit': return 'crit';
-      case 'fumble': return 'fumble';
-      case 'bothCrit': return 'crit';
-      case 'bothFumble': return 'fumble';
-      case 'critVsFumble': return 'warning';
-      case 'tie': return 'warning';
-      default: return 'info';
-    }
-  }
-
-  // ── [COMBAT] 승리 선언 ────────────────────────────────────
-
-  async function announceVictory() {
-    flowState = STATE.COMBAT_END;
-    const victoryMsg = engine.getVictoryMessage();
-    const winner = engine.getWinner();
-
-    log(`전투 종료! 승자: ${winner}`);
-    await chat.sendSystemMessage(victoryMsg);
-
-    // 승리/패배 애니메이션
-    if (winner === 'attacker' || winner === 'defender') {
-      overlay.playVictory(winner);
-    }
-
-    overlay.addLog(victoryMsg, 'success');
-    overlay.setStatus('idle', '전투 종료');
-
-    // 상태 초기화
-    engine.reset();
-
-    // TURN_COMBAT에서 시작한 합이면 전투 보조 모드로 복귀
-    if (_activeCombatFromTurnCombat && combatEngine && combatEngine.inCombat) {
-      log('⚔️ 합 종료 → 전투 보조 모드로 복귀');
-      _activeCombatFromTurnCombat = false;
-      flowState = STATE.TURN_COMBAT;
-      overlay.addLog('합 종료 — 전투 보조 모드로 복귀', 'info');
-      overlay.setStatus('active', '전투 보조 중');
-      overlay.smoothTransition(() => refreshTurnUI());
-      return;
-    }
-
-    // 관전 추적 중이었으면 관전 UI 복귀 (비호스트)
-    if (_activeCombatFromTurnCombat && _turnTrackingActive) {
-      log('⚔️ 합 종료 → 전투 관전 모드로 복귀');
-      _activeCombatFromTurnCombat = false;
-      flowState = STATE.IDLE;
-      overlay.setTurnTrackingMode(true);
-      overlay.addLog('합 종료 — 전투 관전 모드로 복귀', 'info');
-      overlay.setStatus('active', '👁 전투 관전 중');
-      overlay.smoothTransition(() => updateTrackedTurnUI());
-      return;
-    }
-
-    _activeCombatFromTurnCombat = false;
-    flowState = STATE.IDLE;
-
-    // 오버레이 상태 업데이트 (전투 종료 후에도 잠시 표시 유지)
-    setTimeout(() => {
-      overlay.updateCombatState(engine.getState());
-    }, 5000);
-  }
-
-  // ── [COMBAT] 수동 모드: 주사위 결과 직접 입력 ────────────
-
-  async function processManualDiceInput(who) {
-    const state = engine.getState();
-    if (!state?.combat) return;
-
-    let emoji, playerName, whoKey;
-    if (flowState === STATE.WAITING_ATTACKER_RESULT) {
-      emoji = '⚔️';
-      playerName = state.combat.attacker.name;
-      whoKey = 'attacker';
-    } else if (flowState === STATE.WAITING_DEFENDER_RESULT) {
-      emoji = '🛡️';
-      playerName = state.combat.defender.name;
-      whoKey = 'defender';
-    } else {
-      return;
-    }
-
-    // H0 자유 발동 루프: 사용자가 H0을 입력하면 발동 후 재프롬프트
-    let manualValue;
-    while (true) {
-      const currentFighter = engine.getState().combat[whoKey];
-      const h0Available = currentFighter.traits &&
-        currentFighter.traits.some(t => ['H0', 'H00', 'H40', 'H400'].includes(t)) &&
-        !currentFighter.h0Used;
-
-      manualValue = await overlay.showManualInput(who, emoji, playerName, h0Available);
-
-      if (manualValue === 'H0') {
-        const h0Result = engine.activateH0Free(whoKey);
-        if (h0Result) {
-          const icon = whoKey === 'attacker' ? '⚔️' : '🛡️';
-          const snd = '발도' + (Math.floor(Math.random() * 3) + 1);
-          overlay.addLog(`🔥 ${playerName}: 인간 특성 발동! 주사위 +1`, 'crit');
-          await chat.sendSystemMessage(`🔥 인간 특성 발동! | ${icon} ${playerName} 주사위 +1 @${snd}`);
-          overlay.updateCombatState(engine.getState());
-        }
-        continue; // 다시 주사위 값 입력 대기
-      }
-      break; // 숫자 입력 또는 취소
-    }
-
-    if (manualValue === null) {
-      log('수동 입력: 취소됨 (전투 중지)');
-      return;
-    }
-
-    log(`수동 입력: ${who} = ${manualValue}`);
-    overlay.addLog(`${emoji} ${playerName}: ${manualValue} (수동 입력)`, 'info');
-
-    if (flowState === STATE.WAITING_ATTACKER_RESULT) {
-      flowState = STATE.PROCESSING_RESULT;
-      engine.setAttackerRoll(manualValue);
-      const logType = manualValue >= state.combat.attacker.critThreshold ? 'crit'
-        : manualValue <= state.combat.attacker.fumbleThreshold ? 'fumble' : 'info';
-      overlay.addLog(`⚔️ ${state.combat.attacker.name}: ${manualValue}`, logType);
-      overlay.animateDiceValue('attacker', manualValue);
-      if (logType === 'crit') overlay.playCrit('attacker');
-      else if (logType === 'fumble') overlay.playFumble('attacker');
-      setTimeout(() => rollForDefender(), 0);
-    } else if (flowState === STATE.WAITING_DEFENDER_RESULT) {
-      flowState = STATE.PROCESSING_RESULT;
-      engine.setDefenderRoll(manualValue);
-      const logType = manualValue >= state.combat.defender.critThreshold ? 'crit'
-        : manualValue <= state.combat.defender.fumbleThreshold ? 'fumble' : 'info';
-      overlay.addLog(`🛡️ ${state.combat.defender.name}: ${manualValue}`, logType);
-      overlay.animateDiceValue('defender', manualValue);
-      if (logType === 'crit') overlay.playCrit('defender');
-      else if (logType === 'fumble') overlay.playFumble('defender');
-      setTimeout(() => processRoundResult(), 0);
-    }
-  }
-
-  // ── [COMBAT] 타임아웃 → 수동 입력 요청 ────────────────
-
-  function setResultTimeout(who) {
-    clearTimeout(resultTimeoutId);
-    const expectedRound = engine.round;
-    resultTimeoutId = setTimeout(async () => {
-      // 라운드가 바뀌었으면 무시 (stale timeout)
-      if (engine.round !== expectedRound) {
-        log(`${who} 타임아웃 무시 (라운드 변경: ${expectedRound} → ${engine.round})`);
-        return;
-      }
-
-      log(`${who} 결과 타임아웃 → 수동 입력 요청`);
-      overlay.addLog(`${who} 결과를 자동 인식하지 못했습니다. 도우미에 직접 입력해주세요.`, 'warning');
-
-      const state = engine.getState();
-      if (!state?.combat) return;
-
-      let emoji, playerName;
-      if (flowState === STATE.WAITING_ATTACKER_RESULT) {
-        emoji = '⚔️';
-        playerName = state.combat.attacker.name;
-      } else if (flowState === STATE.WAITING_DEFENDER_RESULT) {
-        emoji = '🛡️';
-        playerName = state.combat.defender.name;
-      } else {
-        return; // 이미 다른 상태로 전환될 경우
-      }
-
-      // 수동 입력 UI 표시 & 대기
-      const manualValue = await overlay.showManualInput(who, emoji, playerName);
-      if (manualValue === null) {
-        // 수동 입력 취소됨 (채팅에서 인식되었거나 전투 중지)
-        log('수동 입력: 취소됨 (채팅 인식 또는 중지)');
-        return;
-      }
-
-      log(`수동 입력: ${who} = ${manualValue}`);
-      overlay.addLog(`${emoji} ${playerName}: ${manualValue} (수동 입력)`, 'info');
-
-      if (flowState === STATE.WAITING_ATTACKER_RESULT) {
-        flowState = STATE.PROCESSING_RESULT;
-        engine.setAttackerRoll(manualValue);
-        const logType = manualValue >= state.combat.attacker.critThreshold ? 'crit'
-          : manualValue <= state.combat.attacker.fumbleThreshold ? 'fumble' : 'info';
-        overlay.addLog(`⚔️ ${state.combat.attacker.name}: ${manualValue}`, logType);
-        overlay.animateDiceValue('attacker', manualValue);
-        if (logType === 'crit') overlay.playCrit('attacker');
-        else if (logType === 'fumble') overlay.playFumble('attacker');
-        setTimeout(() => rollForDefender(), config.timing.betweenRolls);
-      } else if (flowState === STATE.WAITING_DEFENDER_RESULT) {
-        flowState = STATE.PROCESSING_RESULT;
-        engine.setDefenderRoll(manualValue);
-        const logType = manualValue >= state.combat.defender.critThreshold ? 'crit'
-          : manualValue <= state.combat.defender.fumbleThreshold ? 'fumble' : 'info';
-        overlay.addLog(`🛡️ ${state.combat.defender.name}: ${manualValue}`, logType);
-        overlay.animateDiceValue('defender', manualValue);
-        if (logType === 'crit') overlay.playCrit('defender');
-        else if (logType === 'fumble') overlay.playFumble('defender');
-        setTimeout(() => processRoundResult(), config.timing.beforeRoundResult);
-      }
-    }, config.timing.resultTimeout);
+    // 전투 관련 메시지 처리는 모두 전투 제어기에 위임
+    combatCtrl.handleNewMessage(text, element, senderName);
   }
 
   // ── [CORE] 확장 프로그램 메시지 처리 ────────────────
-  // ↳ BWBR_SET_MANUAL_MODE, BWBR_SET_AUTO_CONSUME_ACTIONS 등은 [COMBAT] 전용
-  // ↳ BWBR_SET_AUTO_COMPLETE, BWBR_SET_BETTER_SOUNDBAR 등은 [CORE]────────
+  // ↳ 전투 관련 설정은 전투 제어기(combatCtrl)에 위임
+  // ↳ BWBR_SET_AUTO_COMPLETE, BWBR_SET_BETTER_SOUNDBAR 등은 [CORE]
 
   function onExtensionMessage(message, sender, sendResponse) {
     switch (message.type) {
       case 'BWBR_GET_STATUS':
         sendResponse({
           enabled: enabled,
-          state: flowState,
-          paused: paused,
-          combat: engine ? engine.getState() : null,
+          state: combatCtrl.getFlowState(),
+          paused: combatCtrl.getPaused(),
+          combat: combatCtrl.getEngine() ? combatCtrl.getEngine().getState() : null,
           connected: !!(chat && chat.chatContainer)
         });
         break;
 
       case 'BWBR_SET_ENABLED':
         enabled = message.enabled;
-        overlay.setStatus(enabled ? 'idle' : 'disabled', enabled ? '대기 중' : '비활성');
-        if (!enabled) cancelCombat();
+        combatCtrl.setEnabled(enabled);
+        if (!enabled) combatCtrl.cancelCombat();
         sendResponse({ success: true });
         break;
 
       case 'BWBR_UPDATE_CONFIG':
         config = deepMerge(window.BWBR_DEFAULTS, message.config);
         // 패턴/템플릿은 항상 최신 기본값 사용 (팝업 측 구버전 호환)
-        config.patterns = JSON.parse(JSON.stringify(window.BWBR_DEFAULTS.patterns));
-        config.templates = JSON.parse(JSON.stringify(window.BWBR_DEFAULTS.templates));
-        engine.updateConfig(config);
+        config.patterns = JSON.parse(JSON.stringify(window.BWBR_COMBAT_DEFAULTS.patterns));
+        config.templates = JSON.parse(JSON.stringify(window.BWBR_COMBAT_DEFAULTS.templates));
+        combatCtrl.updateConfig(config);
         chat.updateConfig(config);
-        overlay.updateConfig(config);
         applySiteVolume(config.general.siteVolume ?? 1.0);
         syncSiteVolumeSlider(config.general.siteVolume ?? 1.0);
         sendResponse({ success: true });
@@ -2246,16 +366,12 @@
         break;
 
       case 'BWBR_SET_MANUAL_MODE':
-        config.general.manualMode = message.manualMode;
-        alwaysLog(`수동 모드 ${message.manualMode ? '활성화' : '비활성화'}`);
-        overlay.addLog(`수동 모드 ${message.manualMode ? 'ON' : 'OFF'}`, 'info');
+        combatCtrl.setManualMode(message.manualMode);
         sendResponse({ success: true });
         break;
 
       case 'BWBR_SET_SHOW_BATTLE_LOG':
-        config.general.showBattleLog = message.showBattleLog;
-        overlay.updateConfig(config);
-        alwaysLog(`전투 로그 ${message.showBattleLog ? '표시' : '숨김'}`);
+        combatCtrl.setShowBattleLog(message.showBattleLog);
         sendResponse({ success: true });
         break;
 
@@ -2269,9 +385,7 @@
         break;
 
       case 'BWBR_SET_AUTO_CONSUME_ACTIONS':
-        config.general.autoConsumeActions = message.autoConsumeActions;
-        alwaysLog(`행동 자동 소모 ${message.autoConsumeActions ? '활성화' : '비활성화'}`);
-        overlay.addLog(`행동 자동 소모 ${message.autoConsumeActions ? 'ON' : 'OFF'}`, 'info');
+        combatCtrl.setAutoConsumeActions(message.autoConsumeActions);
         sendResponse({ success: true });
         break;
 
@@ -2287,13 +401,13 @@
         break;
 
       case 'BWBR_CANCEL_COMBAT':
-        cancelCombat();
+        combatCtrl.cancelCombat();
         sendResponse({ success: true });
         break;
 
       case 'BWBR_PAUSE_COMBAT':
-        togglePause();
-        sendResponse({ success: true, paused: paused });
+        combatCtrl.togglePause();
+        sendResponse({ success: true, paused: combatCtrl.getPaused() });
         break;
 
       case 'BWBR_TEST_SEND':
@@ -2405,7 +519,7 @@
     _logExportBusy = true;
 
     // 진행 상태 토스트 표시
-    overlay.addLog('📜 로그 추출 중...', 'info');
+    combatCtrl.getOverlay().addLog('📜 로그 추출 중...', 'info');
     _showExportToast('📜 Firestore에서 로그를 가져오는 중...');
 
     const handler = (e) => {
@@ -2414,13 +528,13 @@
       _logExportBusy = false;
 
       if (!e.detail?.success) {
-        overlay.addLog('로그 추출 실패: ' + (e.detail?.error || '알 수 없는 오류'), 'error');
+        combatCtrl.getOverlay().addLog('로그 추출 실패: ' + (e.detail?.error || '알 수 없는 오류'), 'error');
         _showExportToast('❌ 로그 추출 실패: ' + (e.detail?.error || ''), 3000);
         return;
       }
 
       const { messages, roomName } = e.detail;
-      overlay.addLog(`📜 ${messages.length}건 로그 가져옴`, 'info');
+      combatCtrl.getOverlay().addLog(`📜 ${messages.length}건 로그 가져옴`, 'info');
       _showExportToast(`📜 ${messages.length}건 로그 가져옴`, 2000);
 
       // 다이얼로그 열기 (log-export-dialog.js)
@@ -2432,10 +546,10 @@
           const html = _generateLogHtml(messages, roomName);
           const filename = `log_${roomName || 'cocofolia'}_${_formatDateForFilename(new Date())}.html`;
           _downloadFile(filename, html, 'text/html');
-          overlay.addLog(`📜 로그 추출 완료! ${messages.length}건 → ${filename}`, 'success');
+          combatCtrl.getOverlay().addLog(`📜 로그 추출 완료! ${messages.length}건 → ${filename}`, 'success');
           _showExportToast(`✅ ${messages.length}건 로그 추출 완료!`, 3000);
         } catch (genErr) {
-          overlay.addLog('HTML 생성 실패: ' + genErr.message, 'error');
+          combatCtrl.getOverlay().addLog('HTML 생성 실패: ' + genErr.message, 'error');
           _showExportToast('❌ HTML 생성 실패', 3000);
         }
       }
@@ -2445,7 +559,7 @@
     let timeout = setTimeout(() => {
       window.removeEventListener('bwbr-export-log-result', handler);
       _logExportBusy = false;
-      overlay.addLog('로그 추출 타임아웃 (60초 초과)', 'error');
+      combatCtrl.getOverlay().addLog('로그 추출 타임아웃 (60초 초과)', 'error');
       _showExportToast('❌ 로그 추출 타임아웃', 3000);
     }, 60000);
 
@@ -3486,12 +1600,12 @@ ${rows.join('\n')}
         clearTimeout(_saveTimer);
         _saveTimer = setTimeout(() => {
           try {
-            chrome.storage.sync.get('bwbr_config', (res) => {
+            chrome.storage.sync.get('bwbr_core', (res) => {
               if (chrome.runtime.lastError) return;
-              const c = res.bwbr_config || {};
+              const c = res.bwbr_core || {};
               if (!c.general) c.general = {};
               c.general.siteVolume = curVal;
-              chrome.storage.sync.set({ bwbr_config: c });
+              chrome.storage.sync.set({ bwbr_core: c });
             });
           } catch(e) { /* 컨텍스트 무효화 */ }
         }, 300);

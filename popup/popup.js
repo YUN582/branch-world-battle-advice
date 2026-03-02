@@ -6,10 +6,37 @@
 (function () {
   'use strict';
 
-  // ── 기본값 (content script의 BWBR_DEFAULTS와 동일한 구조) ───
+  // ── 기본값 (content script의 BWBR_*_DEFAULTS와 동일한 구조) ──
   // popup에서는 content script에 접근할 수 없으므로 기본값을 여기에도 정의합니다.
+  // 네임스페이스: CORE_DEFAULTS (범용) + COMBAT_DEFAULTS (전투 모듈)
 
-  const DEFAULTS = {
+  const CORE_DEFAULTS = {
+    general: {
+      enabled: true,
+      manualMode: false,
+      showBattleLog: false,
+      autoComplete: true,
+      autoConsumeActions: true,
+      showVisitHistory: true,
+      charShortcuts: true,
+      autoScroll: true,
+      showOverlay: true,
+      debugMode: false,
+      sfxVolume: 0.45,
+      siteVolume: 1.0,
+      betterSoundbar: true,
+      language: 'ko'
+    },
+    selectors: {
+      chatContainer: ['[class*="MuiList-root"]', '[class*="chat-log"]', '[class*="message-list"]', '[role="log"]', '[class*="scroll"]'],
+      chatMessage: ['[class*="MuiListItem"]', '[class*="message"]', '[class*="chat-item"]'],
+      messageText: ['[class*="MuiTypography"]', '[class*="text"]', '[class*="content"]', '[class*="body"]', 'p', 'span', 'div'],
+      chatInput: ['textarea', 'input[type="text"]', '[contenteditable="true"]', '[class*="MuiInput"] textarea', '[class*="MuiInput"] input'],
+      sendButton: ['button[type="submit"]', '[class*="send"]', '[aria-label*="send"]', '[aria-label*="전송"]']
+    }
+  };
+
+  const COMBAT_DEFAULTS = {
     templates: {
       combatStart: '《합 개시》| ⚔️ {attacker} - {atkDice}/{atkCrit}/{atkFumble} | 🛡️ {defender} - {defDice}/{defCrit}/{defFumble}',
       roundHeader: '《{round}합》| ⚔️ {attacker} {atkDice} : 🛡️ {defender} {defDice} @{sound}',
@@ -56,30 +83,18 @@
       diceResultRegex: '1[Dd]20[^0-9]*?[→＞>]\\s*(\\d+)',
       cancelRegex: '《합\\s*중지》'
     },
-    selectors: {
-      chatContainer: ['[class*="MuiList-root"]', '[class*="chat-log"]', '[class*="message-list"]', '[role="log"]', '[class*="scroll"]'],
-      chatMessage: ['[class*="MuiListItem"]', '[class*="message"]', '[class*="chat-item"]'],
-      messageText: ['[class*="MuiTypography"]', '[class*="text"]', '[class*="content"]', '[class*="body"]', 'p', 'span', 'div'],
-      chatInput: ['textarea', 'input[type="text"]', '[contenteditable="true"]', '[class*="MuiInput"] textarea', '[class*="MuiInput"] input'],
-      sendButton: ['button[type="submit"]', '[class*="send"]', '[aria-label*="send"]', '[aria-label*="전송"]']
-    },
-    general: {
-      enabled: true,
-      manualMode: false,
-      showBattleLog: false,
-      autoComplete: true,
-      autoConsumeActions: true,
-      showVisitHistory: true,
-      charShortcuts: true,
-      autoScroll: true,
-      showOverlay: true,
-      debugMode: false,
-      sfxVolume: 0.45,
-      siteVolume: 1.0,
-      betterSoundbar: true,
-      language: 'ko'
-    }
+    traits: {}
   };
+
+  // 런타임 병합 (하위 호환): 기존 코드가 DEFAULTS.templates, DEFAULTS.general 등으로 접근
+  const DEFAULTS = Object.assign({},
+    JSON.parse(JSON.stringify(CORE_DEFAULTS)),
+    JSON.parse(JSON.stringify(COMBAT_DEFAULTS))
+  );
+
+  /** 코어 / 전투 네임스페이스 키 분류 */
+  const CORE_KEYS = ['general', 'selectors'];
+  const COMBAT_KEYS = ['templates', 'timing', 'sounds', 'rules', 'patterns', 'traits'];
 
   let currentConfig = null;
 
@@ -118,9 +133,26 @@
 
   function loadConfig() {
     return new Promise((resolve) => {
-      chrome.storage.sync.get('bwbr_config', (result) => {
-        if (result.bwbr_config) {
-          const merged = deepMerge(DEFAULTS, result.bwbr_config);
+      chrome.storage.sync.get(['bwbr_core', 'bwbr_combat', 'bwbr_config'], (result) => {
+        let coreData = result.bwbr_core;
+        let combatData = result.bwbr_combat;
+
+        // v1→v2 마이그레이션: 구 bwbr_config가 있고 새 키가 없으면 자동 변환
+        if (result.bwbr_config && !coreData) {
+          coreData = {};
+          combatData = {};
+          CORE_KEYS.forEach(k => { if (result.bwbr_config[k] !== undefined) coreData[k] = result.bwbr_config[k]; });
+          COMBAT_KEYS.forEach(k => { if (result.bwbr_config[k] !== undefined) combatData[k] = result.bwbr_config[k]; });
+          // 마이그레이션 저장 (비동기, 차단 안 함)
+          chrome.storage.sync.set({ bwbr_core: coreData, bwbr_combat: combatData }, () => {
+            chrome.storage.sync.remove('bwbr_config');
+          });
+        }
+
+        if (coreData || combatData) {
+          const mergedCore = deepMerge(CORE_DEFAULTS, coreData || {});
+          const mergedCombat = deepMerge(COMBAT_DEFAULTS, combatData || {});
+          const merged = Object.assign({}, mergedCore, mergedCombat);
           migrateSounds(merged.sounds);
           resolve(merged);
         } else {
@@ -132,9 +164,17 @@
 
   function saveConfig(config) {
     return new Promise((resolve) => {
-      chrome.storage.sync.set({ bwbr_config: config }, () => {
-        resolve();
-      });
+      if (config === null) {
+        // 초기화: 두 네임스페이스 키 모두 삭제
+        chrome.storage.sync.remove(['bwbr_core', 'bwbr_combat', 'bwbr_config'], () => resolve());
+        return;
+      }
+      // 네임스페이스별로 분리 저장
+      const core = {};
+      const combat = {};
+      CORE_KEYS.forEach(k => { if (config[k] !== undefined) core[k] = config[k]; });
+      COMBAT_KEYS.forEach(k => { if (config[k] !== undefined) combat[k] = config[k]; });
+      chrome.storage.sync.set({ bwbr_core: core, bwbr_combat: combat }, () => resolve());
     });
   }
 

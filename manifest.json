@@ -65,6 +65,7 @@
         "content/room-copy.js",
         "content/trigger-engine.js",
         "content/trigger-ui.js",
+        "content/combat-controller.js",
         "content/content.js"
       ],
       "css": [

@@ -16,7 +16,7 @@ chrome.runtime.onInstalled.addListener((details) => {
 
   if (details.reason === 'install') {
     console.log('[BWBR] 확장 프로그램 설치 완료');
-    chrome.storage.sync.set({ bwbr_config: null });
+    chrome.storage.sync.remove(['bwbr_config', 'bwbr_core', 'bwbr_combat']);
     // 설치 직후 업데이트 확인
     checkForUpdate();
   } else if (details.reason === 'update') {

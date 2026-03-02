@@ -131,7 +131,8 @@ Combat stat deduction (주 행동🔺, 보조 행동🔹, etc.) is implemented d
 | `room-copy.js` | Room copy functionality |
 | `trigger-engine.js` | Pattern matching + action chain execution |
 | `trigger-ui.js` | Trigger management modal UI |
-| `content.js` | **Main controller** — state machine orchestration, combat flow, init |
+| `combat-controller.js` | **전투 모듈** — 합/턴제/관전 전체 전투 로직 (`BWBR_CombatController`) |
+| `content.js` | **Main controller** — 설정 로드, 채팅 감시, 트리거 분배, 로그 추출 |
 
 ### MAIN World
 

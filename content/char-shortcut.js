@@ -43,7 +43,7 @@
     chrome.storage.onChanged.addListener(function (changes, area) {
       if (area !== 'sync') return;
       if (changes[STORAGE_KEY]) bindings = changes[STORAGE_KEY].newValue || {};
-      if (changes.bwbr_config) enabled = changes.bwbr_config.newValue?.general?.charShortcuts !== false;
+      if (changes.bwbr_core) enabled = changes.bwbr_core.newValue?.general?.charShortcuts !== false;
     });
     window.addEventListener('bwbr-char-action-result', function (e) {
       if (e.detail?.message) showToast(e.detail.message, 2500);
@@ -62,7 +62,7 @@
     catch (e) { console.warn('[BWBR char-shortcut] saveBindings 실패:', e); }
   }
   async function loadEnabled() {
-    try { var d = await chrome.storage.sync.get('bwbr_config'); enabled = d.bwbr_config?.general?.charShortcuts !== false; }
+    try { var d = await chrome.storage.sync.get('bwbr_core'); enabled = d.bwbr_core?.general?.charShortcuts !== false; }
     catch (_) { enabled = true; }
   }
 
