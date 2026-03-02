@@ -65,6 +65,7 @@
         "content/room-copy.js",
         "content/trigger-engine.js",
         "content/trigger-ui.js",
+        "content/module-loader.js",
         "content/combat-controller.js",
         "content/content.js"
       ],
@@ -76,7 +77,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["sounds/*", "triggers/*", "content/site-volume-page.js", "content/redux-injector.js"],
+      "resources": ["sounds/*", "triggers/*", "modules/*", "content/site-volume-page.js", "content/redux-injector.js"],
       "matches": ["https://ccfolia.com/*"]
     }
   ],

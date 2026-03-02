@@ -228,6 +228,105 @@ input[type="checkbox"]:checked + .toggle-slider.small::after {
   display: block;
 }
 
+/* ── 모듈 목록 ─────────────────────────────────── */
+.module-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.module-loading {
+  text-align: center;
+  color: #888;
+  padding: 20px 0;
+  font-size: 12px;
+}
+
+.module-card {
+  background: #2a2a2e;
+  border: 1px solid #3a3a40;
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  transition: border-color 0.15s;
+}
+
+.module-card:hover {
+  border-color: #555;
+}
+
+.module-card.disabled {
+  opacity: 0.55;
+}
+
+.module-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.module-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+
+.module-name {
+  font-weight: 600;
+  font-size: 13px;
+  color: #e0e0e0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.module-version {
+  font-size: 10px;
+  color: #888;
+  background: #333;
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.module-type-badge {
+  font-size: 9px;
+  color: #ffab40;
+  background: rgba(255,171,64,0.12);
+  padding: 1px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.module-desc {
+  font-size: 11px;
+  color: #999;
+  line-height: 1.4;
+}
+
+.module-tags {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.module-tag {
+  font-size: 9px;
+  color: #78909c;
+  background: rgba(120,144,156,0.12);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.module-toggle {
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
 .section-desc {
   font-size: 11px;
   color: #666;

@@ -118,7 +118,7 @@ Combat stat deduction (주 행동🔺, 보조 행동🔹, etc.) is implemented d
 | File | Role |
 |---|---|
 | `site-volume.js` | Site volume control (runs at `document_start`) |
-| `config-defaults.js` | `BWBR_DEFAULTS` — all default settings |
+| `config-defaults.js` | `BWBR_CORE_DEFAULTS` — core settings only (combat settings from module loader) |
 | `melee-engine.js` | Melee round engine (dice comparison, trait processing) |
 | `combat-engine.js` | Combat state machine, turn/action management, message parsers |
 | `chat-interface.js` | Chat detection (Redux subscribe), message sending, textarea interaction |
@@ -131,6 +131,7 @@ Combat stat deduction (주 행동🔺, 보조 행동🔹, etc.) is implemented d
 | `room-copy.js` | Room copy functionality |
 | `trigger-engine.js` | Pattern matching + action chain execution |
 | `trigger-ui.js` | Trigger management modal UI |
+| `module-loader.js` | **모듈 로더** — data 모듈 JSON 로드, 활성/비활성 관리 (`BWBR_ModuleLoader`) |
 | `combat-controller.js` | **전투 모듈** — 합/턴제/관전 전체 전투 로직 (`BWBR_CombatController`) |
 | `content.js` | **Main controller** — 설정 로드, 채팅 감시, 트리거 분배, 로그 추출 |
 
@@ -150,11 +151,19 @@ Combat stat deduction (주 행동🔺, 보조 행동🔹, etc.) is implemented d
 | `room-save.js` | Room save functionality |
 | `site-volume-page.js` | Page-context volume script (web_accessible_resource) |
 
+### Data Modules
+
+| File | Role |
+|---|---|
+| `modules/branch-world-combat.json` | 가지세계 전투 설정 모듈 (templates, timing, sounds, rules, patterns, traits) |
+| `modules/branch-world-triggers.json` | 가지세계 기본 트리거 프리셋 모듈 |
+
 ### Reference Documents
 
 | File | Purpose |
 |---|---|
 | `COCOFOLIA_DATA_API.md` | Reverse-engineered ccfolia internals (Redux, Firestore, DOM, webpack modules) |
+| `ARCHITECTURE.md` | Modularization architecture design document |
 | `HANDOFF.md` | Trigger system implementation status and data model |
 | `README.md` | User-facing documentation with architecture section |
 

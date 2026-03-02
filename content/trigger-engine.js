@@ -18,14 +18,23 @@
   // ── 스토리지 키 ──────────────────────────────────────
   var STORAGE_KEY = 'bwbr_triggers';
 
-  // ── 기본 트리거: triggers/defaults.json에서 로드 ──
-  var DEFAULT_TRIGGERS = []; // 런타임에 JSON 파일에서 채워짐
+  // ── 기본 트리거: 모듈 시스템 또는 triggers/defaults.json ──
+  var DEFAULT_TRIGGERS = []; // 런타임에 모듈 또는 JSON 파일에서 채워짐
+  var _externalDefaults = null; // 모듈 시스템이 제공한 기본 트리거 (우선순위 높음)
 
   /**
    * triggers/ 폴더의 JSON 파일에서 기본 트리거를 로드합니다.
+   * 외부(모듈 시스템)에서 이미 기본 트리거를 제공한 경우 파일 로드를 건너뜁니다.
    * Chrome 확장 프로그램 내부 리소스를 fetch로 읽습니다.
    */
   function _loadDefaultTriggersFromJSON() {
+    // 모듈 시스템이 기본 트리거를 제공한 경우 → 파일 로드 생략
+    if (_externalDefaults && _externalDefaults.length > 0) {
+      DEFAULT_TRIGGERS = _externalDefaults;
+      LOG('모듈 제공 기본 트리거 사용:', DEFAULT_TRIGGERS.length, '개');
+      return Promise.resolve();
+    }
+
     var url = chrome.runtime.getURL('triggers/defaults.json');
     return fetch(url).then(function (res) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -414,11 +423,23 @@
   };
 
   /**
+   * 모듈 시스템에서 제공하는 기본 트리거를 설정합니다.
+   * load() 호출 전에 호출하면, triggers/defaults.json 로드 대신
+   * 이 배열을 기본 트리거로 사용합니다.
+   * @param {Array} triggers - 기본 트리거 배열
+   */
+  TriggerEngine.prototype.setExternalDefaults = function (triggers) {
+    if (Array.isArray(triggers)) {
+      _externalDefaults = triggers;
+    }
+  };
+
+  /**
    * 트리거 목록 로드 (chrome.storage.local + 기본 제공 병합)
    */
   TriggerEngine.prototype.load = function () {
     var self = this;
-    // 1) triggers/defaults.json에서 기본 트리거 로드
+    // 1) 모듈 시스템 또는 triggers/defaults.json에서 기본 트리거 로드
     return _loadDefaultTriggersFromJSON().then(function () {
       return new Promise(function (resolve) {
         try {

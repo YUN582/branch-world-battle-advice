@@ -111,6 +111,7 @@
     bindEvents();
     checkConnection();
     checkForUpdateUI();
+    loadModules(); // 모듈 탭 초기화
   });
 
   // ── 설정 로드/저장 ───────────────────────────────────────
@@ -743,6 +744,168 @@
     // 오버레이 클릭으로도 닫기
     modal.addEventListener('click', (e) => {
       if (e.target === modal) modal.style.display = 'none';
+    });
+  }
+
+  // ══════════════════════════════════════════════════════════
+  //  모듈 관리
+  // ══════════════════════════════════════════════════════════
+
+  // 내장 모듈 경로 (module-loader.js와 동일)
+  const BUILTIN_MODULE_PATHS = [
+    'modules/branch-world-combat.json',
+    'modules/branch-world-triggers.json'
+  ];
+
+  const MODULE_STORAGE_KEY = 'bwbr_modules';
+
+  /**
+   * 모듈 목록 로드 및 UI 렌더링
+   */
+  async function loadModules() {
+    const container = document.getElementById('module-list');
+    if (!container) return;
+
+    try {
+      // 1. 내장 모듈 JSON 로드
+      const modules = [];
+      for (const path of BUILTIN_MODULE_PATHS) {
+        try {
+          const url = chrome.runtime.getURL(path);
+          const res = await fetch(url);
+          if (res.ok) {
+            const mod = await res.json();
+            mod._path = path;
+            mod._builtin = true;
+            modules.push(mod);
+          }
+        } catch (e) {
+          console.warn('[BWBR Popup] 모듈 로드 실패:', path, e);
+        }
+      }
+
+      // 2. 활성 상태 로드
+      const enabledState = await new Promise(resolve => {
+        chrome.storage.sync.get(MODULE_STORAGE_KEY, result => {
+          resolve((result && result[MODULE_STORAGE_KEY]) || {});
+        });
+      });
+
+      // 3. 렌더링
+      renderModuleList(container, modules, enabledState);
+
+    } catch (e) {
+      container.innerHTML = '<div class="module-loading">모듈 목록을 불러올 수 없습니다.</div>';
+      console.error('[BWBR Popup] 모듈 로드 오류:', e);
+    }
+  }
+
+  /**
+   * 모듈 목록 UI 렌더링
+   */
+  function renderModuleList(container, modules, enabledState) {
+    container.innerHTML = '';
+
+    if (modules.length === 0) {
+      container.innerHTML = '<div class="module-loading">설치된 모듈이 없습니다.</div>';
+      return;
+    }
+
+    modules.forEach(mod => {
+      const enabled = enabledState[mod.id] !== undefined ? enabledState[mod.id] : true;
+
+      const card = document.createElement('div');
+      card.className = 'module-card' + (enabled ? '' : ' disabled');
+
+      const info = document.createElement('div');
+      info.className = 'module-info';
+
+      // 헤더 (이름 + 버전 + 타입)
+      const header = document.createElement('div');
+      header.className = 'module-header';
+
+      const name = document.createElement('span');
+      name.className = 'module-name';
+      name.textContent = mod.name || mod.id;
+      header.appendChild(name);
+
+      if (mod.version) {
+        const ver = document.createElement('span');
+        ver.className = 'module-version';
+        ver.textContent = 'v' + mod.version;
+        header.appendChild(ver);
+      }
+
+      if (mod.type) {
+        const type = document.createElement('span');
+        type.className = 'module-type-badge';
+        type.textContent = mod.type;
+        header.appendChild(type);
+      }
+
+      info.appendChild(header);
+
+      // 설명
+      if (mod.description) {
+        const desc = document.createElement('div');
+        desc.className = 'module-desc';
+        desc.textContent = mod.description;
+        info.appendChild(desc);
+      }
+
+      // 태그
+      if (mod.tags && mod.tags.length > 0) {
+        const tags = document.createElement('div');
+        tags.className = 'module-tags';
+        mod.tags.forEach(t => {
+          const tag = document.createElement('span');
+          tag.className = 'module-tag';
+          tag.textContent = t;
+          tags.appendChild(tag);
+        });
+        info.appendChild(tags);
+      }
+
+      card.appendChild(info);
+
+      // 토글 스위치
+      const toggle = document.createElement('div');
+      toggle.className = 'module-toggle';
+      const label = document.createElement('label');
+      label.className = 'toggle-label';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = enabled;
+      cb.addEventListener('change', () => {
+        toggleModule(mod.id, cb.checked, enabledState, card);
+      });
+      const slider = document.createElement('span');
+      slider.className = 'toggle-slider small';
+      label.appendChild(cb);
+      label.appendChild(slider);
+      toggle.appendChild(label);
+      card.appendChild(toggle);
+
+      container.appendChild(card);
+    });
+  }
+
+  /**
+   * 모듈 활성/비활성 토글
+   */
+  function toggleModule(id, enabled, enabledState, card) {
+    enabledState[id] = enabled;
+    card.classList.toggle('disabled', !enabled);
+
+    // 저장
+    const data = {};
+    data[MODULE_STORAGE_KEY] = enabledState;
+    chrome.storage.sync.set(data, () => {
+      if (chrome.runtime.lastError) {
+        console.warn('[BWBR Popup] 모듈 상태 저장 실패:', chrome.runtime.lastError.message);
+        return;
+      }
+      showToast(enabled ? '모듈 활성화됨 — 새로고침 후 적용' : '모듈 비활성화됨 — 새로고침 후 적용');
     });
   }
 

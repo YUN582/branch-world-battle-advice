@@ -44,6 +44,14 @@
     try {
     alwaysLog('확장 프로그램 초기화 시작...');
 
+    // 모듈 로더: 내장 모듈 로드 → BWBR_COMBAT_DEFAULTS, BWBR_DEFAULTS 구성
+    if (window.BWBR_ModuleLoader) {
+      await window.BWBR_ModuleLoader.loadAll();
+      const mods = window.BWBR_ModuleLoader.getModules();
+      alwaysLog('모듈 로더 완료: ' + mods.length + '개 모듈, ' +
+        mods.filter(function(m) { return m.enabled; }).length + '개 활성');
+    }
+
     // 설정 로드
     config = await loadConfig();
 
@@ -108,6 +116,12 @@
         },
         getSpeakerName: () => _cachedSpeakerName
       });
+
+      // 모듈 시스템에서 제공하는 기본 트리거가 있으면 전달
+      if (window.BWBR_ModuleLoader && window.BWBR_ModuleLoader.getTriggers().length > 0) {
+        triggerEngine.setExternalDefaults(window.BWBR_ModuleLoader.getTriggers());
+      }
+
       await triggerEngine.load();
       alwaysLog('범용 트리거 엔진 초기화 완료 (' + triggerEngine.getTriggers().length + '개 트리거)');
 

@@ -74,6 +74,7 @@
       <button class="tab-btn active" data-tab="general">일반</button>
       <button class="tab-btn" data-tab="sounds">사운드</button>
       <button class="tab-btn" data-tab="timing">타이밍</button>
+      <button class="tab-btn" data-tab="modules">모듈</button>
       <button class="tab-btn" data-tab="advanced">고급</button>
     </nav>
 
@@ -342,6 +343,17 @@
             <input type="number" class="field-number" id="time-resultTimeout-num" min="1000" max="60000" step="1000">
             <span class="field-unit">ms</span>
           </div>
+        </div>
+      </div>
+
+      <!-- 모듈 관리 탭 -->
+      <div class="tab-panel" id="tab-modules">
+        <div class="section-desc">설치된 데이터 모듈을 관리합니다. 모듈을 비활성화하면 해당 기능이 꺼집니다.</div>
+        <div id="module-list" class="module-list">
+          <div class="module-loading">모듈 목록 로드 중...</div>
+        </div>
+        <div class="section-desc" style="margin-top:12px;font-size:11px;color:#888;">
+          모듈 변경 후 코코포리아 탭을 새로고침해야 적용됩니다.
         </div>
       </div>
 
