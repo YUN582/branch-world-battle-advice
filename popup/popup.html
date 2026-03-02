@@ -80,11 +80,8 @@
       <!-- 일반 설정 탭 -->
       <div class="tab-panel active" id="tab-general">
         <div class="field-group">
-          <label class="toggle-label inline">
-            <span>확장 프로그램 활성화</span>
-            <input type="checkbox" id="toggle-enabled" checked>
-            <span class="toggle-slider small"></span>
-          </label>
+          <label class="field-label">로컬 효과음 볼륨 <span id="gen-sfxVolume-val" style="color:#82b1ff;font-weight:700">45%</span></label>
+          <input type="range" class="field-range" id="gen-sfxVolume" min="0" max="1" step="0.05" value="0.45">
         </div>
 
         <div class="field-group">
@@ -94,31 +91,6 @@
             <span class="toggle-slider small"></span>
           </label>
           <div class="toggle-hint" style="font-size:11px;color:#888;padding:2px 0 4px;">"" '' () 「」 『』 【】 《》 자동 닫기 + Tab 순환 / Shift+Tab 역순환</div>
-        </div>
-
-        <div class="field-group">
-          <label class="toggle-label inline">
-            <span>자동 스크롤</span>
-            <input type="checkbox" id="gen-autoScroll">
-            <span class="toggle-slider small"></span>
-          </label>
-        </div>
-
-        <div class="field-group">
-          <label class="toggle-label inline">
-            <span>오버레이 표시</span>
-            <input type="checkbox" id="gen-showOverlay">
-            <span class="toggle-slider small"></span>
-          </label>
-        </div>
-
-        <div class="field-group">
-          <label class="toggle-label inline">
-            <span>방문 기록 표시</span>
-            <input type="checkbox" id="toggle-showVisitHistory" checked>
-            <span class="toggle-slider small"></span>
-          </label>
-          <div class="toggle-hint" style="font-size:11px;color:#888;padding:2px 0 4px;">코코포리아 홈 페이지에 최근 방문한 방 목록을 표시합니다</div>
         </div>
 
         <div class="field-group">
@@ -137,11 +109,6 @@
             <span class="toggle-slider small"></span>
           </label>
           <div class="toggle-hint" style="font-size:11px;color:#888;padding:2px 0 4px;">코코포리아 음량 슬라이더를 렉 없는 경량 버전으로 교체합니다</div>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">효과음 볼륨 <span id="gen-sfxVolume-val" style="color:#82b1ff;font-weight:700">45%</span></label>
-          <input type="range" class="field-range" id="gen-sfxVolume" min="0" max="1" step="0.05" value="0.45">
         </div>
 
         <div class="field-group">

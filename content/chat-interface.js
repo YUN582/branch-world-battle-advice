@@ -232,6 +232,9 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
           console.error('[BWBR Chat]', err);
         }
       }
+
+      // 자동 스크롤: DOM 업데이트 후 채팅 로그 맨 아래로 스크롤
+      this._autoScrollToBottom();
     };
 
     window.addEventListener('bwbr-new-chat-message', this._reduxMessageHandler);
@@ -859,6 +862,30 @@ window.CocoforiaChatInterface = class CocoforiaChatInterface {
 
   _delay(ms) { return new Promise(r => setTimeout(r, ms)); }
   _asArray(v) { return Array.isArray(v) ? v : (v ? [v] : []); }
+
+  // ================================================================
+  //  자동 스크롤  ──  새 메시지 시 채팅 로그 맨 아래로
+  // ================================================================
+
+  /**
+   * 채팅 컨테이너를 맨 아래로 스크롤합니다.
+   * 사용자가 위로 스크롤해서 이전 메시지를 보고 있으면 강제 스크롤하지 않습니다.
+   * (하단에서 150px 이내일 때만 자동 스크롤)
+   */
+  _autoScrollToBottom() {
+    if (!this.config?.general?.autoScroll) return;
+    const c = this.chatContainer;
+    if (!c || c === document.body) return;
+
+    // DOM 업데이트(리액트 리렌더) 후 스크롤
+    requestAnimationFrame(() => {
+      const distFromBottom = c.scrollHeight - c.scrollTop - c.clientHeight;
+      if (distFromBottom < 150) {
+        c.scrollTop = c.scrollHeight;
+      }
+    });
+  }
+
   _log(msg) {
     if (!window._BWBR_DEBUG) return;
     console.log(`%c[BWBR Chat]%c ${msg}`, 'color: #4a7cff; font-weight: bold;', 'color: inherit;');

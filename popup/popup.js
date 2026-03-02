@@ -17,10 +17,8 @@
       showBattleLog: false,
       autoComplete: true,
       autoConsumeActions: true,
-      showVisitHistory: true,
       charShortcuts: true,
       autoScroll: true,
-      showOverlay: true,
       debugMode: false,
       sfxVolume: 0.45,
       siteVolume: 1.0,
@@ -197,15 +195,11 @@
   /** 설정 데이터로 UI 필드를 채웁니다 */
   function populateUI(cfg) {
     // ── 일반 탭 (항상 존재) ──
-    $('toggle-enabled').checked = cfg.general.enabled;
-    $('toggle-autoComplete').checked = cfg.general.autoComplete !== false;
-    $('gen-autoScroll').checked = cfg.general.autoScroll;
-    $('gen-showOverlay').checked = cfg.general.showOverlay;
-    $('toggle-showVisitHistory').checked = cfg.general.showVisitHistory !== false;
-    $('toggle-charShortcuts').checked = cfg.general.charShortcuts !== false;
-    $('toggle-betterSoundbar').checked = cfg.general.betterSoundbar !== false;
     $('gen-sfxVolume').value = cfg.general.sfxVolume ?? 0.45;
     $('gen-sfxVolume-val').textContent = Math.round((cfg.general.sfxVolume ?? 0.45) * 100) + '%';
+    $('toggle-autoComplete').checked = cfg.general.autoComplete !== false;
+    $('toggle-charShortcuts').checked = cfg.general.charShortcuts !== false;
+    $('toggle-betterSoundbar').checked = cfg.general.betterSoundbar !== false;
     $('toggle-debugMode').checked = cfg.general.debugMode;
 
     // ── 로컬 효과음 (커스텀 롤 사운드) ──
@@ -222,14 +216,10 @@
     const cfg = JSON.parse(JSON.stringify(DEFAULTS));
 
     // ── 일반 탭 (항상 존재) ──
-    cfg.general.enabled = $('toggle-enabled').checked;
+    cfg.general.sfxVolume = parseFloat($('gen-sfxVolume').value) || 0.45;
     cfg.general.autoComplete = $('toggle-autoComplete').checked;
-    cfg.general.autoScroll = $('gen-autoScroll').checked;
-    cfg.general.showOverlay = $('gen-showOverlay').checked;
-    cfg.general.showVisitHistory = $('toggle-showVisitHistory').checked;
     cfg.general.charShortcuts = $('toggle-charShortcuts').checked;
     cfg.general.betterSoundbar = $('toggle-betterSoundbar').checked;
-    cfg.general.sfxVolume = parseFloat($('gen-sfxVolume').value) || 0.45;
     cfg.general.debugMode = $('toggle-debugMode').checked;
 
     // ── 전투 모듈 설정 (동적 패널 열려 있으면 수집, 아니면 현재 값 유지) ──
@@ -264,11 +254,6 @@
     // 더 나은 사운드바 토글 (즉시 적용)
     $('toggle-betterSoundbar').addEventListener('change', (e) => {
       sendToContent({ type: 'BWBR_SET_BETTER_SOUNDBAR', betterSoundbar: e.target.checked });
-    });
-
-    // 활성화 토글
-    $('toggle-enabled').addEventListener('change', (e) => {
-      sendToContent({ type: 'BWBR_SET_ENABLED', enabled: e.target.checked });
     });
 
     // 자동완성 토글 (즉시 적용)

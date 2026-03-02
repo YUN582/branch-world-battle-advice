@@ -31,8 +31,6 @@ window.BWBR_CORE_DEFAULTS = {
     manualMode: false,          // 수동 모드 (주사위 결과를 사용자가 직접 입력)
     showBattleLog: false,       // 전투 로그 표시 (UI 로그 영역 표시 여부)
     autoComplete: true,         // 채팅 자동완성 (괄호/따옴표 자동 닫기 + Tab 순환)
-    autoScroll: true,           // 새 메시지 시 자동 스크롤
-    showOverlay: true,          // 페이지 내 오버레이 표시
     autoConsumeActions: true,   // 주/보조 행동 자동 소모 (《...》【...】 패턴 감지 시)
     charShortcuts: true,        // 캐릭터 단축키 (Ctrl/Alt/Shift+숫자로 발화 캐릭터 변경)
     debugMode: false,           // 디버그 로그 출력
