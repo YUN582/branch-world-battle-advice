@@ -61,24 +61,13 @@
   var _cachedPanelTags = null;
 
   function _fetchCharactersForUI() {
-    return new Promise(function (resolve) {
-      var timeout = setTimeout(function () {
-        resolve(_cachedCharacters || []);
-      }, 3000);
-      window.addEventListener('bwbr-all-characters-data', function handler() {
-        clearTimeout(timeout);
-        window.removeEventListener('bwbr-all-characters-data', handler);
-        try {
-          var raw = document.documentElement.getAttribute('data-bwbr-all-characters-data');
-          if (raw) {
-            var parsed = JSON.parse(raw);
-            _cachedCharacters = parsed.characters || [];
-          }
-        } catch (e) { /* fallback */ }
-        resolve(_cachedCharacters || []);
-      });
-      window.dispatchEvent(new CustomEvent('bwbr-request-all-characters'));
-    });
+    return BWBR_Bridge.request(
+      'bwbr-request-all-characters', 'bwbr-all-characters-data', null,
+      { recvAttr: 'data-bwbr-all-characters-data', timeout: 3000 }
+    ).then(function (parsed) {
+      if (parsed && parsed.characters) _cachedCharacters = parsed.characters;
+      return _cachedCharacters || [];
+    }).catch(function () { return _cachedCharacters || []; });
   }
 
   function _populateFaceDropdowns(cardEl) {
@@ -174,24 +163,13 @@
   // ── 패널 태그 드롭다운 ──
 
   function _fetchPanelTags() {
-    return new Promise(function (resolve) {
-      var timeout = setTimeout(function () {
-        resolve(_cachedPanelTags || []);
-      }, 3000);
-      window.addEventListener('bwbr-panel-tags-data', function handler() {
-        clearTimeout(timeout);
-        window.removeEventListener('bwbr-panel-tags-data', handler);
-        try {
-          var raw = document.documentElement.getAttribute('data-bwbr-panel-tags-data');
-          if (raw) {
-            var parsed = JSON.parse(raw);
-            _cachedPanelTags = parsed.panels || [];
-          }
-        } catch (e) { /* fallback */ }
-        resolve(_cachedPanelTags || []);
-      });
-      window.dispatchEvent(new CustomEvent('bwbr-request-panel-tags'));
-    });
+    return BWBR_Bridge.request(
+      'bwbr-request-panel-tags', 'bwbr-panel-tags-data', null,
+      { recvAttr: 'data-bwbr-panel-tags-data', timeout: 3000 }
+    ).then(function (parsed) {
+      if (parsed && parsed.panels) _cachedPanelTags = parsed.panels;
+      return _cachedPanelTags || [];
+    }).catch(function () { return _cachedPanelTags || []; });
   }
 
   function _populatePanelDropdowns(cardEl) {
@@ -256,26 +234,14 @@
    * @param {Function} callback - (selectedUrl) => void  (취소 시 호출 안 됨)
    */
   function _showImagePicker(currentUrl, callback) {
-    var handler = function () {
-      window.removeEventListener('bwbr-native-picker-result', handler);
-      try {
-        var raw = document.documentElement.getAttribute('data-bwbr-native-picker-result');
-        document.documentElement.removeAttribute('data-bwbr-native-picker-result');
-        if (raw) {
-          var data = JSON.parse(raw);
-          if (data.url !== null && data.url !== undefined) {
-            callback(data.url);
-          }
-          // url이 null이면 취소 — callback 미호출
-        }
-      } catch (e) { /* parsing error */ }
-    };
-    window.addEventListener('bwbr-native-picker-result', handler);
-    // 60초 타임아웃
-    setTimeout(function () {
-      window.removeEventListener('bwbr-native-picker-result', handler);
-    }, 60000);
-    window.dispatchEvent(new CustomEvent('bwbr-open-native-image-picker'));
+    BWBR_Bridge.request(
+      'bwbr-open-native-image-picker', 'bwbr-native-picker-result', null,
+      { recvAttr: 'data-bwbr-native-picker-result', timeout: 60000 }
+    ).then(function (data) {
+      if (data && data.url !== null && data.url !== undefined) {
+        callback(data.url);
+      }
+    }).catch(function () { /* 타임아웃 또는 취소 */ });
   }
 
   /** 이미지 선택 인라인 래퍼의 썸네일/없음 텍스트를 갱신 */

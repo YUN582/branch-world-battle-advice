@@ -66,26 +66,10 @@
   //  3. MAIN world communication helpers
   // ------------------------------------------------
   function requestCharForMove(imageUrl) {
-    return new Promise(function (resolve) {
-      var done = false;
-      var handler = function (e) {
-        if (done) return;
-        done = true;
-        window.removeEventListener('bwbr-char-move-data', handler);
-        resolve(e.detail);
-      };
-      window.addEventListener('bwbr-char-move-data', handler);
-      // ISOLATED→MAIN: DOM attribute 경유 (CustomEvent.detail 전달 불가)
-      document.documentElement.setAttribute('data-bwbr-move-imageurl', imageUrl);
-      window.dispatchEvent(new Event('bwbr-request-char-for-move'));
-      setTimeout(function () {
-        if (!done) {
-          done = true;
-          window.removeEventListener('bwbr-char-move-data', handler);
-          resolve({ success: false });
-        }
-      }, 3000);
-    });
+    return BWBR_Bridge.request(
+      'bwbr-request-char-for-move', 'bwbr-char-move-data', imageUrl,
+      { sendAttr: 'data-bwbr-move-imageurl', timeout: 3000 }
+    ).catch(function () { return { success: false }; });
   }
 
   function moveItem(itemId, x, y) {

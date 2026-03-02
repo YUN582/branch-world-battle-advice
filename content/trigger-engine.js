@@ -269,27 +269,11 @@
    * @returns {Promise<{found:boolean, value:number}|null>}
    */
   function getStatValue(charName, statLabel) {
-    return new Promise(function (resolve) {
-      var timeout = setTimeout(function () {
-        window.removeEventListener('bwbr-get-stat-value-result', handler);
-        resolve(null);
-      }, 3000);
-
-      function handler() {
-        clearTimeout(timeout);
-        window.removeEventListener('bwbr-get-stat-value-result', handler);
-        var raw = document.documentElement.getAttribute('data-bwbr-get-stat-value-result');
-        document.documentElement.removeAttribute('data-bwbr-get-stat-value-result');
-        if (!raw) { resolve(null); return; }
-        try { resolve(JSON.parse(raw)); }
-        catch (e) { resolve(null); }
-      }
-
-      window.addEventListener('bwbr-get-stat-value-result', handler);
-      document.documentElement.setAttribute('data-bwbr-get-stat-value',
-        JSON.stringify({ charName: charName, statLabel: statLabel }));
-      window.dispatchEvent(new CustomEvent('bwbr-get-stat-value'));
-    });
+    return BWBR_Bridge.request(
+      'bwbr-get-stat-value', 'bwbr-get-stat-value-result',
+      { charName: charName, statLabel: statLabel },
+      { sendAttr: 'data-bwbr-get-stat-value', recvAttr: 'data-bwbr-get-stat-value-result', timeout: 3000 }
+    ).catch(function () { return null; });
   }
 
   // ── 비동기 템플릿 해석 ──
@@ -389,27 +373,12 @@
    * @returns {Promise<boolean>}
    */
   function checkStatExists(charName, statLabel) {
-    return new Promise(function (resolve) {
-      var timeout = setTimeout(function () {
-        window.removeEventListener('bwbr-check-stat-exists-result', handler);
-        resolve(false);
-      }, 3000);
-      function handler() {
-        clearTimeout(timeout);
-        window.removeEventListener('bwbr-check-stat-exists-result', handler);
-        var raw = document.documentElement.getAttribute('data-bwbr-check-stat-exists-result');
-        document.documentElement.removeAttribute('data-bwbr-check-stat-exists-result');
-        var result = null;
-        if (raw) { try { result = JSON.parse(raw); } catch (e) {} }
-        resolve(result ? !!result.exists : false);
-      }
-      window.addEventListener('bwbr-check-stat-exists-result', handler);
-      document.documentElement.setAttribute('data-bwbr-check-stat-exists', JSON.stringify({
-        charName: charName,
-        statLabel: statLabel
-      }));
-      window.dispatchEvent(new CustomEvent('bwbr-check-stat-exists'));
-    });
+    return BWBR_Bridge.request(
+      'bwbr-check-stat-exists', 'bwbr-check-stat-exists-result',
+      { charName: charName, statLabel: statLabel },
+      { sendAttr: 'data-bwbr-check-stat-exists', recvAttr: 'data-bwbr-check-stat-exists-result', timeout: 3000 }
+    ).then(function (r) { return r ? !!r.exists : false; })
+     .catch(function () { return false; });
   }
 
   // ══════════════════════════════════════════════════════════
@@ -902,42 +871,22 @@
     var valueType = action.valueType || 'value'; // 'value' 또는 'max'
     LOG('스탯 변경 요청:', targetName, statLabel, op, numValue, '(' + valueType + ')');
 
-    return new Promise(function (resolve) {
-      var timeout = setTimeout(function () {
-        window.removeEventListener('bwbr-modify-status-result', handler);
-        LOG('스탯 변경 타임아웃');
-        resolve();
-      }, 5000);
-
-      function handler(e) {
-        clearTimeout(timeout);
-        window.removeEventListener('bwbr-modify-status-result', handler);
-        // DOM 속성 브릿지 (MAIN → ISOLATED 크로스-월드 안정성)
-        var raw = document.documentElement.getAttribute('data-bwbr-modify-status-result');
-        document.documentElement.removeAttribute('data-bwbr-modify-status-result');
-        var result = null;
-        if (raw) { try { result = JSON.parse(raw); } catch (x) {} }
-        if (result && result.success) {
-          LOG('스탯 변경 완료:', result.target, result.status,
-            result.oldVal, '→', result.newVal);
-        } else {
-          LOG('스탯 변경 실패:', result && result.error);
-        }
-        resolve();
-      }
-
-      window.addEventListener('bwbr-modify-status-result', handler);
-      // ISOLATED → MAIN 이벤트 전송
-      var detail = {
-        targetName: targetName,
-        statusLabel: statLabel,
-        operation: op,
-        value: numValue,
-        valueType: valueType
-      };
-      document.documentElement.setAttribute('data-bwbr-modify-status', JSON.stringify(detail));
-      window.dispatchEvent(new CustomEvent('bwbr-modify-status', { detail: detail }));
-    });
+    var detail = {
+      targetName: targetName,
+      statusLabel: statLabel,
+      operation: op,
+      value: numValue,
+      valueType: valueType
+    };
+    var result = await BWBR_Bridge.request(
+      'bwbr-modify-status', 'bwbr-modify-status-result', detail,
+      { sendAttr: 'data-bwbr-modify-status', recvAttr: 'data-bwbr-modify-status-result', timeout: 5000 }
+    ).catch(function () { LOG('스탯 변경 타임아웃'); return null; });
+    if (result && result.success) {
+      LOG('스탯 변경 완료:', result.target, result.status, result.oldVal, '→', result.newVal);
+    } else if (result) {
+      LOG('스탯 변경 실패:', result.error);
+    }
   };
 
   /** 캐릭터 메시지 전송 (특정 캐릭터 이름/아이콘으로 RP 메시지) */
@@ -948,22 +897,11 @@
 
     LOG('캐릭터 메시지 요청:', targetName, text.substring(0, 60));
 
-    return new Promise(function (resolve) {
-      var timeout = setTimeout(function () {
-        window.removeEventListener('bwbr-char-msg-result', handler);
-        resolve();
-      }, 5000);
-      function handler(e) {
-        clearTimeout(timeout);
-        window.removeEventListener('bwbr-char-msg-result', handler);
-        resolve();
-      }
-      window.addEventListener('bwbr-char-msg-result', handler);
-      // 캐릭터 정보를 redux-injector에 요청하여 전송
-      var detail = { targetName: targetName, text: text };
-      document.documentElement.setAttribute('data-bwbr-trigger-char-msg', JSON.stringify(detail));
-      window.dispatchEvent(new CustomEvent('bwbr-trigger-char-msg', { detail: detail }));
-    });
+    await BWBR_Bridge.request(
+      'bwbr-trigger-char-msg', 'bwbr-char-msg-result',
+      { targetName: targetName, text: text },
+      { sendAttr: 'data-bwbr-trigger-char-msg', timeout: 5000 }
+    ).catch(function () {});
   };
 
   /** 파라미터 변경 (캐릭터 params[] 배열 수정) */
@@ -976,26 +914,16 @@
 
     LOG('파라미터 변경 요청:', targetName, paramLabel, op, rawValue);
 
-    return new Promise(function (resolve) {
-      var timeout = setTimeout(function () {
-        window.removeEventListener('bwbr-modify-param-result', handler);
-        resolve();
-      }, 5000);
-      function handler(e) {
-        clearTimeout(timeout);
-        window.removeEventListener('bwbr-modify-param-result', handler);
-        if (e.detail && e.detail.success) {
-          LOG('파라미터 변경 완료:', e.detail.target, e.detail.param, e.detail.oldVal, '→', e.detail.newVal);
-        } else {
-          LOG('파라미터 변경 실패:', e.detail && e.detail.error);
-        }
-        resolve();
-      }
-      window.addEventListener('bwbr-modify-param-result', handler);
-      var detail = { targetName: targetName, paramLabel: paramLabel, operation: op, value: rawValue };
-      document.documentElement.setAttribute('data-bwbr-modify-param', JSON.stringify(detail));
-      window.dispatchEvent(new CustomEvent('bwbr-modify-param', { detail: detail }));
-    });
+    var detail = { targetName: targetName, paramLabel: paramLabel, operation: op, value: rawValue };
+    var result = await BWBR_Bridge.request(
+      'bwbr-modify-param', 'bwbr-modify-param-result', detail,
+      { sendAttr: 'data-bwbr-modify-param', timeout: 5000 }
+    ).catch(function () { return null; });
+    if (result && result.success) {
+      LOG('파라미터 변경 완료:', result.target, result.param, result.oldVal, '→', result.newVal);
+    } else if (result) {
+      LOG('파라미터 변경 실패:', result.error);
+    }
   };
 
   /** 표정/아이콘 변경 */
@@ -1006,21 +934,11 @@
 
     LOG('표정 변경 요청:', targetName, '인덱스', faceIdx);
 
-    return new Promise(function (resolve) {
-      var timeout = setTimeout(function () {
-        window.removeEventListener('bwbr-trigger-char-field-result', handler);
-        resolve();
-      }, 5000);
-      function handler(e) {
-        clearTimeout(timeout);
-        window.removeEventListener('bwbr-trigger-char-field-result', handler);
-        resolve();
-      }
-      window.addEventListener('bwbr-trigger-char-field-result', handler);
-      var detail = { targetName: targetName, field: 'face', value: faceIdx };
-      document.documentElement.setAttribute('data-bwbr-trigger-char-field', JSON.stringify(detail));
-      window.dispatchEvent(new CustomEvent('bwbr-trigger-char-field', { detail: detail }));
-    });
+    var detail = { targetName: targetName, field: 'face', value: faceIdx };
+    await BWBR_Bridge.request(
+      'bwbr-trigger-char-field', 'bwbr-trigger-char-field-result', detail,
+      { sendAttr: 'data-bwbr-trigger-char-field', timeout: 5000 }
+    ).catch(function () {});
   };
 
   /** 캐릭터 이동 (맵 좌표) */
@@ -1033,21 +951,11 @@
 
     LOG('이동 요청:', targetName, relative ? '상대' : '절대', x, y);
 
-    return new Promise(function (resolve) {
-      var timeout = setTimeout(function () {
-        window.removeEventListener('bwbr-trigger-char-field-result', handler);
-        resolve();
-      }, 5000);
-      function handler(e) {
-        clearTimeout(timeout);
-        window.removeEventListener('bwbr-trigger-char-field-result', handler);
-        resolve();
-      }
-      window.addEventListener('bwbr-trigger-char-field-result', handler);
-      var detail = { targetName: targetName, field: 'move', x: x, y: y, relative: relative };
-      document.documentElement.setAttribute('data-bwbr-trigger-char-field', JSON.stringify(detail));
-      window.dispatchEvent(new CustomEvent('bwbr-trigger-char-field', { detail: detail }));
-    });
+    var detail = { targetName: targetName, field: 'move', x: x, y: y, relative: relative };
+    await BWBR_Bridge.request(
+      'bwbr-trigger-char-field', 'bwbr-trigger-char-field-result', detail,
+      { sendAttr: 'data-bwbr-trigger-char-field', timeout: 5000 }
+    ).catch(function () {});
   };
 
   /** 이니셔티브 변경 */
@@ -1060,21 +968,11 @@
 
     LOG('이니셔티브 변경 요청:', targetName, numValue);
 
-    return new Promise(function (resolve) {
-      var timeout = setTimeout(function () {
-        window.removeEventListener('bwbr-trigger-char-field-result', handler);
-        resolve();
-      }, 5000);
-      function handler(e) {
-        clearTimeout(timeout);
-        window.removeEventListener('bwbr-trigger-char-field-result', handler);
-        resolve();
-      }
-      window.addEventListener('bwbr-trigger-char-field-result', handler);
-      var detail = { targetName: targetName, field: 'initiative', value: numValue };
-      document.documentElement.setAttribute('data-bwbr-trigger-char-field', JSON.stringify(detail));
-      window.dispatchEvent(new CustomEvent('bwbr-trigger-char-field', { detail: detail }));
-    });
+    var detail = { targetName: targetName, field: 'initiative', value: numValue };
+    await BWBR_Bridge.request(
+      'bwbr-trigger-char-field', 'bwbr-trigger-char-field-result', detail,
+      { sendAttr: 'data-bwbr-trigger-char-field', timeout: 5000 }
+    ).catch(function () {});
   };
 
   /** 메모 변경 */
@@ -1094,21 +992,11 @@
     }
 
     // 캐릭터 대상 (기존 로직)
-    return new Promise(function (resolve) {
-      var timeout = setTimeout(function () {
-        window.removeEventListener('bwbr-trigger-char-field-result', handler);
-        resolve();
-      }, 5000);
-      function handler(e) {
-        clearTimeout(timeout);
-        window.removeEventListener('bwbr-trigger-char-field-result', handler);
-        resolve();
-      }
-      window.addEventListener('bwbr-trigger-char-field-result', handler);
-      var detail = { targetName: targetName, field: 'memo', value: text };
-      document.documentElement.setAttribute('data-bwbr-trigger-char-field', JSON.stringify(detail));
-      window.dispatchEvent(new CustomEvent('bwbr-trigger-char-field', { detail: detail }));
-    });
+    var detail = { targetName: targetName, field: 'memo', value: text };
+    await BWBR_Bridge.request(
+      'bwbr-trigger-char-field', 'bwbr-trigger-char-field-result', detail,
+      { sendAttr: 'data-bwbr-trigger-char-field', timeout: 5000 }
+    ).catch(function () {});
   };
 
   /** 사운드 재생 (확장 프로그램 내장 사운드) */
@@ -1133,56 +1021,32 @@
     var applyOption = action.applyOption || 'all'; // all, noBgm, noText
     LOG('장면 불러오기 요청:', sceneName, '(적용:', applyOption + ')');
 
-    return new Promise(function (resolve) {
-      var timeout = setTimeout(function () {
-        window.removeEventListener('bwbr-load-native-scene-result', handler);
-        resolve();
-      }, 5000);
-      function handler(e) {
-        clearTimeout(timeout);
-        window.removeEventListener('bwbr-load-native-scene-result', handler);
-        if (e.detail && e.detail.success) {
-          LOG('장면 적용 완료:', sceneName);
-        } else {
-          LOG('장면 적용 실패:', e.detail && e.detail.error);
-        }
-        resolve();
-      }
-      window.addEventListener('bwbr-load-native-scene-result', handler);
-      var detail = { sceneName: sceneName, applyOption: applyOption };
-      document.documentElement.setAttribute('data-bwbr-load-native-scene', JSON.stringify(detail));
-      window.dispatchEvent(new CustomEvent('bwbr-load-native-scene', { detail: detail }));
-    });
+    var result = await BWBR_Bridge.request(
+      'bwbr-load-native-scene', 'bwbr-load-native-scene-result',
+      { sceneName: sceneName, applyOption: applyOption },
+      { sendAttr: 'data-bwbr-load-native-scene', timeout: 5000 }
+    ).catch(function () { return null; });
+    if (result && result.success) {
+      LOG('장면 적용 완료:', sceneName);
+    } else if (result) {
+      LOG('장면 적용 실패:', result.error);
+    }
   };
 
   // ── 패널(스크린 아이템) 조작 트리거 핸들러 ──
 
   /** @private 패널 조작 공통 헬퍼 — bwbr-trigger-panel-op 이벤트 전송 후 결과 대기 */
   TriggerEngine.prototype._panelOp = function (detail) {
-    return new Promise(function (resolve) {
-      var timeout = setTimeout(function () {
-        window.removeEventListener('bwbr-trigger-panel-op-result', handler);
-        LOG('패널 조작 타임아웃');
-        resolve();
-      }, 5000);
-      function handler() {
-        clearTimeout(timeout);
-        window.removeEventListener('bwbr-trigger-panel-op-result', handler);
-        var raw = document.documentElement.getAttribute('data-bwbr-trigger-panel-op-result');
-        document.documentElement.removeAttribute('data-bwbr-trigger-panel-op-result');
-        var result = null;
-        if (raw) { try { result = JSON.parse(raw); } catch (x) {} }
-        if (result && result.success) {
-          LOG('패널 조작 완료:', result.op, result.target);
-        } else {
-          LOG('패널 조작 실패:', result && result.error);
-        }
-        resolve();
+    return BWBR_Bridge.request(
+      'bwbr-trigger-panel-op', 'bwbr-trigger-panel-op-result', detail,
+      { sendAttr: 'data-bwbr-trigger-panel-op', recvAttr: 'data-bwbr-trigger-panel-op-result', timeout: 5000 }
+    ).then(function (result) {
+      if (result && result.success) {
+        LOG('패널 조작 완료:', result.op, result.target);
+      } else if (result) {
+        LOG('패널 조작 실패:', result.error);
       }
-      window.addEventListener('bwbr-trigger-panel-op-result', handler);
-      document.documentElement.setAttribute('data-bwbr-trigger-panel-op', JSON.stringify(detail));
-      window.dispatchEvent(new CustomEvent('bwbr-trigger-panel-op', { detail: detail }));
-    });
+    }).catch(function () { LOG('패널 조작 타임아웃'); });
   };
 
   /** 패널 이동 (맵 좌표) */
@@ -1266,37 +1130,21 @@
     var valueType = action.valueType || 'value';
     LOG('전체 스탯 변경 요청:', statLabel, op, numValue, '(' + valueType + ')');
 
-    return new Promise(function (resolve) {
-      var timeout = setTimeout(function () {
-        window.removeEventListener('bwbr-modify-status-all-result', handler);
-        LOG('전체 스탯 변경 타임아웃');
-        resolve();
-      }, 10000);
-      function handler(e) {
-        clearTimeout(timeout);
-        window.removeEventListener('bwbr-modify-status-all-result', handler);
-        // DOM 속성 브릿지 (MAIN → ISOLATED 크로스-월드 안정성)
-        var raw = document.documentElement.getAttribute('data-bwbr-modify-status-all-result');
-        document.documentElement.removeAttribute('data-bwbr-modify-status-all-result');
-        var result = null;
-        if (raw) { try { result = JSON.parse(raw); } catch (x) {} }
-        if (result && result.success) {
-          LOG('전체 스탯 변경 완료:', result.affected, '명 캐릭터');
-        } else {
-          LOG('전체 스탯 변경 실패:', result && result.error);
-        }
-        resolve();
-      }
-      window.addEventListener('bwbr-modify-status-all-result', handler);
-      var detail = {
-        statusLabel: statLabel,
-        operation: op,
-        value: numValue,
-        valueType: valueType
-      };
-      document.documentElement.setAttribute('data-bwbr-modify-status-all', JSON.stringify(detail));
-      window.dispatchEvent(new CustomEvent('bwbr-modify-status-all', { detail: detail }));
-    });
+    var detail = {
+      statusLabel: statLabel,
+      operation: op,
+      value: numValue,
+      valueType: valueType
+    };
+    var result = await BWBR_Bridge.request(
+      'bwbr-modify-status-all', 'bwbr-modify-status-all-result', detail,
+      { sendAttr: 'data-bwbr-modify-status-all', recvAttr: 'data-bwbr-modify-status-all-result', timeout: 10000 }
+    ).catch(function () { LOG('전체 스탯 변경 타임아웃'); return null; });
+    if (result && result.success) {
+      LOG('전체 스탯 변경 완료:', result.affected, '명 캐릭터');
+    } else if (result) {
+      LOG('전체 스탯 변경 실패:', result.error);
+    }
   };
 
   /**

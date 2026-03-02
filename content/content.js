@@ -497,23 +497,10 @@
 
   /** MAIN 월드에서 캐릭터 전투 스탯 조회 (DOM 속성 브릿지) */
   function _fetchCharStatsFromMain(name) {
-    return new Promise(resolve => {
-      const timeout = setTimeout(() => {
-        window.removeEventListener('bwbr-char-stats-result', handler);
-        resolve(null);
-      }, 3000);
-      function handler() {
-        clearTimeout(timeout);
-        window.removeEventListener('bwbr-char-stats-result', handler);
-        const raw = document.documentElement.getAttribute('data-bwbr-char-stats-result');
-        document.documentElement.removeAttribute('data-bwbr-char-stats-result');
-        if (raw) { try { resolve(JSON.parse(raw)); return; } catch (e) {} }
-        resolve(null);
-      }
-      window.addEventListener('bwbr-char-stats-result', handler);
-      document.documentElement.setAttribute('data-bwbr-get-char-stats', name);
-      window.dispatchEvent(new CustomEvent('bwbr-get-char-stats'));
-    });
+    return BWBR_Bridge.request(
+      'bwbr-get-char-stats', 'bwbr-char-stats-result', name,
+      { sendAttr: 'data-bwbr-get-char-stats', recvAttr: 'data-bwbr-char-stats-result', timeout: 3000 }
+    ).catch(() => null);
   }
 
   /** 전투 보조 모드에서 채팅 메시지 처리 (onNewMessage 경유)
@@ -645,62 +632,34 @@
 
   /** 개별 캐릭터 스탯 변경 이벤트 발송 (Promise 반환, silent 지원) */
   function _modifyCharStat(characterName, statLabel, operation, value, silent) {
-    return new Promise(resolve => {
-      const timeout = setTimeout(() => {
-        window.removeEventListener('bwbr-modify-status-result', handler);
-        resolve(null);
-      }, 5000);
-      function handler() {
-        clearTimeout(timeout);
-        window.removeEventListener('bwbr-modify-status-result', handler);
-        const raw = document.documentElement.getAttribute('data-bwbr-modify-status-result');
-        document.documentElement.removeAttribute('data-bwbr-modify-status-result');
-        let result = null;
-        if (raw) { try { result = JSON.parse(raw); } catch (e) {} }
-        resolve(result);
-      }
-      window.addEventListener('bwbr-modify-status-result', handler);
-      const detail = {
-        targetName: characterName,
-        statusLabel: statLabel,
-        operation: operation,
-        value: value,
-        valueType: 'value',
-        silent: !!silent
-      };
-      document.documentElement.setAttribute('data-bwbr-modify-status', JSON.stringify(detail));
-      window.dispatchEvent(new CustomEvent('bwbr-modify-status', { detail: detail }));
-    });
+    const detail = {
+      targetName: characterName,
+      statusLabel: statLabel,
+      operation: operation,
+      value: value,
+      valueType: 'value',
+      silent: !!silent
+    };
+    return BWBR_Bridge.request(
+      'bwbr-modify-status', 'bwbr-modify-status-result', detail,
+      { sendAttr: 'data-bwbr-modify-status', recvAttr: 'data-bwbr-modify-status-result', timeout: 5000 }
+    ).catch(() => null);
   }
 
   /** 전체 캐릭터 스탯 일괄 변경 (Promise 반환, silent 지원)
    *  반환: { success, affected, label, changes: [{name, oldVal, newVal}] } */
   function _modifyAllCharStat(statLabel, operation, value, silent) {
-    return new Promise(resolve => {
-      const timeout = setTimeout(() => {
-        window.removeEventListener('bwbr-modify-status-all-result', handler);
-        resolve(null);
-      }, 5000);
-      function handler() {
-        clearTimeout(timeout);
-        window.removeEventListener('bwbr-modify-status-all-result', handler);
-        const raw = document.documentElement.getAttribute('data-bwbr-modify-status-all-result');
-        document.documentElement.removeAttribute('data-bwbr-modify-status-all-result');
-        let result = null;
-        if (raw) { try { result = JSON.parse(raw); } catch (e) {} }
-        resolve(result);
-      }
-      window.addEventListener('bwbr-modify-status-all-result', handler);
-      const detail = {
-        statusLabel: statLabel,
-        operation: operation,
-        value: value,
-        valueType: 'value',
-        silent: !!silent
-      };
-      document.documentElement.setAttribute('data-bwbr-modify-status-all', JSON.stringify(detail));
-      window.dispatchEvent(new CustomEvent('bwbr-modify-status-all', { detail: detail }));
-    });
+    const detail = {
+      statusLabel: statLabel,
+      operation: operation,
+      value: value,
+      valueType: 'value',
+      silent: !!silent
+    };
+    return BWBR_Bridge.request(
+      'bwbr-modify-status-all', 'bwbr-modify-status-all-result', detail,
+      { sendAttr: 'data-bwbr-modify-status-all', recvAttr: 'data-bwbr-modify-status-all-result', timeout: 5000 }
+    ).catch(() => null);
   }
 
   /** 간단한 딜레이 유틸 */
@@ -3312,36 +3271,19 @@ ${rows.join('\n')}
    * @returns {Promise<Array|null>} 캐릭터 배열 또는 null
    */
   function requestCharacterData() {
-    return new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        window.removeEventListener('bwbr-characters-data', handler);
-        alwaysLog('캐릭터 데이터 요청 타임아웃');
-        resolve(null);
-      }, 5000);
-
-      const handler = () => {
-        clearTimeout(timeout);
-        window.removeEventListener('bwbr-characters-data', handler);
-
-        // DOM 속성 브릿지 (MAIN → ISOLATED 크로스-월드 안정성)
-        const raw = document.documentElement.getAttribute('data-bwbr-characters-data');
-        document.documentElement.removeAttribute('data-bwbr-characters-data');
-        if (raw) {
-          try {
-            const data = JSON.parse(raw);
-            if (data.success && data.characters) {
-              log(`캐릭터 데이터 수신: ${data.characters.length}명`);
-              resolve(data.characters);
-              return;
-            }
-          } catch (e) { /* JSON 파싱 실패 */ }
-        }
-        alwaysLog('캐릭터 데이터 수신 실패');
-        resolve(null);
-      };
-
-      window.addEventListener('bwbr-characters-data', handler);
-      window.dispatchEvent(new CustomEvent('bwbr-request-characters'));
+    return BWBR_Bridge.request(
+      'bwbr-request-characters', 'bwbr-characters-data', null,
+      { recvAttr: 'data-bwbr-characters-data', timeout: 5000 }
+    ).then(data => {
+      if (data && data.success && data.characters) {
+        log(`캐릭터 데이터 수신: ${data.characters.length}명`);
+        return data.characters;
+      }
+      alwaysLog('캐릭터 데이터 수신 실패');
+      return null;
+    }).catch(() => {
+      alwaysLog('캐릭터 데이터 요청 타임아웃');
+      return null;
     });
   }
 

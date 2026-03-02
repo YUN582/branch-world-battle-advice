@@ -641,48 +641,37 @@
   /**
    * 필터링된 데이터를 MAIN world로 전달하여 가져오기를 실행합니다.
    */
-  function executeImport(filteredData) {
+  async function executeImport(filteredData) {
     _importBusy = true;
     showToast('📥 룸 데이터 가져오는 중...', false, 0);
 
-    // DOM 속성으로 데이터 전달 (ISOLATED → MAIN)
-    document.documentElement.setAttribute(
-      'data-bwbr-room-import',
-      JSON.stringify(filteredData)
-    );
-
-    const handler = (e) => {
-      _importBusy = false;
-      clearToasts();
-      const result = e.detail;
-
-      if (result?.success) {
-        const parts = [];
-        if (result.settingsUpdated) parts.push('방 설정');
-        if (result.charCount > 0) parts.push(`캐릭터 ${result.charCount}개`);
-        if (result.itemCount > 0) parts.push(`아이템 ${result.itemCount}개`);
-        const summary = parts.join(', ');
-        log(`✅ 룸 데이터 가져오기 완료 (${summary})`);
-        showToast(`📥 룸 데이터를 가져왔습니다! (${summary})`);
-      } else {
-        showToast('❌ 룸 데이터 가져오기 실패: ' + (result?.error || '알 수 없는 오류'), true);
-      }
-    };
-
-    // 60초 타임아웃
-    const timeout = setTimeout(() => {
-      window.removeEventListener('bwbr-room-import-result', handler);
+    let result;
+    try {
+      result = await BWBR_Bridge.request(
+        'bwbr-room-import', 'bwbr-room-import-result', filteredData,
+        { sendAttr: 'data-bwbr-room-import', timeout: 60000 }
+      );
+    } catch {
       _importBusy = false;
       clearToasts();
       showToast('❌ 룸 데이터 가져오기 시간 초과', true);
-    }, 60000);
+      return;
+    }
 
-    window.addEventListener('bwbr-room-import-result', (e) => {
-      clearTimeout(timeout);
-      handler(e);
-    }, { once: true });
+    _importBusy = false;
+    clearToasts();
 
-    window.dispatchEvent(new CustomEvent('bwbr-room-import'));
+    if (result?.success) {
+      const parts = [];
+      if (result.settingsUpdated) parts.push('방 설정');
+      if (result.charCount > 0) parts.push(`캐릭터 ${result.charCount}개`);
+      if (result.itemCount > 0) parts.push(`아이템 ${result.itemCount}개`);
+      const summary = parts.join(', ');
+      log(`✅ 룸 데이터 가져오기 완료 (${summary})`);
+      showToast(`📥 룸 데이터를 가져왔습니다! (${summary})`);
+    } else {
+      showToast('❌ 룸 데이터 가져오기 실패: ' + (result?.error || '알 수 없는 오류'), true);
+    }
   }
 
   // ── 토스트 메시지 ───────────────────────────────────────

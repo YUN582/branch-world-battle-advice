@@ -789,21 +789,13 @@
 
   /** 현재 토큰(발화 캐릭터) 찾기 */
   function _requestSpeakingChar(chars) {
-    return new Promise((resolve) => {
-      const timeout = setTimeout(() => resolve(null), 3000);
-      const handler = (e) => {
-        clearTimeout(timeout);
-        window.removeEventListener('bwbr-speaking-character-data', handler);
-        const name = e.detail?.name;
-        if (name && chars) {
-          resolve(chars.find(c => c.name === name) || null);
-        } else {
-          resolve(null);
-        }
-      };
-      window.addEventListener('bwbr-speaking-character-data', handler);
-      window.dispatchEvent(new CustomEvent('bwbr-request-speaking-character'));
-    });
+    return BWBR_Bridge.request(
+      'bwbr-request-speaking-character', 'bwbr-speaking-character-data', null, { timeout: 3000 }
+    ).then(d => {
+      const name = d?.name;
+      if (name && chars) return chars.find(c => c.name === name) || null;
+      return null;
+    }).catch(() => null);
   }
 
   /* ── @ 자동완성 : 컷인(이펙트) 드롭다운 관리 ──────── */
@@ -889,20 +881,10 @@
   }
 
   function _requestCutins() {
-    return new Promise((resolve) => {
-      const timeout = setTimeout(() => resolve([]), 3000);
-      const handler = (e) => {
-        clearTimeout(timeout);
-        window.removeEventListener('bwbr-cutins-data', handler);
-        if (e.detail?.success && e.detail?.cutins) {
-          resolve(e.detail.cutins);
-        } else {
-          resolve([]);
-        }
-      };
-      window.addEventListener('bwbr-cutins-data', handler);
-      window.dispatchEvent(new CustomEvent('bwbr-request-cutins'));
-    });
+    return BWBR_Bridge.request(
+      'bwbr-request-cutins', 'bwbr-cutins-data', null, { timeout: 3000 }
+    ).then(d => (d?.success && d?.cutins) ? d.cutins : [])
+     .catch(() => []);
   }
 
   async function _startAt(el) {

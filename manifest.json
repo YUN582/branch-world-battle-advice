@@ -50,6 +50,7 @@
         "https://ccfolia.com/*"
       ],
       "js": [
+        "content/bridge-util.js",
         "content/config-defaults.js",
         "content/melee-engine.js",
         "content/combat-engine.js",

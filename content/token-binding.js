@@ -85,47 +85,19 @@
   }
 
   function identifyPanel(formProps) {
-    return new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        document.removeEventListener('bwbr-panel-identified', handler);
-        resolve(null);
-      }, 3000);
-
-      const handler = () => {
-        clearTimeout(timeout);
-        document.removeEventListener('bwbr-panel-identified', handler);
-        const raw = document.documentElement.getAttribute('data-bwbr-panel-result');
-        document.documentElement.removeAttribute('data-bwbr-panel-result');
-        try { resolve(JSON.parse(raw)); } catch (e) { resolve(null); }
-      };
-      document.addEventListener('bwbr-panel-identified', handler);
-      document.documentElement.setAttribute('data-bwbr-panel-props', JSON.stringify(formProps));
-      document.dispatchEvent(new CustomEvent('bwbr-identify-panel'));
-    });
+    return BWBR_Bridge.request(
+      'bwbr-identify-panel', 'bwbr-panel-identified', formProps,
+      { sendAttr: 'data-bwbr-panel-props', recvAttr: 'data-bwbr-panel-result',
+        timeout: 3000, on: document, emit: document }
+    ).catch(() => null);
   }
 
   function fetchCharacters() {
-    return new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        window.removeEventListener('bwbr-all-characters-data', handler);
-        resolve([]);
-      }, 3000);
-      const handler = () => {
-        clearTimeout(timeout);
-        window.removeEventListener('bwbr-all-characters-data', handler);
-        try {
-          const raw = document.documentElement.getAttribute('data-bwbr-all-characters-data');
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            resolve(parsed.characters || []);
-            return;
-          }
-        } catch (e) { /* fallback */ }
-        resolve([]);
-      };
-      window.addEventListener('bwbr-all-characters-data', handler);
-      window.dispatchEvent(new CustomEvent('bwbr-request-all-characters'));
-    });
+    return BWBR_Bridge.request(
+      'bwbr-request-all-characters', 'bwbr-all-characters-data', null,
+      { recvAttr: 'data-bwbr-all-characters-data', timeout: 3000 }
+    ).then(parsed => (parsed && parsed.characters) ? parsed.characters : [])
+     .catch(() => []);
   }
 
   // ------------------------------------------------
