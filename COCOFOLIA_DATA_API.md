@@ -970,6 +970,49 @@ store.dispatch({
 > **주의**: `openRoomCharacterId`에는 `entities.roomCharacters` 의 entity key (= Firestore 문서 ID)를 사용합니다.
 > 캐릭터 객체 내부의 `_id` 필드와는 다를 수 있습니다.
 
+### 네이티브 이미지 선택 다이얼로그
+
+> 코코포리아의 이미지 선택창(ROOM/ALL/Unsplash 탭, 7개 카테고리 탭)은 아래 `app.state` 키들로 제어됩니다.
+>
+> **기준**: 2026-03-02
+
+| 키 | 타입 | 기본값 | 설명 |
+|----|------|--------|------|
+| `openRoomImageSelect` | boolean | `false` | 이미지 선택 다이얼로그 열림 여부 |
+| `openRoomImageSelectGroup` | string | `"room"` | 이미지 그룹 (ROOM/ALL/Unsplash) |
+| `openRoomImageSelectDir` | string | `"item"` | 카테고리 디렉토리 (`"item"` = 스크린, `"marker"`, `"character"`, `"foreground"`, `"background"`, 등) |
+| `openRoomImageSelectTarget` | string | `""` | 선택 결과 라우팅 대상 (예: `"item/update"`, `"marker/update"`, `"character/update"`) |
+| `selectingFiles` | boolean | `false` | 다중 선택 모드 (삭제용) |
+| `selectedFileIds` | array | `[]` | 다중 선택된 파일 ID 목록 |
+
+```js
+// 네이티브 이미지 피커 열기 (bogus target으로 side-effect 방지)
+const appState = store.getState().app.state;
+store.dispatch({
+  type: 'app/state/seted',
+  payload: Object.assign({}, appState, {
+    openRoomImageSelect: true,
+    openRoomImageSelectDir: 'item',
+    openRoomImageSelectTarget: 'bwbr/ext'  // 존재하지 않는 target → selectUserFile이 아무것도 안 함
+  })
+});
+```
+
+**이미지 선택 흐름**:
+1. `openRoomImageSelect: true` → MUI Dialog (`MuiDialog-paperWidthMd`) 마운트
+2. 사용자가 이미지 클릭 → `onSelect(url)` → `selectUserFile(url)` thunk 실행
+3. `selectUserFile`은 `openRoomImageSelectTarget`을 읽어 `ge[target]`으로 라우팅
+4. 존재하지 않는 target 사용 시 `ge[target]`이 `undefined` → thunk가 아무것도 안 함 (안전)
+5. 이후 `appStateMutate`로 `openRoomImageSelect: false` 설정 → 피커 닫힘
+
+**확장 프로그램의 활용 방법** (bwbr-open-native-image-picker):
+- bogus target으로 피커를 열고, DOM capture-phase click 이벤트에서 `<img src>`를 읽어 URL 획득
+- `store.subscribe()`로 `openRoomImageSelect: false` 전환 감지하여 취소 처리
+
+**React 컴포넌트 체인**: `k7 → A7 → dce → vce → bce`
+**Dialog 선택자**: `.MuiDialog-paperWidthMd[role="dialog"]`
+**이미지 아이템 구조**: `DIV.sc-*(onClick) → IMG(src=파일URL)`
+
 ### 기타 유용한 키
 
 | 키 | 타입 | 설명 |

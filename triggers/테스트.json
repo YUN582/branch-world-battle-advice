@@ -1,0 +1,704 @@
+[
+  {
+    "id": "test_msg_basic",
+    "name": "[테스트] 기본 메시지",
+    "enabled": true,
+    "pattern": "《테메》",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "message", "template": "✅ 기본 시스템 메시지 테스트 성공!" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_msg_param",
+    "name": "[테스트] 파라미터 메시지",
+    "enabled": true,
+    "pattern": "《테파》| {내용}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "message", "template": "📝 파라미터 전달됨: \"{내용}\"" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_msg_multi_param",
+    "name": "[테스트] 다중 파라미터",
+    "enabled": true,
+    "pattern": "《테다》| {이름} | {값1} | {값2}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "message", "template": "📋 이름={이름}, 값1={값1}, 값2={값2}" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_char_message",
+    "name": "[테스트] 캐릭터 메시지",
+    "enabled": true,
+    "pattern": "《테캐》| {캐릭터} | {대사}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "char_message", "target": "{캐릭터}", "template": "{대사}" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_cutin",
+    "name": "[테스트] 컷인 재생",
+    "enabled": true,
+    "pattern": "《테컷》| {태그}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "message", "template": "🎬 컷인 재생: {태그}" },
+      { "type": "cutin", "tag": "{태그}" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_stat_add",
+    "name": "[테스트] 스탯 증가",
+    "enabled": true,
+    "pattern": "《테스+》| {대상} | {스탯} | {수치}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "stat", "target": "{대상}", "stat": "{스탯}", "op": "+", "value": "{수치}", "valueType": "value" },
+      { "type": "message", "template": "⬆️ {대상}의 {스탯} +{수치}" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_stat_sub",
+    "name": "[테스트] 스탯 감소",
+    "enabled": true,
+    "pattern": "《테스-》| {대상} | {스탯} | {수치}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "stat", "target": "{대상}", "stat": "{스탯}", "op": "-", "value": "{수치}", "valueType": "value" },
+      { "type": "message", "template": "⬇️ {대상}의 {스탯} -{수치}" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_stat_set",
+    "name": "[테스트] 스탯 설정",
+    "enabled": true,
+    "pattern": "《테스=》| {대상} | {스탯} | {수치}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "stat", "target": "{대상}", "stat": "{스탯}", "op": "=", "value": "{수치}", "valueType": "value" },
+      { "type": "message", "template": "📌 {대상}의 {스탯} = {수치} (고정)" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_stat_max",
+    "name": "[테스트] 스탯 최대값 변경",
+    "enabled": true,
+    "pattern": "《테맥》| {대상} | {스탯} | {수치}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "stat", "target": "{대상}", "stat": "{스탯}", "op": "=", "value": "{수치}", "valueType": "max" },
+      { "type": "message", "template": "📊 {대상}의 {스탯} 최대값 → {수치}" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_stat_all",
+    "name": "[테스트] 전체 스탯 변경",
+    "enabled": true,
+    "pattern": "《테전》| {스탯} | {수치}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "stat_all", "stat": "{스탯}", "op": "+", "value": "{수치}", "valueType": "value" },
+      { "type": "message", "template": "🌐 모든 캐릭터 {스탯} +{수치}" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_stat_all_fill",
+    "name": "[테스트] 전체 스탯 최대충전",
+    "enabled": true,
+    "pattern": "《테충》| {스탯}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "stat_all", "stat": "{스탯}", "op": "=max", "value": "0", "valueType": "value" },
+      { "type": "message", "template": "🔋 모든 캐릭터 {스탯} 최대치 충전 완료!" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_param",
+    "name": "[테스트] 파라미터 변경",
+    "enabled": true,
+    "pattern": "《테파변》| {대상} | {파람} | {값}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "param", "target": "{대상}", "param": "{파람}", "op": "=", "value": "{값}" },
+      { "type": "message", "template": "🔧 {대상}의 {파람} → {값}" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_dice_basic",
+    "name": "[테스트] 주사위 기본",
+    "enabled": true,
+    "pattern": "《테주》",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "dice", "command": "2d6" },
+      { "type": "message", "template": "🎲 주사위 결과: {주사위}" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_dice_custom",
+    "name": "[테스트] 주사위 커스텀",
+    "enabled": true,
+    "pattern": "《테주커》| {명령}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "dice", "command": "{명령}" },
+      { "type": "message", "template": "🎲 {명령} → {주사위}" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_dice_condition",
+    "name": "[테스트] 주사위 조건분기",
+    "enabled": true,
+    "pattern": "《테판》",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "dice", "command": "1d20" },
+      { "type": "condition_dice", "op": ">=", "value": "15", "inGroup": false },
+      { "type": "message", "template": "🎯 대성공! (🎲 {주사위} ≥ 15)", "inGroup": true },
+      { "type": "cutin", "tag": "대성공", "inGroup": true },
+      { "type": "condition_dice", "op": ">=", "value": "10", "inGroup": false },
+      { "type": "message", "template": "✅ 성공 (🎲 {주사위} ≥ 10)", "inGroup": true },
+      { "type": "condition_dice", "op": ">=", "value": "5", "inGroup": false },
+      { "type": "message", "template": "⚠️ 부분 성공 (🎲 {주사위} ≥ 5)", "inGroup": true },
+      { "type": "condition_dice", "op": "<", "value": "5", "inGroup": false },
+      { "type": "message", "template": "💀 대실패! (🎲 {주사위} < 5)", "inGroup": true }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_condition_text",
+    "name": "[테스트] 텍스트 조건분기",
+    "enabled": true,
+    "pattern": "《테조》| {모드}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "condition_text", "field": "모드", "op": "==", "value": "공격", "inGroup": false },
+      { "type": "message", "template": "⚔️ 공격 모드 활성화!", "inGroup": true },
+      { "type": "condition_text", "field": "모드", "op": "==", "value": "방어", "inGroup": false },
+      { "type": "message", "template": "🛡️ 방어 모드 활성화!", "inGroup": true },
+      { "type": "message", "template": "📋 모드 = \"{모드}\" 입력됨 (조건 외 공통 메시지)", "inGroup": false }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_face",
+    "name": "[테스트] 표정 변경",
+    "enabled": true,
+    "pattern": "《테표》| {캐릭터} | {번호}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "face", "target": "{캐릭터}", "faceIndex": "{번호}" },
+      { "type": "message", "template": "😀 {캐릭터}의 표정 → #{번호}" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_move",
+    "name": "[테스트] 캐릭터 이동 (절대)",
+    "enabled": true,
+    "pattern": "《테이》| {캐릭터} | {X} | {Y}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "move", "target": "{캐릭터}", "x": "{X}", "y": "{Y}", "relative": "false" },
+      { "type": "message", "template": "📍 {캐릭터} → ({X}, {Y}) 이동" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_move_rel",
+    "name": "[테스트] 캐릭터 이동 (상대)",
+    "enabled": true,
+    "pattern": "《테이상》| {캐릭터} | {X} | {Y}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "move", "target": "{캐릭터}", "x": "{X}", "y": "{Y}", "relative": "true" },
+      { "type": "message", "template": "↗️ {캐릭터} 상대이동 (+{X}, +{Y})" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_initiative",
+    "name": "[테스트] 이니셔티브",
+    "enabled": true,
+    "pattern": "《테이니》| {캐릭터} | {값}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "initiative", "target": "{캐릭터}", "value": "{값}" },
+      { "type": "message", "template": "🏁 {캐릭터} 이니셔티브 → {값}" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_memo",
+    "name": "[테스트] 메모 변경",
+    "enabled": true,
+    "pattern": "《테메모》| {캐릭터} | {내용}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "memo", "target": "{캐릭터}", "memo": "{내용}" },
+      { "type": "message", "template": "📝 {캐릭터} 메모: {내용}" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_scene",
+    "name": "[테스트] 장면 전환",
+    "enabled": true,
+    "pattern": "《테장》| {장면이름}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "message", "template": "🎬 장면 \"{장면이름}\" 로딩..." },
+      { "type": "load_scene", "sceneName": "{장면이름}", "applyOption": "all" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_scene_nobgm",
+    "name": "[테스트] 장면 전환 (BGM 없이)",
+    "enabled": true,
+    "pattern": "《테장조》| {장면이름}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "message", "template": "🎬 장면 \"{장면이름}\" (BGM 유지)" },
+      { "type": "load_scene", "sceneName": "{장면이름}", "applyOption": "noBgm" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_wait",
+    "name": "[테스트] 딜레이 체인",
+    "enabled": true,
+    "pattern": "《테딜》",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "message", "template": "⏳ 1초 뒤에 메시지..." },
+      { "type": "wait", "ms": "1000" },
+      { "type": "message", "template": "✅ 1초 경과! 다시 0.5초 대기..." },
+      { "type": "wait", "ms": "500" },
+      { "type": "message", "template": "✅ 총 1.5초 경과 완료!" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_sound",
+    "name": "[테스트] 사운드 재생",
+    "enabled": true,
+    "pattern": "《테사》| {파일}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "sound", "file": "{파일}", "volume": "0.5" },
+      { "type": "message", "template": "🔊 사운드 재생: {파일}" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_chain_complex",
+    "name": "[테스트] 복합 체인",
+    "enabled": true,
+    "pattern": "《테복》| {대상}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "message", "template": "🔄 {대상} 복합 테스트 시작" },
+      { "type": "dice", "command": "1d6" },
+      { "type": "message", "template": "🎲 주사위: {주사위}" },
+      { "type": "wait", "ms": "500" },
+      { "type": "stat", "target": "{대상}", "stat": "HP", "op": "-", "value": "{주사위}", "valueType": "value" },
+      { "type": "message", "template": "💥 {대상}의 HP -{주사위}" },
+      { "type": "condition_dice", "op": ">=", "value": "5", "inGroup": false },
+      { "type": "message", "template": "⚡ 크리티컬! 추가 효과 발동", "inGroup": true },
+      { "type": "message", "template": "🔄 복합 테스트 완료", "inGroup": false }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_mychar",
+    "name": "[테스트] {내캐릭터} 변수",
+    "enabled": true,
+    "pattern": "《테나》",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "message", "template": "👤 현재 선택된 캐릭터: {내캐릭터}" },
+      { "type": "char_message", "target": "{내캐릭터}", "template": "안녕하세요! 저는 {내캐릭터}입니다." }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_calc",
+    "name": "[테스트] 수식 계산",
+    "enabled": true,
+    "pattern": "《테계》| {a} | {b}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "message", "template": "🧮 {a} + {b} = {계산:{a}+{b}}" },
+      { "type": "message", "template": "🧮 {a} × {b} = {계산:{a}*{b}}" },
+      { "type": "message", "template": "🧮 {a} - {b} = {계산:{a}-{b}}" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_stat_ref",
+    "name": "[테스트] 스탯 참조",
+    "enabled": true,
+    "pattern": "《테참》| {캐릭터} | {스탯}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "message", "template": "📊 {캐릭터}의 {스탯} = {#{캐릭터}!{스탯}}" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_message_recv",
+    "name": "[테스트] 수신 메시지 감지",
+    "enabled": true,
+    "pattern": "테스트핑",
+    "source": "message",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "message", "template": "🏓 퐁! (채팅에서 '테스트핑' 감지됨)" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_panel_move_abs",
+    "name": "[테스트] 패널 이동 (절대)",
+    "enabled": true,
+    "pattern": "《테패이》| {패널} | {X} | {Y}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "panel_move", "target": "{패널}", "panelType": "", "x": "{X}", "y": "{Y}", "relative": "false" },
+      { "type": "message", "template": "📦 패널 〔{패널}〕 → ({X}, {Y}) 이동" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_panel_move_rel",
+    "name": "[테스트] 패널 이동 (상대)",
+    "enabled": true,
+    "pattern": "《테패상》| {패널} | {X} | {Y}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "panel_move", "target": "{패널}", "panelType": "", "x": "{X}", "y": "{Y}", "relative": "true" },
+      { "type": "message", "template": "↗️ 패널 〔{패널}〕 상대이동 (+{X}, +{Y})" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_panel_rotate_abs",
+    "name": "[테스트] 패널 회전 (절대)",
+    "enabled": true,
+    "pattern": "《테패회》| {패널} | {각도}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "panel_rotate", "target": "{패널}", "panelType": "", "angle": "{각도}", "relative": "false" },
+      { "type": "message", "template": "🔄 패널 〔{패널}〕 → {각도}° 회전" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_panel_rotate_rel",
+    "name": "[테스트] 패널 회전 (상대)",
+    "enabled": true,
+    "pattern": "《테패회상》| {패널} | {각도}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "panel_rotate", "target": "{패널}", "panelType": "", "angle": "{각도}", "relative": "true" },
+      { "type": "message", "template": "🔄 패널 〔{패널}〕 +{각도}° 상대 회전" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_panel_copy",
+    "name": "[테스트] 패널 복사",
+    "enabled": true,
+    "pattern": "《테패복》| {패널}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "panel_copy", "target": "{패널}", "panelType": "", "offsetX": "50", "offsetY": "50" },
+      { "type": "message", "template": "📋 패널 〔{패널}〕 복사 완료 (오프셋 50,50)" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_panel_copy_custom",
+    "name": "[테스트] 패널 복사 (커스텀 오프셋)",
+    "enabled": true,
+    "pattern": "《테패복커》| {패널} | {오프X} | {오프Y}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "panel_copy", "target": "{패널}", "panelType": "", "offsetX": "{오프X}", "offsetY": "{오프Y}" },
+      { "type": "message", "template": "📋 패널 〔{패널}〕 복사 (오프셋 {오프X},{오프Y})" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_panel_delete",
+    "name": "[테스트] 패널 삭제",
+    "enabled": true,
+    "pattern": "《테패삭》| {패널}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "message", "template": "⚠️ 패널 〔{패널}〕 삭제 중..." },
+      { "type": "panel_delete", "target": "{패널}", "panelType": "" },
+      { "type": "message", "template": "🗑️ 패널 〔{패널}〕 삭제 완료" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_panel_create_screen",
+    "name": "[테스트] 스크린 패널 생성",
+    "enabled": true,
+    "pattern": "《테패생스》| {태그} | {X} | {Y}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "panel_create", "target": "{태그}", "panelType": "object", "x": "{X}", "y": "{Y}", "width": "200", "height": "200", "angle": "0", "imageUrl": "" },
+      { "type": "message", "template": "🆕 스크린 패널 〔{태그}〕 생성 ({X}, {Y})" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_panel_create_marker",
+    "name": "[테스트] 마커 패널 생성",
+    "enabled": true,
+    "pattern": "《테패생마》| {태그} | {X} | {Y}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "panel_create", "target": "{태그}", "panelType": "plane", "x": "{X}", "y": "{Y}", "width": "100", "height": "100", "angle": "0", "imageUrl": "" },
+      { "type": "message", "template": "🆕 마커 패널 〔{태그}〕 생성 ({X}, {Y})" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_panel_create_and_move",
+    "name": "[테스트] 패널 생성 후 이동",
+    "enabled": true,
+    "pattern": "《테패생이》| {태그}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "panel_create", "target": "{태그}", "panelType": "object", "x": "0", "y": "0", "width": "150", "height": "150", "angle": "0", "imageUrl": "" },
+      { "type": "message", "template": "🆕 패널 〔{태그}〕 생성 → 이동 시작" },
+      { "type": "wait", "ms": "500" },
+      { "type": "panel_move", "target": "{태그}", "panelType": "", "x": "200", "y": "200", "relative": "false" },
+      { "type": "message", "template": "📦 패널 〔{태그}〕 → (200, 200) 이동 완료" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_panel_chain",
+    "name": "[테스트] 패널 복합 조작",
+    "enabled": true,
+    "pattern": "《테패연》| {패널}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "message", "template": "🔄 패널 〔{패널}〕 복합 조작 시작" },
+      { "type": "panel_move", "target": "{패널}", "panelType": "", "x": "100", "y": "100", "relative": "true" },
+      { "type": "wait", "ms": "500" },
+      { "type": "panel_rotate", "target": "{패널}", "panelType": "", "angle": "45", "relative": "true" },
+      { "type": "wait", "ms": "500" },
+      { "type": "panel_move", "target": "{패널}", "panelType": "", "x": "-100", "y": "-100", "relative": "true" },
+      { "type": "wait", "ms": "500" },
+      { "type": "panel_rotate", "target": "{패널}", "panelType": "", "angle": "-45", "relative": "true" },
+      { "type": "message", "template": "✅ 패널 〔{패널}〕 복합 조작 완료 (원래 위치 복귀)" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_panel_dice_move",
+    "name": "[테스트] 주사위+패널이동",
+    "enabled": true,
+    "pattern": "《테패주》| {패널}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "dice", "command": "2d6" },
+      { "type": "message", "template": "🎲 이동 거리: {주사위}" },
+      { "type": "panel_move", "target": "{패널}", "panelType": "", "x": "{주사위}", "y": "0", "relative": "true" },
+      { "type": "message", "template": "📦 패널 〔{패널}〕 X방향 +{주사위} 이동!" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_panel_not_found",
+    "name": "[테스트] 패널 미발견 에러",
+    "enabled": true,
+    "pattern": "《테패에》",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "panel_move", "target": "존재하지않는패널_XYZ", "panelType": "", "x": "0", "y": "0", "relative": "false" },
+      { "type": "message", "template": "이 메시지는 에러와 무관하게 표시됩니다 (에러가 체인을 중단하지 않음 확인)" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_empty_target",
+    "name": "[테스트] 빈 타겟 스킵",
+    "enabled": true,
+    "pattern": "《테빈》",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "panel_move", "target": "", "panelType": "", "x": "100", "y": "100", "relative": "false" },
+      { "type": "panel_rotate", "target": "", "panelType": "", "angle": "90", "relative": "false" },
+      { "type": "panel_copy", "target": "", "panelType": "", "offsetX": "50", "offsetY": "50" },
+      { "type": "panel_delete", "target": "", "panelType": "" },
+      { "type": "panel_create", "target": "", "panelType": "object", "x": "0", "y": "0", "width": "100", "height": "100", "angle": "0", "imageUrl": "" },
+      { "type": "message", "template": "✅ 빈 타겟 5개 모두 스킵됨 — 에러 없이 도달!" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_multiline_msg",
+    "name": "[테스트] 여러 줄 메시지",
+    "enabled": true,
+    "pattern": "《테줄》| {이름}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "message", "template": "━━━━━━━━━━━━━━\n🎭 {이름} 등장!\n━━━━━━━━━━━━━━" }
+    ],
+    "delay": 300,
+    "priority": 0
+  },
+  {
+    "id": "test_all_actions",
+    "name": "[테스트] 전체 액션 체인",
+    "enabled": true,
+    "pattern": "《테올》| {캐릭터} | {패널}",
+    "source": "input",
+    "conditions": { "states": [] },
+    "actions": [
+      { "type": "message", "template": "━━ 전체 액션 테스트 시작 ━━" },
+      { "type": "dice", "command": "1d6" },
+      { "type": "message", "template": "🎲 {주사위}" },
+      { "type": "wait", "ms": "300" },
+      { "type": "char_message", "target": "{캐릭터}", "template": "나 {캐릭터}야!" },
+      { "type": "wait", "ms": "300" },
+      { "type": "stat", "target": "{캐릭터}", "stat": "HP", "op": "+", "value": "1", "valueType": "value" },
+      { "type": "message", "template": "❤️ {캐릭터} HP +1" },
+      { "type": "wait", "ms": "300" },
+      { "type": "stat", "target": "{캐릭터}", "stat": "HP", "op": "-", "value": "1", "valueType": "value" },
+      { "type": "message", "template": "💔 {캐릭터} HP -1 (원복)" },
+      { "type": "wait", "ms": "300" },
+      { "type": "panel_move", "target": "{패널}", "panelType": "", "x": "30", "y": "0", "relative": "true" },
+      { "type": "message", "template": "📦 패널 +30,0 이동" },
+      { "type": "wait", "ms": "300" },
+      { "type": "panel_rotate", "target": "{패널}", "panelType": "", "angle": "15", "relative": "true" },
+      { "type": "message", "template": "🔄 패널 +15° 회전" },
+      { "type": "wait", "ms": "300" },
+      { "type": "panel_create", "target": "테스트임시", "panelType": "object", "x": "0", "y": "0", "width": "100", "height": "100", "angle": "0", "imageUrl": "" },
+      { "type": "message", "template": "🆕 임시 패널 생성" },
+      { "type": "wait", "ms": "500" },
+      { "type": "panel_delete", "target": "테스트임시", "panelType": "object" },
+      { "type": "message", "template": "🗑️ 임시 패널 삭제" },
+      { "type": "wait", "ms": "300" },
+      { "type": "panel_move", "target": "{패널}", "panelType": "", "x": "-30", "y": "0", "relative": "true" },
+      { "type": "panel_rotate", "target": "{패널}", "panelType": "", "angle": "-15", "relative": "true" },
+      { "type": "message", "template": "↩️ 패널 원복" },
+      { "type": "message", "template": "━━ 전체 액션 테스트 완료 ━━" }
+    ],
+    "delay": 300,
+    "priority": 0
+  }
+]

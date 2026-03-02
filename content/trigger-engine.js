@@ -851,6 +851,11 @@
       case 'sound':        await this._actionSound(action, params); break;
       case 'load_scene':   await this._actionLoadScene(action, params); break;
       case 'stat_all':      await this._actionStatAll(action, params); break;
+      case 'panel_move':    await this._actionPanelMove(action, params); break;
+      case 'panel_rotate':  await this._actionPanelRotate(action, params); break;
+      case 'panel_copy':    await this._actionPanelCopy(action, params); break;
+      case 'panel_delete':  await this._actionPanelDelete(action, params); break;
+      case 'panel_create':  await this._actionPanelCreate(action, params); break;
       case 'wait':
         var _waitMs = parseInt(await resolveTemplate(String(action.ms || '0'), params), 10);
         await _delay(_waitMs || 0);
@@ -1078,8 +1083,17 @@
     var text = await resolveTemplate(action.memo || '', params);
     if (!targetName) return;
 
-    LOG('메모 변경 요청:', targetName, text.substring(0, 40));
+    var memoTarget = action.memoTarget || 'character';
+    LOG('메모 변경 요청:', memoTarget, targetName, text.substring(0, 40));
 
+    // 패널 대상 (스크린/마커)
+    if (memoTarget === 'object' || memoTarget === 'plane') {
+      return this._panelOp({
+        op: 'memo', target: targetName, panelType: memoTarget, memo: text
+      });
+    }
+
+    // 캐릭터 대상 (기존 로직)
     return new Promise(function (resolve) {
       var timeout = setTimeout(function () {
         window.removeEventListener('bwbr-trigger-char-field-result', handler);
@@ -1138,6 +1152,103 @@
       var detail = { sceneName: sceneName, applyOption: applyOption };
       document.documentElement.setAttribute('data-bwbr-load-native-scene', JSON.stringify(detail));
       window.dispatchEvent(new CustomEvent('bwbr-load-native-scene', { detail: detail }));
+    });
+  };
+
+  // ── 패널(스크린 아이템) 조작 트리거 핸들러 ──
+
+  /** @private 패널 조작 공통 헬퍼 — bwbr-trigger-panel-op 이벤트 전송 후 결과 대기 */
+  TriggerEngine.prototype._panelOp = function (detail) {
+    return new Promise(function (resolve) {
+      var timeout = setTimeout(function () {
+        window.removeEventListener('bwbr-trigger-panel-op-result', handler);
+        LOG('패널 조작 타임아웃');
+        resolve();
+      }, 5000);
+      function handler() {
+        clearTimeout(timeout);
+        window.removeEventListener('bwbr-trigger-panel-op-result', handler);
+        var raw = document.documentElement.getAttribute('data-bwbr-trigger-panel-op-result');
+        document.documentElement.removeAttribute('data-bwbr-trigger-panel-op-result');
+        var result = null;
+        if (raw) { try { result = JSON.parse(raw); } catch (x) {} }
+        if (result && result.success) {
+          LOG('패널 조작 완료:', result.op, result.target);
+        } else {
+          LOG('패널 조작 실패:', result && result.error);
+        }
+        resolve();
+      }
+      window.addEventListener('bwbr-trigger-panel-op-result', handler);
+      document.documentElement.setAttribute('data-bwbr-trigger-panel-op', JSON.stringify(detail));
+      window.dispatchEvent(new CustomEvent('bwbr-trigger-panel-op', { detail: detail }));
+    });
+  };
+
+  /** 패널 이동 (맵 좌표) */
+  TriggerEngine.prototype._actionPanelMove = async function (action, params) {
+    var target = await resolveTemplate(action.target || '', params);
+    var x = parseInt(await resolveTemplate(String(action.x || '0'), params), 10);
+    var y = parseInt(await resolveTemplate(String(action.y || '0'), params), 10);
+    var relative = action.relative === 'true' || action.relative === true;
+    var panelType = action.panelType || '';
+    if (!target) return;
+
+    LOG('패널 이동 요청:', target, relative ? '상대' : '절대', x, y);
+    return this._panelOp({ op: 'move', target: target, x: x, y: y, relative: relative, panelType: panelType });
+  };
+
+  /** 패널 회전 */
+  TriggerEngine.prototype._actionPanelRotate = async function (action, params) {
+    var target = await resolveTemplate(action.target || '', params);
+    var angle = parseInt(await resolveTemplate(String(action.angle || '0'), params), 10);
+    var relative = action.relative === 'true' || action.relative === true;
+    var panelType = action.panelType || '';
+    if (!target) return;
+
+    LOG('패널 회전 요청:', target, relative ? '상대' : '절대', angle + '°');
+    return this._panelOp({ op: 'rotate', target: target, angle: angle, relative: relative, panelType: panelType });
+  };
+
+  /** 패널 복사 */
+  TriggerEngine.prototype._actionPanelCopy = async function (action, params) {
+    var target = await resolveTemplate(action.target || '', params);
+    var offsetX = parseInt(await resolveTemplate(String(action.offsetX || '50'), params), 10);
+    var offsetY = parseInt(await resolveTemplate(String(action.offsetY || '50'), params), 10);
+    var panelType = action.panelType || '';
+    if (!target) return;
+
+    LOG('패널 복사 요청:', target, '오프셋', offsetX, offsetY);
+    return this._panelOp({ op: 'copy', target: target, offsetX: offsetX, offsetY: offsetY, panelType: panelType });
+  };
+
+  /** 패널 삭제 */
+  TriggerEngine.prototype._actionPanelDelete = async function (action, params) {
+    var target = await resolveTemplate(action.target || '', params);
+    var panelType = action.panelType || '';
+    if (!target) return;
+
+    LOG('패널 삭제 요청:', target);
+    return this._panelOp({ op: 'delete', target: target, panelType: panelType });
+  };
+
+  /** 패널 생성 */
+  TriggerEngine.prototype._actionPanelCreate = async function (action, params) {
+    var target = await resolveTemplate(action.target || '', params);
+    var panelType = action.panelType || 'object';
+    var x = parseInt(await resolveTemplate(String(action.x || '0'), params), 10);
+    var y = parseInt(await resolveTemplate(String(action.y || '0'), params), 10);
+    var width = parseInt(await resolveTemplate(String(action.width || '200'), params), 10);
+    var height = parseInt(await resolveTemplate(String(action.height || '200'), params), 10);
+    var angle = parseInt(await resolveTemplate(String(action.angle || '0'), params), 10);
+    var imageUrl = await resolveTemplate(action.imageUrl || '', params);
+    var description = await resolveTemplate(action.description || '', params);
+
+    LOG('패널 생성 요청:', target, panelType, x, y, width + 'x' + height);
+    return this._panelOp({
+      op: 'create', target: target, panelType: panelType,
+      x: x, y: y, width: width, height: height, angle: angle, imageUrl: imageUrl,
+      description: description
     });
   };
 

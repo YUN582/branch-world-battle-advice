@@ -58,6 +58,7 @@
   // ══════════════════════════════════════════════════════════
 
   var _cachedCharacters = null;
+  var _cachedPanelTags = null;
 
   function _fetchCharactersForUI() {
     return new Promise(function (resolve) {
@@ -170,6 +171,150 @@
     }
   }
 
+  // ── 패널 태그 드롭다운 ──
+
+  function _fetchPanelTags() {
+    return new Promise(function (resolve) {
+      var timeout = setTimeout(function () {
+        resolve(_cachedPanelTags || []);
+      }, 3000);
+      window.addEventListener('bwbr-panel-tags-data', function handler() {
+        clearTimeout(timeout);
+        window.removeEventListener('bwbr-panel-tags-data', handler);
+        try {
+          var raw = document.documentElement.getAttribute('data-bwbr-panel-tags-data');
+          if (raw) {
+            var parsed = JSON.parse(raw);
+            _cachedPanelTags = parsed.panels || [];
+          }
+        } catch (e) { /* fallback */ }
+        resolve(_cachedPanelTags || []);
+      });
+      window.dispatchEvent(new CustomEvent('bwbr-request-panel-tags'));
+    });
+  }
+
+  function _populatePanelDropdowns(cardEl) {
+    var sel = cardEl.querySelector('.tmgr-panel-tag');
+    if (!sel) return;
+
+    var currentTarget = sel.getAttribute('data-current') || '';
+    var filterType = ''; // panelType 필터 (카드에서 읽기)
+    var ptSel = cardEl.querySelector('[data-f="panelType"]');
+    if (!ptSel) ptSel = cardEl.querySelector('[data-f="memoTarget"]'); // memo 동작용 폴백
+    if (ptSel) filterType = ptSel.value || '';
+
+    _fetchPanelTags().then(function (panels) {
+      var h = '<option value="">패널 선택 (〔태그〕 권장)...</option>';
+      // 태그 있는 패널 먼저
+      for (var i = 0; i < panels.length; i++) {
+        var p = panels[i];
+        if (filterType && p.type !== filterType) continue;
+        if (!p.tag) continue;
+        var label = p.tag + (p.type === 'plane' ? ' (마커)' : ' (스크린)');
+        var sel2 = (p.tag === currentTarget) ? ' selected' : '';
+        h += '<option value="' + _ea(p.tag) + '"' + sel2 + '>' + _esc(label) + '</option>';
+      }
+      // 태그 없는 패널 (구분선 + memo/id로 표시)
+      var untagged = panels.filter(function (p) {
+        if (p.tag) return false;
+        if (filterType && p.type !== filterType) return false;
+        return true;
+      });
+      if (untagged.length > 0) {
+        h += '<option disabled>── 태그 없는 패널 ──</option>';
+        for (var j = 0; j < untagged.length; j++) {
+          var u = untagged[j];
+          var uLabel = (u.memo || '').substring(0, 30) || u._id.substring(0, 12);
+          uLabel += u.type === 'plane' ? ' (마커)' : ' (스크린)';
+          h += '<option value="" disabled title="memo에 〔태그〕를 추가해야 선택 가능">' + _esc(uLabel) + '</option>';
+        }
+      }
+      // 현재 값이 목록에 없으면 직접 입력 옵션 추가
+      if (currentTarget) {
+        var found = panels.some(function (p) { return p.tag === currentTarget; });
+        if (!found) {
+          h += '<option value="' + _ea(currentTarget) + '" selected>' + _esc(currentTarget) + ' (직접 입력)</option>';
+        }
+      }
+      sel.innerHTML = h;
+
+      // panelType 변경 시 패널 목록 필터
+      if (ptSel) {
+        ptSel.addEventListener('change', function () {
+          _populatePanelDropdowns(cardEl);
+        });
+      }
+    });
+  }
+
+  // ── 네이티브 이미지 선택 ──
+
+  /**
+   * 코코포리아 네이티브 이미지 선택창을 연다.
+   * @param {string} currentUrl - 현재 선택된 URL (참고용)
+   * @param {Function} callback - (selectedUrl) => void  (취소 시 호출 안 됨)
+   */
+  function _showImagePicker(currentUrl, callback) {
+    var handler = function () {
+      window.removeEventListener('bwbr-native-picker-result', handler);
+      try {
+        var raw = document.documentElement.getAttribute('data-bwbr-native-picker-result');
+        document.documentElement.removeAttribute('data-bwbr-native-picker-result');
+        if (raw) {
+          var data = JSON.parse(raw);
+          if (data.url !== null && data.url !== undefined) {
+            callback(data.url);
+          }
+          // url이 null이면 취소 — callback 미호출
+        }
+      } catch (e) { /* parsing error */ }
+    };
+    window.addEventListener('bwbr-native-picker-result', handler);
+    // 60초 타임아웃
+    setTimeout(function () {
+      window.removeEventListener('bwbr-native-picker-result', handler);
+    }, 60000);
+    window.dispatchEvent(new CustomEvent('bwbr-open-native-image-picker'));
+  }
+
+  /** 이미지 선택 인라인 래퍼의 썸네일/없음 텍스트를 갱신 */
+  function _updateImgPickThumb(wrap, url) {
+    var clearBtn = wrap.querySelector('.tmgr-imgpick-clear');
+    // data-mode="lg" : panel_create용 (항상 img+btn 둘 다 존재, 토글)
+    if (wrap.getAttribute('data-mode') === 'lg') {
+      var lgThumb = wrap.querySelector('.tmgr-imgpick-thumb-lg');
+      var lgBtn = wrap.querySelector('.tmgr-btn.tmgr-imgpick-btn');
+      if (url) {
+        if (lgThumb) { lgThumb.src = url; lgThumb.style.display = ''; }
+        if (lgBtn) lgBtn.style.display = 'none';
+        if (clearBtn) clearBtn.style.display = '';
+      } else {
+        if (lgThumb) { lgThumb.src = ''; lgThumb.style.display = 'none'; }
+        if (lgBtn) lgBtn.style.display = '';
+        if (clearBtn) clearBtn.style.display = 'none';
+      }
+      return;
+    }
+    // 기본 모드 (cutin 등): thumb/none 요소 교체
+    var oldThumb = wrap.querySelector('.tmgr-imgpick-thumb');
+    var oldNone = wrap.querySelector('.tmgr-imgpick-none');
+    if (oldThumb) oldThumb.remove();
+    if (oldNone) oldNone.remove();
+    if (url) {
+      var img = document.createElement('img');
+      img.className = 'tmgr-imgpick-thumb';
+      img.src = url;
+      wrap.appendChild(img);
+    } else {
+      var sp = document.createElement('span');
+      sp.className = 'tmgr-imgpick-none';
+      sp.textContent = '없음';
+      wrap.appendChild(sp);
+    }
+    if (clearBtn) clearBtn.style.display = url ? '' : 'none';
+  }
+
   // ══════════════════════════════════════════════════════════
   //  CSS 주입
   // ══════════════════════════════════════════════════════════
@@ -280,6 +425,15 @@
     c += '.tmgr-add-dd-item:hover{background:rgba(255,255,255,.08)}';
     c += '.tmgr-add-dd-item.cond{color:' + T.warn + '}';
     c += '.tmgr-add-dd-sep{height:1px;background:' + T.divider + ';margin:4px 0}';
+
+    // 이미지 선택 인라인
+    c += '.tmgr-imgpick-wrap{display:flex;gap:8px;align-items:center}';
+    c += '.tmgr-imgpick-thumb{width:32px;height:32px;object-fit:cover;border-radius:3px;border:1px solid ' + T.divider + ';flex-shrink:0;background:rgba(0,0,0,.3)}';
+    c += '.tmgr-imgpick-none{font-size:11px;color:' + T.textDis + '}';
+    c += '.tmgr-imgpick-clear{min-width:auto;padding:2px 6px;font-size:11px;color:' + T.textSec + ';border:1px solid ' + T.border + ';border-radius:3px;background:transparent;cursor:pointer;line-height:1}';
+    c += '.tmgr-imgpick-clear:hover{color:' + T.error + ';border-color:' + T.error + '}';
+    c += '.tmgr-imgpick-thumb-lg{width:40px;height:40px;cursor:pointer;transition:border-color .15s}';
+    c += '.tmgr-imgpick-thumb-lg:hover{border-color:' + T.primary + '}';
 
     // 토스트
     c += '.tmgr-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#323232;color:#fff;padding:6px 16px;border-radius:4px;font-size:14px;z-index:1400;min-width:288px;text-align:center;';
@@ -575,7 +729,9 @@
     h += '<input class="tmgr-inp" id="tf-pat" value="' + _ea(d.pattern) + '" placeholder="' + (d.isRegex ? '정규식 패턴 (예: ^(?<대상>.+?)에게 공격$)' : '예: 《공격》| {대상} 또는 【방어】| {대상} 또는 자유 형식') + '" style="flex:1">';
     h += '<label style="display:flex;align-items:center;gap:4px;white-space:nowrap;font-size:12px;color:' + T.textSec + ';cursor:pointer"><input type="checkbox" id="tf-regex"' + (d.isRegex ? ' checked' : '') + '> 정규식</label>';
     h += '</div>';
-    h += '<div class="tmgr-hint" id="tf-pat-hint">' + (d.isRegex ? '정규식 모드: JavaScript 정규식을 직접 입력합니다. (?&lt;파라미터명&gt;...) 이름 있는 캡처 그룹으로 파라미터를 정의합니다.' : '어떤 형식이든 가능합니다. {파라미터명}으로 파라미터를 정의·추출합니다 (예: {대상}, {값}). 정의한 파라미터는 동작에서 {대상} 같은 형식으로 사용할 수 있습니다. 비워두면 조건만으로 트리거됩니다.') + '</div></div>';
+    h += '<div class="tmgr-hint" id="tf-pat-hint">' + (d.isRegex ? '정규식 모드: JavaScript 정규식을 직접 입력합니다. (?&lt;파라미터명&gt;...) 이름 있는 캡처 그룹으로 파라미터를 정의합니다.' : '{파라미터명}으로 파라미터 정의·추출 (예: {대상}, {값}). 비워두면 조건만으로 트리거.') + '</div>';
+    h += '<div class="tmgr-hint" style="margin-top:2px">💡 <b>내장 변수</b>: {내캐릭터} = 발화 캐릭터, {보낸이} = 메시지 발신자, {차례} = 전투 현재 턴</div>';
+    h += '<div class="tmgr-hint" style="margin-top:1px">📐 <b>스탯 참조</b>: {#캐릭터!스탯} → 값 (예: {#홍길동!HP}) &nbsp; 🧮 <b>수식</b>: {계산:1+2*3} → 7</div></div>';
 
     // 감지 대상 + 딜레이 + 우선순위
     h += '<div class="tmgr-row tmgr-row-i">';
@@ -641,6 +797,13 @@
     h += '<div class="tmgr-add-dd-item" data-add="memo">메모 변경</div>';
     h += '<div class="tmgr-add-dd-item" data-add="sound">사운드 재생</div>';
     h += '<div class="tmgr-add-dd-item" data-add="load_scene">장면 불러오기</div>';
+    h += '<div class="tmgr-add-dd-sep"></div>';
+    h += '<div class="tmgr-add-dd-item" data-add="panel_move">패널 이동</div>';
+    h += '<div class="tmgr-add-dd-item" data-add="panel_rotate">패널 회전</div>';
+    h += '<div class="tmgr-add-dd-item" data-add="panel_copy">패널 복사</div>';
+    h += '<div class="tmgr-add-dd-item" data-add="panel_delete">패널 삭제</div>';
+    h += '<div class="tmgr-add-dd-item" data-add="panel_create">패널 생성</div>';
+    h += '<div class="tmgr-add-dd-sep"></div>';
     h += '<div class="tmgr-add-dd-item" data-add="wait">대기 (딜레이)</div>';
     h += '<div class="tmgr-add-dd-sep"></div>';
     h += '<div class="tmgr-add-dd-item cond" data-add="condition_dice">조건: 주사위 결과</div>';
@@ -701,6 +864,11 @@
       h += '<option value="memo"'         + (item.type === 'memo'         ? ' selected' : '') + '>메모 변경</option>';
       h += '<option value="sound"'        + (item.type === 'sound'        ? ' selected' : '') + '>사운드 재생</option>';
       h += '<option value="load_scene"'   + (item.type === 'load_scene'   ? ' selected' : '') + '>장면 불러오기</option>';
+      h += '<option value="panel_move"'    + (item.type === 'panel_move'   ? ' selected' : '') + '>패널 이동</option>';
+      h += '<option value="panel_rotate"'  + (item.type === 'panel_rotate' ? ' selected' : '') + '>패널 회전</option>';
+      h += '<option value="panel_copy"'    + (item.type === 'panel_copy'   ? ' selected' : '') + '>패널 복사</option>';
+      h += '<option value="panel_delete"'  + (item.type === 'panel_delete' ? ' selected' : '') + '>패널 삭제</option>';
+      h += '<option value="panel_create"'  + (item.type === 'panel_create' ? ' selected' : '') + '>패널 생성</option>';
       h += '<option value="wait"'         + (item.type === 'wait'         ? ' selected' : '') + '>대기 (딜레이)</option>';
       h += '</select>';
     }
@@ -760,6 +928,23 @@
       h += '</div>';
       h += '<div class="tmgr-hint">조건 불충족 시 그룹 내 동작을 건너뜁니다 (→ 버튼으로 그룹 설정)</div>';
     }
+    return h;
+  }
+
+  /** 패널 대상 지정 ROW (panelType 셀렉트 + 태그 드롭다운) — panel_move/rotate/copy/delete 공용 */
+  function _renderPanelTargetRow(a) {
+    var pt = a.panelType || '';
+    var h = '<div class="tmgr-afrow">';
+    h += '<select class="tmgr-sel" data-f="panelType" style="flex:0 0 100px">';
+    h += '<option value=""'       + (pt === ''       ? ' selected' : '') + '>전체</option>';
+    h += '<option value="object"' + (pt === 'object' ? ' selected' : '') + '>스크린</option>';
+    h += '<option value="plane"'  + (pt === 'plane'  ? ' selected' : '') + '>마커</option>';
+    h += '</select>';
+    h += '<select class="tmgr-sel tmgr-panel-tag" data-f="target" data-current="' + _ea(a.target || '') + '" style="flex:2">';
+    h += '<option value="">로딩 중...</option>';
+    if (a.target) h += '<option value="' + _ea(a.target) + '" selected>' + _esc(a.target) + '</option>';
+    h += '</select>';
+    h += '</div>';
     return h;
   }
 
@@ -869,10 +1054,27 @@
         h += '</div>';
         break;
       case 'memo':
+        var mt = a.memoTarget || 'character';
         h += '<div class="tmgr-afrow">';
-        h += '<input class="tmgr-inp" data-f="target" value="' + _ea(a.target || '') + '" placeholder="캐릭터 이름">';
+        h += '<div style="flex:0 0 95px"><label class="tmgr-lbl">대상 유형</label>';
+        h += '<select class="tmgr-sel" data-f="memoTarget" style="width:100%">';
+        h += '<option value="character"' + (mt === 'character' ? ' selected' : '') + '>캐릭터</option>';
+        h += '<option value="object"'   + (mt === 'object'    ? ' selected' : '') + '>스크린</option>';
+        h += '<option value="plane"'    + (mt === 'plane'     ? ' selected' : '') + '>마커</option>';
+        h += '</select></div>';
+        if (mt === 'character') {
+          h += '<div style="flex:2"><label class="tmgr-lbl">캐릭터 이름</label>';
+          h += '<input class="tmgr-inp" data-f="target" value="' + _ea(a.target || '') + '" placeholder="캐릭터 이름 ({파라미터} 사용 가능)"></div>';
+        } else {
+          h += '<div style="flex:2"><label class="tmgr-lbl">패널 태그</label>';
+          h += '<select class="tmgr-sel tmgr-panel-tag" data-f="target" data-current="' + _ea(a.target || '') + '" style="width:100%">';
+          h += '<option value="">로딩 중...</option>';
+          if (a.target) h += '<option value="' + _ea(a.target) + '" selected>' + _esc(a.target) + '</option>';
+          h += '</select></div>';
+        }
         h += '</div>';
-        h += '<input class="tmgr-inp" data-f="memo" value="' + _ea(a.memo || '') + '" placeholder="메모 내용 ({파라미터명} 사용 가능)">';
+        h += '<textarea class="tmgr-inp tmgr-textarea" data-f="memo" placeholder="메모 내용 ({파라미터명} 사용 가능). 여러 줄 입력 가능">' + _esc(a.memo || '') + '</textarea>';
+        h += '<div class="tmgr-hint">' + (mt === 'character' ? '캐릭터의 메모를 변경합니다.' : '패널(〔태그〕)의 메모를 변경합니다. 기존 태그는 유지됩니다.') + '</div>';
         break;
       case 'sound':
         h += '<div class="tmgr-afrow">';
@@ -891,6 +1093,78 @@
         h += '<option value="noText"' + (a.applyOption === 'noText' ? ' selected' : '') + '>텍스트 없이 적용</option>';
         h += '</select></div>';
         h += '<div class="tmgr-hint">네이티브 장면 목록에 등록된 장면 이름을 정확히 입력</div>';
+        break;
+      case 'panel_move':
+        h += _renderPanelTargetRow(a);
+        var pmRel = (a.relative === true || a.relative === 'true') ? 'true' : 'false';
+        h += '<div class="tmgr-afrow">';
+        h += '<select class="tmgr-sel" data-f="relative" style="flex:0 0 100px">';
+        h += '<option value="false"' + (pmRel === 'false' ? ' selected' : '') + '>절대 좌표</option>';
+        h += '<option value="true"'  + (pmRel === 'true'  ? ' selected' : '') + '>상대 좌표</option>';
+        h += '</select>';
+        h += '<input class="tmgr-inp" data-f="x" value="' + _ea(a.x != null ? String(a.x) : '0') + '" placeholder="X" style="flex:1">';
+        h += '<input class="tmgr-inp" data-f="y" value="' + _ea(a.y != null ? String(a.y) : '0') + '" placeholder="Y" style="flex:1">';
+        h += '</div>';
+        h += '<div class="tmgr-hint">패널 memo에 〔태그〕 형식으로 작성 → 태그명으로 식별. {파라미터}, {계산:} 사용 가능</div>';
+        break;
+      case 'panel_rotate':
+        h += _renderPanelTargetRow(a);
+        var prRel = (a.relative === true || a.relative === 'true') ? 'true' : 'false';
+        h += '<div class="tmgr-afrow">';
+        h += '<select class="tmgr-sel" data-f="relative" style="flex:0 0 100px">';
+        h += '<option value="false"' + (prRel === 'false' ? ' selected' : '') + '>절대 각도</option>';
+        h += '<option value="true"'  + (prRel === 'true'  ? ' selected' : '') + '>상대 각도</option>';
+        h += '</select>';
+        h += '<input class="tmgr-inp" data-f="angle" value="' + _ea(a.angle != null ? String(a.angle) : '0') + '" placeholder="각도 (0~360)" style="flex:1">';
+        h += '<span style="font-size:12px;color:' + T.textSec + '">°</span>';
+        h += '</div>';
+        h += '<div class="tmgr-hint">패널 memo에 〔태그〕 형식으로 작성 → 태그명으로 식별. {파라미터} 사용 가능</div>';
+        break;
+      case 'panel_copy':
+        h += _renderPanelTargetRow(a);
+        h += '<div class="tmgr-afrow">';
+        h += '<input class="tmgr-inp" data-f="offsetX" value="' + _ea(a.offsetX != null ? String(a.offsetX) : '50') + '" placeholder="X 오프셋" style="flex:1">';
+        h += '<input class="tmgr-inp" data-f="offsetY" value="' + _ea(a.offsetY != null ? String(a.offsetY) : '50') + '" placeholder="Y 오프셋" style="flex:1">';
+        h += '</div>';
+        h += '<div class="tmgr-hint">원본 위치에서 오프셋만큼 이동한 위치에 복사됨. {파라미터} 사용 가능</div>';
+        break;
+      case 'panel_delete':
+        h += _renderPanelTargetRow(a);
+        h += '<div class="tmgr-hint">⚠️ 패널이 영구 삭제됩니다. memo에 〔태그〕로 대상 식별</div>';
+        break;
+      case 'panel_create':
+        var pcPt = a.panelType || 'object';
+        // Row 1: 유형 + 이미지 + 태그명
+        h += '<div class="tmgr-afrow" style="align-items:flex-end">';
+        h += '<div style="flex:0 0 95px"><label class="tmgr-lbl">유형</label>';
+        h += '<select class="tmgr-sel" data-f="panelType" style="width:100%">';
+        h += '<option value="object"' + (pcPt === 'object' ? ' selected' : '') + '>스크린</option>';
+        h += '<option value="plane"'  + (pcPt === 'plane'  ? ' selected' : '') + '>마커</option>';
+        h += '</select></div>';
+        h += '<div style="flex:0 0 auto"><label class="tmgr-lbl">이미지</label>';
+        h += '<div class="tmgr-imgpick-wrap" data-mode="lg">';
+        h += '<input type="hidden" class="tmgr-imgpick-url" data-f="imageUrl" value="' + _ea(a.imageUrl || '') + '">';
+        h += '<img class="tmgr-imgpick-thumb tmgr-imgpick-thumb-lg tmgr-imgpick-btn" src="' + _ea(a.imageUrl || '') + '" title="클릭하여 이미지 변경" style="' + (a.imageUrl ? '' : 'display:none') + '">';
+        h += '<button class="tmgr-btn tmgr-btn-sm tmgr-imgpick-btn" type="button" style="' + (a.imageUrl ? 'display:none' : '') + '">선택</button>';
+        h += '<button class="tmgr-imgpick-clear" type="button" title="이미지 제거" style="' + (a.imageUrl ? '' : 'display:none') + '">✕</button>';
+        h += '</div></div>';
+        h += '<div style="flex:1"><label class="tmgr-lbl">태그명</label>';
+        h += '<input class="tmgr-inp" data-f="target" value="' + _ea(a.target || '') + '" placeholder="〔태그〕로 저장됨"></div>';
+        h += '</div>';
+        // Row 2: 메모
+        h += '<div style="margin-top:2px"><label class="tmgr-lbl">메모</label>';
+        h += '<textarea class="tmgr-inp tmgr-textarea" data-f="description" placeholder="패널 메모 (여러 줄 가능). 태그명 아래에 저장됩니다." style="min-height:40px">' + _esc(a.description || '') + '</textarea>';
+        h += '</div>';
+        // Row 3: 좌표 + 크기 + 각도 한 줄
+        h += '<div class="tmgr-afrow" style="margin-top:4px">';
+        h += '<div style="flex:1"><label class="tmgr-lbl">X</label><input class="tmgr-inp" data-f="x" value="' + _ea(a.x != null ? String(a.x) : '0') + '"></div>';
+        h += '<div style="flex:1"><label class="tmgr-lbl">Y</label><input class="tmgr-inp" data-f="y" value="' + _ea(a.y != null ? String(a.y) : '0') + '"></div>';
+        h += '<div style="flex:1"><label class="tmgr-lbl">너비</label><input class="tmgr-inp" data-f="width" value="' + _ea(a.width != null ? String(a.width) : '4') + '"></div>';
+        h += '<div style="flex:1"><label class="tmgr-lbl">높이</label><input class="tmgr-inp" data-f="height" value="' + _ea(a.height != null ? String(a.height) : '4') + '"></div>';
+        h += '<div style="flex:1"><label class="tmgr-lbl">각도</label>';
+        h += '<input class="tmgr-inp" data-f="angle" value="' + _ea(a.angle != null ? String(a.angle) : '0') + '"></div>';
+        h += '</div>';
+        h += '<div class="tmgr-hint">좌표·크기는 칸 단위 (1칸 = 24px). 태그명은 memo에 〔태그〕 형식으로 저장됩니다.</div>';
         break;
       case 'wait':
         h += '<div class="tmgr-afrow">';
@@ -930,7 +1204,7 @@
         if (hintEl) {
           hintEl.innerHTML = regexCb.checked
             ? '정규식 모드: JavaScript 정규식을 직접 입력합니다. (?&lt;파라미터명&gt;...) 이름 있는 캡처 그룹으로 파라미터를 정의합니다.'
-            : '어떤 형식이든 가능합니다. {파라미터명}으로 파라미터를 정의·추출합니다 (예: {대상}, {값}). 정의한 파라미터는 동작에서 {대상} 같은 형식으로 사용할 수 있습니다. 비워두면 조건만으로 트리거됩니다.';
+            : '{파라미터명}으로 파라미터 정의·추출 (예: {대상}, {값}). 비워두면 조건만으로 트리거.';
         }
       });
     }
@@ -988,9 +1262,14 @@
             case 'face':           newItem = { type: 'face', target: '', faceIndex: '0' }; break;
             case 'move':           newItem = { type: 'move', target: '', x: '0', y: '0', relative: 'false' }; break;
             case 'initiative':     newItem = { type: 'initiative', target: '', value: '0' }; break;
-            case 'memo':           newItem = { type: 'memo', target: '', memo: '' }; break;
+            case 'memo':           newItem = { type: 'memo', target: '', memo: '', memoTarget: 'character' }; break;
             case 'sound':          newItem = { type: 'sound', file: '', volume: '0.5' }; break;
             case 'load_scene':     newItem = { type: 'load_scene', sceneName: '', applyOption: 'all' }; break;
+            case 'panel_move':     newItem = { type: 'panel_move', target: '', panelType: '', x: '0', y: '0', relative: 'false' }; break;
+            case 'panel_rotate':   newItem = { type: 'panel_rotate', target: '', panelType: '', angle: '0', relative: 'false' }; break;
+            case 'panel_copy':     newItem = { type: 'panel_copy', target: '', panelType: '', offsetX: '50', offsetY: '50' }; break;
+            case 'panel_delete':   newItem = { type: 'panel_delete', target: '', panelType: '' }; break;
+            case 'panel_create':   newItem = { type: 'panel_create', target: '', panelType: 'object', x: '0', y: '0', width: '4', height: '4', angle: '0', imageUrl: '', description: '' }; break;
             case 'wait':           newItem = { type: 'wait', ms: '300' }; break;
             case 'condition_dice': newItem = { type: 'condition_dice', op: '>=', value: '' }; break;
             case 'condition_text': newItem = { type: 'condition_text', field: '', op: '==', value: '' }; break;
@@ -1030,9 +1309,14 @@
           case 'face':         nw.target = ''; nw.faceIndex = '0'; break;
           case 'move':         nw.target = ''; nw.x = '0'; nw.y = '0'; nw.relative = 'false'; break;
           case 'initiative':   nw.target = ''; nw.value = '0'; break;
-          case 'memo':         nw.target = ''; nw.memo = ''; break;
+          case 'memo':         nw.target = ''; nw.memo = ''; nw.memoTarget = 'character'; break;
           case 'sound':        nw.file = ''; nw.volume = '0.5'; break;
           case 'load_scene':   nw.sceneName = ''; nw.applyOption = 'all'; break;
+          case 'panel_move':   nw.target = ''; nw.panelType = ''; nw.x = '0'; nw.y = '0'; nw.relative = 'false'; break;
+          case 'panel_rotate': nw.target = ''; nw.panelType = ''; nw.angle = '0'; nw.relative = 'false'; break;
+          case 'panel_copy':   nw.target = ''; nw.panelType = ''; nw.offsetX = '50'; nw.offsetY = '50'; break;
+          case 'panel_delete': nw.target = ''; nw.panelType = ''; break;
+          case 'panel_create': nw.target = ''; nw.panelType = 'object'; nw.x = '0'; nw.y = '0'; nw.width = '4'; nw.height = '4'; nw.angle = '0'; nw.imageUrl = ''; nw.description = ''; break;
           case 'wait':         nw.ms = '300'; break;
         }
         data.actions[idx] = nw;
@@ -1151,6 +1435,41 @@
       if (card.querySelector('.tmgr-face-char')) {
         _populateFaceDropdowns(card);
       }
+      if (card.querySelector('.tmgr-panel-tag')) {
+        _populatePanelDropdowns(card);
+      }
+      // memoTarget 변경 시 카드 다시 렌더링
+      var memoTargetSel = card.querySelector('[data-f="memoTarget"]');
+      if (memoTargetSel) {
+        memoTargetSel.addEventListener('change', function () {
+          _syncChainDOM(data);
+          var idx = parseInt(card.getAttribute('data-idx'), 10);
+          data.actions[idx].memoTarget = memoTargetSel.value;
+          _rerenderChain(data);
+        });
+      }
+      // 이미지 선택 버튼 바인딩
+      card.querySelectorAll('.tmgr-imgpick-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var wrap = btn.closest('.tmgr-imgpick-wrap');
+          if (!wrap) return;
+          var hiddenInput = wrap.querySelector('.tmgr-imgpick-url');
+          _showImagePicker(hiddenInput ? hiddenInput.value : '', function (url) {
+            if (hiddenInput) hiddenInput.value = url || '';
+            _updateImgPickThumb(wrap, url);
+          });
+        });
+      });
+      // 이미지 제거 버튼 바인딩
+      card.querySelectorAll('.tmgr-imgpick-clear').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var wrap = btn.closest('.tmgr-imgpick-wrap');
+          if (!wrap) return;
+          var hiddenInput = wrap.querySelector('.tmgr-imgpick-url');
+          if (hiddenInput) hiddenInput.value = '';
+          _updateImgPickThumb(wrap, '');
+        });
+      });
     });
   }
 
@@ -1230,6 +1549,11 @@
         case 'memo':         return !!a.target;
         case 'sound':        return !!a.file;
         case 'load_scene':   return !!a.sceneName;
+        case 'panel_move':   return !!a.target;
+        case 'panel_rotate': return !!a.target;
+        case 'panel_copy':   return !!a.target;
+        case 'panel_delete': return !!a.target;
+        case 'panel_create': return true;
         case 'wait':         return parseInt(a.ms, 10) >= 0;
         default: return false;
       }

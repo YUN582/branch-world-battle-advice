@@ -2610,6 +2610,315 @@
   });
 
   // ================================================================
+  //  트리거: 패널(아이템) 조작 — 이동/회전/복사/삭제/생성
+  //  bwbr-trigger-panel-op  { op, target, panelType, ... }
+  //  → bwbr-trigger-panel-op-result { success }
+  //
+  //  target: 〔태그〕 형식의 메모 태그로 패널 식별 (예: target="문A" → memo에 〔문A〕포함)
+  //  panelType: 'object'(스크린) | 'plane'(마커) — create 시 필수, 기존 조작 시 검색 필터
+  //  op: 'move' | 'rotate' | 'copy' | 'delete' | 'create'
+  // ================================================================
+  window.addEventListener('bwbr-trigger-panel-op', async (e) => {
+    const _raw = document.documentElement.getAttribute('data-bwbr-trigger-panel-op');
+    document.documentElement.removeAttribute('data-bwbr-trigger-panel-op');
+    const detail = _raw ? JSON.parse(_raw) : (e.detail || {});
+    const { op, target, panelType } = detail;
+
+    const respond = (d) => {
+      document.documentElement.setAttribute('data-bwbr-trigger-panel-op-result', JSON.stringify(d));
+      window.dispatchEvent(new CustomEvent('bwbr-trigger-panel-op-result', { detail: d }));
+    };
+
+    try {
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) throw new Error('Firestore SDK 없음');
+      if (!reduxStore) throw new Error('Redux Store 없음');
+
+      const state = reduxStore.getState();
+      const roomId = state.app?.state?.roomId
+        || window.location.pathname.match(/rooms\/([^/]+)/)?.[1];
+      if (!roomId) throw new Error('방 ID를 찾을 수 없음');
+
+      const itemsCol = sdk.collection(sdk.db, 'rooms', roomId, 'items');
+
+      // ── create는 기존 패널 검색 불필요 ──
+      if (op === 'create') {
+        const tgt = (target || '').trim();
+        const pt = panelType === 'plane' ? 'plane' : 'object';
+        let memo = tgt ? '〔' + tgt + '〕' : '';
+        if (detail.description) memo += (memo ? '\n' : '') + detail.description;
+        const newItem = {
+          type: pt,
+          active: true,
+          visible: true,
+          closed: false,
+          locked: false,
+          freezed: false,
+          withoutOwner: false,
+          memo: memo,
+          imageUrl: detail.imageUrl || '',
+          coverImageUrl: '',
+          x: detail.x != null ? detail.x : 0,
+          y: detail.y != null ? detail.y : 0,
+          z: 0,
+          width: detail.width != null ? detail.width : (pt === 'object' ? 4 : 2),
+          height: detail.height != null ? detail.height : (pt === 'object' ? 4 : 2),
+          angle: detail.angle != null ? detail.angle : 0,
+          owner: '',
+          ownerName: '',
+          ownerColor: '',
+          clickAction: null,
+          deckId: null,
+          order: 0,
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        };
+        await sdk.addDoc(itemsCol, newItem);
+        _dbg(`%c[BWBR]%c ✅ 패널 생성: 〔${tgt}〕 (${pt})`,
+          'color: #4caf50; font-weight: bold;', 'color: inherit;');
+        respond({ success: true, op, target: tgt, panelType: pt });
+        return;
+      }
+
+      // --- 기존 패널 검색: 〔tag〕 형식 매칭 ---
+      const items = state.entities?.roomItems;
+      if (!items || !items.ids || items.ids.length === 0) throw new Error('패널 없음');
+
+      let found = null;
+      const tgt = (target || '').trim();
+      if (!tgt) throw new Error('패널 식별자(target)가 비어있음');
+
+      const tagStr = '〔' + tgt + '〕';
+
+      // 1) 〔tag〕 형식으로 memo 검색 (panelType 필터 적용)
+      for (const id of items.ids) {
+        const it = items.entities[id];
+        if (!it) continue;
+        if (panelType && it.type !== panelType) continue;
+        if ((it.memo || '').includes(tagStr)) {
+          found = { ...it, __id: id };
+          break;
+        }
+      }
+
+      // 2) 폴백: memo 부분 일치 (하위 호환)
+      if (!found) {
+        for (const id of items.ids) {
+          const it = items.entities[id];
+          if (!it) continue;
+          if (panelType && it.type !== panelType) continue;
+          if ((it.memo || '').includes(tgt)) {
+            found = { ...it, __id: id };
+            break;
+          }
+        }
+      }
+
+      // 3) _id 직접 매칭 (마지막 폴백)
+      if (!found && items.entities[tgt]) {
+        found = { ...items.entities[tgt], __id: tgt };
+      }
+
+      if (!found) throw new Error(`패널 "${tgt}" 을(를) 찾을 수 없음`);
+
+      const itemRef = sdk.doc(itemsCol, found.__id);
+
+      switch (op) {
+        // ── 이동 ──
+        case 'move': {
+          let nx, ny;
+          if (detail.relative) {
+            nx = (found.x || 0) + (detail.x || 0);
+            ny = (found.y || 0) + (detail.y || 0);
+          } else {
+            nx = detail.x != null ? detail.x : (found.x || 0);
+            ny = detail.y != null ? detail.y : (found.y || 0);
+          }
+          await sdk.setDoc(itemRef, { x: nx, y: ny, updatedAt: Date.now() }, { merge: true });
+          _dbg(`%c[BWBR]%c ✅ 패널 이동: 〔${tgt}〕 → (${nx}, ${ny})`,
+            'color: #4caf50; font-weight: bold;', 'color: inherit;');
+          respond({ success: true, op, target: tgt, x: nx, y: ny });
+          break;
+        }
+
+        // ── 회전 ──
+        case 'rotate': {
+          let angle;
+          if (detail.relative) {
+            angle = (found.angle || 0) + (detail.angle || 0);
+          } else {
+            angle = detail.angle != null ? detail.angle : 0;
+          }
+          await sdk.setDoc(itemRef, { angle, updatedAt: Date.now() }, { merge: true });
+          _dbg(`%c[BWBR]%c ✅ 패널 회전: 〔${tgt}〕 → ${angle}°`,
+            'color: #4caf50; font-weight: bold;', 'color: inherit;');
+          respond({ success: true, op, target: tgt, angle });
+          break;
+        }
+
+        // ── 복사 ──
+        case 'copy': {
+          const clone = { ...found };
+          delete clone.__id;
+          delete clone._id;
+          clone.x = (clone.x || 0) + (detail.offsetX != null ? detail.offsetX : 50);
+          clone.y = (clone.y || 0) + (detail.offsetY != null ? detail.offsetY : 50);
+          clone.createdAt = Date.now();
+          clone.updatedAt = Date.now();
+          await sdk.addDoc(itemsCol, clone);
+          _dbg(`%c[BWBR]%c ✅ 패널 복사: 〔${tgt}〕 (오프셋 ${clone.x - (found.x||0)}, ${clone.y - (found.y||0)})`,
+            'color: #4caf50; font-weight: bold;', 'color: inherit;');
+          respond({ success: true, op, target: tgt });
+          break;
+        }
+
+        // ── 삭제 ──
+        case 'delete': {
+          await sdk.deleteDoc(itemRef);
+          _dbg(`%c[BWBR]%c ✅ 패널 삭제: 〔${tgt}〕`,
+            'color: #f44336; font-weight: bold;', 'color: inherit;');
+          respond({ success: true, op, target: tgt });
+          break;
+        }
+
+        // ── 메모 변경 ──
+        case 'memo': {
+          // 기존 태그는 유지하고 메모 내용만 변경
+          const oldMemo = found.memo || '';
+          const tagMatch = oldMemo.match(/〔[^〕]+〕/);
+          const tagPart = tagMatch ? tagMatch[0] : '';
+          const newMemo = tagPart ? tagPart + '\n' + (detail.memo || '') : (detail.memo || '');
+          await sdk.setDoc(itemRef, { memo: newMemo, updatedAt: Date.now() }, { merge: true });
+          _dbg(`%c[BWBR]%c ✅ 패널 메모 변경: 〔${tgt}〕`,
+            'color: #4caf50; font-weight: bold;', 'color: inherit;');
+          respond({ success: true, op, target: tgt });
+          break;
+        }
+
+        default:
+          throw new Error(`알 수 없는 패널 연산: ${op}`);
+      }
+
+    } catch (err) {
+      console.error(`[BWBR] 패널 조작(${op}) 실패:`, err.message);
+      respond({ success: false, error: err.message });
+    }
+  });
+
+  // ================================================================
+  //  트리거 UI: 패널 태그 목록 요청
+  //  bwbr-request-panel-tags → bwbr-panel-tags-data
+  //  memo에 〔태그〕형식이 있는 패널 목록 반환
+  // ================================================================
+  window.addEventListener('bwbr-request-panel-tags', () => {
+    const panels = [];
+    if (reduxStore) {
+      const state = reduxStore.getState();
+      const ri = state.entities?.roomItems;
+      if (ri?.ids) {
+        const tagRe = /〔([^〕]+)〕/;
+        for (const id of ri.ids) {
+          const it = ri.entities?.[id];
+          if (!it) continue;
+          const m = (it.memo || '').match(tagRe);
+          const tag = m ? m[1] : '';
+          panels.push({
+            _id: it._id || id,
+            tag: tag,
+            type: it.type || 'object',  // 'object'=스크린, 'plane'=마커
+            memo: it.memo || '',
+            imageUrl: it.imageUrl || ''
+          });
+        }
+      }
+    }
+    document.documentElement.setAttribute('data-bwbr-panel-tags-data', JSON.stringify({ panels }));
+    window.dispatchEvent(new CustomEvent('bwbr-panel-tags-data', { detail: { panels } }));
+  });
+
+  // ================================================================
+  //  트리거 UI: 네이티브 이미지 선택창 열기
+  //  bwbr-open-native-image-picker → 네이티브 피커 열림 → 선택 결과 반환
+  //  bwbr-native-picker-result (data-bwbr-native-picker-result)
+  // ================================================================
+  let _bwbrPickerActive = false;
+
+  window.addEventListener('bwbr-open-native-image-picker', () => {
+    if (!reduxStore || _bwbrPickerActive) return;
+    _bwbrPickerActive = true;
+    let _pickerGotResult = false;
+
+    // 1) 네이티브 이미지 피커를 bogus target으로 열기 (side-effect 방지)
+    const appState = reduxStore.getState().app.state;
+    reduxStore.dispatch({
+      type: 'app/state/seted',
+      payload: Object.assign({}, appState, {
+        openRoomImageSelect: true,
+        openRoomImageSelectDir: 'item',
+        openRoomImageSelectTarget: 'bwbr/ext'
+      })
+    });
+
+    // 2) DOM 클릭 캡처로 선택된 이미지 URL 획득
+    function onDocClick(e) {
+      // MuiDialog-paperWidthMd = 네이티브 이미지 피커 dialog
+      const pickerDialog = document.querySelector('.MuiDialog-paperWidthMd[role="dialog"]');
+      if (!pickerDialog || !pickerDialog.contains(e.target)) return;
+
+      // 이미지 요소 찾기
+      let imgEl = null;
+      if (e.target.tagName === 'IMG') {
+        imgEl = e.target;
+      } else {
+        // 래퍼 div 클릭 시 — 직계 자식 img 찾기
+        imgEl = e.target.querySelector(':scope > img');
+      }
+      if (!imgEl || !imgEl.src) return;
+
+      // UI 아이콘이 아닌 ccfolia 파일 이미지인지 확인
+      if (imgEl.closest('button') || imgEl.closest('header') || imgEl.closest('[role="tab"]')) return;
+      if (!imgEl.src.startsWith('https://')) return;
+
+      // URL 캡처
+      _pickerGotResult = true;
+      _sendResult(imgEl.src);
+    }
+    document.addEventListener('click', onDocClick, true); // capture phase
+
+    // 3) store 감시: 피커가 닫히면 정리
+    const unsub = reduxStore.subscribe(() => {
+      const s = reduxStore.getState().app.state;
+      if (!s.openRoomImageSelect && _bwbrPickerActive) {
+        _bwbrPickerActive = false;
+        unsub();
+        document.removeEventListener('click', onDocClick, true);
+        // 이미지 선택 없이 닫힘 = 취소
+        if (!_pickerGotResult) {
+          _sendResult(null);
+        }
+      }
+    });
+
+    // 60초 안전 타임아웃
+    setTimeout(() => {
+      if (_bwbrPickerActive) {
+        _bwbrPickerActive = false;
+        try { unsub(); } catch(e) {}
+        document.removeEventListener('click', onDocClick, true);
+        if (!_pickerGotResult) _sendResult(null);
+      }
+    }, 60000);
+
+    function _sendResult(url) {
+      document.documentElement.setAttribute(
+        'data-bwbr-native-picker-result',
+        JSON.stringify({ url: url })
+      );
+      window.dispatchEvent(new CustomEvent('bwbr-native-picker-result'));
+    }
+  });
+
+  // ================================================================
   //  진단: Redux 상태 구조 덤프
   //  콘솔: window.dispatchEvent(new CustomEvent('bwbr-dump-redux-keys'))
   // ================================================================
