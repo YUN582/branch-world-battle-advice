@@ -6,6 +6,7 @@
 const UPDATE_CHECK_URL = 'https://api.github.com/repos/YUN582/branch-world-battle-advice/contents/manifest.json';
 const GITHUB_REPO_URL = 'https://github.com/YUN582/branch-world-battle-advice';
 const UPDATE_CHECK_INTERVAL = 4 * 60 * 60 * 1000; // 4시간
+const NM_HOST_NAME = 'com.ccofolia.extension.updater';
 
 // content script에서 chrome.storage.session 접근 허용 (서비스 워커 시작 시마다 보장)
 chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' });
@@ -129,6 +130,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'BWBR_DISMISS_UPDATE') {
     chrome.action.setBadgeText({ text: '' });
     sendResponse({ ok: true });
+    return;
+  }
+
+  // Native Messaging 연결 테스트 (popup → background)
+  if (message.type === 'BWBR_TEST_NATIVE') {
+    chrome.runtime.sendNativeMessage(NM_HOST_NAME, { command: 'ping' }, (response) => {
+      if (chrome.runtime.lastError) {
+        sendResponse({ available: false, error: chrome.runtime.lastError.message });
+      } else {
+        sendResponse({ available: true, response: response });
+      }
+    });
+    return true;
+  }
+
+  // 자동 업데이트 실행 (popup → background → native host)
+  if (message.type === 'BWBR_AUTO_UPDATE') {
+    chrome.runtime.sendNativeMessage(NM_HOST_NAME, { command: 'git-pull' }, (response) => {
+      if (chrome.runtime.lastError) {
+        sendResponse({ success: false, error: chrome.runtime.lastError.message });
+      } else {
+        sendResponse(response);
+      }
+    });
+    return true;
+  }
+
+  // 업데이트 적용 (확장 리로드)
+  if (message.type === 'BWBR_APPLY_UPDATE') {
+    sendResponse({ ok: true });
+    // 약간의 딜레이 후 리로드 (응답이 popup에 도달할 시간 확보)
+    setTimeout(() => {
+      chrome.runtime.reload();
+    }, 300);
     return;
   }
 

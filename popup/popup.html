@@ -39,30 +39,73 @@
     <!-- ── 업데이트 모달 ───────────────────────── -->
     <div class="update-modal-overlay" id="update-modal" style="display:none;">
       <div class="update-modal">
-        <h3>📦 업데이트 방법</h3>
+        <h3>📦 업데이트</h3>
         <div class="update-modal-body">
           <p class="update-version-info" id="update-version-info"></p>
-          <div class="update-method">
-            <strong>방법 1: Git Pull (추천)</strong>
-            <ol>
-              <li>확장 프로그램 폴더를 파일 탐색기에서 엽니다</li>
-              <li>주소창에 <code>cmd</code> 를 입력하고 Enter</li>
-              <li><code>git pull</code> 입력 후 Enter</li>
-              <li>크롬 주소창에 <code>chrome://extensions</code> 입력</li>
-              <li>이 확장 프로그램의 🔄 새로고침 버튼 클릭</li>
-            </ol>
+
+          <!-- 자동 업데이트 (NM 설정 완료 시) -->
+          <div id="update-auto-section" style="display:none;">
+            <div class="update-method">
+              <button class="btn btn-primary btn-full" id="btn-auto-update">⚡ 자동 업데이트</button>
+            </div>
+            <div id="update-progress" style="display:none;">
+              <div class="update-progress-text" id="update-progress-text">업데이트 중...</div>
+              <pre class="update-output" id="update-output"></pre>
+            </div>
+            <div id="update-apply" style="display:none;">
+              <button class="btn btn-primary btn-full" id="btn-apply-update" style="margin-top:8px;">✅ 적용하기 (확장 리로드)</button>
+              <div style="font-size:10px;color:#888;margin-top:4px;text-align:center;">리로드 후 코코포리아 탭을 새로고침하세요</div>
+            </div>
           </div>
-          <div class="update-method">
-            <strong>방법 2: 자동 스크립트</strong>
-            <ol>
-              <li>확장 프로그램 폴더의 <code>update.bat</code> 파일을 더블클릭</li>
-              <li>크롬 주소창에 <code>chrome://extensions</code> 입력</li>
-              <li>이 확장 프로그램의 🔄 새로고침 버튼 클릭</li>
-            </ol>
+
+          <!-- NM 설정 필요 -->
+          <div id="update-setup-section" style="display:none;">
+            <div class="update-method">
+              <strong>⚡ 자동 업데이트 설정 (최초 1회)</strong>
+              <ol>
+                <li>확장 프로그램 폴더의 <code>updater</code> 폴더를 엽니다</li>
+                <li><code>install.bat</code>를 더블클릭합니다</li>
+                <li>아래 ID를 입력합니다:</li>
+              </ol>
+              <div class="ext-id-box">
+                <code id="ext-id-display"></code>
+                <button class="btn-copy-id" id="btn-copy-ext-id" title="복사">📋</button>
+              </div>
+              <div style="margin-top:8px;font-size:11px;color:#888;">
+                설정 후 이 모달을 다시 열면 자동 업데이트를 사용할 수 있습니다.
+              </div>
+            </div>
           </div>
+
+          <!-- NM 확인 중 -->
+          <div id="update-checking-section">
+            <div class="update-method" style="text-align:center;color:#888;">
+              연결 확인 중...
+            </div>
+          </div>
+
+          <!-- 수동 방법 (접기) -->
+          <details class="update-manual-toggle">
+            <summary>수동 업데이트 방법</summary>
+            <div class="update-method">
+              <strong>방법 1: Git Pull</strong>
+              <ol>
+                <li>확장 프로그램 폴더에서 <code>cmd</code> 를 엽니다</li>
+                <li><code>git pull</code> 입력 후 Enter</li>
+                <li><code>chrome://extensions</code> → 새로고침</li>
+              </ol>
+            </div>
+            <div class="update-method">
+              <strong>방법 2: update.bat</strong>
+              <ol>
+                <li>확장 프로그램 폴더의 <code>update.bat</code> 더블클릭</li>
+                <li><code>chrome://extensions</code> → 새로고침</li>
+              </ol>
+            </div>
+          </details>
         </div>
         <div class="update-modal-footer">
-          <button class="btn btn-secondary" id="btn-open-github">GitHub 페이지 열기</button>
+          <button class="btn btn-secondary" id="btn-open-github">GitHub</button>
           <button class="btn btn-primary" id="btn-close-update-modal">닫기</button>
         </div>
       </div>

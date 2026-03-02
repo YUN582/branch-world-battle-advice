@@ -518,30 +518,120 @@
 
   function showUpdateModal(updateInfo) {
     const modal = $('update-modal');
-    const versionInfo = $('update-version-info');
     if (!modal) return;
 
-    if (versionInfo) {
+    // ── 버전 정보 ──
+    const versionInfo = $('update-version-info');
+    if (versionInfo && updateInfo) {
       versionInfo.textContent = '현재 v' + updateInfo.localVersion + ' → 최신 v' + updateInfo.remoteVersion;
+      versionInfo.style.display = '';
+    } else if (versionInfo) {
+      versionInfo.style.display = 'none';
     }
 
     modal.style.display = '';
 
-    // GitHub 페이지 열기
-    const btnGithub = $('btn-open-github');
-    if (btnGithub) {
-      btnGithub.onclick = () => {
-        chrome.tabs.create({ url: updateInfo.repoUrl || 'https://github.com/YUN582/branch-world-battle-advice' });
+    // ── 섹션 초기화 ──
+    const autoSection     = $('update-auto-section');
+    const setupSection    = $('update-setup-section');
+    const checkingSection = $('update-checking-section');
+    const progressDiv     = $('update-progress');
+    const applyDiv        = $('update-apply');
+    const btnAutoUpdate   = $('btn-auto-update');
+
+    if (autoSection) autoSection.style.display = 'none';
+    if (setupSection) setupSection.style.display = 'none';
+    if (checkingSection) checkingSection.style.display = '';
+    if (progressDiv) progressDiv.style.display = 'none';
+    if (applyDiv) applyDiv.style.display = 'none';
+    if (btnAutoUpdate) {
+      btnAutoUpdate.disabled = false;
+      btnAutoUpdate.textContent = '⚡ 자동 업데이트';
+      btnAutoUpdate.style.display = '';
+    }
+
+    // Extension ID 표시
+    const extIdDisplay = $('ext-id-display');
+    if (extIdDisplay) extIdDisplay.textContent = chrome.runtime.id;
+
+    // ── Native Messaging 연결 테스트 ──
+    chrome.runtime.sendMessage({ type: 'BWBR_TEST_NATIVE' }, (response) => {
+      if (checkingSection) checkingSection.style.display = 'none';
+      if (chrome.runtime.lastError || !response || !response.available) {
+        if (setupSection) setupSection.style.display = '';
+      } else {
+        if (autoSection) autoSection.style.display = '';
+      }
+    });
+
+    // ── 자동 업데이트 버튼 ──
+    if (btnAutoUpdate) {
+      btnAutoUpdate.onclick = () => {
+        btnAutoUpdate.disabled = true;
+        btnAutoUpdate.textContent = '⏳ 업데이트 중...';
+        if (progressDiv) progressDiv.style.display = '';
+        const outputPre = $('update-output');
+        const progressText = $('update-progress-text');
+        if (progressText) progressText.textContent = 'git pull 실행 중...';
+        if (outputPre) outputPre.textContent = '';
+
+        chrome.runtime.sendMessage({ type: 'BWBR_AUTO_UPDATE' }, (response) => {
+          if (chrome.runtime.lastError) {
+            if (progressText) progressText.textContent = '❌ 오류 발생';
+            if (outputPre) outputPre.textContent = chrome.runtime.lastError.message;
+            btnAutoUpdate.textContent = '⚡ 재시도';
+            btnAutoUpdate.disabled = false;
+            return;
+          }
+          if (response && response.success) {
+            if (progressText) progressText.textContent = '✅ 업데이트 완료!';
+            if (outputPre) outputPre.textContent = response.output || '';
+            if (applyDiv) applyDiv.style.display = '';
+            btnAutoUpdate.style.display = 'none';
+          } else {
+            if (progressText) progressText.textContent = '❌ 업데이트 실패';
+            if (outputPre) outputPre.textContent = (response && response.output) || (response && response.error) || '알 수 없는 오류';
+            btnAutoUpdate.textContent = '⚡ 재시도';
+            btnAutoUpdate.disabled = false;
+          }
+        });
       };
     }
 
-    // 모달 닫기
+    // ── 적용 버튼 (확장 리로드) ──
+    const btnApply = $('btn-apply-update');
+    if (btnApply) {
+      btnApply.onclick = () => {
+        btnApply.disabled = true;
+        btnApply.textContent = '리로드 중...';
+        chrome.runtime.sendMessage({ type: 'BWBR_APPLY_UPDATE' });
+      };
+    }
+
+    // ── Extension ID 복사 ──
+    const btnCopyId = $('btn-copy-ext-id');
+    if (btnCopyId) {
+      btnCopyId.onclick = () => {
+        navigator.clipboard.writeText(chrome.runtime.id).then(() => {
+          btnCopyId.textContent = '✓';
+          setTimeout(() => { btnCopyId.textContent = '📋'; }, 1500);
+        });
+      };
+    }
+
+    // ── GitHub / 닫기 ──
+    const btnGithub = $('btn-open-github');
+    if (btnGithub) {
+      btnGithub.onclick = () => {
+        chrome.tabs.create({ url: (updateInfo && updateInfo.repoUrl) || 'https://github.com/YUN582/branch-world-battle-advice' });
+      };
+    }
+
     const btnClose = $('btn-close-update-modal');
     if (btnClose) {
       btnClose.onclick = () => { modal.style.display = 'none'; };
     }
 
-    // 오버레이 클릭으로도 닫기
     modal.addEventListener('click', (e) => {
       if (e.target === modal) modal.style.display = 'none';
     });
