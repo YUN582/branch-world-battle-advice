@@ -85,8 +85,11 @@
         width: '20px', height: '24px', display: 'flex', alignItems: 'center',
         justifyContent: 'center', cursor: 'grab', color: 'rgba(255,255,255,0.4)',
         fontSize: '14px', userSelect: 'none', zIndex: '5',
-        borderRadius: '3px', transition: 'color .15s, background .15s'
+        borderRadius: '3px', transition: 'color .15s, background .15s, opacity .3s',
+        opacity: '0'
       });
+      // 페이드인: 삽입 후 rAF로 opacity 전환
+      requestAnimationFrame(() => { handle.style.opacity = '1'; });
       handle.addEventListener('mouseenter', () => {
         handle.style.color = 'rgba(255,255,255,0.8)';
         handle.style.background = 'rgba(255,255,255,0.08)';

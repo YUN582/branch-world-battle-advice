@@ -1,5 +1,5 @@
 /**
- * panel-manager.js — 스크린/마커 패널 + 시나리오 텍스트 + 컷인 일괄 관리
+ * panel-manager.js — 스크린/마커 패널 + 시나리오 텍스트 + 컷인 + 캐릭터 일괄 관리
  *
  * 패널 목록(MuiPaper-elevation6) 감지 시:
  * - 헤더에 "선택" 버튼 주입 (→ 선택 모드 토글)
@@ -7,6 +7,8 @@
  * - 하단 액션바:
  *   · 스크린/마커: 전체 선택, 표시 전환, 삭제
  *   · 시나리오 텍스트/컷인: 전체 선택, 복제, 삭제
+ *   · 캐릭터: 전체 선택, 스테이터스 공개/비공개, 목록 표시/숨김,
+ *     꺼내기/집어넣기, 복제, 삭제
  *
  * ★ 각 패널별 독립 상태 (여러 패널 동시 지원)
  * ★ 선택 모드: document 캡처 단계에서 React 이벤트 완전 차단
@@ -28,7 +30,7 @@
         selectMode: false,
         selected: new Set(),
         itemMap: new Map(),   // domListItem → reduxData
-        type: 'screens'       // 'screens' | 'markers' | 'notes' | 'cutins'
+        type: 'screens'       // 'screens' | 'markers' | 'notes' | 'cutins' | 'characters'
       };
       _states.set(paper, s);
     }
@@ -92,6 +94,8 @@
         results.push({ paper, title: t, type: 'notes' });
       } else if (t.includes('컷인') || t.includes('カットイン')) {
         results.push({ paper, title: t, type: 'cutins' });
+      } else if (t.includes('캐릭터') || t.includes('キャラクター')) {
+        results.push({ paper, title: t, type: 'characters' });
       }
     }
     return results;
@@ -163,6 +167,16 @@
     } catch (e) { console.error(TAG, '컷인 데이터 로드 실패:', e.message); return []; }
   }
 
+  async function loadCharData() {
+    try {
+      const result = await BWBR_Bridge.request(
+        'bwbr-request-char-list', 'bwbr-char-list-data', {},
+        { sendAttr: 'data-bwbr-request-char-list', recvAttr: 'data-bwbr-char-list-data', timeout: 5000 }
+      );
+      return result?.items || [];
+    } catch (e) { console.error(TAG, '캐릭터 데이터 로드 실패:', e.message); return []; }
+  }
+
   /**
    * 배치 작업 실행
    * 단계별 로그로 실패 지점 특정
@@ -170,6 +184,7 @@
   async function doBatchOp(panelType, op, ids, extra) {
     const evSend = panelType === 'notes' ? 'bwbr-note-batch-op'
       : panelType === 'cutins' ? 'bwbr-cutin-batch-op'
+      : panelType === 'characters' ? 'bwbr-char-batch-op'
       : panelType === 'markers' ? 'bwbr-marker-batch-op' : 'bwbr-panel-batch-op';
     const sendAttr = 'data-' + evSend;
     const recvAttr = sendAttr + '-result';
@@ -275,6 +290,28 @@
     }
   }
 
+  function buildCharMap(paper, chars) {
+    const s = getState(paper);
+    const listItems = getListItems(paper);
+    s.itemMap.clear();
+    const usedIds = new Set();
+
+    for (const domItem of listItems) {
+      const nameEl = domItem.querySelector('.MuiListItemText-root span');
+      const domName = nameEl ? nameEl.textContent.trim() : '';
+      if (!domName) continue;
+      for (const ch of chars) {
+        if (usedIds.has(ch._id)) continue;
+        if (ch.name === domName) { s.itemMap.set(domItem, ch); usedIds.add(ch._id); break; }
+      }
+    }
+    const unmatched = [...listItems].filter(li => !s.itemMap.has(li));
+    const leftover  = chars.filter(c => !usedIds.has(c._id));
+    for (let i = 0; i < Math.min(unmatched.length, leftover.length); i++) {
+      s.itemMap.set(unmatched[i], leftover[i]);
+    }
+  }
+
   // buildMarkerMap 삭제 — 마커도 buildItemMap 사용 (이미지+z/w/h+순서 폴백)
 
   /** 순서 기반 매핑 (마커 등 고유 식별자가 DOM에 없는 경우) */
@@ -295,6 +332,7 @@
     let items;
     if (s.type === 'notes') items = await loadNoteData();
     else if (s.type === 'cutins') items = await loadCutinData();
+    else if (s.type === 'characters') items = await loadCharData();
     else if (s.type === 'markers') items = await loadMarkerData();
     else {
       const all = await loadPanelData();
@@ -302,6 +340,7 @@
     }
     if (s.type === 'notes') buildNoteMap(paper, items);
     else if (s.type === 'cutins') buildCutinMap(paper, items);
+    else if (s.type === 'characters') buildCharMap(paper, items);
     else if (s.type === 'markers') buildOrderMap(paper, items);
     else buildItemMap(paper, items);
   }
@@ -381,6 +420,8 @@
       items = await loadNoteData();
     } else if (s.type === 'cutins') {
       items = await loadCutinData();
+    } else if (s.type === 'characters') {
+      items = await loadCharData();
     } else if (s.type === 'markers') {
       items = await loadMarkerData();
     } else {
@@ -391,6 +432,7 @@
 
     if (s.type === 'notes') { buildNoteMap(paper, items); }
     else if (s.type === 'cutins') { buildCutinMap(paper, items); }
+    else if (s.type === 'characters') { buildCharMap(paper, items); }
     else if (s.type === 'markers') { buildOrderMap(paper, items); }
     else                    { buildItemMap(paper, items); }
     injectSelectButton(paper);
@@ -630,6 +672,40 @@
       ));
     }
 
+    // 캐릭터 전용 버튼들
+    if (s.type === 'characters') {
+      // 스테이터스 비공개 (secret 토글)
+      bar.appendChild(makeIconBtn('스테이터스 공개/비공개',
+        '<path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10H7v-2h10v2z"/>',
+        async () => {
+          if (s.selected.size === 0) return;
+          const res = await doBatchOp(s.type, 'toggleSecret', [...s.selected]);
+          if (res?.success) { console.log(TAG, '✅', res.count + '개 스테이터스 전환'); watchListAndRefresh(paper); }
+          else { console.error(TAG, '스테이터스 전환 실패:', res?.error); }
+        }
+      ));
+      // 화면 캐릭터 목록 표시/숨김 (hideStatus 토글)
+      bar.appendChild(makeIconBtn('목록 표시/숨김',
+        '<path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>',
+        async () => {
+          if (s.selected.size === 0) return;
+          const res = await doBatchOp(s.type, 'toggleHideStatus', [...s.selected]);
+          if (res?.success) { console.log(TAG, '✅', res.count + '개 목록 표시 전환'); watchListAndRefresh(paper); }
+          else { console.error(TAG, '목록 표시 전환 실패:', res?.error); }
+        }
+      ));
+      // 꺼내기/집어넣기 (active 토글)
+      bar.appendChild(makeIconBtn('꺼내기/집어넣기',
+        '<path d="M15 3l2.3 2.3-2.89 2.87 1.42 1.42L18.7 6.7 21 9V3h-6zM3 9l2.3-2.3 2.87 2.89 1.42-1.42L6.7 5.3 9 3H3v6zm6 12l-2.3-2.3 2.89-2.87-1.42-1.42L5.3 17.3 3 15v6h6zm12-6l-2.3 2.3-2.87-2.89-1.42 1.42 2.89 2.87L15 21h6v-6z"/>',
+        async () => {
+          if (s.selected.size === 0) return;
+          const res = await doBatchOp(s.type, 'toggleActive', [...s.selected]);
+          if (res?.success) { console.log(TAG, '✅', res.count + '개 꺼내기/집어넣기 전환'); watchListAndRefresh(paper); }
+          else { console.error(TAG, '꺼내기/집어넣기 실패:', res?.error); }
+        }
+      ));
+    }
+
     // 복제
     bar.appendChild(makeIconBtn('복제',
       '<path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>',
@@ -649,7 +725,7 @@
       '<path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>',
       async () => {
         if (s.selected.size === 0) return;
-        const label = s.type === 'notes' ? '텍스트' : s.type === 'cutins' ? '컷인' : s.type === 'markers' ? '마커' : '패널';
+        const label = s.type === 'notes' ? '텍스트' : s.type === 'cutins' ? '컷인' : s.type === 'characters' ? '캐릭터' : s.type === 'markers' ? '마커' : '패널';
         if (!confirm(s.selected.size + '개 ' + label + '을(를) 삭제하시겠습니까?')) return;
 
         // 낙관적 UI: 서버 응답 전 선택된 아이템 즉시 숨기기

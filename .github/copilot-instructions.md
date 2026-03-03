@@ -27,6 +27,17 @@
    - After confirming the structure, update `COCOFOLIA_DATA_API.md` with any new findings.
    - This prevents wasted iterations from wrong assumptions (e.g., assuming grid is on parent when it's on a child div).
 
+9. **Never trust field names at face value — verify actual behavior**: ccfolia's internal field names are often misleading (e.g., `hideStatus` does NOT hide status — it hides the character from the screen character list). Before assigning UI labels or implementing toggle logic based on a field name:
+   - **Write a diagnostic script** that toggles the field on a single test character and asks the user to observe the actual UI effect.
+   - **Cross-reference with ccfolia's own edit dialog** to confirm which checkbox/toggle corresponds to which field.
+   - **Never derive UI label text from the field name alone.** The field name is an internal implementation detail, not a description of user-facing behavior.
+   - Document confirmed field-to-UI mappings in `COCOFOLIA_DATA_API.md`.
+
+10. **When debugging, question your own assumptions first**: If the user reports something is broken and diagnostics show the code "works" (e.g., Firestore write succeeds, Redux value changes), do NOT dismiss the user's report. Instead:
+    - Consider that your understanding of which field controls which behavior may be wrong.
+    - Re-verify the field-to-behavior mapping before concluding the code is correct.
+    - The user's observation of the actual UI is the ground truth — not your interpretation of field names or log output.
+
 ## Project Info
 
 - Chrome Extension MV3 ("Ccofolia Extension" / CE, for ccfolia.com TRPG)

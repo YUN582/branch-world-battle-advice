@@ -3449,6 +3449,177 @@
   }
 
   // ================================================================
+  //  캐릭터 목록 조회 (ID + 주요 속성 포함)
+  //  bwbr-request-char-list → bwbr-char-list-data
+  // ================================================================
+  window.addEventListener('bwbr-request-char-list', () => {
+    document.documentElement.removeAttribute('data-bwbr-request-char-list');
+
+    const respond = (d) => {
+      document.documentElement.setAttribute('data-bwbr-char-list-data', JSON.stringify(d));
+      window.dispatchEvent(new CustomEvent('bwbr-char-list-data'));
+    };
+
+    if (!reduxStore) return respond({ items: [] });
+    const state = reduxStore.getState();
+    const rc = state.entities?.roomCharacters;
+    if (!rc?.ids) return respond({ items: [] });
+
+    const items = rc.ids
+      .map(id => rc.entities[id])
+      .filter(it => !!it)
+      .map(it => ({
+        _id:        it._id,
+        name:       it.name || '',
+        iconUrl:    it.iconUrl || '',
+        active:     !!it.active,
+        invisible:  !!it.invisible,
+        hideStatus: !!it.hideStatus,
+        secret:     !!it.secret,
+        createdAt:  it.createdAt || 0
+      }));
+
+    respond({ items });
+  });
+
+  // ================================================================
+  //  캐릭터 일괄 조작
+  //  bwbr-char-batch-op → bwbr-char-batch-op-result
+  //  op: 'toggleHideStatus' | 'toggleSecret' | 'toggleActive' | 'duplicate' | 'delete'
+  // ================================================================
+  function _charBatchHandler() {
+    const raw = document.documentElement.getAttribute('data-bwbr-char-batch-op');
+    if (!raw) return;
+    document.documentElement.removeAttribute('data-bwbr-char-batch-op');
+    const { op, ids } = JSON.parse(raw);
+    console.log('[CE] [CharBatch] op:', op, 'ids:', ids?.length);
+    _charBatchHandlerAsync(op, ids);
+  }
+  window.addEventListener('bwbr-char-batch-op', _charBatchHandler);
+  document.addEventListener('bwbr-char-batch-op', _charBatchHandler);
+  async function _charBatchHandlerAsync(op, ids) {
+
+    const respond = (d) => {
+      document.documentElement.setAttribute('data-bwbr-char-batch-op-result', JSON.stringify(d));
+      window.dispatchEvent(new CustomEvent('bwbr-char-batch-op-result'));
+    };
+
+    try {
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) throw new Error('Firestore SDK 없음');
+      if (!reduxStore) throw new Error('Redux Store 없음');
+
+      const state = reduxStore.getState();
+      const roomId = state.app?.state?.roomId
+        || window.location.pathname.match(/rooms\/([^/]+)/)?.[1];
+      if (!roomId) throw new Error('방 ID를 찾을 수 없음');
+
+      const charsCol = sdk.collection(sdk.db, 'rooms', roomId, 'characters');
+      let count = 0;
+
+      switch (op) {
+        case 'toggleHideStatus': {
+          if (!ids?.length) throw new Error('대상 ID 없음');
+          for (const id of ids) {
+            const ch = state.entities?.roomCharacters?.entities?.[id];
+            if (!ch) continue;
+            const ref = sdk.doc(charsCol, id);
+            const fullDoc = {};
+            for (const k of Object.keys(ch)) { if (k === '_id') continue; fullDoc[k] = ch[k]; }
+            fullDoc.hideStatus = !ch.hideStatus;
+            fullDoc.updatedAt = Date.now();
+            try { await sdk.setDoc(ref, fullDoc); count++; } catch (e) { console.error(`[CE] toggleHideStatus 실패: ${ch.name}`, e); }
+          }
+          _dbg(`%c[CE]%c ✅ 캐릭터 ${count}개 목록 표시/숨김 전환`,
+            'color: #4caf50; font-weight: bold;', 'color: inherit;');
+          respond({ success: true, count });
+          break;
+        }
+
+        case 'toggleSecret': {
+          if (!ids?.length) throw new Error('대상 ID 없음');
+          for (const id of ids) {
+            const ch = state.entities?.roomCharacters?.entities?.[id];
+            if (!ch) continue;
+            const ref = sdk.doc(charsCol, id);
+            const fullDoc = {};
+            for (const k of Object.keys(ch)) { if (k === '_id') continue; fullDoc[k] = ch[k]; }
+            fullDoc.secret = !ch.secret;
+            fullDoc.updatedAt = Date.now();
+            try { await sdk.setDoc(ref, fullDoc); count++; } catch (e) { console.error(`[CE] toggleSecret 실패: ${ch.name}`, e); }
+          }
+          _dbg(`%c[CE]%c ✅ 캐릭터 ${count}개 스테이터스 공개/비공개 전환`,
+            'color: #4caf50; font-weight: bold;', 'color: inherit;');
+          respond({ success: true, count });
+          break;
+        }
+
+        case 'toggleActive': {
+          if (!ids?.length) throw new Error('대상 ID 없음');
+          for (const id of ids) {
+            const ch = state.entities?.roomCharacters?.entities?.[id];
+            if (!ch) continue;
+            const ref = sdk.doc(charsCol, id);
+            const fullDoc = {};
+            for (const k of Object.keys(ch)) { if (k === '_id') continue; fullDoc[k] = ch[k]; }
+            fullDoc.active = !ch.active;
+            fullDoc.updatedAt = Date.now();
+            try { await sdk.setDoc(ref, fullDoc); count++; } catch (e) { console.error(`[CE] toggleActive 실패: ${ch.name}`, e); }
+          }
+          _dbg(`%c[CE]%c ✅ 캐릭터 ${count}개 꺼내기/집어넣기 전환`,
+            'color: #4caf50; font-weight: bold;', 'color: inherit;');
+          respond({ success: true, count });
+          break;
+        }
+
+        case 'duplicate': {
+          if (!ids?.length) throw new Error('대상 ID 없음');
+          const ops = [];
+          for (const id of ids) {
+            const ch = state.entities?.roomCharacters?.entities?.[id];
+            if (!ch) continue;
+            const newRef = sdk.doc(charsCol);
+            const copy = {};
+            for (const k of Object.keys(ch)) {
+              if (k === '_id') continue;
+              copy[k] = ch[k];
+            }
+            copy.speaking = false;
+            copy.createdAt = Date.now();
+            copy.updatedAt = Date.now();
+            ops.push({ type: 'set', ref: newRef, data: copy });
+          }
+          count = await _batchCommit(sdk, ops);
+          _dbg(`%c[CE]%c ✅ 캐릭터 ${count}개 복제`,
+            'color: #2196f3; font-weight: bold;', 'color: inherit;');
+          respond({ success: true, count });
+          break;
+        }
+
+        case 'delete': {
+          if (!ids?.length) throw new Error('대상 ID 없음');
+          if (!sdk.deleteDoc) throw new Error('deleteDoc 함수 없음');
+          const ops = [];
+          for (const id of ids) {
+            ops.push({ type: 'delete', ref: sdk.doc(charsCol, id) });
+          }
+          count = await _batchCommit(sdk, ops);
+          _dbg(`%c[CE]%c ✅ 캐릭터 ${count}개 삭제`,
+            'color: #f44336; font-weight: bold;', 'color: inherit;');
+          respond({ success: true, count });
+          break;
+        }
+
+        default:
+          throw new Error(`알 수 없는 캐릭터 배치 작업: ${op}`);
+      }
+    } catch (err) {
+      console.error(`[CE] 캐릭터 배치 작업(${op}) 실패:`, err.message);
+      respond({ success: false, error: err.message });
+    }
+  }
+
+  // ================================================================
   //  현재 활성 씬 ID 탐색 헬퍼 (여러 경로 시도)
   // ================================================================
   function _findCurrentSceneId() {

@@ -333,10 +333,10 @@ rc.ids.map(id => rc.entities[id]).find(c => c.name?.includes('캐릭터이름'))
   x: 0, y: 0, z: 0,                  // 맵 좌표
   angle: 0,                           // 회전 각도
   width: 4, height: 4,                // 토큰 크기
-  active: true,                       // 맵에 활성화 여부
-  secret: false,                      // 비밀 여부
-  invisible: false,                   // 숨김 여부
-  hideStatus: false,                  // 상태바 숨김
+  active: true,                       // 맵에 활성화 여부 (꺼내기/집어넣기)
+  secret: false,                      // ⚠️ "스테이터스를 비공개로 하기" (ccfolia UI label)
+  invisible: false,                   // ⚠️ 용도 불명 — setDoc으로 변경해도 UI에 반영 안 됨 (사용 금지)
+  hideStatus: false,                  // ⚠️ "화면 캐릭터 목록에 표시하지 않기" (이름과 실제 기능 불일치!)
   color: "#...",                      // 캐릭터 색상
   roomId: null,                       // (null인 경우 있음, URL에서 획득)
   commands: "...",                    // 채팅 명령어 텍스트
