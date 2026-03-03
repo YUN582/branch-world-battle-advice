@@ -1001,6 +1001,8 @@
 
   /* ── 페이지 힌트 주입 (주사위 버튼 바 영역) ──────────── */
   function injectHint() {
+    // 비활성화 상태면 힌트를 주입하지 않음
+    if (!enabled) return;
     // 방(/rooms/*) 페이지에서만 힌트 표시 — 홈 화면 등에서는 표시하지 않음
     if (!window.location.pathname.match(/^\/rooms\//)) return;
 
@@ -1029,7 +1031,15 @@
 
   /* ── 외부 API ─────────────────────────────────────── */
   window.BWBR_AutoComplete = {
-    setEnabled(v) { enabled = !!v; if (!v) { _hideHash(); _hideBang(); _hideAt(); } },
+    setEnabled(v) {
+      enabled = !!v;
+      if (!v) { _hideHash(); _hideBang(); _hideAt(); }
+      // 힌트 UI도 연동
+      const hint = document.querySelector('.bwbr-hint');
+      if (hint) hint.style.display = v ? '' : 'none';
+      // 비활성→활성 전환 시 힌트가 아직 없으면 주입 시도
+      if (v && !hint) injectHint();
+    },
     isEnabled()   { return enabled; },
     isHashActive() { return _hashActive; },
     isBangActive() { return _bangActive; },

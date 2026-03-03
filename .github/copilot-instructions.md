@@ -157,7 +157,6 @@ Combat stat deduction (주 행동🔺, 보조 행동🔹, etc.) is implemented d
 |---|---|
 | `modules/branch-world/manifest.json` | 가지세계 모듈 — 합 전투 설정 (templates, timing, sounds, rules, patterns, traits) |
 | `modules/triggers/manifest.json` | 트리거 자동화 모듈 — 기본 트리거 프리셋 |
-| `modules/triggers/defaults.json` | 트리거 프리셋 원본 (fallback용) |
 
 ### Reference Documents
 
