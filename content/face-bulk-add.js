@@ -2,7 +2,8 @@
  * face-bulk-add.js  — 표정(faces) 일괄 추가
  *
  * 캐릭터 편집 다이얼로그가 열려 있는 상태에서 이미지 피커가 열리면
- * 자동으로 다중 선택 모드가 활성화된다.
+ * 툴바에 "선택 추가" 버튼이 주입된다 (기본은 단일 선택).
+ * "선택 추가" 클릭 시 다중 선택 모드가 활성화된다.
  * 네이티브 "선택 삭제" 스타일과 동일한 SVG 체크 서클을 사용한다.
  *
  * ● 네이티브 "선택 삭제" 모드와 공존:
@@ -260,6 +261,64 @@
     // 추가 버튼 숨기기
     const addBtn = document.querySelector('.bwbr-face-add-btn');
     if (addBtn) addBtn.style.display = deleteMode ? 'none' : '';
+    // "선택 추가" 버튼 숨기기
+    const bulkBtn = picker.querySelector('.bwbr-bulk-add-btn');
+    if (bulkBtn) bulkBtn.style.display = deleteMode ? 'none' : '';
+  }
+
+  /* ══════════════════════════════════════════════════════════
+   *  "선택 추가" 툴바 버튼 — 복수 선택 모드 진입/종료
+   * ══════════════════════════════════════════════════════════ */
+
+  function injectBulkAddButton(picker) {
+    const toolbar = picker.querySelector('.MuiToolbar-root');
+    if (!toolbar) {
+      // 툴바가 아직 없으면 재시도
+      setTimeout(() => { if (getPickerDialog()) injectBulkAddButton(picker); }, 300);
+      return;
+    }
+    if (toolbar.querySelector('.bwbr-bulk-add-btn')) return;
+
+    // 네이티브 "선택 삭제" 버튼 찾기 (스타일 + 위치 참조)
+    let refBtn = null;
+    for (const b of toolbar.querySelectorAll('button')) {
+      const t = b.textContent.trim();
+      if (t.includes('삭제') || t.includes('削除')) { refBtn = b; break; }
+    }
+
+    const btn = document.createElement('button');
+    btn.className = 'bwbr-bulk-add-btn';
+    // 네이티브 버튼 클래스 복사 → 동일 MUI 스타일 적용
+    if (refBtn) {
+      for (const cls of refBtn.classList) {
+        if (!cls.startsWith('bwbr')) btn.classList.add(cls);
+      }
+    }
+    btn.textContent = '선택 추가';
+
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (isNativeDeleteMode(picker)) return;
+
+      if (_active) {
+        disableMultiSelect();
+        btn.textContent = '선택 추가';
+      } else {
+        enableMultiSelect(picker);
+        btn.textContent = '선택 완료';
+      }
+    });
+
+    if (refBtn) refBtn.parentElement.insertBefore(btn, refBtn);
+    else toolbar.appendChild(btn);
+  }
+
+  /** 다중 선택 모드 비활성화 (툴바 버튼은 유지) */
+  function disableMultiSelect() {
+    _active = false;
+    _selected.clear();
+    if (_pickerObs) { _pickerObs.disconnect(); _pickerObs = null; }
+    document.querySelectorAll('.bwbr-img-overlay, .bwbr-face-add-btn').forEach(el => el.remove());
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -297,7 +356,9 @@
       window.alert('표정 추가 실패: ' + err.message);
     }
 
-    fullCleanup();
+    disableMultiSelect();
+    const bulkBtn = document.querySelector('.bwbr-bulk-add-btn');
+    if (bulkBtn) bulkBtn.textContent = '선택 추가';
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -308,11 +369,11 @@
     _active = false;
     _selected.clear();
     if (_pickerObs) { _pickerObs.disconnect(); _pickerObs = null; }
-    document.querySelectorAll('.bwbr-img-overlay, .bwbr-face-add-btn').forEach(el => el.remove());
+    document.querySelectorAll('.bwbr-img-overlay, .bwbr-face-add-btn, .bwbr-bulk-add-btn').forEach(el => el.remove());
   }
 
   /* ══════════════════════════════════════════════════════════
-   *  메인 옵저버: 피커 등장 → 자동 다중 선택
+   *  메인 옵저버: 피커 등장 → 툴바 버튼 주입
    * ══════════════════════════════════════════════════════════ */
 
   let _lastPickerState = false;
@@ -333,8 +394,8 @@
     // 캐릭터 편집 다이얼로그가 없으면 무시
     if (!getCharEditDialog()) return;
 
-    // 자동 활성화
-    enableMultiSelect(picker);
+    // 툴바에 "선택 추가" 버튼 주입 (기본: 단일 선택)
+    injectBulkAddButton(picker);
   });
 
   _mainObs.observe(document.body, { childList: true, subtree: true });

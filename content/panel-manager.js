@@ -1,12 +1,12 @@
 /**
- * panel-manager.js — 스크린/마커 패널 + 시나리오 텍스트 일괄 관리
+ * panel-manager.js — 스크린/마커 패널 + 시나리오 텍스트 + 컷인 일괄 관리
  *
  * 패널 목록(MuiPaper-elevation6) 감지 시:
  * - 헤더에 "선택" 버튼 주입 (→ 선택 모드 토글)
  * - 선택 모드: 아이템 클릭 → 파란 행 하이라이트로 선택/해제
  * - 하단 액션바:
  *   · 스크린/마커: 전체 선택, 표시 전환, 삭제
- *   · 시나리오 텍스트: 전체 선택, 삭제 (표시 전환 없음)
+ *   · 시나리오 텍스트/컷인: 전체 선택, 복제, 삭제
  *
  * ★ 각 패널별 독립 상태 (여러 패널 동시 지원)
  * ★ 선택 모드: document 캡처 단계에서 React 이벤트 완전 차단
@@ -28,7 +28,7 @@
         selectMode: false,
         selected: new Set(),
         itemMap: new Map(),   // domListItem → reduxData
-        type: 'screens'       // 'screens' | 'markers' | 'notes'
+        type: 'screens'       // 'screens' | 'markers' | 'notes' | 'cutins'
       };
       _states.set(paper, s);
     }
@@ -90,6 +90,8 @@
       } else if (t.includes('시나리오') || t.includes('텍스트') ||
                  t.includes('シナリオ') || t.includes('テキスト')) {
         results.push({ paper, title: t, type: 'notes' });
+      } else if (t.includes('컷인') || t.includes('カットイン')) {
+        results.push({ paper, title: t, type: 'cutins' });
       }
     }
     return results;
@@ -151,12 +153,23 @@
     } catch (e) { console.error(TAG, '마커 데이터 로드 실패:', e.message); return []; }
   }
 
+  async function loadCutinData() {
+    try {
+      const result = await BWBR_Bridge.request(
+        'bwbr-request-cutin-list', 'bwbr-cutin-list-data', {},
+        { sendAttr: 'data-bwbr-request-cutin-list', recvAttr: 'data-bwbr-cutin-list-data', timeout: 5000 }
+      );
+      return result?.items || [];
+    } catch (e) { console.error(TAG, '컷인 데이터 로드 실패:', e.message); return []; }
+  }
+
   /**
    * 배치 작업 실행
    * 단계별 로그로 실패 지점 특정
    */
   async function doBatchOp(panelType, op, ids, extra) {
     const evSend = panelType === 'notes' ? 'bwbr-note-batch-op'
+      : panelType === 'cutins' ? 'bwbr-cutin-batch-op'
       : panelType === 'markers' ? 'bwbr-marker-batch-op' : 'bwbr-panel-batch-op';
     const sendAttr = 'data-' + evSend;
     const recvAttr = sendAttr + '-result';
@@ -240,6 +253,28 @@
     }
   }
 
+  function buildCutinMap(paper, cutins) {
+    const s = getState(paper);
+    const listItems = getListItems(paper);
+    s.itemMap.clear();
+    const usedIds = new Set();
+
+    for (const domItem of listItems) {
+      const nameEl = domItem.querySelector('.MuiListItemText-root span');
+      const domName = nameEl ? nameEl.textContent.trim() : '';
+      if (!domName) continue;
+      for (const cutin of cutins) {
+        if (usedIds.has(cutin._id)) continue;
+        if (cutin.name === domName) { s.itemMap.set(domItem, cutin); usedIds.add(cutin._id); break; }
+      }
+    }
+    const unmatched = [...listItems].filter(li => !s.itemMap.has(li));
+    const leftover  = cutins.filter(c => !usedIds.has(c._id));
+    for (let i = 0; i < Math.min(unmatched.length, leftover.length); i++) {
+      s.itemMap.set(unmatched[i], leftover[i]);
+    }
+  }
+
   // buildMarkerMap 삭제 — 마커도 buildItemMap 사용 (이미지+z/w/h+순서 폴백)
 
   /** 순서 기반 매핑 (마커 등 고유 식별자가 DOM에 없는 경우) */
@@ -259,12 +294,14 @@
     const s = getState(paper);
     let items;
     if (s.type === 'notes') items = await loadNoteData();
+    else if (s.type === 'cutins') items = await loadCutinData();
     else if (s.type === 'markers') items = await loadMarkerData();
     else {
       const all = await loadPanelData();
       items = all.filter(it => it.type === 'object');
     }
     if (s.type === 'notes') buildNoteMap(paper, items);
+    else if (s.type === 'cutins') buildCutinMap(paper, items);
     else if (s.type === 'markers') buildOrderMap(paper, items);
     else buildItemMap(paper, items);
   }
@@ -342,6 +379,8 @@
     let items;
     if (s.type === 'notes') {
       items = await loadNoteData();
+    } else if (s.type === 'cutins') {
+      items = await loadCutinData();
     } else if (s.type === 'markers') {
       items = await loadMarkerData();
     } else {
@@ -351,6 +390,7 @@
     if (!items.length) { console.log(TAG, '아이템 0개 — 주입 생략'); return; }
 
     if (s.type === 'notes') { buildNoteMap(paper, items); }
+    else if (s.type === 'cutins') { buildCutinMap(paper, items); }
     else if (s.type === 'markers') { buildOrderMap(paper, items); }
     else                    { buildItemMap(paper, items); }
     injectSelectButton(paper);
@@ -609,7 +649,7 @@
       '<path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>',
       async () => {
         if (s.selected.size === 0) return;
-        const label = s.type === 'notes' ? '텍스트' : s.type === 'markers' ? '마커' : '패널';
+        const label = s.type === 'notes' ? '텍스트' : s.type === 'cutins' ? '컷인' : s.type === 'markers' ? '마커' : '패널';
         if (!confirm(s.selected.size + '개 ' + label + '을(를) 삭제하시겠습니까?')) return;
 
         // 낙관적 UI: 서버 응답 전 선택된 아이템 즉시 숨기기
@@ -726,15 +766,22 @@
 
   /* ══════════════════════════════════════════════════════════
    *  메인 옵저버 — 모든 패널 동시 감지
+   *  디바운스로 드래그/리사이즈 중 과도한 콜백 방지
    * ══════════════════════════════════════════════════════════ */
 
+  let _obsDebounce = 0;
+
   const _mainObs = new MutationObserver(() => {
-    const panels = findAllPanelLists();
-    for (const { paper, type } of panels) {
-      if (!paper.dataset.bwbrInjected) {
-        setTimeout(() => inject(paper, type), 250);
+    if (_obsDebounce) return;
+    _obsDebounce = requestAnimationFrame(() => {
+      _obsDebounce = 0;
+      const panels = findAllPanelLists();
+      for (const { paper, type } of panels) {
+        if (!paper.dataset.bwbrInjected) {
+          setTimeout(() => inject(paper, type), 250);
+        }
       }
-    }
+    });
   });
 
   _mainObs.observe(document.body, { childList: true, subtree: true });

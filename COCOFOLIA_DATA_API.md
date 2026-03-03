@@ -2232,14 +2232,27 @@ function paintCheck(svg, selected) {
 >
 > **기준**: 2026-03-03 (콘솔 진단)
 
-#### 컨테이너 구조
+#### 컨테이너 구조 (react-rnd 3단계)
+
+> **기준**: 2026-03-04 (콘솔 진단 — 조상 체인 분석)
+>
+> react-rnd가 **3단계 DOM**을 생성합니다. 크기 변경 시 innerResize만 수정해야 합니다.
+> outerDrag의 width/height나 transform을 직접 수정하면 react-rnd 내부 상태와
+> 불일치하여 **첫 드래그 시 위치가 튀는 현상**이 발생합니다.
 
 ```
 body
-└─ DIV (position: absolute, w×h = 패널 크기)
-   └─ DIV (빈 래퍼)
-      └─ DIV.MuiPaper-root.MuiPaper-elevation6.sc-btlehR (flex, 높이 ≈ 861px)
-         ├─ DIV[role="button"] (헤더 래퍼, 48px)
+└─ DIV [outerDrag] (position: absolute, transform: translate3d(Xpx, Ypx, 0px))
+   │   → react-rnd 드래그/위치 관리. 내부 상태로 위치 추적.
+   │   → ⚠ style.width/height/transform을 외부에서 직접 수정하면 안 됨
+   │
+   └─ DIV [innerResize] (position: absolute, style.width/height = 실제 패널 크기)
+      │   → react-rnd 리사이즈 핸들 + 실제 보이는 크기를 결정
+      │   → ✅ style.width/height만 수정하면 안전하게 크기 변경 가능
+      │   → 기본값 예시: 320×280 (네이티브)
+      │
+      └─ DIV.MuiPaper-root.MuiPaper-elevation6.sc-btlehR (position: static, flex)
+         ├─ DIV[role="button"] (헤더 래퍼, 48px — 드래그 핸들)
          │   └─ HEADER.MuiAppBar-root.MuiAppBar-colorTransparent (elevation0, sticky)
          │       └─ DIV.MuiToolbar-root.MuiToolbar-dense.css-6tsndk
          │           ├─ H6.MuiTypography-subtitle2 → "스크린 패널 목록" / "마커 패널 목록"
@@ -2248,6 +2261,21 @@ body
          └─ DIV.MuiDialogContent-root.scrollable-list (overflow: auto, 스크롤 영역)
              └─ (리스트 컨테이너)
                 └─ DIV.MuiListItem-root × N
+```
+
+#### react-rnd 크기 변경 가이드
+
+```js
+// ✅ 올바른 방법: innerResize만 수정
+const innerResize = paper.parentElement; // position:absolute인 중간 div
+while (innerResize !== outerDrag && getComputedStyle(innerResize).position !== 'absolute')
+  innerResize = innerResize.parentElement;
+innerResize.style.width = '700px';
+innerResize.style.height = '900px';
+
+// ❌ 잘못된 방법: outerDrag 수정 → 드래그 시 위치 튐
+outerDrag.style.width = '700px';  // react-rnd 내부 상태와 불일치
+outerDrag.style.transform = '...'; // 첫 드래그 시 원래 위치로 점프
 ```
 
 #### 리스트 아이템 구조

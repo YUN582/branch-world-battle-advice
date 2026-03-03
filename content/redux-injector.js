@@ -2019,10 +2019,18 @@
       }));
       const mergedFaces = [...currentFaces, ...newFaces];
 
-      // Firestore 업데이트
+      // Firestore 업데이트 — Redux에만 반영된 미저장 편집도 함께 보존
+      // (프로필 이미지 변경 등이 편집 다이얼로그에서 아직 미커밋 상태일 수 있음)
       const charsCol = sdk.collection(sdk.db, 'rooms', roomId, 'characters');
       const charRef = sdk.doc(charsCol, charId);
-      await sdk.setDoc(charRef, { faces: mergedFaces, updatedAt: Date.now() }, { merge: true });
+      const saveData = {};
+      for (const k of Object.keys(char)) {
+        if (k === '_id') continue;
+        saveData[k] = char[k];
+      }
+      saveData.faces = mergedFaces;
+      saveData.updatedAt = Date.now();
+      await sdk.setDoc(charRef, saveData, { merge: true });
 
       console.log(`%c[CE]%c ✅ ${char.name || charId} 표정 ${newFaces.length}장 추가 (총 ${mergedFaces.length}장)`,
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
@@ -3326,6 +3334,116 @@
       }
     } catch (err) {
       console.error(`[CE] 노트 배치 작업(${op}) 실패:`, err.message);
+      respond({ success: false, error: err.message });
+    }
+  }
+
+  // ================================================================
+  //  컷인(이펙트) 목록 조회 (ID 포함)
+  //  bwbr-request-cutin-list → bwbr-cutin-list-data
+  // ================================================================
+  window.addEventListener('bwbr-request-cutin-list', () => {
+    document.documentElement.removeAttribute('data-bwbr-request-cutin-list');
+
+    const respond = (d) => {
+      document.documentElement.setAttribute('data-bwbr-cutin-list-data', JSON.stringify(d));
+      window.dispatchEvent(new CustomEvent('bwbr-cutin-list-data'));
+    };
+
+    if (!reduxStore) return respond({ items: [] });
+    const state = reduxStore.getState();
+    const re = state.entities?.roomEffects;
+    if (!re?.ids) return respond({ items: [] });
+
+    const items = re.ids
+      .map(id => re.entities[id])
+      .filter(it => !!it)
+      .map(it => ({
+        _id:       it._id,
+        name:      it.name || '',
+        order:     it.order ?? 0,
+        createdAt: it.createdAt || 0
+      }));
+
+    respond({ items });
+  });
+
+  // ================================================================
+  //  컷인(이펙트) 일괄 조작
+  //  bwbr-cutin-batch-op → bwbr-cutin-batch-op-result
+  //  op: 'delete' | 'duplicate'
+  // ================================================================
+  function _cutinBatchHandler() {
+    const raw = document.documentElement.getAttribute('data-bwbr-cutin-batch-op');
+    if (!raw) return;
+    document.documentElement.removeAttribute('data-bwbr-cutin-batch-op');
+    const { op, ids } = JSON.parse(raw);
+    console.log('[CE] [CutinBatch] op:', op, 'ids:', ids?.length);
+    _cutinBatchHandlerAsync(op, ids);
+  }
+  window.addEventListener('bwbr-cutin-batch-op', _cutinBatchHandler);
+  document.addEventListener('bwbr-cutin-batch-op', _cutinBatchHandler);
+  async function _cutinBatchHandlerAsync(op, ids) {
+
+    const respond = (d) => {
+      document.documentElement.setAttribute('data-bwbr-cutin-batch-op-result', JSON.stringify(d));
+      window.dispatchEvent(new CustomEvent('bwbr-cutin-batch-op-result'));
+    };
+
+    try {
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) throw new Error('Firestore SDK 없음');
+      if (!reduxStore) throw new Error('Redux Store 없음');
+
+      const state = reduxStore.getState();
+      const roomId = state.app?.state?.roomId
+        || window.location.pathname.match(/rooms\/([^/]+)/)?.[1];
+      if (!roomId) throw new Error('방 ID를 찾을 수 없음');
+
+      const effectsCol = sdk.collection(sdk.db, 'rooms', roomId, 'effects');
+      let count = 0;
+
+      switch (op) {
+        case 'delete': {
+          if (!ids?.length) throw new Error('대상 ID 없음');
+          if (!sdk.deleteDoc) throw new Error('deleteDoc 함수 없음');
+          const ops = [];
+          for (const id of ids) {
+            ops.push({ type: 'delete', ref: sdk.doc(effectsCol, id) });
+          }
+          count = await _batchCommit(sdk, ops);
+          _dbg(`%c[CE]%c ✅ 컷인 ${count}개 삭제`,
+            'color: #f44336; font-weight: bold;', 'color: inherit;');
+          respond({ success: true, count });
+          break;
+        }
+        case 'duplicate': {
+          if (!ids?.length) throw new Error('대상 ID 없음');
+          const ops = [];
+          for (const id of ids) {
+            const effect = state.entities?.roomEffects?.entities?.[id];
+            if (!effect) continue;
+            const newRef = sdk.doc(effectsCol);
+            const copy = {};
+            for (const k of Object.keys(effect)) {
+              if (k === '_id') continue;
+              copy[k] = effect[k];
+            }
+            copy.createdAt = Date.now();
+            copy.updatedAt = Date.now();
+            ops.push({ type: 'set', ref: newRef, data: copy });
+          }
+          count = await _batchCommit(sdk, ops);
+          _dbg(`%c[CE]%c ✅ 컷인 ${count}개 복제`,
+            'color: #2196f3; font-weight: bold;', 'color: inherit;');
+          respond({ success: true, count });
+          break;
+        }
+        default:
+          throw new Error(`알 수 없는 컷인 배치 작업: ${op}`);
+      }
+    } catch (err) {
+      console.error(`[CE] 컷인 배치 작업(${op}) 실패:`, err.message);
       respond({ success: false, error: err.message });
     }
   }
