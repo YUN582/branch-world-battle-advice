@@ -42,12 +42,12 @@
   const _FS_CONFIG = {
     firestoreModId: 49631,   // Firestore SDK 함수 모듈
     dbModId: 5156,           // Firestore DB 인스턴스 모듈
-    fsKeys: { setDoc: 'pl', doc: 'JU', collection: 'hJ', getDocs: 'PL' },
+    fsKeys: { setDoc: 'pl', doc: 'JU', collection: 'hJ', getDocs: 'PL', deleteDoc: 'oe' },
     dbKey: 'db'
   };
 
   let _wpRequire = null;
-  let _firestoreSDK = null;  // { db, setDoc, doc, collection, getDocs }
+  let _firestoreSDK = null;  // { db, setDoc, doc, collection, getDocs, deleteDoc }
 
   /**
    * React Fiber 트리를 순회하여 Redux Store를 찾습니다.
@@ -498,6 +498,63 @@
   }
 
   /**
+   * Firestore deleteField() 센티널을 모듈에서 탐색합니다.
+   * deleteField()는 호출 시 내부적으로 isEqual 같은 인터페이스를 가진 센티널 객체를 반환합니다.
+   */
+  let _deleteFieldFn = null;
+  function _getDeleteField() {
+    if (_deleteFieldFn) return _deleteFieldFn;
+    const req = acquireWebpackRequire();
+    if (!req) return null;
+    let fsMod;
+    try { fsMod = req(_FS_CONFIG.firestoreModId); } catch { return null; }
+    if (!fsMod) return null;
+
+    for (const [key, fn] of Object.entries(fsMod)) {
+      if (typeof fn !== 'function') continue;
+      try {
+        const result = fn();
+        // deleteField() 센티널: _methodName === 'deleteField' 또는 type === 'deleteField' 등
+        if (result && typeof result === 'object' &&
+            (result._methodName === 'deleteField' || result.type === 'deleteField' ||
+             (result.isEqual && JSON.stringify(result).includes('delete')))) {
+          _deleteFieldFn = fn;
+          _dbg(`%c[CE]%c ✅ deleteField 발견: key=${key}`,
+            'color: #4caf50; font-weight: bold;', 'color: inherit;');
+          return fn;
+        }
+      } catch {}
+    }
+    console.warn('[CE] deleteField 함수를 찾을 수 없음');
+    return null;
+  }
+
+  /**
+   * writeBatch 함수를 Firestore 모듈에서 자동 탐색합니다.
+   * writeBatch(db)를 호출하면 commit/set/delete/update 메서드를 가진 WriteBatch 객체가 반환됩니다.
+   * 네트워크 요청 없이 로컬 객체만 생성하므로 안전합니다.
+   */
+  function _discoverWriteBatch(fsMod, db) {
+    for (const [key, fn] of Object.entries(fsMod)) {
+      if (typeof fn !== 'function') continue;
+      try {
+        const result = fn(db);
+        if (result && typeof result === 'object' &&
+            typeof result.commit === 'function' &&
+            typeof result.set === 'function' &&
+            typeof result.delete === 'function' &&
+            typeof result.update === 'function') {
+          _dbg(`%c[CE]%c ✅ writeBatch 발견: key=${key}`,
+            'color: #4caf50; font-weight: bold;', 'color: inherit;');
+          return fn;
+        }
+      } catch (e) {}
+    }
+    console.warn('[CE] writeBatch를 찾을 수 없음 — 순차 쓰기 폴백');
+    return null;
+  }
+
+  /**
    * Firestore SDK (collection, doc, setDoc, db)를 획득합니다.
    * 1차: 알려진 모듈 ID + 프로퍼티 키로 시도 (빠름)
    * 2차: 자동 탐색으로 프로퍼티 키 재발견 (프로퍼티 키만 변경된 경우)
@@ -534,6 +591,7 @@
     let docFn = fsMod[_FS_CONFIG.fsKeys.doc];
     let collectionFn = fsMod[_FS_CONFIG.fsKeys.collection];
     let getDocsFn = fsMod[_FS_CONFIG.fsKeys.getDocs];
+    let deleteDocFn = fsMod[_FS_CONFIG.fsKeys.deleteDoc];
 
     // 검증
     if (typeof collectionFn === 'function' && typeof docFn === 'function' && typeof setDocFn === 'function') {
@@ -542,7 +600,9 @@
         if (testRef && testRef.type === 'collection') {
           _firestoreSDK = {
             db, setDoc: setDocFn, doc: docFn, collection: collectionFn,
-            getDocs: typeof getDocsFn === 'function' ? getDocsFn : null
+            getDocs: typeof getDocsFn === 'function' ? getDocsFn : null,
+            deleteDoc: typeof deleteDocFn === 'function' ? deleteDocFn : null,
+            writeBatch: _discoverWriteBatch(fsMod, db)
           };
           console.log('%c[CE]%c ✅ Firestore SDK 획득 성공 (알려진 키)',
             'color: #4caf50; font-weight: bold;', 'color: inherit;');
@@ -556,11 +616,14 @@
       'color: #ff9800; font-weight: bold;', 'color: inherit;');
     const discovered = autoDiscoverFirestoreFunctions(fsMod, db);
     if (discovered) {
-      // getDocs는 자동탐색으로 찾을 수 없으므로 알려진 키로 시도
+      // getDocs, deleteDoc는 자동탐색으로 찾을 수 없으므로 알려진 키로 시도
       let fallbackGetDocs = fsMod[_FS_CONFIG.fsKeys.getDocs];
+      let fallbackDeleteDoc = fsMod[_FS_CONFIG.fsKeys.deleteDoc];
       _firestoreSDK = {
         db, ...discovered,
-        getDocs: typeof fallbackGetDocs === 'function' ? fallbackGetDocs : null
+        getDocs: typeof fallbackGetDocs === 'function' ? fallbackGetDocs : null,
+        deleteDoc: typeof fallbackDeleteDoc === 'function' ? fallbackDeleteDoc : null,
+        writeBatch: _discoverWriteBatch(fsMod, db)
       };
       return _firestoreSDK;
     }
@@ -568,6 +631,43 @@
     console.error('[CE] Firestore SDK 자동 탐색 실패!');
     console.error('[CE] → 콘솔에서 실행: window.dispatchEvent(new CustomEvent("bwbr-discover-firestore"))');
     return null;
+  }
+
+  /**
+   * Firestore writeBatch를 사용한 일괄 쓰기.
+   * 최대 500개 작업을 하나의 원자적 트랜잭션으로 커밋합니다.
+   * writeBatch가 없으면 순차 폴백합니다.
+   *
+   * @param {object} sdk - Firestore SDK
+   * @param {Array<{type: 'set'|'delete', ref, data?, options?}>} ops - 작업 목록
+   * @returns {Promise<number>} 커밋된 작업 수
+   */
+  async function _batchCommit(sdk, ops) {
+    if (!ops.length) return 0;
+
+    // writeBatch 미지원 시 순차 폴백
+    if (!sdk.writeBatch) {
+      for (const op of ops) {
+        if (op.type === 'delete') await sdk.deleteDoc(op.ref);
+        else await sdk.setDoc(op.ref, op.data, op.options || {});
+      }
+      return ops.length;
+    }
+
+    // 500개씩 분할 커밋
+    const BATCH_SIZE = 500;
+    let committed = 0;
+    for (let i = 0; i < ops.length; i += BATCH_SIZE) {
+      const chunk = ops.slice(i, i + BATCH_SIZE);
+      const batch = sdk.writeBatch(sdk.db);
+      for (const op of chunk) {
+        if (op.type === 'delete') batch.delete(op.ref);
+        else batch.set(op.ref, op.data, op.options || {});
+      }
+      await batch.commit();
+      committed += chunk.length;
+    }
+    return committed;
   }
 
   /**
@@ -1877,6 +1977,85 @@
   });
 
   // ================================================================
+  //  표정 일괄 추가 (bwbr-add-faces-bulk)
+  //  ISOLATED world에서 다중 선택된 이미지를 Firestore에 일괄 추가
+  //  → 편집 다이얼로그 닫기/재열기로 갱신
+  // ================================================================
+  window.addEventListener('bwbr-add-faces-bulk', async () => {
+    const _raw = document.documentElement.getAttribute('data-bwbr-add-faces-bulk');
+    document.documentElement.removeAttribute('data-bwbr-add-faces-bulk');
+    const { faces } = _raw ? JSON.parse(_raw) : {};
+
+    const respond = (detail) => {
+      document.documentElement.setAttribute('data-bwbr-add-faces-bulk-result', JSON.stringify(detail));
+      window.dispatchEvent(new CustomEvent('bwbr-add-faces-bulk-result'));
+    };
+
+    try {
+      if (!faces || !faces.length) throw new Error('추가할 표정 데이터 없음');
+
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) throw new Error('Firestore SDK 없음');
+      if (!reduxStore) throw new Error('Redux Store 없음');
+
+      const state = reduxStore.getState();
+      const roomId = state.app?.state?.roomId
+        || window.location.pathname.match(/rooms\/([^/]+)/)?.[1];
+      if (!roomId) throw new Error('방 ID를 찾을 수 없음');
+
+      // 현재 편집 중인 캐릭터 ID
+      const charId = state.app?.state?.openRoomCharacterId;
+      if (!charId) throw new Error('편집 중인 캐릭터 없음 (openRoomCharacterId 없음)');
+
+      const rc = state.entities?.roomCharacters;
+      const char = rc?.entities?.[charId];
+      if (!char) throw new Error(`캐릭터 ID "${charId}" 데이터 없음`);
+
+      // 기존 faces + 새 faces 합산
+      const currentFaces = Array.isArray(char.faces) ? [...char.faces] : [];
+      const newFaces = faces.map(f => ({
+        label: String(f.label || ''),
+        iconUrl: String(f.iconUrl || '')
+      }));
+      const mergedFaces = [...currentFaces, ...newFaces];
+
+      // Firestore 업데이트
+      const charsCol = sdk.collection(sdk.db, 'rooms', roomId, 'characters');
+      const charRef = sdk.doc(charsCol, charId);
+      await sdk.setDoc(charRef, { faces: mergedFaces, updatedAt: Date.now() }, { merge: true });
+
+      console.log(`%c[CE]%c ✅ ${char.name || charId} 표정 ${newFaces.length}장 추가 (총 ${mergedFaces.length}장)`,
+        'color: #4caf50; font-weight: bold;', 'color: inherit;');
+
+      // 이미지 피커 닫기 + 편집 다이얼로그 닫기 → 재열기
+      const creator = findSetedActionCreator();
+      if (creator) {
+        // 1) 피커 + 편집 다이얼로그 닫기
+        const s1 = reduxStore.getState().app?.state;
+        reduxStore.dispatch({
+          type: creator.type,
+          payload: { ...s1, openRoomImageSelect: false, openRoomCharacter: false }
+        });
+
+        // 2) 300ms 후 편집 다이얼로그 재열기
+        setTimeout(() => {
+          const s2 = reduxStore.getState().app?.state;
+          reduxStore.dispatch({
+            type: creator.type,
+            payload: { ...s2, openRoomCharacter: true, openRoomCharacterId: charId }
+          });
+        }, 350);
+      }
+
+      respond({ success: true, count: newFaces.length, total: mergedFaces.length });
+
+    } catch (err) {
+      console.error('[CE] 표정 일괄 추가 실패:', err.message);
+      respond({ success: false, error: err.message });
+    }
+  });
+
+  // ================================================================
   //  진단용: roomMessages 구조 덤프
   //  콘솔에서 실행: window.dispatchEvent(new CustomEvent('bwbr-dump-messages'))
   // ================================================================
@@ -2877,6 +3056,470 @@
   });
 
   // ================================================================
+  //  패널 관리: 패널 목록 요청
+  //  bwbr-request-panel-list → bwbr-panel-list-data
+  //  전체 아이템 목록 반환 (type 필터 없음 — 패널 목록은 모든 type 표시)
+  // ================================================================
+  window.addEventListener('bwbr-request-panel-list', () => {
+    const raw = document.documentElement.getAttribute('data-bwbr-request-panel-list');
+    document.documentElement.removeAttribute('data-bwbr-request-panel-list');
+
+    const respond = (d) => {
+      document.documentElement.setAttribute('data-bwbr-panel-list-data', JSON.stringify(d));
+      window.dispatchEvent(new CustomEvent('bwbr-panel-list-data'));
+    };
+
+    if (!reduxStore) return respond({ items: [] });
+    const state = reduxStore.getState();
+    const ri = state.entities?.roomItems;
+    if (!ri?.ids) return respond({ items: [] });
+
+    const items = ri.ids
+      .map(id => ri.entities[id])
+      .filter(it => !!it)
+      .map(it => ({
+        _id:       it._id,
+        type:      it.type,
+        imageUrl:  it.imageUrl || '',
+        memo:      it.memo || '',
+        visible:   !!it.visible,
+        active:    !!it.active,
+        order:     it.order ?? 0,
+        z:         it.z ?? 0,
+        width:     it.width ?? 0,
+        height:    it.height ?? 0,
+        createdAt: it.createdAt || 0
+      }));
+
+    respond({ items });
+  });
+
+  // ================================================================
+  //  패널 관리: 일괄 조작
+  //  bwbr-panel-batch-op → bwbr-panel-batch-op-result
+  //  op: 'toggleVisible' | 'delete' | 'toggleActive' | 'reorder'
+  // ================================================================
+  function _panelBatchHandler() {
+    const raw = document.documentElement.getAttribute('data-bwbr-panel-batch-op');
+    if (!raw) return;  // 이미 소비됨 (중복 호출 방지)
+    document.documentElement.removeAttribute('data-bwbr-panel-batch-op');
+    const { op, ids, updates } = JSON.parse(raw);
+    _panelBatchHandlerAsync(op, ids, updates);
+  }
+  window.addEventListener('bwbr-panel-batch-op', _panelBatchHandler);
+  document.addEventListener('bwbr-panel-batch-op', _panelBatchHandler);
+  async function _panelBatchHandlerAsync(op, ids, updates) {
+
+    const respond = (d) => {
+      document.documentElement.setAttribute('data-bwbr-panel-batch-op-result', JSON.stringify(d));
+      window.dispatchEvent(new CustomEvent('bwbr-panel-batch-op-result'));
+    };
+
+    try {
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) throw new Error('Firestore SDK 없음');
+      if (!reduxStore) throw new Error('Redux Store 없음');
+
+      const state = reduxStore.getState();
+      const roomId = state.app?.state?.roomId
+        || window.location.pathname.match(/rooms\/([^/]+)/)?.[1];
+      if (!roomId) throw new Error('방 ID를 찾을 수 없음');
+
+      const itemsCol = sdk.collection(sdk.db, 'rooms', roomId, 'items');
+      let count = 0;
+
+      switch (op) {
+        case 'toggleVisible': {
+          if (!ids?.length) throw new Error('대상 ID 없음');
+          const ops = [];
+          for (const id of ids) {
+            const item = state.entities?.roomItems?.entities?.[id];
+            if (!item) continue;
+            const ref = sdk.doc(itemsCol, id);
+            ops.push({ type: 'set', ref, data: { visible: !item.visible, updatedAt: Date.now() }, options: { merge: true } });
+          }
+          count = await _batchCommit(sdk, ops);
+          _dbg(`%c[CE]%c ✅ 패널 ${count}개 표시 전환`,
+            'color: #4caf50; font-weight: bold;', 'color: inherit;');
+          respond({ success: true, count });
+          break;
+        }
+
+        case 'delete': {
+          if (!ids?.length) throw new Error('대상 ID 없음');
+          if (!sdk.deleteDoc) throw new Error('deleteDoc 함수 없음 — _FS_CONFIG.fsKeys.deleteDoc 키 확인 필요');
+          const ops = [];
+          for (const id of ids) {
+            ops.push({ type: 'delete', ref: sdk.doc(itemsCol, id) });
+          }
+          count = await _batchCommit(sdk, ops);
+          _dbg(`%c[CE]%c ✅ 패널 ${count}개 삭제`,
+            'color: #f44336; font-weight: bold;', 'color: inherit;');
+          respond({ success: true, count });
+          break;
+        }
+
+        case 'toggleActive': {
+          if (!ids?.length) throw new Error('대상 ID 없음');
+          const ops = [];
+          for (const id of ids) {
+            const item = state.entities?.roomItems?.entities?.[id];
+            if (!item) continue;
+            const ref = sdk.doc(itemsCol, id);
+            ops.push({ type: 'set', ref, data: { active: !item.active, updatedAt: Date.now() }, options: { merge: true } });
+          }
+          count = await _batchCommit(sdk, ops);
+          _dbg(`%c[CE]%c ✅ 패널 ${count}개 활성 전환`,
+            'color: #4caf50; font-weight: bold;', 'color: inherit;');
+          respond({ success: true, count });
+          break;
+        }
+
+        case 'reorder': {
+          if (!updates?.length) throw new Error('순서 데이터 없음');
+          const ops = [];
+          for (const { id, order } of updates) {
+            ops.push({ type: 'set', ref: sdk.doc(itemsCol, id), data: { order, updatedAt: Date.now() }, options: { merge: true } });
+          }
+          count = await _batchCommit(sdk, ops);
+          _dbg(`%c[CE]%c ✅ 패널 ${count}개 순서 변경`,
+            'color: #4caf50; font-weight: bold;', 'color: inherit;');
+          respond({ success: true, count });
+          break;
+        }
+
+        case 'duplicate': {
+          if (!ids?.length) throw new Error('대상 ID 없음');
+          const ops = [];
+          for (const id of ids) {
+            const item = state.entities?.roomItems?.entities?.[id];
+            if (!item) continue;
+            const newRef = sdk.doc(itemsCol);
+            const copy = {};
+            for (const k of Object.keys(item)) {
+              if (k === '_id') continue;
+              copy[k] = item[k];
+            }
+            copy.createdAt = Date.now();
+            copy.updatedAt = Date.now();
+            ops.push({ type: 'set', ref: newRef, data: copy });
+          }
+          count = await _batchCommit(sdk, ops);
+          _dbg(`%c[CE]%c ✅ 패널 ${count}개 복제`,
+            'color: #2196f3; font-weight: bold;', 'color: inherit;');
+          respond({ success: true, count });
+          break;
+        }
+
+        default:
+          throw new Error(`알 수 없는 배치 작업: ${op}`);
+      }
+
+    } catch (err) {
+      console.error(`[CE] 패널 배치 작업(${op}) 실패:`, err.message);
+      respond({ success: false, error: err.message });
+    }
+  }
+
+  // ================================================================
+  //  시나리오 텍스트(노트) 목록 조회
+  //  bwbr-request-note-list → bwbr-note-list-data
+  // ================================================================
+  window.addEventListener('bwbr-request-note-list', () => {
+    document.documentElement.removeAttribute('data-bwbr-request-note-list');
+
+    const respond = (d) => {
+      document.documentElement.setAttribute('data-bwbr-note-list-data', JSON.stringify(d));
+      window.dispatchEvent(new CustomEvent('bwbr-note-list-data'));
+    };
+
+    if (!reduxStore) return respond({ items: [] });
+    const state = reduxStore.getState();
+    const rn = state.entities?.roomNotes;
+    if (!rn?.ids) return respond({ items: [] });
+
+    const items = rn.ids
+      .map(id => rn.entities[id])
+      .filter(it => !!it)
+      .map(it => ({
+        _id:       it._id,
+        name:      it.name || '',
+        iconUrl:   it.iconUrl || '',
+        order:     it.order ?? 0,
+        createdAt: it.createdAt || 0
+      }));
+
+    respond({ items });
+  });
+
+  // ================================================================
+  //  시나리오 텍스트(노트) 일괄 조작
+  //  bwbr-note-batch-op → bwbr-note-batch-op-result
+  //  op: 'delete'
+  // ================================================================
+  function _noteBatchHandler() {
+    const raw = document.documentElement.getAttribute('data-bwbr-note-batch-op');
+    if (!raw) return;
+    document.documentElement.removeAttribute('data-bwbr-note-batch-op');
+    const { op, ids } = JSON.parse(raw);
+    _noteBatchHandlerAsync(op, ids);
+  }
+  window.addEventListener('bwbr-note-batch-op', _noteBatchHandler);
+  document.addEventListener('bwbr-note-batch-op', _noteBatchHandler);
+  async function _noteBatchHandlerAsync(op, ids) {
+
+    const respond = (d) => {
+      document.documentElement.setAttribute('data-bwbr-note-batch-op-result', JSON.stringify(d));
+      window.dispatchEvent(new CustomEvent('bwbr-note-batch-op-result'));
+    };
+
+    try {
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) throw new Error('Firestore SDK 없음');
+      if (!sdk.deleteDoc) throw new Error('deleteDoc 함수 없음');
+
+      const state = reduxStore.getState();
+      const roomId = state.app?.state?.roomId
+        || window.location.pathname.match(/rooms\/([^/]+)/)?.[1];
+      if (!roomId) throw new Error('방 ID를 찾을 수 없음');
+
+      const notesCol = sdk.collection(sdk.db, 'rooms', roomId, 'notes');
+      let count = 0;
+
+      switch (op) {
+        case 'delete': {
+          if (!ids?.length) throw new Error('대상 ID 없음');
+          const ops = [];
+          for (const id of ids) {
+            ops.push({ type: 'delete', ref: sdk.doc(notesCol, id) });
+          }
+          count = await _batchCommit(sdk, ops);
+          _dbg(`%c[CE]%c ✅ 노트 ${count}개 삭제`,
+            'color: #f44336; font-weight: bold;', 'color: inherit;');
+          respond({ success: true, count });
+          break;
+        }
+        case 'duplicate': {
+          if (!ids?.length) throw new Error('대상 ID 없음');
+          const ops = [];
+          for (const id of ids) {
+            const note = state.entities?.roomNotes?.entities?.[id];
+            if (!note) continue;
+            const newRef = sdk.doc(notesCol);
+            const copy = {};
+            for (const k of Object.keys(note)) {
+              if (k === '_id') continue;
+              copy[k] = note[k];
+            }
+            copy.createdAt = Date.now();
+            copy.updatedAt = Date.now();
+            ops.push({ type: 'set', ref: newRef, data: copy });
+          }
+          count = await _batchCommit(sdk, ops);
+          _dbg(`%c[CE]%c ✅ 노트 ${count}개 복제`,
+            'color: #2196f3; font-weight: bold;', 'color: inherit;');
+          respond({ success: true, count });
+          break;
+        }
+        default:
+          throw new Error(`알 수 없는 노트 배치 작업: ${op}`);
+      }
+    } catch (err) {
+      console.error(`[CE] 노트 배치 작업(${op}) 실패:`, err.message);
+      respond({ success: false, error: err.message });
+    }
+  }
+
+  // ================================================================
+  //  현재 활성 씬 ID 탐색 헬퍼 (여러 경로 시도)
+  // ================================================================
+  function _findCurrentSceneId() {
+    if (!reduxStore) return { sceneId: null, roomId: null };
+    const state = reduxStore.getState();
+
+    const roomId = state.app?.state?.roomId
+      || window.location.pathname.match(/\/rooms\/([^/]+)/)?.[1];
+    const room = roomId ? state.entities?.rooms?.entities?.[roomId] : null;
+
+    // 1) 직접 참조
+    let sceneId = room?.sceneId
+      || state.app?.state?.sceneId
+      || state.app?.state?.currentSceneId;
+
+    // 2) rooms 엔티티 전체 키에서 scene 관련 필드
+    if (!sceneId && room) {
+      for (const k of Object.keys(room)) {
+        if (/scene/i.test(k) && typeof room[k] === 'string' && room[k].length > 5) {
+          sceneId = room[k];
+          _dbg(`%c[CE]%c 마커: room.${k} 에서 sceneId 발견: ${sceneId}`,
+            'color: #ff9800; font-weight: bold;', 'color: inherit;');
+          break;
+        }
+      }
+    }
+
+    // 3) app.state 전체에서 scene 관련 필드
+    if (!sceneId && state.app?.state) {
+      for (const k of Object.keys(state.app.state)) {
+        if (/scene/i.test(k) && typeof state.app.state[k] === 'string' && state.app.state[k].length > 5) {
+          sceneId = state.app.state[k];
+          _dbg(`%c[CE]%c 마커: app.state.${k} 에서 sceneId 발견: ${sceneId}`,
+            'color: #ff9800; font-weight: bold;', 'color: inherit;');
+          break;
+        }
+      }
+    }
+
+    // 4) backgroundUrl 매칭
+    if (!sceneId && room?.backgroundUrl) {
+      const rs = state.entities?.roomScenes;
+      if (rs?.ids) {
+        for (const sid of rs.ids) {
+          const sc = rs.entities[sid];
+          if (sc?.backgroundUrl === room.backgroundUrl) {
+            sceneId = sid;
+            _dbg(`%c[CE]%c 마커: backgroundUrl 매칭으로 sceneId 발견: ${sceneId}`,
+              'color: #ff9800; font-weight: bold;', 'color: inherit;');
+            break;
+          }
+        }
+      }
+    }
+
+    if (!sceneId) {
+      console.warn('[CE] 마커: sceneId 찾기 실패!',
+        'roomId:', roomId,
+        'room 키:', room ? Object.keys(room) : 'room 없음',
+        'app.state scene 키:', state.app?.state ? Object.keys(state.app.state).filter(k => /scene/i.test(k)) : '없음',
+        'app.state 전체 키:', state.app?.state ? Object.keys(state.app.state) : '없음');
+    }
+
+    return { sceneId, roomId };
+  }
+
+  // ================================================================
+  //  마커 목록 조회 (room 문서의 markers — 라이브 마커)
+  //  bwbr-request-marker-list → bwbr-marker-list-data
+  // ================================================================
+  window.addEventListener('bwbr-request-marker-list', () => {
+    document.documentElement.removeAttribute('data-bwbr-request-marker-list');
+
+    const respond = (d) => {
+      document.documentElement.setAttribute('data-bwbr-marker-list-data', JSON.stringify(d));
+      window.dispatchEvent(new CustomEvent('bwbr-marker-list-data'));
+    };
+
+    if (!reduxStore) return respond({ items: [], roomId: null });
+    const state = reduxStore.getState();
+    const roomId = state.app?.state?.roomId || location.pathname.match(/rooms\/([^/]+)/)?.[1];
+    if (!roomId) return respond({ items: [], roomId: null });
+
+    const room = state.entities?.rooms?.entities?.[roomId];
+    if (!room?.markers) return respond({ items: [], roomId });
+
+    const markers = room.markers;
+    const items = Object.keys(markers).map(key => ({
+      ...markers[key],
+      _id: key
+    }));
+
+    respond({ items, roomId });
+  });
+
+  // ================================================================
+  //  마커 일괄 조작 (room 문서의 markers 필드 업데이트)
+  //  bwbr-marker-batch-op → bwbr-marker-batch-op-result
+  //  op: 'delete' | 'duplicate'
+  // ================================================================
+  function _markerBatchHandler() {
+    const raw = document.documentElement.getAttribute('data-bwbr-marker-batch-op');
+    if (!raw) return;
+    document.documentElement.removeAttribute('data-bwbr-marker-batch-op');
+    const { op, ids } = JSON.parse(raw);
+    console.log('[CE] [MarkerBatch] op:', op, 'ids:', ids?.length);
+    _markerBatchHandlerAsync(op, ids);
+  }
+  window.addEventListener('bwbr-marker-batch-op', _markerBatchHandler);
+  document.addEventListener('bwbr-marker-batch-op', _markerBatchHandler);
+  async function _markerBatchHandlerAsync(op, ids) {
+
+    const respond = (d) => {
+      document.documentElement.setAttribute('data-bwbr-marker-batch-op-result', JSON.stringify(d));
+      window.dispatchEvent(new CustomEvent('bwbr-marker-batch-op-result'));
+    };
+
+    try {
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) throw new Error('Firestore SDK 없음');
+      if (!reduxStore) throw new Error('Redux Store 없음');
+
+      const state = reduxStore.getState();
+      const roomId = state.app?.state?.roomId || location.pathname.match(/rooms\/([^/]+)/)?.[1];
+      if (!roomId) throw new Error('방 ID를 찾을 수 없음');
+
+      const room = state.entities?.rooms?.entities?.[roomId];
+      if (!room?.markers) throw new Error('room에 markers 없음');
+
+      // room 문서 참조 (rooms/{roomId})
+      const roomsCol = sdk.collection(sdk.db, 'rooms');
+      const roomRef = sdk.doc(roomsCol, roomId);
+      let count = 0;
+
+      // ───── writeBatch.update 로 개별 필드만 조작 (문서 덮어쓰기 X) ─────
+      if (sdk.writeBatch) {
+        const batch = sdk.writeBatch(sdk.db);
+        const updateData = { updatedAt: Date.now() };
+
+        switch (op) {
+          case 'delete': {
+            if (!ids?.length) throw new Error('대상 ID 없음');
+            const delField = _getDeleteField();
+            if (!delField) throw new Error('deleteField 함수 없음 — 마커 삭제 불가');
+            for (const id of ids) {
+              if (id in room.markers) {
+                updateData[`markers.${id}`] = delField();
+                count++;
+              }
+            }
+            break;
+          }
+          case 'duplicate': {
+            if (!ids?.length) throw new Error('대상 ID 없음');
+            for (const id of ids) {
+              if (!(id in room.markers)) continue;
+              const newKey = Date.now().toString(16) + Math.random().toString(16).slice(2, 5);
+              const copy = JSON.parse(JSON.stringify(room.markers[id]));
+              delete copy._id;
+              copy.x = (copy.x || 0) + 2;
+              copy.y = (copy.y || 0) + 2;
+              updateData[`markers.${newKey}`] = copy;
+              count++;
+            }
+            break;
+          }
+          default:
+            throw new Error(`알 수 없는 마커 배치 작업: ${op}`);
+        }
+
+        batch.update(roomRef, updateData);
+        await batch.commit();
+
+      } else {
+        throw new Error('writeBatch 미지원 — 마커 조작 불가');
+      }
+
+      _dbg(`%c[CE]%c ✅ 마커 ${count}개 ${op === 'delete' ? '삭제' : '복제'}`,
+        op === 'delete' ? 'color: #f44336; font-weight: bold;' : 'color: #2196f3; font-weight: bold;',
+        'color: inherit;');
+      respond({ success: true, count });
+
+    } catch (err) {
+      console.error(`[CE] 마커 배치 작업(${op}) 실패:`, err.message);
+      respond({ success: false, error: err.message });
+    }
+  }
+
+  // ================================================================
   //  트리거 UI: 네이티브 이미지 선택창 열기
   //  bwbr-open-native-image-picker → 네이티브 피커 열림 → 선택 결과 반환
   //  bwbr-native-picker-result (data-bwbr-native-picker-result)
@@ -3208,6 +3851,57 @@
     } catch (err) {
       console.error('[CE] 장면 적용 실패:', err.message);
       respond({ success: false, error: err.message });
+    }
+  });
+
+  // ================================================================
+  //  진단: Redux entities 전체 키 + 크기 덤프
+  //  콘솔: window.dispatchEvent(new CustomEvent('bwbr-dump-entities'))
+  // ================================================================
+  window.addEventListener('bwbr-dump-entities', () => {
+    if (!reduxStore) { console.error('[CE 진단] Redux Store 없음'); return; }
+    const state = reduxStore.getState();
+    const ent = state.entities || {};
+    console.log('%c[CE 진단]%c ===== Redux entities 키 목록 =====',
+      'color: #ff9800; font-weight: bold;', 'color: inherit;');
+    for (const k of Object.keys(ent)) {
+      const e = ent[k];
+      const count = e?.ids?.length || 0;
+      let extra = '';
+      if (count > 0 && count <= 10) {
+        const first = e.entities[e.ids[0]];
+        extra = ' | keys: ' + Object.keys(first || {}).slice(0, 10).join(', ');
+        if (first?.type) extra += ' | type: ' + first.type;
+      }
+      console.log(`  ${k}: ${count}개${extra}`);
+    }
+  });
+
+  // ================================================================
+  //  진단: roomScenes markers 구조 덤프
+  //  콘솔: window.dispatchEvent(new CustomEvent('bwbr-dump-scenes'))
+  // ================================================================
+  window.addEventListener('bwbr-dump-scenes', () => {
+    if (!reduxStore) { console.error('[CE 진단] Redux Store 없음'); return; }
+    const state = reduxStore.getState();
+    const rs = state.entities?.roomScenes;
+    if (!rs?.ids?.length) { console.log('[CE 진단] roomScenes: 0건'); return; }
+    console.log('%c[CE 진단]%c ===== roomScenes + markers =====',
+      'color: #ff9800; font-weight: bold;', 'color: inherit;');
+    for (const id of rs.ids) {
+      const sc = rs.entities[id];
+      const m = sc.markers;
+      const isArr = Array.isArray(m);
+      const cnt = isArr ? m.length : (m ? Object.keys(m).length : 0);
+      console.log(`  씬 "${sc.name}" [${id}] | markers: ${cnt}개 (${isArr ? 'array' : typeof m})`);
+      if (cnt > 0) {
+        const sample = isArr ? m[0] : Object.values(m)[0];
+        console.log('    샘플 marker:', JSON.parse(JSON.stringify(sample)));
+      }
+      // 다른 scene 필드 중 마커 관련 확인
+      const allKeys = Object.keys(sc);
+      const markerKeys = allKeys.filter(k => /marker|plane/i.test(k));
+      if (markerKeys.length > 1) console.log('    마커 관련 키:', markerKeys);
     }
   });
 
@@ -3962,6 +4656,7 @@
       let charCount = 0;
       if (importData.characters?.length) {
         const charsCol = sdk.collection(sdk.db, 'rooms', roomId, 'characters');
+        const ops = [];
         for (const char of importData.characters) {
           const newId = _generateFirestoreId();
           const charData = { ...char };
@@ -3973,10 +4668,9 @@
           charData.createdAt = Date.now();
           charData.updatedAt = Date.now();
 
-          const charRef = sdk.doc(charsCol, newId);
-          await sdk.setDoc(charRef, charData);
-          charCount++;
+          ops.push({ type: 'set', ref: sdk.doc(charsCol, newId), data: charData });
         }
+        charCount = await _batchCommit(sdk, ops);
         console.log(`%c[CE]%c   캐릭터 ${charCount}개 생성 완료`, 'color: #90caf9; font-weight: bold;', 'color: inherit;');
       }
 
@@ -3984,6 +4678,7 @@
       let itemCount = 0;
       if (importData.items?.length) {
         const itemsCol = sdk.collection(sdk.db, 'rooms', roomId, 'items');
+        const ops = [];
         for (const item of importData.items) {
           const newId = _generateFirestoreId();
           const itemData = { ...item };
@@ -3993,10 +4688,9 @@
           itemData.createdAt = Date.now();
           itemData.updatedAt = Date.now();
 
-          const itemRef = sdk.doc(itemsCol, newId);
-          await sdk.setDoc(itemRef, itemData);
-          itemCount++;
+          ops.push({ type: 'set', ref: sdk.doc(itemsCol, newId), data: itemData });
         }
+        itemCount = await _batchCommit(sdk, ops);
         console.log(`%c[CE]%c   아이템 ${itemCount}개 생성 완료`, 'color: #90caf9; font-weight: bold;', 'color: inherit;');
       }
 

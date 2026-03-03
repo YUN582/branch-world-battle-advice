@@ -7,7 +7,7 @@
 > 업데이트 시 webpack 모듈 ID 및 minified 프로퍼티명이 변경될 수 있습니다.
 >
 > 아래 모듈 ID·프로퍼티명은 **2026-02-16 기준**이며, 변경 시 재탐색이 필요합니다.
-> DOM 구조 레퍼런스는 **2026-02-24 기준** (섹션 11 참조).
+> DOM 구조 레퍼런스는 **2026-02-24 ~ 2026-03-03 기준** (섹션 11 참조).
 > rooms/roomScenes 엔티티 구조는 **2026-02-27 기준** (섹션 9.1, 9.2, 13 참조).
 > UI 디자인 시스템(테마 규칙)은 **2026-03-02 기준** (섹션 14 참조).
 > 토큰 바인딩 시스템은 **2026-03-02 기준** (섹션 15 참조).
@@ -30,6 +30,11 @@
 11. [DOM 구조 레퍼런스 (MUI 컴포넌트 매핑)](#11-dom-구조-레퍼런스-mui-컴포넌트-매핑)
     - [11.7 배틀맵 / 씬 계층 구조](#117-배틀맵--씬-계층-구조-foreground--background--zoom--pan)
     - [11.8 상단 툴바 (MuiAppBar / MuiToolbar)](#118-상단-툴바-muiappbar--muitoolbar)
+    - [11.10 이미지 선택 다이얼로그](#1110-이미지-선택-다이얼로그-image-picker)
+    - [11.11 캐릭터 편집 — 스테이터스/매개변수 행](#1111-캐릭터-편집-다이얼로그--스테이터스매개변수-행-구조)
+    - [11.12 색상 선택 다이얼로그 (TwitterPicker)](#1112-색상-선택-다이얼로그-twitterpicker)
+    - [11.13 네이티브 이미지 선택 스타일](#1113-네이티브-이미지-선택-스타일-선택-삭제-모드)
+    - [11.14 스크린/마커 패널 목록](#1114-스크린마커-패널-목록-gm-패널-드로어)
 12. [특성 시스템 (Traits)](#12-특성-시스템-traits)
 13. [엔티티 전체 목록](#13-엔티티-전체-목록)
 14. [UI 디자인 시스템 (테마 규칙)](#14-ui-디자인-시스템-테마-규칙)
@@ -527,6 +532,49 @@ window.dispatchEvent(new CustomEvent('bwbr-dump-items'));
 
 ---
 
+### 3.2 시나리오 텍스트 / 노트 데이터 구조 (roomNotes)
+
+> 코코포리아의 "시나리오 텍스트"는 `entities.roomNotes`에 저장됩니다.
+> UI에서는 **시나리오 텍스트 목록** 패널로 표시됩니다.
+>
+> **기준**: 2026-03-03 (콘솔 진단으로 확인)
+
+#### 접근 방법
+
+```js
+const state = store.getState();
+const rn = state.entities.roomNotes;
+rn.ids    // ['G28mq5M5br6gTOwKcNd8', 'WJV3AgXjKOAh2wsUedwm', ...]
+rn.entities['노트ID']
+```
+
+#### 노트 객체 키
+
+```js
+{
+  _id: "G28mq5M5br6gTOwKcNd8",    // Firestore 문서 ID
+  name: "서사 장면",                // ★ 텍스트 제목
+  iconUrl: "",                      // 아이콘 이미지 URL (빈 문자열이면 기본 아이콘)
+  order: -2,                        // 정렬 순서
+  createdAt: 1771982971259          // 생성 시각
+  // + 기타 본문 필드 (text/html 등)
+}
+```
+
+#### Firestore 문서 경로
+
+```
+rooms/{roomId}/notes/{noteId}
+```
+
+#### 특이사항
+
+- 시나리오 텍스트에는 `visible`/`active` 필드가 **없음** → 표시 전환 기능 불가
+- 삭제만 가능 (`deleteDoc`)
+- DOM 목록에서 굵은 제목(span) 텍스트로 Redux 노트의 `name`과 매칭
+
+---
+
 ## 4. Firestore 직접 접근 (읽기 + 쓰기)
 
 ### webpack 모듈 ID (2026-02-16 기준, 변경될 수 있음!)
@@ -551,6 +599,10 @@ const collection = fsMod.hJ;   // collection(db, ...pathSegments)
 const getDoc    = fsMod.QT;    // getDoc(docRef)
 const getDocs   = fsMod.PL;    // getDocs(queryRef)
 const deleteDoc = fsMod.oe;    // deleteDoc(docRef)
+
+// writeBatch: 자동 탐색으로 발견 (minified 키 미확정)
+// writeBatch(db) → { commit(), set(ref, data, opts), delete(ref), update(ref, data) }
+// 최대 500개 작업을 하나의 원자적 트랜잭션으로 커밋
 
 const db = webpackRequire(5156).db;  // Firestore 인스턴스
 ```
@@ -1088,7 +1140,7 @@ window.dispatchEvent(new CustomEvent('bwbr-deep-snapshot-after'));
 | `displayGrid` | boolean | 그리드 표시 여부 |
 | `gridSize` | number | 그리드 한 칸 크기 |
 | `alignWithGrid` | boolean | 그리드 정렬 |
-| `markers` | array | 마커 목록 |
+| `markers` | Object\<string, MarkerData\> | 라이브 마커 (key=마커ID, value=마커데이터). 장면 적용 시 장면의 markers가 여기에 복사됨 |
 | **BGM / 사운드** | | |
 | `soundUrl` | string\|null | BGM URL |
 | `soundVolume` | number | BGM 볼륨 |
@@ -1159,6 +1211,44 @@ await sdk.setDoc(roomRef, {
 > **주의**: `app.state`에는 `displayGrid` 키가 존재하지 않습니다 (174개 키 중 grid 관련 없음).
 > Redux 상태는 Firestore 실시간 리스너를 통해 자동 동기화됩니다.
 
+#### MarkerData 구조
+
+> 마커 키는 16진수 타임스탬프 기반 문자열 (예: `19c61886089`).
+> **기준**: 2026-03-03 진단 결과
+
+| 필드 | 타입 | 설명 |
+|-------|------|------|
+| `x` | number | X 좌표 (그리드 단위) |
+| `y` | number | Y 좌표 (그리드 단위) |
+| `z` | number | Z-order (높을수록 앞) |
+| `width` | number | 너비 (그리드 단위) |
+| `height` | number | 높이 (그리드 단위) |
+| `locked` | boolean | 잠김 여부 |
+| `freezed` | boolean | 고정 여부 |
+| `text` | string | 마커 텍스트 |
+| `imageUrl` | string\|null | 마커 이미지 URL |
+| `clickAction` | any\|null | 클릭 액션 |
+
+```js
+// 마커 복제 (room 문서에 직접 쓰기 — writeBatch.update 권장)
+const roomRef = sdk.doc(sdk.collection(sdk.db, 'rooms'), roomId);
+const batch = sdk.writeBatch(sdk.db);
+batch.update(roomRef, {
+  [`markers.${newKey}`]: { x: 5, y: 5, z: 50, width: 4, height: 4, locked: false, freezed: false, text: '', imageUrl: '', clickAction: null },
+  updatedAt: Date.now()
+});
+await batch.commit();
+
+// 마커 삭제 (deleteField 센티넬 사용)
+batch.update(roomRef, {
+  [`markers.${targetKey}`]: deleteField(),
+  updatedAt: Date.now()
+});
+```
+
+> **중요**: 라이브 마커는 **room 문서** (`rooms/{roomId}`)의 `markers` 필드입니다.
+> 씬의 `markers`는 장면 스냅샷일 뿐이며, 씬에 쓰면 지도에 반영되지 않습니다.
+
 ### 9.2 roomScenes 엔티티 (장면 목록)
 
 > 장면은 `entities.roomScenes` 에 저장됩니다 (normalized: `{ ids: [...], entities: {...} }`).
@@ -1190,7 +1280,7 @@ const scenes = state.entities.roomScenes;
 | **그리드** | | |
 | `displayGrid` | boolean | 그리드 표시 |
 | `gridSize` | number | 그리드 크기 |
-| `markers` | array | 마커 |
+| `markers` | Object\<string, MarkerData\> | 마커 스냅샷 (장면 불러오기 시 room.markers에 복사됨) |
 | **텍스트** | | |
 | `text` | string\|null | 장면 전환 시 표시되는 텍스트 |
 | **BGM** | | |
@@ -1893,6 +1983,382 @@ body
 
 ---
 
+### 11.10 이미지 선택 다이얼로그 (Image Picker)
+
+> 캐릭터 이미지·컷인·배경 등을 선택하는 공용 이미지 피커입니다.
+> 확장 프로그램의 표정 일괄 추가(face-bulk-add.js)가 이 구조를 이용합니다.
+>
+> **기준**: 2026-03-03 (콘솔 진단)
+
+#### 컨테이너 구조
+
+```
+body
+└─ DIV.MuiDialog-root.MuiModal-root[role="presentation"]
+   └─ DIV.MuiDialog-container.MuiDialog-scrollPaper
+      └─ DIV.MuiPaper-root.MuiDialog-paper.MuiDialog-paperWidthMd[role="dialog"]
+         │                               ↑ 핵심: paperWidthMd 로 다른 다이얼로그와 구분
+         ├─ HEADER.MuiAppBar-root.MuiAppBar-colorDefault (sticky)
+         │    └─ DIV.MuiToolbar-root.css-i6s8oy
+         │       ├─ DIV.MuiButtonGroup-root  →  ROOM / ALL / Unsplash 탭 전환
+         │       └─ BUTTON "선택 삭제" (MuiToolbar 내부)
+         │
+         ├─ DIV.MuiTabs-root (탭 헤더 — ROOM 모드일 때)
+         │    └─ BUTTON × N [role="tab"]  →  전경 / 배경 / 캐릭터 / 스크린 /
+         │                                    스크린 뒷면 / 마커 / 컷인
+         │
+         ├─ (이미지 그리드 영역)
+         │    └─ IMG × N  (https:// 로 시작, naturalWidth > 40)
+         │       - 각 img.alt = 파일명 (확장자 포함)
+         │       - 컨테이너 button/header/tab 내부 img 제외 필요
+         │
+         └─ DIV.MuiDialogActions-root
+              └─ BUTTON.MuiButton-textPrimary  →  "닫기"
+```
+
+#### 셀렉터 가이드
+
+| 대상 | 셀렉터 |
+|------|--------|
+| 피커 다이얼로그 | `.MuiDialog-paperWidthMd[role="dialog"]` |
+| 그리드 이미지 | `picker.querySelectorAll('img')` + `src.startsWith('https://')` + `naturalWidth > 40` |
+| 닫기 버튼 | `.MuiDialogActions-root .MuiButton-textPrimary` |
+| "선택 삭제" 버튼 | `.MuiToolbar-root` 내부 버튼 텍스트 매칭 |
+
+#### 확장 프로그램 활용
+
+- **face-bulk-add.js**: 캐릭터 편집 중 피커가 열리면 자동으로 다중 선택 모드 활성화
+  - 이미지 클릭 → 체크 오버레이 토글 (네이티브 단일 선택 차단: `stopPropagation()`)
+  - "추가 (N)" 버튼을 닫기 버튼 옆에 `cloneNode(false)` + `insertBefore`로 삽입
+  - 선택된 이미지의 `img.alt`에서 확장자 제거 → `@파일명` 형태로 표정 이름 자동 생성
+
+---
+
+### 11.11 캐릭터 편집 다이얼로그 — 스테이터스/매개변수 행 구조
+
+> 캐릭터 편집 다이얼로그 내 "스테이터스"·"매개변수" 섹션의 입력 행입니다.
+> 확장 프로그램의 드래그 순서 변경(drag-reorder.js)이 이 구조를 이용합니다.
+>
+> **기준**: 2026-03-03 (콘솔 진단)
+
+#### 섹션 탐색 방법
+
+```
+[role="dialog"]:not(.MuiDialog-paperWidthMd)   ← 캐릭터 편집 다이얼로그
+  └─ MuiDialogContent-root
+      ├─ DIV.MuiToolbar-root.MuiToolbar-dense
+      │   ├─ H6.MuiTypography-subtitle2  →  "스테이터스"
+      │   └─ BUTTON (+/−)
+      ├─ SPAN.MuiTypography-caption  →  설명 텍스트 (height ~40px)
+      ├─ DIV (행 — 스타일드 컴포넌트)  ← 스테이터스 행 × N
+      │   ├─ input[name="status.0.label"]  (text)
+      │   ├─ input[name="status.0.value"]  (number)
+      │   └─ input[name="status.0.max"]    (number)
+      ├─ DIV (행) ...
+      │
+      ├─ DIV.MuiToolbar-root.MuiToolbar-dense
+      │   ├─ H6.MuiTypography-subtitle2  →  "매개변수"
+      │   └─ BUTTON (+/−)
+      ├─ SPAN.MuiTypography-caption
+      ├─ DIV (행)  ← 매개변수 행 × N
+      │   ├─ input[name="params.0.label"]  (text)
+      │   └─ input[name="params.0.value"]  (text)
+      └─ ...
+```
+
+#### 행 구조 상세
+
+```
+DIV (스타일드 컴포넌트: sc-* 클래스, 빌드마다 변경됨)
+├─ MuiFormControl-root.MuiTextField-root  ← "라벨" 필드
+│   └─ DIV.MuiInputBase-root
+│       └─ INPUT[name="status.N.label"][type="text"]
+├─ MuiFormControl-root.MuiTextField-root  ← "값" 필드
+│   └─ DIV.MuiInputBase-root
+│       └─ INPUT[name="status.N.value"][type="number"]
+└─ MuiFormControl-root.MuiTextField-root  ← "최대값" 필드 (스테이터스만)
+    └─ DIV.MuiInputBase-root
+        └─ INPUT[name="status.N.max"][type="number"]
+```
+
+- 스테이터스 행: input 3개 (`label/value/max`)
+- 매개변수 행: input 2개 (`label/value`)
+
+#### input name 패턴
+
+| 필드 | name 형식 | type |
+|------|-----------|------|
+| 스테이터스 라벨 | `status.N.label` | text |
+| 스테이터스 값 | `status.N.value` | number |
+| 스테이터스 최댓값 | `status.N.max` | number |
+| 매개변수 라벨 | `params.N.label` | text |
+| 매개변수 값 | `params.N.value` | text |
+
+(`N` = 0부터 시작하는 인덱스)
+
+#### React controlled input 갱신 방법
+
+ccfolia는 React controlled input을 사용하므로, DOM에서 값을 변경할 때
+반드시 **native setter + 이벤트 디스패치** 패턴을 사용해야 합니다:
+
+```js
+const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+setter.call(input, newValue);
+input.dispatchEvent(new Event('input', { bubbles: true }));
+input.dispatchEvent(new Event('change', { bubbles: true }));
+```
+
+이 패턴 없이 `input.value = x` 로 설정하면 React가 변경을 감지하지 못합니다.
+
+#### 셀렉터 가이드
+
+| 대상 | 셀렉터 / 방법 |
+|------|---------------|
+| 캐릭터 편집 다이얼로그 | `[role="dialog"]:not(.MuiDialog-paperWidthMd)` + h6에 "스테이터스"/"매개변수" 포함 여부 확인 |
+| 섹션 헤더 | `h6` (텍스트: "스테이터스", "매개변수", "ステータス", "パラメータ") |
+| 행 수집 | 헤더 부모(MuiToolbar-root)의 `nextElementSibling`을 순회, `DIV` + `input ≥ 2` 조건 |
+| 다음 섹션 경계 | `sib.classList.contains('MuiToolbar-root')` |
+
+⚠️ 행의 styled-components 클래스(`sc-*`)는 빌드마다 변경되므로 **절대 의존하지 말 것**.
+`input` 개수(≥2)와 `tagName === 'DIV'` 조건으로 식별합니다.
+
+---
+
+### 11.12 색상 선택 다이얼로그 (TwitterPicker)
+
+> 캐릭터 이름 색상 등을 선택할 때 열리는 색상 다이얼로그입니다.
+> 확장 프로그램의 HSV 컬러피커(color-picker.js)가 이 구조를 이용합니다.
+>
+> **기준**: 2026-03-03 (콘솔 진단)
+
+#### 컨테이너 구조
+
+```
+DIV.MuiDialog-root.MuiModal-root
+  └─ DIV.MuiDialog-container
+     └─ DIV.MuiDialog-paper.MuiDialog-paperWidthSm[role="dialog"]
+        └─ MuiDialogContent-root
+           └─ DIV.twitter-picker     ← react-color의 TwitterPicker 컴포넌트
+              ├─ (확장 프로그램 주입) DIV#ce-color-picker
+              │   ├─ CANVAS (SV 영역: 246×130px)
+              │   ├─ CANVAS (Hue 바: 246×12px)
+              │   └─ DIV (선택 미리보기 원: 18×18px)
+              ├─ DIV (프리셋 색상 스와치 그리드)
+              │   └─ SPAN × N (각 색상 칩)
+              └─ DIV (hex 입력 필드)
+                 └─ INPUT[id^="rc-editable-input-"]
+                    type: text, spellcheck: false
+```
+
+#### 확장 프로그램 연동 포인트
+
+- **TwitterPicker 감지**: `MutationObserver` → `.MuiDialog-paper .twitter-picker` 셀렉터 매칭
+- **hex 입력 필드**: `input[id^="rc-editable-input-"]` → React controlled
+  - 값 설정: native setter + `input` + `change` 이벤트 (React bridge 패턴)
+- **HSV 피커 주입 위치**: `.twitter-picker`의 `firstChild` 앞에 `insertBefore`
+- **색상 동기화**: hex input 값 ↔ HSV 캔버스 양방향 동기화 (MutationObserver로 input 변경 감지)
+
+---
+
+### 11.13 네이티브 이미지 선택 스타일 ("선택 삭제" 모드)
+
+> 이미지 피커에서 "선택 삭제" 버튼 클릭 시 활성화되는 다중 선택 모드의 시각 스타일입니다.
+> 확장 프로그램의 표정 일괄 추가(face-bulk-add.js) 및 패널 관리(panel-manager.js)가
+> 이 스타일을 재사용합니다.
+>
+> **기준**: 2026-03-03 (콘솔 진단)
+
+#### 선택 삭제 모드 진입 감지
+
+```
+툴바(.MuiToolbar-root) 내 버튼 텍스트:
+  - 일반 모드: "선택 삭제" 버튼 존재
+  - 삭제 모드: "취소" (한) / "キャンセル" (일) / "Cancel" (영) 버튼 존재
+  + 선택 개수 표시 버튼 (숫자만)
+```
+
+#### SVG 체크 서클 (16×16)
+
+모든 이미지에 SVG 원형 체크가 오버레이됩니다. 위치: `position: absolute; top: 4px; left: 4px`.
+
+**미선택 상태** (빈 원):
+```html
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" class="sc-cOoixM hoOXjR">
+  <circle cx="8" cy="8" r="7.5" fill="rgba(0,0,0,0.3)" stroke="rgba(255,255,255,0.8)"/>
+</svg>
+```
+
+**선택 상태** (파란 원 + 체크마크):
+```html
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" class="sc-gwWxZU iHRxJu">
+  <circle cx="8" cy="8" r="7.5" fill="#2196F3" stroke="white"/>
+  <path d="M6.57109 11.5L3.24609 8.175L4.07734 7.34375L6.57109 9.8375L11.9232 4.48541L12.7544 5.31666L6.57109 11.5Z" fill="white"/>
+</svg>
+```
+
+#### 이미지 컨테이너 구조 (삭제 모드)
+
+```
+DIV.sc-eEnVzt (position: relative, border: 1px solid rgba(0,0,0,0.2))
+├─ IMG (이미지)
+├─ (선택 시) SPAN.MuiTypography-caption → 파일명 라벨
+└─ SVG (체크 서클, position: absolute, top: 4px, left: 4px)
+```
+
+- 선택된 이미지: children 3개 (img + label + SVG checked)
+- 미선택 이미지: children 2개 (img + SVG unchecked)
+- 컨테이너 스타일은 선택 여부에 무관하게 동일 (border, opacity 변화 없음)
+
+#### 확장 프로그램 재사용 가이드
+
+체크 SVG를 프로그래밍적으로 생성:
+```js
+const SVGNS = 'http://www.w3.org/2000/svg';
+const CHECK_D = 'M6.57109 11.5L3.24609 8.175L4.07734 7.34375L6.57109 9.8375L11.9232 4.48541L12.7544 5.31666L6.57109 11.5Z';
+
+function createCheckSVG() { /* circle + optional path */ }
+function paintCheck(svg, selected) {
+  // selected: fill=#2196F3, stroke=white, + path
+  // unselected: fill=rgba(0,0,0,0.3), stroke=rgba(255,255,255,0.8), path 제거
+}
+```
+
+---
+
+### 11.14 스크린/마커 패널 목록 (GM 패널 드로어)
+
+> 상단 툴바의 "[GM] 스크린 패널 목록" / "[GM] 마커 패널 목록" 버튼으로 열리는 패널 리스트입니다.
+> 확장 프로그램의 패널 관리(panel-manager.js)가 이 구조를 이용합니다.
+>
+> **기준**: 2026-03-03 (콘솔 진단)
+
+#### 컨테이너 구조
+
+```
+body
+└─ DIV (position: absolute, w×h = 패널 크기)
+   └─ DIV (빈 래퍼)
+      └─ DIV.MuiPaper-root.MuiPaper-elevation6.sc-btlehR (flex, 높이 ≈ 861px)
+         ├─ DIV[role="button"] (헤더 래퍼, 48px)
+         │   └─ HEADER.MuiAppBar-root.MuiAppBar-colorTransparent (elevation0, sticky)
+         │       └─ DIV.MuiToolbar-root.MuiToolbar-dense.css-6tsndk
+         │           ├─ H6.MuiTypography-subtitle2 → "스크린 패널 목록" / "마커 패널 목록"
+         │           └─ DIV.sc-kOojCW → 버튼 컨테이너 (+ 추가, × 닫기)
+         │
+         └─ DIV.MuiDialogContent-root.scrollable-list (overflow: auto, 스크롤 영역)
+             └─ (리스트 컨테이너)
+                └─ DIV.MuiListItem-root × N
+```
+
+#### 리스트 아이템 구조
+
+```
+DIV.MuiButtonBase-root.MuiListItem-root.MuiListItem-dense
+    (display: flex, height: ~60px, padding: 4px 48px 4px 16px, cursor: pointer)
+├─ DIV.MuiListItemAvatar-root (56×40px)
+│   └─ DIV.MuiAvatar-root.MuiAvatar-circular
+│       └─ IMG [src=아이템 imageUrl]
+├─ DIV.MuiListItemText-root.MuiListItemText-dense
+│   ├─ SPAN.MuiTypography-body2 → primary: 아이템 이름 (memo 첫줄)
+│   └─ P.MuiTypography-body2 → secondary: "[z] w × h"
+├─ (눈 아이콘 — absolute position, right: 0, padding-right 48px 영역)
+└─ SPAN.MuiTouchRipple-root (전체 영역 리플 효과)
+```
+
+#### 패널 타입
+
+| 패널 목록 | H6 텍스트 | `type` 필드 |
+|-----------|-----------|-------------|
+| 스크린 패널 목록 | `스크린 패널 목록` / `スクリーンパネル一覧` | `"object"` |
+| 마커 패널 목록 | `마커 패널 목록` / `マーカーパネル一覧` | `"plane"` |
+
+#### 셀렉터 가이드
+
+| 대상 | 셀렉터 |
+|------|--------|
+| 패널 목록 루트 | `.MuiPaper-root.MuiPaper-elevation6` + H6 텍스트 매칭 |
+| 리스트 아이템 | `.MuiListItem-root` (paper 내부) |
+| 스크롤 영역 | `.MuiDialogContent-root.scrollable-list` |
+| 아바타 이미지 | `.MuiAvatar-root img` (아이템 내부) |
+| 헤더 한글 제목 | `h6.MuiTypography-subtitle2` |
+
+#### DOM ↔ Redux 매핑
+
+패널 목록의 DOM 아이템을 Redux `entities.roomItems`와 매핑하는 방법:
+
+1. **이미지 URL 매칭** (우선): `MuiAvatar-root img.src`의 경로를 Redux `imageUrl`와 비교
+2. **속성 폴백**: secondary text `[z] w × h` 파싱 → Redux `z/width/height`와 비교
+
+```js
+function extractImagePath(el) {
+  const img = el.querySelector('.MuiAvatar-root img');
+  try { return new URL(img.src).pathname; } catch { return ''; }
+}
+```
+
+### 11.15 시나리오 텍스트 패널 목록
+
+> 상단 툴바의 "시나리오 텍스트 목록" 버튼으로 열리는 텍스트 목록입니다.
+> panel-manager.js가 이 패널도 관리하며, **스크린/마커 패널과 DOM 구조가 다릅니다**.
+>
+> **기준**: 2026-03-03 (콘솔 진단)
+
+#### 컨테이너 구조
+
+```
+DIV.MuiPaper-root.MuiPaper-elevation6.sc-btlehR
+├─ DIV[role="button"] (드래그 핸들 — 패널 이동용)
+│   └─ HEADER.MuiAppBar-root.MuiAppBar-colorTransparent
+│       └─ DIV.MuiToolbar-root.MuiToolbar-dense
+│           ├─ H6.MuiTypography-subtitle2 → "시나리오 텍스트 목록"
+│           └─ DIV.sc-kOojCW → 버튼 컨테이너 (선택, +추가, ×닫기)
+│
+└─ DIV.MuiDialogContent-root.scrollable-list (padding: 0, overflow: auto)
+    └─ DIV
+        └─ DIV.sc-hWZjGb (styled-component, 아이템 컨테이너)
+            ├─ DIV
+            │   └─ DIV[role="button"][aria-roledescription="sortable"] (dnd-kit)
+            │       └─ DIV.MuiListItemButton-root.MuiListItemButton-dense ← 클릭 아이템
+            ├─ DIV
+            │   └─ DIV[role="button"][aria-roledescription="sortable"]
+            │       └─ DIV.MuiListItemButton-root.MuiListItemButton-dense
+            └─ ...
+```
+
+#### ⚠ 스크린/마커 패널과의 차이점
+
+| 항목 | 스크린/마커 (11.14) | 시나리오 텍스트 |
+|------|---------------------|-----------------|
+| 아이템 클래스 | `.MuiListItem-root` | `.MuiListItemButton-root` |
+| dnd-kit 래퍼 | 없음 | `[aria-roledescription="sortable"]` |
+| 아바타 | `.MuiAvatar-root img` | 없음 |
+| MuiList-root | 없음 | 없음 |
+| 아이템 태그 | `<div>` | `<div>` |
+
+#### 리스트 아이템 구조
+
+```
+DIV.MuiButtonBase-root.MuiListItemButton-root.MuiListItemButton-dense
+    .MuiListItemButton-gutters.css-vcgx1b
+    [tabindex="0", role="button"]
+├─ DIV.MuiListItemText-root.MuiListItemText-dense.MuiListItemText-multiline
+│   ├─ SPAN.MuiTypography-body2.MuiListItemText-primary → 텍스트 이름
+│   └─ P.MuiTypography-body2.MuiListItemText-secondary → 텍스트 내용 (잘림)
+└─ SPAN.MuiTouchRipple-root
+```
+
+#### 셀렉터 가이드 (통합)
+
+panel-manager.js에서 두 종류 패널을 모두 지원하려면:
+
+| 대상 | 셀렉터 |
+|------|--------|
+| 아이템 (우선) | `.MuiListItemButton-root` → fallback `.MuiListItem-root` |
+| 스크롤 컨테이너 | `.MuiList-root` → fallback `.MuiDialogContent-root` |
+| 캡처 차단 | `e.target.closest('.MuiListItemButton-root') \|\| e.target.closest('.MuiListItem-root')` |
+
+---
+
 ## 12. 특성 시스템 (Traits)
 
 > 가지세계 TRPG 합 전투에서 캐릭터에 부여되는 특수 능력/효과입니다.
@@ -2110,7 +2576,7 @@ H4와 H0 (또는 H00)의 상호작용 특성입니다.
 | `roomItems` | 스크린 패널/아이템 (3.1 참조) | `rooms/{roomId}/items/{id}` |
 | `roomMembers` | 방 멤버 | `rooms/{roomId}/members/{uid}` |
 | `roomMessages` | 채팅 메시지 (섹션 2 참조) | `rooms/{roomId}/messages/{msgId}` |
-| `roomNotes` | 공유 메모 | `rooms/{roomId}/notes/{id}` |
+| `roomNotes` | 시나리오 텍스트 (3.2 참조) | `rooms/{roomId}/notes/{id}` |
 | `roomSavedatas` | 세이브 데이터 | `rooms/{roomId}/savedatas/{id}` |
 | `roomScenes` | 장면 (9.2 참조) | `rooms/{roomId}/scenes/{sceneId}` |
 | `roomHistories` | 방 히스토리 | — |

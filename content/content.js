@@ -103,8 +103,12 @@
     // 로그 추출 메뉴 삽입 (톱니바퀴 메뉴에 항목 추가)
     setupLogExportMenu();
 
-    // 범용 트리거 엔진 초기화
-    if (window.TriggerEngine) {
+    // 범용 트리거 엔진 초기화 (트리거 모듈이 활성일 때만)
+    const triggerModuleEnabled = window.BWBR_ModuleLoader
+      ? window.BWBR_ModuleLoader.isEnabled('triggers')
+      : true; // 모듈 로더 없으면 기본 활성
+
+    if (window.TriggerEngine && triggerModuleEnabled) {
       triggerEngine = new window.TriggerEngine();
       triggerEngine.init({
         chat: chat,
@@ -129,6 +133,8 @@
       if (window.BWBR_TriggerUI) {
         window.BWBR_TriggerUI.init(triggerEngine);
       }
+    } else if (window.TriggerEngine && !triggerModuleEnabled) {
+      alwaysLog('트리거 모듈 비활성 — 트리거 엔진/UI 건너뜀');
     }
 
     // 채팅 관찰 시작 - Redux 기반 (DOM 대신 Redux store.subscribe 사용)
