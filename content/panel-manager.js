@@ -30,7 +30,9 @@
         selectMode: false,
         selected: new Set(),
         itemMap: new Map(),   // domListItem → reduxData
-        type: 'screens'       // 'screens' | 'markers' | 'notes' | 'cutins' | 'characters'
+        type: 'screens',      // 'screens' | 'markers' | 'notes' | 'cutins' | 'characters'
+        sortMode: 'default',
+        _sortOriginalOrder: null
       };
       _states.set(paper, s);
     }
@@ -74,6 +76,33 @@
     clearTimeout(_tipTimer);
     if (_tipEl) _tipEl.style.opacity = '0';
   }
+
+  /* ── 정렬 옵션 ──────── */
+  const SORT_OPTIONS = {
+    characters: [
+      { key: 'default', label: '기본' },
+      { key: 'name', label: '가나다순' },
+      { key: 'initiative', label: '이니셔티브순' }
+    ],
+    screens: [
+      { key: 'default', label: '기본' },
+      { key: 'name', label: '가나다순' },
+      { key: 'z', label: '겹침우선도순' }
+    ],
+    markers: [
+      { key: 'default', label: '기본' },
+      { key: 'name', label: '가나다순' },
+      { key: 'z', label: '겹침우선도순' }
+    ],
+    notes: [
+      { key: 'default', label: '기본' },
+      { key: 'name', label: '가나다순' }
+    ],
+    cutins: [
+      { key: 'default', label: '기본' },
+      { key: 'name', label: '가나다순' }
+    ]
+  };
 
   /* ══════════════════════════════════════════════════════════
    *  패널 목록 감지 — 모든 매칭 패널 반환
@@ -382,6 +411,11 @@
     }
 
     refreshActionBar(paper);
+
+    // Re-apply sort if active
+    if (s.sortMode && s.sortMode !== 'default') {
+      applySortMode(paper, s.sortMode);
+    }
   }
 
   /** DOM 변경 감지 후 remapAndRefreshSelect 실행 */
@@ -435,6 +469,14 @@
     else if (s.type === 'characters') { buildCharMap(paper, items); }
     else if (s.type === 'markers') { buildOrderMap(paper, items); }
     else                    { buildItemMap(paper, items); }
+
+    // Save original order for sort restore
+    s._sortOriginalOrder = getListItems(paper).map(li => {
+      const data = s.itemMap.get(li);
+      return data ? data._id : null;
+    }).filter(Boolean);
+
+    injectSortButton(paper);
     injectSelectButton(paper);
   }
 
@@ -470,7 +512,185 @@
     btn.addEventListener('mouseleave', () => { btn.style.background = 'transparent'; hideTip(); });
     btn.addEventListener('click', e => { e.stopPropagation(); e.preventDefault(); hideTip(); toggleSelectMode(paper); });
 
-    btnContainer.insertBefore(btn, btnContainer.firstChild);
+    btnContainer.insertBefore(btn, nativeBtns[0]);
+  }
+
+  /* ══════════════════════════════════════════════════════════
+   *  정렬 기능
+   * ══════════════════════════════════════════════════════════ */
+
+  function injectSortButton(paper) {
+    const toolbar = paper.querySelector('.MuiToolbar-dense');
+    if (!toolbar || toolbar.querySelector('.bwbr-sort-btn')) return;
+    const h6 = toolbar.querySelector('h6');
+    if (!h6) return;
+
+    // span 사용 — button으로 만들면 querySelectorAll('button')에 잡혀서 선택 버튼 주입이 깨짐
+    const icon = document.createElement('span');
+    icon.className = 'bwbr-sort-btn';
+    icon.setAttribute('role', 'button');
+    icon.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="display:block">' +
+      '<path d="M3 18h6v-2H3v2zM3 6v2h18V6H3zm0 7h12v-2H3v2z"/></svg>';
+    Object.assign(icon.style, {
+      cursor: 'pointer',
+      color: 'rgba(255,255,255,0.4)', padding: '2px',
+      display: 'inline-flex', alignItems: 'center',
+      borderRadius: '4px', flexShrink: '0',
+      transition: 'color .15s, background .15s'
+    });
+    icon.addEventListener('mouseenter', () => { icon.style.background = 'rgba(255,255,255,0.08)'; showTip(icon, '정렬'); });
+    icon.addEventListener('mouseleave', () => { icon.style.background = ''; hideTip(); });
+    // 패널 헤더가 드래그 핸들이라 mousedown/pointerdown을 가로챔 → stopPropagation 필수
+    icon.addEventListener('mousedown', e => { e.stopPropagation(); });
+    icon.addEventListener('pointerdown', e => { e.stopPropagation(); });
+    icon.addEventListener('click', e => { e.stopPropagation(); e.preventDefault(); hideTip(); showSortMenu(paper, icon); });
+
+    h6.style.display = 'flex';
+    h6.style.alignItems = 'center';
+    h6.style.gap = '6px';
+    h6.style.overflow = 'visible';
+    h6.appendChild(icon);
+  }
+
+  function showSortMenu(paper, anchor) {
+    closeSortMenu();
+    const s = getState(paper);
+    const options = SORT_OPTIONS[s.type];
+    if (!options) return;
+
+    const menu = document.createElement('div');
+    menu.className = 'bwbr-sort-menu';
+    Object.assign(menu.style, {
+      position: 'fixed', zIndex: '99999',
+      background: 'rgb(48, 48, 48)', borderRadius: '4px',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+      padding: '4px 0', minWidth: '140px',
+      fontFamily: 'Roboto, sans-serif', fontSize: '13px'
+    });
+
+    for (const opt of options) {
+      const row = document.createElement('div');
+      const isActive = s.sortMode === opt.key;
+      row.textContent = (isActive ? '✓ ' : '    ') + opt.label;
+      Object.assign(row.style, {
+        padding: '6px 12px', cursor: 'pointer',
+        color: isActive ? '#2196F3' : 'rgba(255,255,255,0.8)',
+        fontWeight: isActive ? '600' : '400',
+        whiteSpace: 'nowrap', transition: 'background .1s'
+      });
+      row.addEventListener('mouseenter', () => { row.style.background = 'rgba(255,255,255,0.08)'; });
+      row.addEventListener('mouseleave', () => { row.style.background = ''; });
+      row.addEventListener('click', e => {
+        e.stopPropagation();
+        closeSortMenu();
+        applySortMode(paper, opt.key);
+      });
+      menu.appendChild(row);
+    }
+
+    const rect = anchor.getBoundingClientRect();
+    menu.style.left = rect.left + 'px';
+    menu.style.top = (rect.bottom + 4) + 'px';
+    document.body.appendChild(menu);
+
+    setTimeout(() => {
+      const closer = e => {
+        if (menu.contains(e.target) || anchor.contains(e.target)) return;
+        closeSortMenu();
+      };
+      menu._closer = closer;
+      document.addEventListener('pointerdown', closer, true);
+    }, 50);
+  }
+
+  function closeSortMenu() {
+    const m = document.querySelector('.bwbr-sort-menu');
+    if (m) {
+      if (m._closer) document.removeEventListener('pointerdown', m._closer, true);
+      m.remove();
+    }
+  }
+
+  function getSortName(data, type) {
+    if (type === 'screens') return data.memo || '';
+    if (type === 'markers') return data.text || '';
+    return data.name || '';
+  }
+
+  function applySortMode(paper, mode) {
+    const s = getState(paper);
+    s.sortMode = mode;
+
+    const sortBtn = paper.querySelector('.bwbr-sort-btn');
+    if (sortBtn) sortBtn.style.color = mode === 'default' ? 'rgba(255,255,255,0.4)' : '#2196F3';
+
+    const listItems = getListItems(paper);
+    if (!listItems.length) return;
+
+    // 실제 이동 단위(sortable wrapper) 및 컨테이너 찾기
+    // DOM: container(N children) → wrapper(1) → sortable → li
+    // sortable.parentElement가 children:1이면 그 wrapper째로 이동해야 함
+    const firstLi = listItems[0];
+    const firstSortable = firstLi.closest('[aria-roledescription="sortable"]') || firstLi;
+    
+    // 실제 N개 아이템을 가진 컨테이너까지 올라감
+    let container = firstSortable.parentElement;
+    while (container && container.children.length <= 1 && container !== paper) {
+      container = container.parentElement;
+    }
+    if (!container || container === paper) return;
+
+    // 컨테이너 직접 자식 = 이동 단위
+    const childArr = Array.from(container.children);
+
+    // 각 이동 단위 → data 매핑 (내부에서 sortable을 찾아 li를 추적)
+    const movableData = new Map();
+    for (const child of childArr) {
+      // child 안에 있는 li를 찾아서 itemMap에서 data를 가져옴
+      const innerLis = child.querySelectorAll
+        ? Array.from(child.querySelectorAll('.MuiListItemButton-root, .MuiListItem-root'))
+        : [];
+      for (const li of innerLis) {
+        const data = s.itemMap.get(li);
+        if (data) { movableData.set(child, data); break; }
+      }
+      // child 자체가 li인 경우
+      if (!movableData.has(child) && s.itemMap.has(child)) {
+        movableData.set(child, s.itemMap.get(child));
+      }
+    }
+
+    // 데이터 있는 것과 없는 것 분리
+    const withData = [];
+    const withoutData = [];
+    for (const child of childArr) {
+      const data = movableData.get(child);
+      if (data) withData.push({ movable: child, data });
+      else withoutData.push(child);
+    }
+    if (!withData.length) return;
+
+    // 정렬
+    if (mode === 'default') {
+      const orig = s._sortOriginalOrder || [];
+      withData.sort((a, b) => {
+        let ai = orig.indexOf(a.data._id), bi = orig.indexOf(b.data._id);
+        if (ai < 0) ai = 9999; if (bi < 0) bi = 9999;
+        return ai - bi;
+      });
+    } else if (mode === 'name') {
+      withData.sort((a, b) => getSortName(a.data, s.type).localeCompare(getSortName(b.data, s.type), 'ko'));
+    } else if (mode === 'initiative') {
+      withData.sort((a, b) => (b.data.initiative ?? 0) - (a.data.initiative ?? 0));
+    } else if (mode === 'z') {
+      withData.sort((a, b) => (b.data.z ?? 0) - (a.data.z ?? 0));
+    }
+
+    // 전체 재배치
+    const frag = document.createDocumentFragment();
+    for (const { movable } of withData) frag.appendChild(movable);
+    for (const el of withoutData) frag.appendChild(el);
+    container.appendChild(frag);
   }
 
   /* ══════════════════════════════════════════════════════════

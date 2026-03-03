@@ -3476,6 +3476,7 @@
         invisible:  !!it.invisible,
         hideStatus: !!it.hideStatus,
         secret:     !!it.secret,
+        initiative: it.initiative ?? 0,
         createdAt:  it.createdAt || 0
       }));
 

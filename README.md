@@ -228,25 +228,177 @@
 
 ---
 
+## 패널 관리
+
+### 일괄 선택
+
+캐릭터, 스크린, 마커, 시나리오 텍스트, 컷인 패널에서 **선택** 버튼을 누르면 일괄 선택 모드로 진입합니다.
+
+- 아이템을 클릭해 개별 선택/해제
+- **전체 선택** / **전체 해제** 버튼
+- 선택 후 타입별 일괄 작업 실행:
+
+| 패널 | 일괄 작업 |
+|------|----------|
+| 캐릭터 | 스테이터스 공개/비공개, 목록 표시/숨김, 꺼내기/집어넣기, 복제, 삭제 |
+| 스크린 | 표시/숨김, 복제, 삭제 |
+| 마커 | 복제, 삭제 |
+| 시나리오 텍스트 | 삭제 |
+| 컷인 | 삭제 |
+
+### 목록 정렬
+
+패널 타이틀 옆 정렬 아이콘(≡)을 클릭하면 정렬 옵션이 드롭다운으로 표시됩니다.
+
+| 패널 | 정렬 옵션 |
+|------|----------|
+| 캐릭터 | 기본, 가나다순, 이니셔티브순 |
+| 스크린 | 기본, 가나다순, 겹침우선도순 |
+| 마커 | 기본, 가나다순, 겹침우선도순 |
+| 시나리오 텍스트 | 기본, 가나다순 |
+| 컷인 | 기본, 가나다순 |
+
+- 정렬은 표시 순서만 변경 (서버 데이터 미변경)
+- 활성 정렬 시 아이콘이 파란색으로 표시
+- 「기본」선택 시 원래 순서로 복원
+
+### 드래그 리오더
+
+패널 아이템 좌측 드래그 핸들로 순서를 변경할 수 있습니다.
+
+---
+
+## 트리거 시스템
+
+채팅 패턴을 감지해 자동 동작을 실행하는 시스템입니다.
+
+### 트리거 패턴
+
+```
+《트리거이름》| {파라미터}
+```
+
+- `《》` 로 감싸인 이름과 `|` 뒤 파라미터로 구성
+- 기본 파라미터: `{대상}`, `{스탯}`, `{수치}`, `{내용}`, `{장면이름}`, `{캐릭터}`, `{대사}`, `{_주사위}`
+
+### 동작 체인
+
+하나의 트리거에 여러 동작을 순서대로 연결할 수 있습니다:
+
+| 동작 | 설명 |
+|------|------|
+| message | 채팅 메시지 전송 |
+| cutin | 컷인(이펙트) 재생 |
+| stat | 스테이터스 변경 |
+| dice | 주사위 굴림 |
+| face | 캐릭터 표정 변경 |
+| scene | 장면 전환 |
+| bgm / se | 배경음/효과음 재생 |
+| wait | 지연 시간 |
+| log | 콘솔 로그 |
+
+### 트리거 관리 UI
+
+채팅 패널에서 트리거 관리 다이얼로그를 열어 트리거를 추가/편집/삭제할 수 있습니다.
+
+- 빌트인 트리거: `_builtin_*` (읽기 전용)
+- 사용자 트리거: `usr_*` (자유 편집)
+- 가져오기/내보내기 지원
+
+---
+
+## 모듈 시스템
+
+JSON 기반 데이터 모듈을 로드하여 전투 설정, 트리거 프리셋 등을 관리합니다.
+
+### 내장 모듈
+
+| 모듈 | 설명 |
+|------|------|
+| `branch-world` | 가지세계 합 전투 설정 (템플릿, 타이밍, 효과음, 규칙, 패턴, 특성) |
+| `triggers` | 트리거 자동화 프리셋 |
+
+### 모듈 관리
+
+- 모듈 활성화/비활성화
+- 사용자 모듈 가져오기/내보내기/삭제
+- 모듈 개발 가이드: [MODULE_DEV_GUIDE.md](MODULE_DEV_GUIDE.md)
+
+---
+
+## 기타 기능
+
+### 채팅 로그 내보내기
+
+채팅 로그를 텍스트 파일로 내보낼 수 있습니다.
+
+### 보드 그리드 오버레이
+
+보드 위에 격자 오버레이를 표시합니다.
+
+### 사이트 음량 조절
+
+코코포리아 사이트 전체 음량을 별도로 조절할 수 있습니다.
+
+### 룸 복사
+
+현재 방의 설정을 복사합니다.
+
+### 얼굴 일괄 추가
+
+캐릭터에 여러 표정 이미지를 한 번에 추가할 수 있습니다.
+
+### 컬러 피커
+
+색상 선택 보조 도구입니다.
+
+### 자동 업데이트
+
+GitHub 릴리스 확인을 통한 업데이트 알림 및 자동 업데이트를 지원합니다.
+
+---
+
 ## 파일 구조
 
 ```
 manifest.json             Chrome Extension 매니페스트 (MV3)
-background.js             Service Worker (설치/업데이트, 메시지 라우팅)
+background.js             Service Worker (설치/업데이트, GitHub 업데이트 체크)
 README.md                 이 파일
 COCOFOLIA_DATA_API.md     코코포리아 내부 데이터 API 레퍼런스
+MODULE_DEV_GUIDE.md       모듈 개발 가이드
 
 content/
-  config-defaults.js      기본 설정값
+  site-volume.js          사이트 음량 조절 (document_start)
+  site-volume-page.js     페이지 컨텍스트 음량 스크립트
+  config-defaults.js      기본 설정값 (BWBR_CORE_DEFAULTS)
+  bridge-util.js          ISOLATED ↔ MAIN 브릿지 유틸리티
   melee-engine.js         합 처리 엔진 (주사위 비교, 특성 처리)
   combat-engine.js        전투 보조 엔진 (턴/행동 관리)
+  combat-controller.js    전투 컨트롤러 (합/턴제/관전 전체 전투 로직)
+  combat-move.js          전투 이동 헬퍼
   chat-interface.js       코코포리아 채팅 인터페이스 (메시지 감지/전송)
   auto-complete.js        채팅 자동완성 (#캐릭터, !스테이터스, @컷인, 괄호, 명령어)
   char-shortcut.js        캐릭터 단축키 (Alt+숫자 바인딩, 토큰/리스트 메뉴)
-  overlay.js              전투 패널 UI
-  overlay.css             전투 패널 스타일
-  content.js              메인 컨트롤러 (상태 머신, 오케스트레이션)
+  token-binding.js        토큰 바인딩
+  overlay.js / overlay.css  전투 패널 UI / 스타일
+  panel-manager.js        패널 관리 (일괄 선택, 정렬)
+  drag-reorder.js         드래그 리오더
+  trigger-engine.js       트리거 엔진 (패턴 매칭, 동작 체인 실행)
+  trigger-ui.js           트리거 관리 다이얼로그 UI
+  module-loader.js        모듈 로더 (내장+사용자 모듈 관리)
+  grid-overlay.js         보드 그리드 오버레이
+  log-export-dialog.js    채팅 로그 내보내기
+  face-bulk-add.js        얼굴 일괄 추가
+  color-picker.js         컬러 피커
+  room-copy.js            룸 복사
+  room-save.js            룸 저장
+  home-display.js         코코포리아 홈 페이지 기능
+  content.js              메인 컨트롤러 (설정 로드, 채팅 감시, 트리거 분배)
   redux-injector.js       코코포리아 Redux/Firestore 접근 (MAIN world)
+
+modules/
+  branch-world/manifest.json   가지세계 모듈 (합 전투 설정)
+  triggers/manifest.json       트리거 자동화 모듈 (기본 트리거 프리셋)
 
 popup/
   popup.html              설정 팝업 UI
@@ -254,6 +406,8 @@ popup/
   popup.css               팝업 스타일
 
 sounds/                   효과음 파일 (.wav, .mp3)
+
+updater/                  자동 업데이트 스크립트
 ```
 
 ---
@@ -270,7 +424,7 @@ sounds/                   효과음 파일 (.wav, .mp3)
 
 Chrome Extension MV3에서는 content script의 JS 컨텍스트가 페이지와 분리됩니다:
 
-- **ISOLATED world** (content scripts): `content.js`, `chat-interface.js`, `auto-complete.js`, `overlay.js`, `combat-engine.js`, `melee-engine.js`, `config-defaults.js`, `char-shortcut.js`
+- **ISOLATED world** (content scripts): `content.js`, `chat-interface.js`, `auto-complete.js`, `overlay.js`, `combat-engine.js`, `combat-controller.js`, `melee-engine.js`, `config-defaults.js`, `char-shortcut.js`, `panel-manager.js`, `drag-reorder.js`, `trigger-engine.js`, `trigger-ui.js`, `module-loader.js`, `grid-overlay.js`, `log-export-dialog.js`, `face-bulk-add.js`, `color-picker.js`, `room-copy.js`, `room-save.js`, `home-display.js`, `bridge-util.js`, `token-binding.js`, `combat-move.js`
 - **MAIN world** (페이지 컨텍스트): `redux-injector.js` — Redux store, Firestore SDK 접근
 
 ### ISOLATED ↔ MAIN 통신
@@ -290,6 +444,12 @@ CustomEvent + DOM attribute 방식:
 | `bwbr-switch-character` | ISOLATED → MAIN | 발화 캐릭터 변경 |
 | `bwbr-native-zoom` | ISOLATED → MAIN | 네이티브 확대 보기 |
 | `bwbr-character-edit` / `bwbr-character-store` / `bwbr-character-copy` / `bwbr-character-delete` | ISOLATED → MAIN | 캐릭터 조작 |
+| `bwbr-request-panel-list` / `bwbr-panel-list-data` | 양방향 | 스크린 패널 목록 |
+| `bwbr-request-marker-list` / `bwbr-marker-list-data` | 양방향 | 마커 목록 |
+| `bwbr-request-note-list` / `bwbr-note-list-data` | 양방향 | 시나리오 텍스트 목록 |
+| `bwbr-request-cutin-list` / `bwbr-cutin-list-data` | 양방향 | 컷인 목록 |
+| `bwbr-request-char-list` / `bwbr-char-list-data` | 양방향 | 캐릭터 목록 (패널용) |
+| `bwbr-char-batch-op` / `bwbr-char-batch-op-result` | 양방향 | 캐릭터 일괄 조작 |
 
 ### 코코포리아 내부 접근 (redux-injector.js)
 
@@ -321,7 +481,7 @@ IDLE → COMBAT_STARTED → ROUND_HEADER_SENT → WAITING_ATTACKER_RESULT
 - **합 개시 자동완성**: #선택 시 before 텍스트에서 `《합 개시》` 패턴 감지 → 캐릭터 params에서 전투 스탯 자동 채움
 - **테스트 캐릭터**: # 자동완성에 항상 '테스트' 포함 (주사위 3, 대성공 20, 대실패 1)
 - **chrome.storage.sync**: 설정 저장 (popup ↔ content 공유)
-- **Script 로드 순서**: site-volume (document_start) → config-defaults → melee-engine → combat-engine → chat-interface → overlay → auto-complete → content (document_idle)
+- **Script 로드 순서**: site-volume (document_start) → config-defaults → bridge-util → melee-engine → combat-engine → combat-controller → chat-interface → overlay → auto-complete → char-shortcut → panel-manager → drag-reorder → trigger-engine → trigger-ui → module-loader → grid-overlay → log-export-dialog → face-bulk-add → color-picker → room-copy → room-save → token-binding → combat-move → home-display → content (document_idle)
 - **MAIN world 스크립트**: redux-injector.js는 web_accessible_resources로 등록, content.js에서 `<script>` 태그로 주입
 - **네이티브 확대 보기**: Redux `app.state.openInspector` + `inspectImageUrl` 설정으로 코코포리아 내장 뷰어 활용
 - **캐릭터 편집**: Redux `app.state.openRoomCharacter` + `openRoomCharacterId` 설정
