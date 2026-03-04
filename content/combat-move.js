@@ -255,26 +255,79 @@
     // 이동 한칸(스텝) = gridSize (네이티브 셀 단위)
     var stepW = _gridSize;
     var stepH = _gridSize;
-    // 표시 타일 = 토큰 실제 크기 (이동 후 토큰이 차지할 영역)
+    // 토큰이 차지하는 그리드 셀 수 (네이티브 셀 단위 → 그리드 셀 단위)
+    var tokenGW = Math.ceil(item.width / _gridSize);  // 토큰 폭 (그리드 셀)
+    var tokenGH = Math.ceil(item.height / _gridSize);  // 토큰 높이 (그리드 셀)
     var tokenPxW = item.width * CELL_PX;
     var tokenPxH = item.height * CELL_PX;
 
-    // 맨해튼 거리 기반 이동 가능 타일 생성
+    // 1단계: 이동 가능 영역의 모든 그리드 셀을 수집 (중복 없이)
+    //   각 이동 목적지에서 토큰이 차지하는 그리드 셀들을 Set에 추가
+    var reachableCells = {};      // key = "gx,gy" → { dist: 맨해튼 거리 }
+    var moveTargets = [];         // 클릭 가능한 이동 목적지 목록
+
     for (var dx = -moveDistance; dx <= moveDistance; dx++) {
       for (var dy = -moveDistance; dy <= moveDistance; dy++) {
-        if (dx === 0 && dy === 0) continue;
-        if (Math.abs(dx) + Math.abs(dy) > moveDistance) continue;
+        var dist = Math.abs(dx) + Math.abs(dy);
+        if (dist === 0 || dist > moveDistance) continue;
 
         var targetX = item.x + dx * stepW;
         var targetY = item.y + dy * stepH;
+        moveTargets.push({ x: targetX, y: targetY, dist: dist });
 
-        var tile = createMoveTile(
-          targetX * CELL_PX, targetY * CELL_PX,
-          tokenPxW, tokenPxH,
-          item, char, targetX, targetY, moveDistance
-        );
-        _moveOverlay.appendChild(tile);
+        // 이 목적지에서 토큰이 커버하는 모든 그리드 셀
+        for (var gx = 0; gx < tokenGW; gx++) {
+          for (var gy = 0; gy < tokenGH; gy++) {
+            var cellX = targetX + gx * _gridSize;
+            var cellY = targetY + gy * _gridSize;
+            var key = cellX + ',' + cellY;
+            // 가장 가까운 거리를 기록 (색상 결정용)
+            if (!reachableCells[key] || reachableCells[key].dist > dist) {
+              reachableCells[key] = { x: cellX, y: cellY, dist: dist };
+            }
+          }
+        }
       }
+    }
+
+    // 현재 위치의 토큰 셀은 제외 (현재 위치는 별도 마커)
+    for (var gx = 0; gx < tokenGW; gx++) {
+      for (var gy = 0; gy < tokenGH; gy++) {
+        var key = (item.x + gx * _gridSize) + ',' + (item.y + gy * _gridSize);
+        delete reachableCells[key];
+      }
+    }
+
+    // 2단계: 겹치지 않는 그리드 셀 단위로 영역 렌더링
+    var cellKeys = Object.keys(reachableCells);
+    for (var ci = 0; ci < cellKeys.length; ci++) {
+      var cell = reachableCells[cellKeys[ci]];
+      var intensity = moveDistance > 0 ? 1 - (cell.dist - 1) / moveDistance : 0.5;
+      intensity = Math.max(0.15, Math.min(1, intensity));
+      var alpha = (0.10 + intensity * 0.18).toFixed(2);
+
+      var cellEl = document.createElement('div');
+      cellEl.style.cssText =
+        'position:absolute;' +
+        'left:' + (cell.x * CELL_PX) + 'px;' +
+        'top:' + (cell.y * CELL_PX) + 'px;' +
+        'width:' + _gridCellPx + 'px;' +
+        'height:' + _gridCellPx + 'px;' +
+        'background:rgba(66,165,245,' + alpha + ');' +
+        'box-sizing:border-box;' +
+        'pointer-events:none;';
+      _moveOverlay.appendChild(cellEl);
+    }
+
+    // 3단계: 클릭 가능한 이동 목적지 마커 (토큰 크기, 투명 + 테두리)
+    for (var ti = 0; ti < moveTargets.length; ti++) {
+      var t = moveTargets[ti];
+      var tile = createMoveTile(
+        t.x * CELL_PX, t.y * CELL_PX,
+        tokenPxW, tokenPxH,
+        item, char, t.x, t.y, moveDistance
+      );
+      _moveOverlay.appendChild(tile);
     }
 
     // 현재 위치 표시 (노란색, 토큰 전체 크기, 클릭 시 취소)
@@ -309,12 +362,13 @@
       'pointer-events:none;white-space:nowrap;';
     label.textContent = char.name + ' — 이동거리 ' + moveDistance;
     _moveOverlay.appendChild(label);
+    _moveOverlay.appendChild(label);
 
     zoom.appendChild(_moveOverlay);
     LOG('이동 범위 표시됨 (' + countTiles(moveDistance) + '칸)');
   }
 
-  /** 이동 타일 DOM 요소 생성 */
+  /** 이동 타일 DOM 요소 생성 (클릭 가능한 투명 마커, 호버 시 토큰 윤곽 표시) */
   function createMoveTile(leftPx, topPx, widthPx, heightPx, item, char, targetX, targetY, moveMax) {
     var tile = document.createElement('div');
     tile.setAttribute('data-bwbr-move-tile', '');
@@ -325,11 +379,6 @@
     var dx = Math.abs(targetX - item.x) / _gridSize;
     var dy = Math.abs(targetY - item.y) / _gridSize;
     var dist = dx + dy;
-    // 가까울수록 진하고, 멀수록 연하게
-    var intensity = moveMax > 0 ? 1 - (dist - 1) / moveMax : 0.5;
-    intensity = Math.max(0.15, Math.min(1, intensity));
-    var alpha = (0.15 + intensity * 0.25).toFixed(2);
-    var borderAlpha = (0.3 + intensity * 0.4).toFixed(2);
 
     tile.style.cssText =
       'position:absolute;' +
@@ -337,8 +386,8 @@
       'top:' + topPx + 'px;' +
       'width:' + widthPx + 'px;' +
       'height:' + heightPx + 'px;' +
-      'background:rgba(66,165,245,' + alpha + ');' +
-      'border:1px solid rgba(66,165,245,' + borderAlpha + ');' +
+      'background:transparent;' +
+      'border:1px solid transparent;' +
       'box-sizing:border-box;' +
       'pointer-events:auto;' +
       'cursor:pointer;' +
@@ -347,14 +396,14 @@
 
     tile.title = '(' + targetX + ', ' + targetY + ') — 거리 ' + dist;
 
-    // 호버 효과
+    // 호버 효과: 토큰이 이동할 위치를 윤곽으로 표시
     tile.addEventListener('mouseenter', function () {
-      tile.style.background = 'rgba(66,165,245,0.55)';
-      tile.style.borderColor = 'rgba(66,165,245,0.9)';
+      tile.style.background = 'rgba(66,165,245,0.30)';
+      tile.style.borderColor = 'rgba(66,165,245,0.8)';
     });
     tile.addEventListener('mouseleave', function () {
-      tile.style.background = 'rgba(66,165,245,' + alpha + ')';
-      tile.style.borderColor = 'rgba(66,165,245,' + borderAlpha + ')';
+      tile.style.background = 'transparent';
+      tile.style.borderColor = 'transparent';
     });
 
     // 클릭 → 이동 실행
