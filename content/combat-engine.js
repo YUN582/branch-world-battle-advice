@@ -16,6 +16,7 @@ window.CombatEngine = class CombatEngine {
     this.currentTurnIndex = -1;
     this.currentTurn = null;  // 현재 차례 캐릭터 정보
     this._characterData = []; // 캐릭터 데이터 (Content Script에서 전달)
+    this._statusDurations = {};  // CC 상태이상 지속 차례 맵 { charName: { effectLabel: duration } }
   }
 
   /** 설정 업데이트 */
@@ -524,6 +525,7 @@ window.CombatEngine = class CombatEngine {
         // originalData 제외
       })),
       currentTurnIndex: this.currentTurnIndex,
+      statusDurations: JSON.parse(JSON.stringify(this._statusDurations)),
       savedAt: Date.now()
     };
   }
@@ -542,6 +544,7 @@ window.CombatEngine = class CombatEngine {
     }));
     this.currentTurnIndex = data.currentTurnIndex ?? 0;
     this.currentTurn = this.turnOrder[this.currentTurnIndex] || this.turnOrder[0];
+    this._statusDurations = data.statusDurations || {};
     this.inCombat = true;
 
     this._log(`턴 전투 복원 완료: ${this.turnOrder.length}명, ${this.currentTurn.name}의 차례`);
@@ -564,6 +567,85 @@ window.CombatEngine = class CombatEngine {
       }
     }
     this._log('originalData 갱신 완료');
+  }
+
+  // ── 상태이상 duration 관리 ─────────────────────────────────
+
+  /**
+   * CC 상태이상의 지속 차례를 설정합니다.
+   * @param {string} charName - 캐릭터 이름
+   * @param {string} effectLabel - 상태이상 라벨 (예: '속박🚷')
+   * @param {number} duration - 남은 차례 수
+   */
+  setStatusDuration(charName, effectLabel, duration) {
+    if (!this._statusDurations[charName]) {
+      this._statusDurations[charName] = {};
+    }
+    if (duration > 0) {
+      this._statusDurations[charName][effectLabel] = duration;
+    } else {
+      delete this._statusDurations[charName][effectLabel];
+    }
+  }
+
+  /**
+   * CC 상태이상의 남은 지속 차례를 반환합니다.
+   * @param {string} charName - 캐릭터 이름
+   * @param {string} effectLabel - 상태이상 라벨
+   * @returns {number} 남은 차례 수 (없으면 0)
+   */
+  getStatusDuration(charName, effectLabel) {
+    return this._statusDurations[charName]?.[effectLabel] || 0;
+  }
+
+  /**
+   * 캐릭터의 모든 CC duration을 1씩 감소시킵니다.
+   * 0이 된 항목은 제거됩니다.
+   * @param {string} charName - 캐릭터 이름
+   * @returns {Array<{label: string, expired: boolean, remaining: number}>} 변경 내역
+   */
+  decrementStatusDurations(charName) {
+    const map = this._statusDurations[charName];
+    if (!map) return [];
+    const results = [];
+    for (const label of Object.keys(map)) {
+      map[label]--;
+      if (map[label] <= 0) {
+        delete map[label];
+        results.push({ label, expired: true, remaining: 0 });
+      } else {
+        results.push({ label, expired: false, remaining: map[label] });
+      }
+    }
+    return results;
+  }
+
+  /**
+   * 모든 캐릭터의 상태이상 duration을 초기화합니다.
+   */
+  clearAllStatusDurations() {
+    this._statusDurations = {};
+  }
+
+  /**
+   * 캐릭터의 활성 상태이상 목록을 params에서 읽어옵니다.
+   * @param {object} charData - 캐릭터 원본 데이터 (originalData)
+   * @param {object} effectDefs - statusEffects 정의 (manifest config)
+   * @returns {Array<{label: string, value: number, def: object}>} 활성 상태이상 배열
+   */
+  getActiveStatusEffects(charData, effectDefs) {
+    if (!charData?.params || !effectDefs) return [];
+    const active = [];
+    for (const [label, def] of Object.entries(effectDefs)) {
+      const param = charData.params.find(p => p.label === label);
+      if (param) {
+        const val = parseInt(param.value) || 0;
+        if (val > 0) {
+          active.push({ label, value: val, def });
+        }
+      }
+    }
+    return active;
   }
 
   // ── 상태 확인 ───────────────────────────────────────────

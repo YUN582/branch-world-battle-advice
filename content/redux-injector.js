@@ -1835,15 +1835,17 @@
   // ================================================================
   //  트리거: 파라미터 변경 (캐릭터 params[] 배열 수정)
   //  Content Script에서 bwbr-modify-param 이벤트로 요청
+  //  silent: true 시 시스템 메시지 미전송
   // ================================================================
   window.addEventListener('bwbr-modify-param', async (e) => {
     // DOM 속성 브릿지 (크로스-월드 안정성)
     const _raw = document.documentElement.getAttribute('data-bwbr-modify-param');
     document.documentElement.removeAttribute('data-bwbr-modify-param');
-    const { targetName, paramLabel, operation, value } = _raw ? JSON.parse(_raw) : (e.detail || {});
-    const respond = (detail) => window.dispatchEvent(
-      new CustomEvent('bwbr-modify-param-result', { detail })
-    );
+    const { targetName, paramLabel, operation, value, silent } = _raw ? JSON.parse(_raw) : (e.detail || {});
+    const respond = (detail) => {
+      document.documentElement.setAttribute('data-bwbr-modify-param-result', JSON.stringify(detail));
+      window.dispatchEvent(new CustomEvent('bwbr-modify-param-result', { detail }));
+    };
 
     try {
       const sdk = acquireFirestoreSDK();
@@ -1889,8 +1891,104 @@
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
       respond({ success: true, target: targetName, param: paramLabel, oldVal, newVal });
 
+      if (!silent) {
+        sendDirectMessage(
+          `[ ${targetName} ] ${paramLabel} : ${oldVal} → ${newVal}`,
+          { name: 'system', type: 'system', color: '#888888', iconUrl: null }
+        ).catch(() => {});
+      }
+
     } catch (err) {
       console.error('[CE] 파라미터 변경 실패:', err.message);
+      respond({ success: false, error: err.message });
+    }
+  });
+
+  // ================================================================
+  //  전투 보조: 전체 캐릭터 파라미터 일괄 변경
+  //  Content Script에서 bwbr-modify-param-all 이벤트로 요청
+  //  활성화된(hideStatus !== true) 모든 캐릭터를 대상으로 함
+  //  op: '+', '-', '='
+  // ================================================================
+  window.addEventListener('bwbr-modify-param-all', async (e) => {
+    const _raw = document.documentElement.getAttribute('data-bwbr-modify-param-all');
+    document.documentElement.removeAttribute('data-bwbr-modify-param-all');
+    const { paramLabel, operation, value, silent } = _raw ? JSON.parse(_raw) : (e.detail || {});
+    const respond = (detail) => {
+      document.documentElement.setAttribute('data-bwbr-modify-param-all-result', JSON.stringify(detail));
+      window.dispatchEvent(new CustomEvent('bwbr-modify-param-all-result', { detail }));
+    };
+
+    try {
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) throw new Error('Firestore SDK 없음');
+      if (!reduxStore) throw new Error('Redux Store 없음');
+
+      const roomId = getRoomId();
+      if (!roomId) throw new Error('방 ID를 찾을 수 없음');
+
+      const state = reduxStore.getState();
+      const rc = state.entities?.roomCharacters;
+      if (!rc) throw new Error('캐릭터 데이터 없음');
+
+      const charsCol = sdk.collection(sdk.db, 'rooms', roomId, 'characters');
+      let affected = 0;
+      const changes = [];
+
+      for (const id of (rc.ids || [])) {
+        const char = rc.entities?.[id];
+        if (!char) continue;
+        if (char.hideStatus === true) continue;
+
+        const charId = char._id || id;
+        const paramsArr = char.params || [];
+        const idx = paramsArr.findIndex(p => p.label === paramLabel);
+        if (idx < 0) continue;
+
+        const oldVal = paramsArr[idx].value || '';
+        const numOld = parseFloat(oldVal);
+        const numNew = parseFloat(value);
+        let newVal;
+
+        if (operation === '=' || isNaN(numOld) || isNaN(numNew)) {
+          newVal = String(value);
+        } else {
+          switch (operation) {
+            case '+': newVal = String(numOld + numNew); break;
+            case '-': newVal = String(numOld - numNew); break;
+            default:  newVal = String(value); break;
+          }
+        }
+
+        if (oldVal === String(newVal)) continue;
+
+        const newParams = paramsArr.map((p, i) => {
+          if (i === idx) return { ...p, value: String(newVal) };
+          return { ...p };
+        });
+
+        const charRef = sdk.doc(charsCol, charId);
+        await sdk.setDoc(charRef, { params: newParams, updatedAt: Date.now() }, { merge: true });
+        affected++;
+        changes.push({ name: char.name, oldVal, newVal });
+      }
+
+      if (affected > 0) {
+        _dbg(`%c[CE]%c ✅ 전체 ${paramLabel} ${operation}${value}: ${affected}명`,
+          'color: #4caf50; font-weight: bold;', 'color: inherit;');
+        if (!silent) {
+          const changeStr = changes.map(c => `${c.name}: ${c.oldVal}→${c.newVal}`).join(', ');
+          sendDirectMessage(
+            `[ 전체 ] ${paramLabel} ${operation}${value} → ${affected}명 적용 (${changeStr})`,
+            { name: 'system', type: 'system', color: '#888888', iconUrl: null }
+          ).catch(() => {});
+        }
+      }
+
+      respond({ success: true, affected, label: paramLabel, changes });
+
+    } catch (err) {
+      console.error('[CE] 전체 파라미터 변경 실패:', err.message);
       respond({ success: false, error: err.message });
     }
   });

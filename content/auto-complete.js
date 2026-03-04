@@ -67,6 +67,14 @@
   let _atIdx = 0;
   let _atCandidates = [];
 
+  /* ── $ 자동완성 상태 (상태이상) ──────────────── */
+  let _dollarActive = false;
+  let _dollarStartPos = -1;
+  let _dollarInput = null;
+  let _dollarDrop = null;
+  let _dollarIdx = 0;
+  let _dollarCandidates = [];
+
   /* ── 코코포리아 채팅 입력란 감지 (textarea + contenteditable) */
   function isChatInput(el) {
     if (!el) return false;
@@ -224,6 +232,49 @@
       }
       if (e.key === 'Tab') {
         _hideAt();
+      }
+    }
+
+    /* ── $ 자동완성 키 처리 (상태이상) ───────────── */
+    if (_dollarActive && _dollarInput === el) {
+      if (el.selectionStart <= _dollarStartPos || el.value[_dollarStartPos] !== '$') {
+        _hideDollar();
+      }
+    }
+    if (_dollarActive && _dollarInput === el) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault(); e.stopPropagation();
+        const list = _filteredDollar();
+        if (list.length > 0) { _dollarIdx = (_dollarIdx + 1) % list.length; _highlightDollar(); }
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault(); e.stopPropagation();
+        const list = _filteredDollar();
+        if (list.length > 0) { _dollarIdx = (_dollarIdx - 1 + list.length) % list.length; _highlightDollar(); }
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault(); e.stopImmediatePropagation();
+        const list = _filteredDollar();
+        if (list.length > 0 && _dollarIdx >= 0) _selectDollar(list[_dollarIdx].label);
+        else _hideDollar();
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault(); e.stopPropagation();
+        _hideDollar();
+        return;
+      }
+      if (e.key === 'Backspace') {
+        if (el.selectionStart <= _dollarStartPos + 1) {
+          _hideDollar();
+          return;
+        }
+        return;
+      }
+      if (e.key === 'Tab') {
+        _hideDollar();
       }
     }
 
@@ -904,6 +955,117 @@
     _renderAt();
   }
 
+  /* ── $ 자동완성 : 상태이상 드롭다운 관리 ─────────── */
+  function _hideDollar() {
+    if (_dollarDrop) { _dollarDrop.remove(); _dollarDrop = null; }
+    _dollarActive = false;
+    _dollarStartPos = -1;
+    _dollarInput = null;
+    _dollarIdx = 0;
+    _dollarCandidates = [];
+  }
+
+  function _createDollarDrop(el) {
+    _hideDollar();
+    _dollarDrop = document.createElement('div');
+    _dollarDrop.className = 'bwbr-hash-dropdown';
+    const rect = el.getBoundingClientRect();
+    Object.assign(_dollarDrop.style, {
+      position: 'fixed',
+      left: rect.left + 'px',
+      bottom: (window.innerHeight - rect.top + 4) + 'px',
+      minWidth: Math.min(rect.width, 200) + 'px',
+      maxWidth: '300px',
+      maxHeight: '200px',
+      zIndex: '99999'
+    });
+    document.body.appendChild(_dollarDrop);
+  }
+
+  function _filteredDollar() {
+    if (!_dollarInput) return [];
+    const f = _dollarInput.value.slice(_dollarStartPos + 1, _dollarInput.selectionStart).toLowerCase();
+    return f ? _dollarCandidates.filter(c =>
+      c.label.toLowerCase().includes(f) || c.name.toLowerCase().includes(f)
+    ) : [..._dollarCandidates];
+  }
+
+  function _renderDollar() {
+    if (!_dollarDrop || !_dollarInput) return;
+    const list = _filteredDollar();
+    _dollarDrop.innerHTML = '';
+
+    if (list.length === 0) {
+      const em = document.createElement('div');
+      em.className = 'bwbr-hash-item bwbr-hash-empty';
+      em.textContent = '일치하는 상태이상 없음';
+      _dollarDrop.appendChild(em);
+      _dollarIdx = -1;
+      return;
+    }
+
+    if (_dollarIdx >= list.length) _dollarIdx = list.length - 1;
+    if (_dollarIdx < 0) _dollarIdx = 0;
+
+    list.forEach((c, i) => {
+      const item = document.createElement('div');
+      item.className = 'bwbr-hash-item' + (i === _dollarIdx ? ' selected' : '');
+      item.textContent = c.label;
+      item.addEventListener('mousedown', (e) => { e.preventDefault(); _selectDollar(c.label); });
+      item.addEventListener('mouseenter', () => { _dollarIdx = i; _highlightDollar(); });
+      _dollarDrop.appendChild(item);
+    });
+  }
+
+  function _highlightDollar() {
+    if (!_dollarDrop) return;
+    _dollarDrop.querySelectorAll('.bwbr-hash-item:not(.bwbr-hash-empty)').forEach((el, i) => {
+      el.classList.toggle('selected', i === _dollarIdx);
+      if (i === _dollarIdx) el.scrollIntoView({ block: 'nearest' });
+    });
+  }
+
+  function _selectDollar(label) {
+    if (!_dollarInput) return;
+    const el = _dollarInput;
+    const val = el.value;
+    const before = val.slice(0, _dollarStartPos);  // $ 앞까지
+    const after = val.slice(el.selectionStart);     // 커서 뒤
+    // $ 제거, 라벨명 삽입 (앞에 공백 없으면 추가)
+    const needSpace = before.length > 0 && before[before.length - 1] !== ' ';
+    const insert = (needSpace ? ' ' : '') + label;
+    const nv = before + insert + after;
+    _guard = true; setNative(el, nv); _guard = false;
+    el.selectionStart = el.selectionEnd = _dollarStartPos + insert.length;
+    _hideDollar();
+  }
+
+  function _startDollar(el) {
+    const pos = _dollarStartPos;
+    _dollarInput = el;
+
+    // branch-world 모듈의 statusEffects 정의에서 목록 가져오기
+    const effectDefs = window.BWBR_COMBAT_DEFAULTS?.statusEffects;
+    if (!effectDefs || Object.keys(effectDefs).length === 0) {
+      _hideDollar();
+      return;
+    }
+
+    const candidates = Object.entries(effectDefs).map(([label, def]) => ({
+      label: label,
+      name: def.name || label,
+      emoji: def.emoji || ''
+    }));
+
+    _createDollarDrop(el);
+    _dollarActive = true;
+    _dollarStartPos = pos;
+    _dollarInput = el;
+    _dollarIdx = 0;
+    _dollarCandidates = candidates;
+    _renderDollar();
+  }
+
   /* ── # 자동완성 : input 이벤트 (감지 + 필터 갱신) ─── */
   document.addEventListener('input', (e) => {
     if (_guard || !enabled) return;
@@ -911,7 +1073,7 @@
     const el = e.target;
 
     // # 삽입 감지 → 자동완성 시작
-    if (!_hashActive && !_bangActive && !_atActive && e.inputType === 'insertText' && e.data === '#') {
+    if (!_hashActive && !_bangActive && !_atActive && !_dollarActive && e.inputType === 'insertText' && e.data === '#') {
       _hashActive = true;
       _hashStartPos = el.selectionStart - 1;
       _startHash(el);
@@ -925,7 +1087,7 @@
     }
 
     // ! 삽입 감지 → 스테이터스 자동완성 시작
-    if (!_bangActive && !_hashActive && !_atActive && e.inputType === 'insertText' && e.data === '!') {
+    if (!_bangActive && !_hashActive && !_atActive && !_dollarActive && e.inputType === 'insertText' && e.data === '!') {
       _bangActive = true;
       _bangStartPos = el.selectionStart - 1;
       _startBang(el);
@@ -939,7 +1101,7 @@
     }
 
     // @ 삽입 감지 → 컷인 자동완성 시작 (맨 앞 @는 무시 — 코코포리아 자체 자동완성과 충돌 방지)
-    if (!_atActive && !_hashActive && !_bangActive && e.inputType === 'insertText' && e.data === '@') {
+    if (!_atActive && !_hashActive && !_bangActive && !_dollarActive && e.inputType === 'insertText' && e.data === '@') {
       const atPos = el.selectionStart - 1;
       if (atPos > 0) {  // 입력란 맨 앞이 아닌 경우만 활성화
         _atActive = true;
@@ -954,9 +1116,23 @@
       if (el.value[_atStartPos] !== '@') { _hideAt(); return; }
       _renderAt();
     }
+
+    // $ 삽입 감지 → 상태이상 자동완성 시작
+    if (!_dollarActive && !_hashActive && !_bangActive && !_atActive && e.inputType === 'insertText' && e.data === '$') {
+      _dollarActive = true;
+      _dollarStartPos = el.selectionStart - 1;
+      _startDollar(el);
+      return;
+    }
+
+    // $ 필터 갱신
+    if (_dollarActive && _dollarInput === el) {
+      if (el.value[_dollarStartPos] !== '$') { _hideDollar(); return; }
+      _renderDollar();
+    }
   }, true);
 
-  /* ── # / ! / @ 자동완성 : 포커스 아웃 시 닫기 ──────── */
+  /* ── # / ! / @ / $ 자동완성 : 포커스 아웃 시 닫기 ──── */
   document.addEventListener('focusout', (e) => {
     if (_hashActive && _hashInput === e.target) {
       setTimeout(() => { if (_hashActive) _hideHash(); }, 150);
@@ -967,6 +1143,9 @@
     if (_atActive && _atInput === e.target) {
       setTimeout(() => { if (_atActive) _hideAt(); }, 150);
     }
+    if (_dollarActive && _dollarInput === e.target) {
+      setTimeout(() => { if (_dollarActive) _hideDollar(); }, 150);
+    }
   }, true);
 
   /* ── :# 스테이터스 변경 명령 실행 ──────────────────── */
@@ -974,22 +1153,35 @@
     // 입력 필드 클리어
     _guard = true; setNative(el, ''); _guard = false;
 
-    const handler = (e) => {
-      window.removeEventListener('bwbr-modify-status-result', handler);
-      if (e.detail?.success) {
-        // 성공 시 토스트 없음 (시스템 메시지로 확인 가능)
-      } else {
-        console.warn('[CE] 스테이터스 변경 실패:', e.detail?.error);
-        _showToast(`⚠️ ${e.detail?.error || '알 수 없는 오류'}`, 'error');
-      }
-    };
+    // 상태이상 라벨인지 확인 → params 경로 / 일반 status 경로 분기
+    const effectDefs = window.BWBR_COMBAT_DEFAULTS?.statusEffects;
+    const isStatusEffect = effectDefs && Object.prototype.hasOwnProperty.call(effectDefs, statusLabel);
 
-    window.addEventListener('bwbr-modify-status-result', handler);
-    setTimeout(() => window.removeEventListener('bwbr-modify-status-result', handler), 5000);
-
-    window.dispatchEvent(new CustomEvent('bwbr-modify-status', {
-      detail: { targetName, statusLabel, operation, value }
-    }));
+    if (isStatusEffect) {
+      // params 경로 (상태이상)
+      BWBR_Bridge.request(
+        'bwbr-modify-param', 'bwbr-modify-param-result',
+        { targetName, paramLabel: statusLabel, operation, value },
+        { sendAttr: 'data-bwbr-modify-param', recvAttr: 'data-bwbr-modify-param-result', timeout: 5000 }
+      ).then(res => {
+        if (!res?.success) {
+          console.warn('[CE] 상태이상 변경 실패:', res?.error);
+          _showToast(`⚠️ ${res?.error || '알 수 없는 오류'}`, 'error');
+        }
+      }).catch(() => _showToast('⚠️ 상태이상 변경 시간 초과', 'error'));
+    } else {
+      // status 경로 (일반 스테이터스)
+      BWBR_Bridge.request(
+        'bwbr-modify-status', 'bwbr-modify-status-result',
+        { targetName, statusLabel, operation, value },
+        { sendAttr: 'data-bwbr-modify-status', recvAttr: 'data-bwbr-modify-status-result', timeout: 5000 }
+      ).then(res => {
+        if (!res?.success) {
+          console.warn('[CE] 스테이터스 변경 실패:', res?.error);
+          _showToast(`⚠️ ${res?.error || '알 수 없는 오류'}`, 'error');
+        }
+      }).catch(() => _showToast('⚠️ 스테이터스 변경 시간 초과', 'error'));
+    }
   }
 
   /* ── /ㅇ 시스템 메시지 전송 ─────────────────────── */
@@ -1033,7 +1225,7 @@
   window.BWBR_AutoComplete = {
     setEnabled(v) {
       enabled = !!v;
-      if (!v) { _hideHash(); _hideBang(); _hideAt(); }
+      if (!v) { _hideHash(); _hideBang(); _hideAt(); _hideDollar(); }
       // 힌트 UI도 연동
       const hint = document.querySelector('.bwbr-hint');
       if (hint) hint.style.display = v ? '' : 'none';
@@ -1044,9 +1236,11 @@
     isHashActive() { return _hashActive; },
     isBangActive() { return _bangActive; },
     isAtActive()   { return _atActive; },
+    isDollarActive() { return _dollarActive; },
     hideHash()     { _hideHash(); },
     hideBang()     { _hideBang(); },
-    hideAt()       { _hideAt(); }
+    hideAt()       { _hideAt(); },
+    hideDollar()   { _hideDollar(); }
   };
 
 })();

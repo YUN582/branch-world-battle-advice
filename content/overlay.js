@@ -331,6 +331,7 @@ window.BattleRollOverlay = class BattleRollOverlay {
 
     if (!turnData) {
       // 전투 종료 - 패널 숨김
+      this._prevEffectLabels = new Set();
       info.classList.remove('bwbr-combat-visible');
       const guide = this.element?.querySelector('#bwbr-guide');
       if (guide) guide.classList.remove('bwbr-guide-hidden');
@@ -403,6 +404,26 @@ window.BattleRollOverlay = class BattleRollOverlay {
       ? `<span class="bwbr-turn-alias">${this._esc(turnData.alias)}</span>` 
       : '';
 
+    // 상태이상 배지 섹션
+    const prevEffectLabels = this._prevEffectLabels || new Set();
+    let statusEffectsHtml = '';
+    const newEffectLabels = new Set();
+    if (turnData.statusEffects && turnData.statusEffects.length > 0) {
+      const badges = turnData.statusEffects.map(eff => {
+        const valText = eff.value > 1 ? `×${eff.value}` : '';
+        const isNew = !prevEffectLabels.has(eff.label);
+        const effType = eff.def?.type || 'unknown';
+        newEffectLabels.add(eff.label);
+        return `<div class="bwbr-effect-badge${isNew ? ' bwbr-effect-new' : ''}" data-effect-type="${effType}" data-effect-label="${this._esc(eff.label)}" title="${this._esc(eff.def?.desc || eff.label)}">
+          <button class="bwbr-effect-btn bwbr-effect-minus" data-effect-label="${this._esc(eff.label)}" title="-1">−</button>
+          <span class="bwbr-effect-text">${this._esc(eff.def?.emoji || '')}${this._esc(eff.def?.name || eff.label)}${valText}</span>
+          <button class="bwbr-effect-btn bwbr-effect-plus" data-effect-label="${this._esc(eff.label)}" title="+1">+</button>
+        </div>`;
+      }).join('');
+      statusEffectsHtml = `<div class="bwbr-status-effects">${badges}</div>`;
+    }
+    this._prevEffectLabels = newEffectLabels;
+
     info.innerHTML = `
       <div class="bwbr-turn-card">
         <div class="bwbr-portrait">
@@ -420,6 +441,7 @@ window.BattleRollOverlay = class BattleRollOverlay {
           </div>
         </div>
       </div>
+      ${statusEffectsHtml}
     `;
 
     // 현재 턴 데이터 저장
@@ -479,6 +501,21 @@ window.BattleRollOverlay = class BattleRollOverlay {
         }
       });
     });
+
+    // 상태이상 +/- 버튼 클릭 이벤트
+    const effectBtns = container.querySelectorAll('.bwbr-effect-btn');
+    effectBtns.forEach(btn => {
+      btn.style.display = isReadOnly ? 'none' : '';
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (isReadOnly) return;
+        const label = btn.dataset.effectLabel;
+        const action = btn.classList.contains('bwbr-effect-plus') ? 'add' : 'remove';
+        if (this.onStatusEffectCallback) {
+          this.onStatusEffectCallback(label, action);
+        }
+      });
+    });
   }
 
   /**
@@ -487,6 +524,14 @@ window.BattleRollOverlay = class BattleRollOverlay {
    */
   setActionClickCallback(callback) {
     this.onActionClickCallback = callback;
+  }
+
+  /**
+   * 상태이상 +/- 클릭 콜백 설정
+   * @param {function} callback - (label: string, action: 'add'|'remove') => void
+   */
+  setStatusEffectCallback(callback) {
+    this.onStatusEffectCallback = callback;
   }
 
   /**

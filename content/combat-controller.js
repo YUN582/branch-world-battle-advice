@@ -65,6 +65,11 @@
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
+  /** 정규식 특수문자 이스케이프 */
+  function _escRegex(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
   // ── 초기화 ────────────────────────────────────────────────
 
   function init(deps) {
@@ -108,6 +113,26 @@
           ? `🔹보조 행동 ${result.oldVal} → ${result.newVal}개`
           : `🔹보조 행동 ${preStats.subActions}개`;
         const msg = `〔 ${current.name}의 차례 〕\n${mainStr}, ${subStr} | 이동거리 ${current.movement}`;
+        chat.sendSystemMessage(msg);
+      }
+
+      _scheduleStatRefreshUI(100);
+    });
+
+    // 상태이상 +/- 버튼 콜백
+    overlay.setStatusEffectCallback(async (label, action) => {
+      const current = combatEngine.getState()?.currentCharacter;
+      if (!current) return;
+
+      let result;
+      if (action === 'add') {
+        result = await _modifyCharParam(current.name, label, '+', 1, true);
+      } else if (action === 'remove') {
+        result = await _modifyCharParam(current.name, label, '-', 1, true);
+      }
+
+      if (result && result.success) {
+        const msg = `〔 ${current.name} 〕 ${label} : ${result.oldVal} → ${result.newVal}`;
         chat.sendSystemMessage(msg);
       }
 
@@ -208,6 +233,17 @@
 
     if (/[《〔].*행동\s*(소비|추가)[》〕]/.test(text) || /\]\s*주 행동🔺/.test(text) || /\]\s*보조 행동🔹/.test(text)) {
       _scheduleStatRefreshUI();
+    }
+
+    // 상태이상 변경 감지 → UI 갱신 (“[ 캐릭 ] 라벨 : old → new” 패턴)
+    const effectDefs = config.statusEffects;
+    if (effectDefs) {
+      for (const label of Object.keys(effectDefs)) {
+        if (text.includes(label)) {
+          _scheduleStatRefreshUI(300);
+          break;
+        }
+      }
     }
   }
 
@@ -315,6 +351,148 @@
       'bwbr-modify-status-all', 'bwbr-modify-status-all-result', detail,
       { sendAttr: 'data-bwbr-modify-status-all', recvAttr: 'data-bwbr-modify-status-all-result', timeout: 5000 }
     ).catch(() => null);
+  }
+
+  // ── 파라미터 변경 헬퍼 (상태이상용) ───────────────────────
+
+  function _modifyCharParam(characterName, paramLabel, operation, value, silent) {
+    const detail = {
+      targetName: characterName,
+      paramLabel: paramLabel,
+      operation: operation,
+      value: value,
+      silent: !!silent
+    };
+    return BWBR_Bridge.request(
+      'bwbr-modify-param', 'bwbr-modify-param-result', detail,
+      { sendAttr: 'data-bwbr-modify-param', recvAttr: 'data-bwbr-modify-param-result', timeout: 5000 }
+    ).catch(() => null);
+  }
+
+  function _modifyAllCharParam(paramLabel, operation, value, silent) {
+    const detail = {
+      paramLabel: paramLabel,
+      operation: operation,
+      value: value,
+      silent: !!silent
+    };
+    return BWBR_Bridge.request(
+      'bwbr-modify-param-all', 'bwbr-modify-param-all-result', detail,
+      { sendAttr: 'data-bwbr-modify-param-all', recvAttr: 'data-bwbr-modify-param-all-result', timeout: 5000 }
+    ).catch(() => null);
+  }
+
+  // ── 상태이상 처리 ─────────────────────────────────────────
+
+  /**
+   * 현재 차례 캐릭터의 활성 상태이상을 읽고, 안내 메시지를 전송하고,
+   * turnDecay/cc 계열을 자동 감소시킵니다.
+   * @returns {Array} 활성 상태이상 배열 (UI 표시용)
+   */
+  async function _processStatusEffects() {
+    const effectDefs = config.statusEffects;
+    if (!effectDefs) return [];
+
+    const state = combatEngine.getState();
+    const current = state.currentCharacter;
+    if (!current?.originalData?.params) return [];
+
+    const charName = current.name;
+    const activeEffects = combatEngine.getActiveStatusEffects(current.originalData, effectDefs);
+    if (activeEffects.length === 0) return [];
+
+    const activeLines = [];   // 유지되는 상태이상
+    const expiredLines = [];  // 이번 차례에 해제되는 상태이상
+
+    for (const effect of activeEffects) {
+      const { label, value, def } = effect;
+      const name = def.name || label;
+
+      // ── 자동 감소 처리 & 해제 판정 ──
+      let willExpire = false;
+
+      if (def.type === 'turnDecay') {
+        // 매 차례 -1 → value가 1이면 이번에 해제
+        willExpire = (value <= 1);
+        await _modifyCharParam(charName, label, '-', 1, true);
+      } else if (def.type === 'cc') {
+        const dur = combatEngine.getStatusDuration(charName, label);
+        if (dur > 0) {
+          const results = combatEngine.decrementStatusDurations(charName);
+          const thisResult = results.find(r => r.label === label);
+          if (thisResult?.expired) {
+            willExpire = true;
+            await _modifyCharParam(charName, label, '=', '0', true);
+          }
+        } else {
+          // duration 미추적 → 1차례 CC
+          willExpire = true;
+          if (def.stacking) {
+            await _modifyCharParam(charName, label, '=', '0', true);
+          } else {
+            await _modifyCharParam(charName, label, '-', 1, true);
+          }
+        }
+      }
+      // onHit: 자동 감소 없음
+
+      // ── 메시지 생성 ──
+      if (willExpire) {
+        expiredLines.push(`❌ ${label} 해제`);
+      } else {
+        // desc에서 [name] 을 실제 수치로 치환
+        let desc = def.desc || '';
+        const re = new RegExp('\\[' + _escRegex(name) + '\\]', 'g');
+        desc = desc.replace(re, String(value));
+
+        // CC 지속시간 문구 치환
+        if (def.type === 'cc') {
+          const dur = combatEngine.getStatusDuration(charName, label);
+          if (dur > 1) {
+            desc = desc.replace('다음 차례까지', `다음 ${dur}차례까지`);
+          }
+        }
+
+        activeLines.push(`▫️${label} ${value}, ${desc}`);
+      }
+    }
+
+    // 별도 시스템 메시지로 상태이상 안내
+    const allLines = [...activeLines, ...expiredLines];
+    if (allLines.length > 0) {
+      const msg = `〔 ⚠️ ${charName} 상태이상 〕\n${allLines.join('\n')}`;
+      chat.sendSystemMessage(msg);
+    }
+
+    // 상태 저장
+    _saveTurnCombatState();
+
+    return activeEffects;
+  }
+
+  /**
+   * 전투 종료 시 모든 캐릭터의 상태이상 파라미터를 0으로 초기화합니다.
+   */
+  async function _resetAllStatusEffects() {
+    const effectDefs = config.statusEffects;
+    if (!effectDefs) return;
+
+    for (const label of Object.keys(effectDefs)) {
+      await _modifyAllCharParam(label, '=', '0', true);
+    }
+    combatEngine.clearAllStatusDurations();
+    _log('[상태이상] 모든 캐릭터 상태이상 초기화 완료');
+  }
+
+  /**
+   * 캐릭터의 활성 상태이상 배열을 반환합니다 (UI 표시용).
+   * @param {object} charData - 캐릭터 originalData
+   * @returns {Array<{label: string, value: number, def: object}>}
+   */
+  function _getActiveEffectsForUI(charData) {
+    const effectDefs = config.statusEffects;
+    if (!effectDefs) return [];
+    return combatEngine.getActiveStatusEffects(charData, effectDefs);
   }
 
   function _extractCharInfo(current) {
@@ -467,6 +645,7 @@
 
     const { willValue, willMax, armorValue, aliasValue } = _extractCharInfo(current);
     const actionStats = _extractActionStats(current);
+    const activeEffects = _getActiveEffectsForUI(current.originalData);
 
     overlay.updateTurnInfo({
       name: current.name,
@@ -478,7 +657,8 @@
       mainActions: actionStats.mainActions,
       mainActionsMax: actionStats.mainActionsMax,
       subActions: actionStats.subActions,
-      subActionsMax: actionStats.subActionsMax
+      subActionsMax: actionStats.subActionsMax,
+      statusEffects: activeEffects
     });
   }
 
@@ -509,6 +689,17 @@
     _log(`턴 메시지: ${turnMsg}`);
     overlay.addLog(`🎯 ${current.name}의 차례`, 'success');
 
+    // 차례 메시지를 먼저 전송
+    chat.sendSystemMessage(turnMsg);
+
+    // 상태이상 처리: 안내 + 자동 감소 (차례 메시지 뒤에)
+    await _processStatusEffects();
+
+    // 상태이상 처리 후 데이터 재로드
+    await _delay(200);
+    await _refreshCharacterOriginalData();
+    const updatedEffects = _getActiveEffectsForUI(current.originalData);
+
     overlay.updateTurnInfo({
       name: current.name,
       iconUrl: current.iconUrl,
@@ -519,10 +710,9 @@
       mainActions: actionStats.mainActions,
       mainActionsMax: actionStats.mainActionsMax,
       subActions: actionStats.subActions,
-      subActionsMax: actionStats.subActionsMax
+      subActionsMax: actionStats.subActionsMax,
+      statusEffects: updatedEffects
     });
-
-    chat.sendSystemMessage(turnMsg);
 
     // 상태 저장
     _saveTurnCombatState();
@@ -534,6 +724,9 @@
     _alwaysLog('🎲 전투 보조 모드 종료');
 
     await _resetAllActionStats('🏳️ 전투 종료');
+
+    // 상태이상 초기화
+    await _resetAllStatusEffects();
 
     const endCutin = _pickCutin('battleEndSounds');
     if (endCutin) {

@@ -110,7 +110,7 @@ Combat stat deduction (주 행동🔺, 보조 행동🔹, etc.) is implemented d
 
 - **trigger-engine.js**: Pattern matching (`《name》| {param}` → regex), action chains (message/cutin/stat/dice/face/scene/bgm/se/wait/log)
 - **trigger-ui.js**: Modal dialog for managing triggers
-- Default trigger parameters use Korean names: `{대상}`, `{스탯}`, `{수치}`, `{내용}`, `{장면이름}`, `{캐릭터}`, `{대사}`, `{_주사위}`
+- Default trigger parameters use Korean names: `{대상}`, `{스탯}`, `{수치}`, `{내용}`, `{장면이름}`, `{캐릭터}`, `{대사}`, `{주사위}`
 - Builtin triggers: `_builtin_*` IDs, user triggers: `usr_*` IDs
 
 ### ccfolia Data Model (Key Points)
