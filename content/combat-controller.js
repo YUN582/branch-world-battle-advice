@@ -440,10 +440,17 @@
       if (willExpire) {
         expiredLines.push(`❌ ${label} 해제`);
       } else {
-        // desc에서 [name] 을 실제 수치로 치환
+        // desc에서 [name] 치환: 수량 문맥 → 숫자, 참조 문맥 → 라벨
         let desc = def.desc || '';
-        const re = new RegExp('\\[' + _escRegex(name) + '\\]', 'g');
-        desc = desc.replace(re, String(value));
+        const eName = _escRegex(name);
+        const v = String(value);
+
+        // 1) [name] 만큼 / [name]× → 숫자값
+        desc = desc.replace(new RegExp('\\[' + eName + '\\](\s*만큼|×)', 'g'), v + '$1');
+        // 2) -[name] (감산 문맥) → 숫자값
+        desc = desc.replace(new RegExp('-\\[' + eName + '\\]', 'g'), '-' + v);
+        // 3) 나머지 [name] → 라벨명 (화상🔥 등)
+        desc = desc.replace(new RegExp('\\[' + eName + '\\]', 'g'), label);
 
         // CC 지속시간 문구 치환
         if (def.type === 'cc') {
@@ -453,7 +460,7 @@
           }
         }
 
-        activeLines.push(`▫️${label} ${value}, ${desc}`);
+        activeLines.push(`▫️${label} ${value}: ${desc}`);
       }
     }
 
