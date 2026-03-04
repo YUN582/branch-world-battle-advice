@@ -36,6 +36,10 @@
   var _combatMode = false;
   var _moveOverlay = null;
   var _selectedItem = null;  // { item, char }
+  var _waypoints = [];        // 중간 경유지 목록 [{ x, y }]
+  var _waypointMarkers = [];  // 경유지 DOM 마커
+  var _totalWaypointDist = 0; // 이미 소비된 이동 거리
+  var _helpPanel = null;      // 전투 모드 도움말 패널
 
   // ------------------------------------------------
   //  1. Zoom container finder
@@ -362,10 +366,88 @@
       'pointer-events:none;white-space:nowrap;';
     label.textContent = char.name + ' — 이동거리 ' + moveDistance;
     _moveOverlay.appendChild(label);
-    _moveOverlay.appendChild(label);
 
     zoom.appendChild(_moveOverlay);
     LOG('이동 범위 표시됨 (' + countTiles(moveDistance) + '칸)');
+  }
+
+  /** 경유지에서의 맨해튼 거리 (현재 위치 또는 마지막 경유지 기준) */
+  function waypointDistFrom(item, targetX, targetY) {
+    var fromX, fromY;
+    if (_waypoints.length > 0) {
+      fromX = _waypoints[_waypoints.length - 1].x;
+      fromY = _waypoints[_waypoints.length - 1].y;
+    } else {
+      fromX = item.x;
+      fromY = item.y;
+    }
+    return Math.abs(targetX - fromX) / _gridSize + Math.abs(targetY - fromY) / _gridSize;
+  }
+
+  /** 전체 경로 거리 합 (현재 위치 → 경유지들 → 목표) */
+  function totalPathDist(item, targetX, targetY) {
+    return _totalWaypointDist + waypointDistFrom(item, targetX, targetY);
+  }
+
+  /** 경유지 마커 추가 (초록 점선 테두리) */
+  function addWaypointMarker(wpX, wpY, tokenPxW, tokenPxH, num) {
+    if (!_moveOverlay) return;
+    var marker = document.createElement('div');
+    marker.setAttribute('data-bwbr-waypoint', num);
+    marker.style.cssText =
+      'position:absolute;' +
+      'left:' + (wpX * CELL_PX) + 'px;' +
+      'top:' + (wpY * CELL_PX) + 'px;' +
+      'width:' + tokenPxW + 'px;' +
+      'height:' + tokenPxH + 'px;' +
+      'background:rgba(76,175,80,0.18);' +
+      'border:2px dashed rgba(76,175,80,0.8);' +
+      'box-sizing:border-box;' +
+      'pointer-events:none;' +
+      'border-radius:2px;';
+    // 번호 라벨
+    var lbl = document.createElement('div');
+    lbl.style.cssText =
+      'position:absolute;top:2px;left:2px;' +
+      'background:rgba(76,175,80,0.85);color:#fff;' +
+      'font-size:10px;font-weight:bold;padding:1px 5px;border-radius:3px;' +
+      'pointer-events:none;line-height:1.3;';
+    lbl.textContent = num;
+    marker.appendChild(lbl);
+    _moveOverlay.appendChild(marker);
+    _waypointMarkers.push(marker);
+  }
+
+  /** 경유지 경로 라인 시각화 (SVG) */
+  function drawWaypointPath(item, tokenPxW, tokenPxH) {
+    // 기존 경로 라인 제거
+    if (_moveOverlay) {
+      var oldLines = _moveOverlay.querySelectorAll('[data-bwbr-wp-line]');
+      for (var i = 0; i < oldLines.length; i++) oldLines[i].remove();
+    }
+    if (_waypoints.length === 0 || !_moveOverlay) return;
+
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('data-bwbr-wp-line', '');
+    svg.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;overflow:visible;';
+
+    var halfW = tokenPxW / 2;
+    var halfH = tokenPxH / 2;
+    var points = [{ x: item.x, y: item.y }].concat(_waypoints);
+
+    for (var i = 0; i < points.length - 1; i++) {
+      var line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', points[i].x * CELL_PX + halfW);
+      line.setAttribute('y1', points[i].y * CELL_PX + halfH);
+      line.setAttribute('x2', points[i + 1].x * CELL_PX + halfW);
+      line.setAttribute('y2', points[i + 1].y * CELL_PX + halfH);
+      line.setAttribute('stroke', 'rgba(76,175,80,0.7)');
+      line.setAttribute('stroke-width', '3');
+      line.setAttribute('stroke-dasharray', '6,4');
+      line.setAttribute('stroke-linecap', 'round');
+      svg.appendChild(line);
+    }
+    _moveOverlay.appendChild(svg);
   }
 
   /** 이동 타일 DOM 요소 생성 (클릭 가능한 투명 마커, 호버 시 토큰 윤곽 표시) */
@@ -375,10 +457,9 @@
     tile.setAttribute('data-target-x', targetX);
     tile.setAttribute('data-target-y', targetY);
 
-    // 맨해튼 거리에 따른 색상 변화
-    var dx = Math.abs(targetX - item.x) / _gridSize;
-    var dy = Math.abs(targetY - item.y) / _gridSize;
-    var dist = dx + dy;
+    // 거리 계산 (경유지 기준)
+    var segDist = waypointDistFrom(item, targetX, targetY);
+    var fullDist = totalPathDist(item, targetX, targetY);
 
     tile.style.cssText =
       'position:absolute;' +
@@ -394,7 +475,9 @@
       'border-radius:2px;' +
       'transition:background 0.12s,border-color 0.12s;';
 
-    tile.title = '(' + targetX + ', ' + targetY + ') — 거리 ' + dist;
+    tile.title = '(' + targetX + ', ' + targetY + ') — 거리 ' + Math.round(fullDist) +
+      (_waypoints.length > 0 ? ' (경유 ' + _waypoints.length + '개)' : '') +
+      '\nShift+클릭: 경유지 추가\n클릭: 최종 이동';
 
     // 호버 효과: 토큰이 이동할 위치를 윤곽으로 표시
     tile.addEventListener('mouseenter', function () {
@@ -406,22 +489,42 @@
       tile.style.borderColor = 'transparent';
     });
 
-    // 클릭 → 이동 실행
+    // 클릭 → Shift면 경유지, 아니면 최종 이동
     tile.addEventListener('click', function (e) {
       e.stopPropagation();
       e.preventDefault();
+
+      if (e.shiftKey) {
+        // ── Shift+클릭: 경유지 추가 ──
+        var wpDist = waypointDistFrom(item, targetX, targetY);
+        _waypoints.push({ x: targetX, y: targetY });
+        _totalWaypointDist += wpDist;
+        LOG('경유지 추가: (' + targetX + ',' + targetY + '), 누적 ' + _totalWaypointDist);
+        addWaypointMarker(targetX, targetY, widthPx, heightPx, _waypoints.length);
+        drawWaypointPath(item, widthPx, heightPx);
+        showToast('경유지 ' + _waypoints.length + ' 추가 (누적 ' + Math.round(_totalWaypointDist) + '칸)', 1500);
+
+        // 이동 범위 재계산: 남은 거리 기준으로 타일 활성화/비활성화
+        refreshTileReachability(item, moveMax);
+        return;
+      }
+
+      // ── 일반 클릭: 최종 이동 (경유지 순서대로 실행) ──
+      var finalDist = totalPathDist(item, targetX, targetY);
+      var allSteps = _waypoints.slice();
+      allSteps.push({ x: targetX, y: targetY });
 
       // 이동 중 표시
       tile.style.background = 'rgba(76,175,80,0.5)';
       tile.style.borderColor = 'rgba(76,175,80,0.8)';
       tile.style.cursor = 'wait';
 
-      moveItem(item._id, targetX, targetY).then(function (result) {
-        if (result && result.success) {
-          LOG(char.name + ' 이동: (' + item.x + ',' + item.y + ') → (' + targetX + ',' + targetY + ')');
-          // 이동 거리 채팅 출력
+      executePathSequence(item._id, allSteps, 0, function (allOk) {
+        if (allOk) {
+          LOG(char.name + ' 경로 이동: ' + allSteps.length + '단계, 총 ' + Math.round(finalDist) + '칸');
           sendChatAsChar(
-            '【이동👣】| ' + dist + '칸 이동',
+            '【이동👣】| ' + Math.round(finalDist) + '칸 이동' +
+            (allSteps.length > 1 ? ' (' + allSteps.length + '단계)' : ''),
             char.name, char.iconUrl, char.color
           );
         } else {
@@ -437,6 +540,38 @@
     return tile;
   }
 
+  /** 경유지 후 남은 이동 거리에 따라 타일 도달 가능/불가 토글 */
+  function refreshTileReachability(item, moveMax) {
+    if (!_moveOverlay) return;
+    var tiles = _moveOverlay.querySelectorAll('[data-bwbr-move-tile]');
+    for (var i = 0; i < tiles.length; i++) {
+      var tx = parseInt(tiles[i].getAttribute('data-target-x'), 10);
+      var ty = parseInt(tiles[i].getAttribute('data-target-y'), 10);
+      var pathDist = totalPathDist(item, tx, ty);
+      if (pathDist > moveMax) {
+        tiles[i].style.pointerEvents = 'none';
+        tiles[i].style.opacity = '0.25';
+        tiles[i].style.cursor = 'not-allowed';
+      } else {
+        tiles[i].style.pointerEvents = 'auto';
+        tiles[i].style.opacity = '1';
+        tiles[i].style.cursor = 'pointer';
+      }
+    }
+  }
+
+  /** 경로 순차 실행 (재귀) */
+  function executePathSequence(itemId, steps, idx, callback) {
+    if (idx >= steps.length) { callback(true); return; }
+    moveItem(itemId, steps[idx].x, steps[idx].y).then(function (result) {
+      if (!result || !result.success) { callback(false); return; }
+      // 짧은 딜레이 후 다음 스텝 (시각적 효과)
+      setTimeout(function () {
+        executePathSequence(itemId, steps, idx + 1, callback);
+      }, 120);
+    });
+  }
+
   /** 맨해튼 거리 내 타일 수 (현재 위치 제외) */
   function countTiles(dist) {
     // 맨해튼 거리 d 내 격자점 수 = 2d(d+1), 원점 제외
@@ -448,6 +583,9 @@
       _moveOverlay.remove();
       _moveOverlay = null;
     }
+    _waypoints = [];
+    _waypointMarkers = [];
+    _totalWaypointDist = 0;
   }
 
   // ------------------------------------------------
@@ -461,8 +599,8 @@
     document.addEventListener('mousedown', onCombatPointerDown, true);
     document.addEventListener('contextmenu', onCombatContextMenu, true);
     updateFabLabel();
+    showHelpPanel();
     LOG('전투 모드 ON');
-    showToast('전투 모드 ON — 토큰을 클릭하면 이동 범위가 표시됩니다', 3000);
   }
 
   function disableCombatMode() {
@@ -474,8 +612,8 @@
     document.removeEventListener('mousedown', onCombatPointerDown, true);
     document.removeEventListener('contextmenu', onCombatContextMenu, true);
     updateFabLabel();
+    hideHelpPanel();
     LOG('전투 모드 OFF');
-    showToast('전투 모드 OFF', 2000);
   }
 
   function toggleCombatMode() {
@@ -656,7 +794,80 @@
   }
 
   // ------------------------------------------------
-  //  9. Toast notification (간단한 알림)
+  //  9. Combat mode help panel
+  //     전투 모드 ON 시 오른쪽에서 슬라이드 인, OFF 시 슬라이드 아웃
+  // ------------------------------------------------
+  function showHelpPanel() {
+    if (_helpPanel) return;
+    _helpPanel = document.createElement('div');
+    _helpPanel.id = 'bwbr-combat-help';
+    _helpPanel.style.cssText =
+      'position:fixed;top:50%;right:0;' +
+      'transform:translateY(-50%) translateX(100%);' +
+      'z-index:13000;padding:14px 18px;' +
+      'background:rgba(30,30,30,0.92);color:#eee;' +
+      'border-radius:8px 0 0 8px;' +
+      'box-shadow:-2px 0 16px rgba(0,0,0,0.4);' +
+      'font-family:"Roboto","Helvetica","Arial",sans-serif;' +
+      'font-size:12px;line-height:1.7;' +
+      'pointer-events:auto;' +
+      'transition:transform 0.35s cubic-bezier(0.2,0.8,0.3,1);' +
+      'max-width:220px;border:1px solid rgba(255,255,255,0.1);border-right:none;';
+
+    _helpPanel.innerHTML =
+      '<div style="font-size:13px;font-weight:bold;margin-bottom:8px;color:#42a5f5;">' +
+      '⚔️ 전투 모드</div>' +
+      '<div style="margin-bottom:4px;">🖱️ <b>토큰 클릭</b> — 이동 범위 표시</div>' +
+      '<div style="margin-bottom:4px;">🖱️ <b>클릭</b> — 최종 이동</div>' +
+      '<div style="margin-bottom:4px;">⇧ <b>Shift+클릭</b> — 경유지 추가</div>' +
+      '<div style="margin-bottom:4px;">🟡 <b>현재 위치 클릭</b> — 취소</div>' +
+      '<div style="margin-bottom:0;opacity:0.6;font-size:11px;margin-top:6px;">' +
+      'Alt+* 로 전투 모드 토글</div>';
+
+    document.body.appendChild(_helpPanel);
+
+    // 슬라이드 인 애니메이션 (오른쪽에서 왼쪽으로)
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        if (_helpPanel) _helpPanel.style.transform = 'translateY(-50%) translateX(0)';
+      });
+    });
+
+    // 5초 후 자동으로 접힘 (반만 숨김)
+    setTimeout(function () {
+      if (_helpPanel && _combatMode) {
+        _helpPanel.style.transform = 'translateY(-50%) translateX(calc(100% - 28px))';
+        _helpPanel.style.opacity = '0.6';
+        _helpPanel.style.cursor = 'pointer';
+        // 호버하면 다시 펼침
+        _helpPanel.addEventListener('mouseenter', function () {
+          if (_helpPanel) {
+            _helpPanel.style.transform = 'translateY(-50%) translateX(0)';
+            _helpPanel.style.opacity = '1';
+          }
+        });
+        _helpPanel.addEventListener('mouseleave', function () {
+          if (_helpPanel && _combatMode) {
+            _helpPanel.style.transform = 'translateY(-50%) translateX(calc(100% - 28px))';
+            _helpPanel.style.opacity = '0.6';
+          }
+        });
+      }
+    }, 5000);
+  }
+
+  function hideHelpPanel() {
+    if (!_helpPanel) return;
+    // 슬라이드 아웃 (왼쪽에서 오른쪽으로 사라짐)
+    _helpPanel.style.transform = 'translateY(-50%) translateX(100%)';
+    _helpPanel.style.opacity = '0';
+    var panel = _helpPanel;
+    _helpPanel = null;
+    setTimeout(function () { panel.remove(); }, 400);
+  }
+
+  // ------------------------------------------------
+  //  10. Toast notification (간단한 알림)
   // ------------------------------------------------
   function showToast(msg, dur) {
     if (!dur) dur = 3000;
@@ -685,7 +896,7 @@
   }
 
   // ------------------------------------------------
-  //  10. Init
+  //  11. Init
   // ------------------------------------------------
   setupFabInjection();
 
