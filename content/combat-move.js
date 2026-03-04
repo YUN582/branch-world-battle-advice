@@ -250,7 +250,7 @@
     _moveOverlay.id = 'bwbr-move-overlay';
     _moveOverlay.style.cssText =
       'position:absolute;left:0;top:0;width:100%;height:100%;' +
-      'z-index:10;pointer-events:none;';
+      'z-index:9999;pointer-events:none;';
 
     // 이동 한칸(스텝) = gridSize (네이티브 셀 단위)
     var stepW = _gridSize;
