@@ -26,13 +26,40 @@
   let overlayEl  = null;
   let _visible   = false;
   const GRID_ATTR = 'data-bwbr-grid';
+  const NATIVE_CELL = 24;  // 코코포리아 기본 셀 = 24px
+  let _gridSize = 4;       // 코코포리아 gridSize (기본 4 → 96px)
+  let _cellPx   = 96;      // _gridSize * NATIVE_CELL
+  let _svgCache = null;    // 동적 SVG 캐시
 
-  // -- 미리 계산된 SVG data URL (상수이므로 1회만 생성) --
-  const _SVG_CACHE = (function() {
-    var SM = 24, LG = 48, XL = 96, D = 5;
+  // -- 손그림 선 SVG 생성 헬퍼 --
+  function _handLineSvg(S, strokeW, opacity, dash) {
+    var r = Math.max(S / 96, 0.4);
+    var w1 = (1.8 * r).toFixed(1), w2 = (1.4 * r).toFixed(1), w3 = (1.0 * r).toFixed(1);
+    var s6 = (S / 6).toFixed(1), s3 = (S / 3).toFixed(1);
+    var s2 = (S / 2).toFixed(1), s23 = (2 * S / 3).toFixed(1), s56 = (5 * S / 6).toFixed(1);
+    var dashAttr = dash ? ' stroke-dasharray="2,2"' : '';
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="' + S + '" height="' + S + '">' +
+      '<path d="M0,0 C' + w1 + ',' + s6 + ' -' + w2 + ',' + s3 + ' ' + w3 + ',' + s2 +
+      ' C-' + w3 + ',' + s23 + ' -' + w1 + ',' + s56 + ' 0,' + S + '"' +
+      ' fill="none" stroke="rgba(255,255,255,' + opacity + ')" stroke-width="' + strokeW + '"' + dashAttr + ' stroke-linecap="round"/>' +
+      '<path d="M0,0 C' + s6 + ',' + w1 + ' ' + s3 + ',-' + w2 + ' ' + s2 + ',' + w3 +
+      ' C' + s23 + ',-' + w3 + ' ' + s56 + ',-' + w1 + ' ' + S + ',0"' +
+      ' fill="none" stroke="rgba(255,255,255,' + opacity + ')" stroke-width="' + strokeW + '"' + dashAttr + ' stroke-linecap="round"/></svg>';
+  }
+
+  // -- gridSize에 따른 SVG data URL 동적 생성 --
+  // gridSize >= 4: 3단계 선 (XL 굵은선 + LG 중간선 + SM 가는 점선) + 체커 + 다이아몬드
+  // gridSize 2~3:  2단계 선 (XL 굵은선 + LG 중간선) + 체커 + 다이아몬드
+  // gridSize 1:    1단계 선 (XL 굵은선만) + 체커 + 다이아몬드
+  function _buildSvgCache(gridSize) {
+    var XL = gridSize * NATIVE_CELL;   // 한 셀 크기 (px)
+    var LG = XL / 2;
+    var SM = XL / 4;
+    var D  = Math.max(3, Math.round(5 * XL / 96));   // 다이아몬드 크기 스케일
     var enc = function(s) { return 'data:image/svg+xml,' + encodeURIComponent(s); };
 
-    var diamond96 =
+    // 다이아몬드 교차점 마커
+    var diamond =
       '<svg xmlns="http://www.w3.org/2000/svg" width="' + XL + '" height="' + XL + '">' +
       '<polygon points="' + (XL/2) + ',' + (XL/2-D) + ' ' + (XL/2+D) + ',' + (XL/2) + ' ' + (XL/2) + ',' + (XL/2+D) + ' ' + (XL/2-D) + ',' + (XL/2) + '"' +
       ' fill="rgba(255,255,255,0.5)"/>' +
@@ -46,40 +73,46 @@
       ' fill="rgba(255,255,255,0.5)"/>' +
       '</svg>';
 
-    // 손그림 선 (cubic bezier path) — 타일 경계에서 tangent 일치하도록 제어점 설계
-    var smallCell =
-      '<svg xmlns="http://www.w3.org/2000/svg" width="' + SM + '" height="' + SM + '">' +
-      '<path d="M0,0 C0.7,4 -0.5,8 0.4,12 C-0.4,16 -0.7,20 0,24" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="0.5" stroke-dasharray="2,2" stroke-linecap="round"/>' +
-      '<path d="M0,0 C4,0.7 8,-0.5 12,0.4 C16,-0.4 20,-0.7 24,0" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="0.5" stroke-dasharray="2,2" stroke-linecap="round"/></svg>';
-
-    var bigCell =
-      '<svg xmlns="http://www.w3.org/2000/svg" width="' + LG + '" height="' + LG + '">' +
-      '<path d="M0,0 C1.2,8 -0.9,16 0.7,24 C-0.7,32 -1.2,40 0,48" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1" stroke-linecap="round"/>' +
-      '<path d="M0,0 C8,1.2 16,-0.9 24,0.7 C32,-0.7 40,-1.2 48,0" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1" stroke-linecap="round"/></svg>';
-
-    // 체스판 틴트 96px: 192px 반복, 대각선 96px 셀 2개에 밝은 tint (큰 칸 구분)
-    var XLXL = XL * 2; // 192
-    var checker96 =
+    // 체스판 틴트
+    var XLXL = XL * 2;
+    var checker =
       '<svg xmlns="http://www.w3.org/2000/svg" width="' + XLXL + '" height="' + XLXL + '">' +
       '<rect x="0" y="0" width="' + XL + '" height="' + XL + '" fill="rgba(255,255,255,0.20)"/>' +
       '<rect x="' + XL + '" y="' + XL + '" width="' + XL + '" height="' + XL + '" fill="rgba(255,255,255,0.20)"/>' +
       '</svg>';
 
-    // 96px(한 칸) 경계선: 손그림 선 (2px, 불투명 흩색)
-    var xlCell =
-      '<svg xmlns="http://www.w3.org/2000/svg" width="' + XL + '" height="' + XL + '">' +
-      '<path d="M0,0 C1.8,16 -1.4,32 1.0,48 C-1.0,64 -1.8,80 0,96" fill="none" stroke="rgba(255,255,255,1)" stroke-width="2" stroke-linecap="round"/>' +
-      '<path d="M0,0 C16,1.8 32,-1.4 48,1.0 C64,-1.0 80,-1.8 96,0" fill="none" stroke="rgba(255,255,255,1)" stroke-width="2" stroke-linecap="round"/></svg>';
+    // 셀 경계 굵은 선 (XL)
+    var xlCell = _handLineSvg(XL, 2, 1, false);
+
+    // 레이어 배열 (위에서부터 렌더링)
+    var layers = [];
+    layers.push({ url: enc(diamond), size: XL + 'px ' + XL + 'px' });
+    layers.push({ url: enc(xlCell),  size: XL + 'px ' + XL + 'px' });
+
+    if (gridSize >= 2) {
+      // 중간선 (LG) — gridSize >= 2일 때만 (셀 >= 48px)
+      var lgCell = _handLineSvg(LG, 1, 0.4, false);
+      layers.push({ url: enc(lgCell), size: LG + 'px ' + LG + 'px' });
+    }
+
+    if (gridSize >= 4) {
+      // 가는 점선 (SM) — gridSize >= 4일 때만 (셀 >= 96px)
+      var smCell = _handLineSvg(SM, 0.5, 0.22, true);
+      layers.push({ url: enc(smCell), size: SM + 'px ' + SM + 'px' });
+    }
+
+    layers.push({ url: enc(checker), size: XLXL + 'px ' + XLXL + 'px' });
 
     return {
-      bg: 'url("' + enc(diamond96) + '") repeat,' +
-          'url("' + enc(xlCell) + '") repeat,' +
-          'url("' + enc(bigCell) + '") repeat,' +
-          'url("' + enc(smallCell) + '") repeat,' +
-          'url("' + enc(checker96) + '") repeat',
-      bgSize: XL + 'px ' + XL + 'px,' + XL + 'px ' + XL + 'px,' + LG + 'px ' + LG + 'px,' + SM + 'px ' + SM + 'px,' + XLXL + 'px ' + XLXL + 'px'
+      bg: layers.map(function(l) { return 'url("' + l.url + '") repeat'; }).join(','),
+      bgSize: layers.map(function(l) { return l.size; }).join(','),
+      layerCount: layers.length,
+      cellPx: XL
     };
-  })();
+  }
+
+  // 초기 캐시 생성
+  _svgCache = _buildSvgCache(_gridSize);
 
   // ------------------------------------------------
   //  1. Find foreground (투명 전경 대응: img 없어도 찾기)
@@ -155,18 +188,21 @@
     const H = parseFloat(cs.height);
     if (!W || !H) return;
 
-    // 캐시된 SVG data URL 적용 (상수이므로 매번 재생성하지 않음)
-    el.style.background = _SVG_CACHE.bg;
-    el.style.backgroundSize = _SVG_CACHE.bgSize;
+    // 동적 SVG data URL 적용 (gridSize 변경 시 재생성됨)
+    if (!_svgCache) _svgCache = _buildSvgCache(_gridSize);
+    el.style.background = _svgCache.bg;
+    el.style.backgroundSize = _svgCache.bgSize;
 
-    // 불완전 96px 셀 중앙 정렬 클리핑
+    // 불완전 셀 중앙 정렬 클리핑
     // background-position을 오프셋해서 그리드 패턴을 중앙 배치 + clip-path로 양쪽 불완전 셀 제거
-    var exX = Math.round(W % 96);
-    var exY = Math.round(H % 96);
+    var exX = Math.round(W % _cellPx);
+    var exY = Math.round(H % _cellPx);
     var offX = Math.round(exX / 2);
     var offY = Math.round(exY / 2);
     var posVal = offX + 'px ' + offY + 'px';
-    el.style.backgroundPosition = posVal + ',' + posVal + ',' + posVal + ',' + posVal + ',' + posVal;
+    var posParts = [];
+    for (var pi = 0; pi < _svgCache.layerCount; pi++) posParts.push(posVal);
+    el.style.backgroundPosition = posParts.join(',');
     if (exX > 0 || exY > 0) {
       el.style.clipPath = 'inset(' + offY + 'px ' + (exX - offX) + 'px ' + (exY - offY) + 'px ' + offX + 'px)';
     } else {
@@ -481,6 +517,34 @@
     if (value) show(); else hide();
   });
 
+  // ------------------------------------------------
+  //  8a. gridSize 변경 감지 — SVG 캐시 재생성 + 오버레이 갱신
+  // ------------------------------------------------
+  window.addEventListener('bwbr-grid-size-changed', function(e) {
+    var newSize = e.detail && e.detail.value;
+    if (typeof newSize !== 'number' || newSize <= 0) return;
+    if (newSize === _gridSize) return;
+    LOG('gridSize changed:', _gridSize, '→', newSize);
+    _gridSize = newSize;
+    _cellPx = _gridSize * NATIVE_CELL;
+    _svgCache = _buildSvgCache(_gridSize);
+    // 오버레이가 표시 중이면 즉시 갱신
+    if (_visible) syncToForeground();
+  });
+
+  // gridSize 초기값 수신
+  window.addEventListener('bwbr-grid-size-result', function(e) {
+    if (e.detail && e.detail.success && typeof e.detail.value === 'number' && e.detail.value > 0) {
+      if (e.detail.value !== _gridSize) {
+        LOG('initial gridSize:', e.detail.value);
+        _gridSize = e.detail.value;
+        _cellPx = _gridSize * NATIVE_CELL;
+        _svgCache = _buildSvgCache(_gridSize);
+        if (_visible) syncToForeground();
+      }
+    }
+  }, { once: true });
+
   // initial state query
   window.addEventListener('bwbr-query-native-grid-result', function(e) {
     if (e.detail && e.detail.success && e.detail.value === true) {
@@ -494,6 +558,8 @@
     function tryQuery() {
       if (document.querySelectorAll('.movable').length > 0) {
         window.dispatchEvent(new CustomEvent('bwbr-query-native-grid'));
+        // gridSize도 함께 조회
+        window.dispatchEvent(new CustomEvent('bwbr-query-grid-size'));
         return true;
       }
       return false;
@@ -508,6 +574,7 @@
     var initFb = setTimeout(function() {
       initObs.disconnect();
       window.dispatchEvent(new CustomEvent('bwbr-query-native-grid'));
+      window.dispatchEvent(new CustomEvent('bwbr-query-grid-size'));
     }, 5000);
   })();
 
@@ -523,7 +590,12 @@
   });
 
   // global API
-  window.__bwbrGridOverlay = { show: show, hide: hide, get isVisible() { return _visible; } };
+  window.__bwbrGridOverlay = {
+    show: show, hide: hide,
+    get isVisible() { return _visible; },
+    get gridSize() { return _gridSize; },
+    get cellPx() { return _cellPx; }
+  };
 
-  LOG('module loaded (displayGrid reactive + FAB)');
+  LOG('module loaded (displayGrid reactive + gridSize dynamic + FAB)');
 })();

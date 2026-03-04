@@ -4725,6 +4725,77 @@
     }, 500);
   }
 
+  // ================================================================
+  //  [COMBAT] 그리드 사이즈 감시 (gridSize)
+  //  Firestore: rooms/{roomId}.gridSize (number)
+  //  Redux:    entities.rooms.entities.{roomId}.gridSize
+  //
+  //  코코포리아 필드 설정의 "그리드 사이즈" 값을 읽어
+  //  커스텀 그리드 오버레이 및 전투 이동 셀 크기에 반영합니다.
+  //  1 grid cell = gridSize * 24px
+  //
+  //  ISOLATED → bwbr-query-grid-size  → bwbr-grid-size-result
+  //  MAIN    → bwbr-grid-size-changed { value }  (store.subscribe)
+  // ================================================================
+
+  /** 현재 방의 gridSize 값을 Redux에서 읽기 (기본값 4) */
+  function readGridSize() {
+    if (!reduxStore) return null;
+    const state = reduxStore.getState();
+    const roomId = state.app?.state?.roomId
+      || window.location.pathname.match(/\/rooms\/([^/]+)/)?.[1];
+    if (!roomId) return null;
+    const room = state.entities?.rooms?.entities?.[roomId];
+    if (!room) return null;
+    // gridSize가 없거나 0이면 기본값 1 (코코포리아 기본)
+    const gs = typeof room.gridSize === 'number' && room.gridSize > 0 ? room.gridSize : 1;
+    return { roomId, value: gs };
+  }
+
+  // 그리드 사이즈 조회 (ISOLATED → MAIN)
+  window.addEventListener('bwbr-query-grid-size', () => {
+    const gs = readGridSize();
+    window.dispatchEvent(new CustomEvent('bwbr-grid-size-result', {
+      detail: gs
+        ? { success: true, roomId: gs.roomId, value: gs.value }
+        : { success: false, reason: 'room_not_found' }
+    }));
+  });
+
+  // ── gridSize 변경 감시 (store.subscribe) ──
+  {
+    let _prevGridSize = undefined;
+
+    function watchGridSize() {
+      if (!reduxStore) return;
+      reduxStore.subscribe(() => {
+        const gs = readGridSize();
+        const curVal = gs ? gs.value : 1;
+        if (curVal !== _prevGridSize) {
+          _prevGridSize = curVal;
+          _dbg(`%c[CE]%c gridSize 변경 감지: ${curVal}`,
+            'color: #4caf50; font-weight: bold;', 'color: inherit;');
+          window.dispatchEvent(new CustomEvent('bwbr-grid-size-changed', {
+            detail: { value: curVal }
+          }));
+        }
+      });
+      // 초기값 설정 (이벤트 발행 없이)
+      const gs = readGridSize();
+      _prevGridSize = gs ? gs.value : 1;
+    }
+
+    // reduxStore가 확보된 직후 실행
+    const _watchGSInterval = setInterval(() => {
+      if (reduxStore) {
+        clearInterval(_watchGSInterval);
+        watchGridSize();
+        _dbg('%c[CE]%c gridSize 감시 시작',
+          'color: #4caf50; font-weight: bold;', 'color: inherit;');
+      }
+    }, 500);
+  }
+
   // ── 네이티브 그리드 DOM 진단 ──
   // displayGrid=true 상태에서 zoom container의 전체 자식을 덤프
   window.addEventListener('bwbr-inspect-native-grid', () => {

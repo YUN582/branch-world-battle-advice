@@ -19,6 +19,9 @@
   'use strict';
 
   var CELL_PX = 24;
+  var NATIVE_CELL = 24;       // 코코포리아 기본 셀 = 24px
+  var _gridSize = 4;          // 코코포리아 gridSize (기본 4 → 96px 한칸)
+  var _gridCellPx = 96;       // _gridSize * NATIVE_CELL
   var LOG_PREFIX = '%c[Branch Move]%c';
   var LOG_STYLE = 'color:#2196f3;font-weight:bold';
 
@@ -239,7 +242,8 @@
 
     LOG(char.name + ': 이동거리 ' + moveDistance +
       ', 위치 (' + item.x + ', ' + item.y + ')' +
-      ', 크기 ' + item.width + 'x' + item.height);
+      ', 크기 ' + item.width + 'x' + item.height +
+      ', 그리드 ' + _gridSize + ' (' + _gridCellPx + 'px)');
 
     // 오버레이 컨테이너 생성
     _moveOverlay = document.createElement('div');
@@ -248,10 +252,11 @@
       'position:absolute;left:0;top:0;width:100%;height:100%;' +
       'z-index:10;pointer-events:none;';
 
-    var tileW = item.width;   // 타일 크기 (셀 단위)
-    var tileH = item.height;
-    var tilePxW = tileW * CELL_PX;
-    var tilePxH = tileH * CELL_PX;
+    // 이동 한칸 = gridSize (네이티브 셀 단위), 토큰 크기와 무관
+    var tileW = _gridSize;    // 한칸 크기 (네이티브 셀 단위)
+    var tileH = _gridSize;
+    var tilePxW = _gridCellPx;
+    var tilePxH = _gridCellPx;
 
     // 맨해튼 거리 기반 이동 가능 타일 생성
     for (var dx = -moveDistance; dx <= moveDistance; dx++) {
@@ -316,8 +321,8 @@
     tile.setAttribute('data-target-y', targetY);
 
     // 맨해튼 거리에 따른 색상 변화
-    var dx = Math.abs(targetX - item.x) / item.width;
-    var dy = Math.abs(targetY - item.y) / item.height;
+    var dx = Math.abs(targetX - item.x) / _gridSize;
+    var dy = Math.abs(targetY - item.y) / _gridSize;
     var dist = dx + dy;
     // 가까울수록 진하고, 멀수록 연하게
     var intensity = moveMax > 0 ? 1 - (dist - 1) / moveMax : 0.5;
@@ -633,6 +638,52 @@
   //  10. Init
   // ------------------------------------------------
   setupFabInjection();
+
+  // gridSize 변경 감지 — 이동 한칸 크기 갱신
+  window.addEventListener('bwbr-grid-size-changed', function(e) {
+    var newSize = e.detail && e.detail.value;
+    if (typeof newSize === 'number' && newSize > 0 && newSize !== _gridSize) {
+      LOG('gridSize changed: ' + _gridSize + ' → ' + newSize);
+      _gridSize = newSize;
+      _gridCellPx = _gridSize * NATIVE_CELL;
+      // 이동 오버레이가 표시중이면 닫기 (크기가 바뀌므로 다시 클릭하도록)
+      if (_moveOverlay) {
+        clearMoveOverlay();
+        _selectedItem = null;
+      }
+    }
+  });
+
+  // gridSize 초기값 수신
+  window.addEventListener('bwbr-grid-size-result', function(e) {
+    if (e.detail && e.detail.success && typeof e.detail.value === 'number' && e.detail.value > 0) {
+      if (e.detail.value !== _gridSize) {
+        _gridSize = e.detail.value;
+        _gridCellPx = _gridSize * NATIVE_CELL;
+        LOG('initial gridSize: ' + _gridSize + ' (' + _gridCellPx + 'px)');
+      }
+    }
+  }, { once: true });
+
+  // 빠른 시작: .movable 등장 시 gridSize 조회
+  (function queryGridSize() {
+    function tryQuery() {
+      if (document.querySelectorAll('.movable').length > 0) {
+        window.dispatchEvent(new CustomEvent('bwbr-query-grid-size'));
+        return true;
+      }
+      return false;
+    }
+    if (tryQuery()) return;
+    var obs = new MutationObserver(function() {
+      if (tryQuery()) { obs.disconnect(); clearTimeout(fb); }
+    });
+    obs.observe(document.body || document.documentElement, { childList: true, subtree: true });
+    var fb = setTimeout(function() {
+      obs.disconnect();
+      window.dispatchEvent(new CustomEvent('bwbr-query-grid-size'));
+    }, 5000);
+  })();
 
   // Alt+* 단축키로 전투 모드 토글
   document.addEventListener('keydown', function(e) {
