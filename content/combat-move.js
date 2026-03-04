@@ -252,11 +252,12 @@
       'position:absolute;left:0;top:0;width:100%;height:100%;' +
       'z-index:10;pointer-events:none;';
 
-    // 이동 한칸 = gridSize (네이티브 셀 단위), 토큰 크기와 무관
-    var tileW = _gridSize;    // 한칸 크기 (네이티브 셀 단위)
-    var tileH = _gridSize;
-    var tilePxW = _gridCellPx;
-    var tilePxH = _gridCellPx;
+    // 이동 한칸(스텝) = gridSize (네이티브 셀 단위)
+    var stepW = _gridSize;
+    var stepH = _gridSize;
+    // 표시 타일 = 토큰 실제 크기 (이동 후 토큰이 차지할 영역)
+    var tokenPxW = item.width * CELL_PX;
+    var tokenPxH = item.height * CELL_PX;
 
     // 맨해튼 거리 기반 이동 가능 타일 생성
     for (var dx = -moveDistance; dx <= moveDistance; dx++) {
@@ -264,27 +265,27 @@
         if (dx === 0 && dy === 0) continue;
         if (Math.abs(dx) + Math.abs(dy) > moveDistance) continue;
 
-        var targetX = item.x + dx * tileW;
-        var targetY = item.y + dy * tileH;
+        var targetX = item.x + dx * stepW;
+        var targetY = item.y + dy * stepH;
 
         var tile = createMoveTile(
           targetX * CELL_PX, targetY * CELL_PX,
-          tilePxW, tilePxH,
+          tokenPxW, tokenPxH,
           item, char, targetX, targetY, moveDistance
         );
         _moveOverlay.appendChild(tile);
       }
     }
 
-    // 현재 위치 표시 (노란색, 클릭 시 취소)
+    // 현재 위치 표시 (노란색, 토큰 전체 크기, 클릭 시 취소)
     var currentTile = document.createElement('div');
     currentTile.setAttribute('data-bwbr-current-pos', '');
     currentTile.style.cssText =
       'position:absolute;' +
       'left:' + (item.x * CELL_PX) + 'px;' +
       'top:' + (item.y * CELL_PX) + 'px;' +
-      'width:' + tilePxW + 'px;' +
-      'height:' + tilePxH + 'px;' +
+      'width:' + tokenPxW + 'px;' +
+      'height:' + tokenPxH + 'px;' +
       'background:rgba(255,235,59,0.25);' +
       'border:2px solid rgba(255,235,59,0.7);' +
       'box-sizing:border-box;' +
@@ -300,7 +301,7 @@
       'position:absolute;' +
       'left:' + (item.x * CELL_PX) + 'px;' +
       'top:' + (item.y * CELL_PX - 20) + 'px;' +
-      'width:' + tilePxW + 'px;' +
+      'width:' + tokenPxW + 'px;' +
       'height:20px;' +
       'display:flex;align-items:center;justify-content:center;' +
       'color:#fff;font-size:11px;font-weight:bold;' +
