@@ -389,8 +389,8 @@
     return _totalWaypointDist + waypointDistFrom(item, targetX, targetY);
   }
 
-  /** 경유지 마커 추가 (초록 점선 테두리) */
-  function addWaypointMarker(wpX, wpY, tokenPxW, tokenPxH, num) {
+  /** 경유지 마커 추가 (초록 점선 테두리 + 중앙 거리 표시) */
+  function addWaypointMarker(wpX, wpY, tokenPxW, tokenPxH, num, usedDist, moveMax) {
     if (!_moveOverlay) return;
     var marker = document.createElement('div');
     marker.setAttribute('data-bwbr-waypoint', num);
@@ -405,7 +405,7 @@
       'box-sizing:border-box;' +
       'pointer-events:none;' +
       'border-radius:2px;';
-    // 번호 라벨
+    // 좌상단 순번 라벨
     var lbl = document.createElement('div');
     lbl.style.cssText =
       'position:absolute;top:2px;left:2px;' +
@@ -414,6 +414,26 @@
       'pointer-events:none;line-height:1.3;';
     lbl.textContent = num;
     marker.appendChild(lbl);
+    // 중앙 이동 거리 표시 (usedDist/moveMax)
+    var minDim = Math.min(tokenPxW, tokenPxH);
+    var fontSize = Math.max(12, Math.min(40, Math.floor(minDim * 0.32)));
+    var center = document.createElement('div');
+    center.style.cssText =
+      'position:absolute;top:0;left:0;width:100%;height:100%;' +
+      'display:flex;align-items:center;justify-content:center;' +
+      'pointer-events:none;';
+    var distLabel = document.createElement('div');
+    distLabel.style.cssText =
+      'font-family:"Roboto","Helvetica","Arial",sans-serif;' +
+      'font-size:' + fontSize + 'px;font-weight:bold;' +
+      'color:#fff;text-shadow:0 1px 4px rgba(0,0,0,0.7);' +
+      'line-height:1;white-space:nowrap;' +
+      'pointer-events:none;';
+    distLabel.innerHTML = '<span style="color:#a5d6a7">' + Math.round(usedDist) +
+      '</span><span style="opacity:0.5;font-size:' + Math.round(fontSize * 0.7) + 'px">/' +
+      moveMax + '</span>';
+    center.appendChild(distLabel);
+    marker.appendChild(center);
     _moveOverlay.appendChild(marker);
     _waypointMarkers.push(marker);
   }
@@ -500,9 +520,9 @@
         _waypoints.push({ x: targetX, y: targetY });
         _totalWaypointDist += wpDist;
         LOG('경유지 추가: (' + targetX + ',' + targetY + '), 누적 ' + _totalWaypointDist);
-        addWaypointMarker(targetX, targetY, widthPx, heightPx, _waypoints.length);
+        addWaypointMarker(targetX, targetY, widthPx, heightPx, _waypoints.length, _totalWaypointDist, moveMax);
         drawWaypointPath(item, widthPx, heightPx);
-        showToast('경유지 ' + _waypoints.length + ' 추가 (누적 ' + Math.round(_totalWaypointDist) + '칸)', 1500);
+        showToast('경유지 ' + _waypoints.length + ' 추가 (' + Math.round(_totalWaypointDist) + '/' + moveMax + '칸)', 1500);
 
         // 이동 범위 재계산: 남은 거리 기준으로 타일 활성화/비활성화
         refreshTileReachability(item, moveMax);
