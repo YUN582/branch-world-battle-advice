@@ -40,6 +40,8 @@
   var _waypointMarkers = [];  // 경유지 DOM 마커
   var _totalWaypointDist = 0; // 이미 소비된 이동 거리
   var _helpPanel = null;      // 전투 모드 도움말 패널
+  var _helpResizeObs = null;  // 드로어 ResizeObserver
+  var _helpResizeHandler = null; // window resize handler
 
   // ------------------------------------------------
   //  1. Zoom container finder
@@ -841,10 +843,8 @@
     _helpPanel = document.createElement('div');
     _helpPanel.id = 'bwbr-combat-help';
 
-    var chatLeft = getChatDrawerLeft();
     _helpPanel.style.cssText =
-      'position:fixed;top:80px;' +
-      'left:' + chatLeft + 'px;' +
+      'position:fixed;top:80px;left:-9999px;' +
       'transform:translateX(0);' +
       'z-index:13000;padding:14px 18px;' +
       'background:rgba(30,30,30,0.92);color:#eee;' +
@@ -856,7 +856,8 @@
       'transition:transform 0.35s cubic-bezier(0.2,0.8,0.3,1),' +
       'opacity 0.35s,' +
       'width 0.35s cubic-bezier(0.2,0.8,0.3,1),' +
-      'padding 0.35s cubic-bezier(0.2,0.8,0.3,1);' +
+      'padding 0.35s cubic-bezier(0.2,0.8,0.3,1),' +
+      'left 0.15s ease-out;' +
       'width:220px;border:1px solid rgba(255,255,255,0.1);border-right:none;' +
       'opacity:0;overflow:hidden;box-sizing:border-box;';
 
@@ -878,10 +879,14 @@
 
     document.body.appendChild(_helpPanel);
 
-    // 슬라이드 인 (채팅창 왼쪽에서 나타남)
+    // 드로어 추적 시작
+    _startDrawerTracking();
+
+    // 슬라이드 인
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
         if (_helpPanel) {
+          _repositionHelpPanel();
           _helpPanel.style.transform = 'translateX(-100%)';
           _helpPanel.style.opacity = '1';
         }
@@ -900,6 +905,46 @@
         });
       }
     }, 5000);
+  }
+
+  /** 드로어 위치/크기 변화 추적 */
+  function _startDrawerTracking() {
+    _stopDrawerTracking();
+
+    // window resize 대응
+    _helpResizeHandler = function () { _repositionHelpPanel(); };
+    window.addEventListener('resize', _helpResizeHandler);
+
+    // 드로어 크기 변화 대응 (접기/펼치기)
+    var drawer = document.querySelector('.MuiDrawer-root .MuiDrawer-paper');
+    if (drawer && typeof ResizeObserver !== 'undefined') {
+      _helpResizeObs = new ResizeObserver(function () { _repositionHelpPanel(); });
+      _helpResizeObs.observe(drawer);
+    }
+  }
+
+  function _stopDrawerTracking() {
+    if (_helpResizeHandler) {
+      window.removeEventListener('resize', _helpResizeHandler);
+      _helpResizeHandler = null;
+    }
+    if (_helpResizeObs) {
+      _helpResizeObs.disconnect();
+      _helpResizeObs = null;
+    }
+  }
+
+  /** 드로어 현재 위치에 맞게 패널 left 재계산 */
+  function _repositionHelpPanel() {
+    if (!_helpPanel) return;
+    var chatLeft = getChatDrawerLeft();
+    // 드로어가 화면 밖이거나 숨겨진 경우
+    if (chatLeft >= window.innerWidth) {
+      _helpPanel.style.visibility = 'hidden';
+    } else {
+      _helpPanel.style.visibility = '';
+      _helpPanel.style.left = chatLeft + 'px';
+    }
   }
 
   function _collapseHelpPanel() {
@@ -926,6 +971,7 @@
 
   function hideHelpPanel() {
     if (!_helpPanel) return;
+    _stopDrawerTracking();
     _helpPanel.style.transform = 'translateX(0)';
     _helpPanel.style.opacity = '0';
     var panel = _helpPanel;
