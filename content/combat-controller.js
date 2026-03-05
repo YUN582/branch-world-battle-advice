@@ -183,11 +183,15 @@
     if (flowState === STATE.TURN_COMBAT) {
       const mainMatch = /《[^》]+》/.test(text);
       const subMatch = /【[^】]+】/.test(text);
+      _alwaysLog(`[전투 보조] 패턴 검사: mainMatch(《》)=${mainMatch}, subMatch(【】)=${subMatch}`);
 
       if (mainMatch || subMatch) {
         const statLabel = mainMatch ? '주 행동🔺' : '보조 행동🔹';
         const emoji = mainMatch ? '🔺' : '🔹';
         const actionType = mainMatch ? '주' : '보조';
+
+        // 전투 개시/종료/차례 종료 패턴은 위에서 이미 return됨
+        // 여기 도달 = 일반 《》 또는 【】 패턴
 
         // 턴제에서는 항상 현재 차례 캐릭터에게 차감 (화자가 GM일 수 있으므로)
         const curChar = combatEngine.getState()?.currentCharacter;
@@ -197,7 +201,7 @@
           return;
         }
 
-        _alwaysLog(`[전투 보조] ${actionType} 행동 소비 감지: 대상=${targetName} / 패턴: ${mainMatch ? '《》' : '【】'}`);
+        _alwaysLog(`[전투 보조] ${actionType} 행동 소비 감지: 대상=${targetName} / 라벨="${statLabel}"`);
 
         await _awaitUserMessage();
         const result = await _modifyCharStat(targetName, statLabel, '-', 1, true);
@@ -208,7 +212,7 @@
           chat.sendSystemMessage(msg);
           _scheduleStatRefreshUI();
         } else {
-          _alwaysLog(`[전투 보조] 행동 소비 실패: ${result ? result.error : '타임아웃'}`);
+          _alwaysLog(`[전투 보조] 행동 소비 실패: ${result ? result.error : '타임아웃(null)'}`);
         }
       }
     }

@@ -1651,7 +1651,10 @@
       const statusArr = target.status || [];
       let idx = statusArr.findIndex(s => s.label === statusLabel);
       if (idx < 0) idx = statusArr.findIndex(s => s.label.includes(statusLabel) || statusLabel.includes(s.label));
-      if (idx < 0) throw new Error(`스테이터스 "${statusLabel}" 없음`);
+      if (idx < 0) {
+        const allLabels = statusArr.map(s => `"${s.label}"`).join(', ');
+        throw new Error(`스테이터스 "${statusLabel}" 없음 (보유: [${allLabels}])`);
+      }
 
       const oldVal = parseInt(statusArr[idx][field], 10) || 0;
       let newVal;
