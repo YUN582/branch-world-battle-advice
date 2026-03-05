@@ -2744,15 +2744,24 @@
             'color: #ab47bc; font-weight: bold;', 'color: inherit;');
           return respond({ success: true, panelId: item._id, imageUrl: item.imageUrl });
         } else if (imageMatches.length > 1 && trackedPos) {
-          // 같은 이미지 여러 개 → 위치로 구분 (가장 가까운 것 선택)
+          // 같은 이미지 여러 개 → 위치로 구분
+          // DOM translate()는 픽셀, Redux x/y는 네이티브 셀 단위 (1셀 = 24px)
+          const NATIVE_CELL = 24;
+          const trkX = trackedPos.x / NATIVE_CELL;
+          const trkY = trackedPos.y / NATIVE_CELL;
+          console.log(`%c[CE]%c 패널 위치 변환: DOM(${trackedPos.x}, ${trackedPos.y})px → native(${trkX.toFixed(1)}, ${trkY.toFixed(1)}) (24px/cell)`,
+            'color: #ab47bc; font-weight: bold;', 'color: inherit;');
+
           let closest = null;
           let closestDist = Infinity;
           for (const item of imageMatches) {
             const ix = item.x ?? 0;
             const iy = item.y ?? 0;
-            const dx = ix - trackedPos.x;
-            const dy = iy - trackedPos.y;
+            const dx = ix - trkX;
+            const dy = iy - trkY;
             const dist = dx * dx + dy * dy;
+            console.log(`%c[CE]%c   후보: "${item._id}" pos=(${ix}, ${iy}) dist=${Math.sqrt(dist).toFixed(1)}`,
+              'color: #ab47bc; font-weight: bold;', 'color: inherit;');
             if (dist < closestDist) {
               closestDist = dist;
               closest = item;

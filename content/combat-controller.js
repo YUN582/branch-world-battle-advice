@@ -187,26 +187,22 @@
         const emoji = mainMatch ? '🔺' : '🔹';
         const actionType = mainMatch ? '주' : '보조';
 
-        // 화자 이름 → null이면 현재 차례 캐릭터로 폴백
-        let speakerName = _getSpeakerName();
-        if (!speakerName) {
-          const curChar = combatEngine.getState()?.currentCharacter;
-          speakerName = curChar ? curChar.name : null;
-          _alwaysLog(`[전투 보조] 화자 이름 없음 → 현재 차례 캐릭터 폴백: ${speakerName || '없음'}`);
-        }
-        if (!speakerName) {
-          _alwaysLog(`[전투 보조] 화자/차례 캐릭터 모두 알 수 없음 — 행동 소비 생략`);
+        // 턴제에서는 항상 현재 차례 캐릭터에게 차감 (화자가 GM일 수 있으므로)
+        const curChar = combatEngine.getState()?.currentCharacter;
+        const targetName = curChar ? curChar.name : null;
+        if (!targetName) {
+          _alwaysLog(`[전투 보조] 현재 차례 캐릭터 없음 — 행동 소비 생략`);
           return;
         }
 
-        _alwaysLog(`[전투 보조] ${actionType} 행동 소비 감지: ${speakerName} / 패턴: ${mainMatch ? '《》' : '【】'}`);
+        _alwaysLog(`[전투 보조] ${actionType} 행동 소비 감지: 대상=${targetName} / 패턴: ${mainMatch ? '《》' : '【】'}`);
 
         await _awaitUserMessage();
-        const result = await _modifyCharStat(speakerName, statLabel, '-', 1, true);
+        const result = await _modifyCharStat(targetName, statLabel, '-', 1, true);
 
         if (result && result.success) {
           let msg = `〔 ${emoji}${actionType} 행동 소비 〕`;
-          msg += `\n[ ${speakerName} ] ${statLabel} : ${result.oldVal} → ${result.newVal}`;
+          msg += `\n[ ${targetName} ] ${statLabel} : ${result.oldVal} → ${result.newVal}`;
           chat.sendSystemMessage(msg);
           _scheduleStatRefreshUI();
         } else {
