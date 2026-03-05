@@ -853,12 +853,15 @@
       'font-family:"Roboto","Helvetica","Arial",sans-serif;' +
       'font-size:12px;line-height:1.7;' +
       'pointer-events:auto;' +
-      'transition:transform 0.35s cubic-bezier(0.2,0.8,0.3,1), opacity 0.35s;' +
-      'max-width:220px;border:1px solid rgba(255,255,255,0.1);border-right:none;' +
-      'opacity:0;overflow:hidden;';
+      'transition:transform 0.35s cubic-bezier(0.2,0.8,0.3,1),' +
+      'opacity 0.35s,' +
+      'width 0.35s cubic-bezier(0.2,0.8,0.3,1),' +
+      'padding 0.35s cubic-bezier(0.2,0.8,0.3,1);' +
+      'width:220px;border:1px solid rgba(255,255,255,0.1);border-right:none;' +
+      'opacity:0;overflow:hidden;box-sizing:border-box;';
 
     _helpPanel.innerHTML =
-      '<div id="bwbr-help-content">' +
+      '<div id="bwbr-help-content" style="min-width:184px;">' +
       '<div style="font-size:13px;font-weight:bold;margin-bottom:8px;color:#42a5f5;">' +
       '⚔️ 전투 모드</div>' +
       '<div style="margin-bottom:4px;">🖱️ <b>토큰 클릭</b> — 이동 범위 표시</div>' +
@@ -868,9 +871,10 @@
       '<div style="margin-bottom:0;opacity:0.6;font-size:11px;margin-top:6px;">' +
       'Alt+* 로 전투 모드 토글</div>' +
       '</div>' +
-      '<div id="bwbr-help-tab" style="display:none;writing-mode:vertical-rl;' +
-      'font-size:11px;font-weight:bold;color:#42a5f5;padding:6px 2px;' +
-      'white-space:nowrap;letter-spacing:2px;">⚔️ 전투</div>';
+      '<div id="bwbr-help-tab" style="position:absolute;top:0;left:0;right:0;bottom:0;' +
+      'display:flex;align-items:center;justify-content:center;' +
+      'writing-mode:vertical-rl;font-size:11px;font-weight:bold;color:#42a5f5;' +
+      'letter-spacing:2px;opacity:0;transition:opacity 0.25s;pointer-events:none;">⚔️ 전투</div>';
 
     document.body.appendChild(_helpPanel);
 
@@ -900,26 +904,24 @@
 
   function _collapseHelpPanel() {
     if (!_helpPanel) return;
-    var content = _helpPanel.querySelector('#bwbr-help-content');
     var tab = _helpPanel.querySelector('#bwbr-help-tab');
-    if (content) content.style.display = 'none';
-    if (tab) tab.style.display = '';
-    _helpPanel.style.padding = '4px 2px';
+    _helpPanel.style.width = '28px';
+    _helpPanel.style.padding = '6px 2px';
     _helpPanel.style.opacity = '0.7';
     _helpPanel.style.cursor = 'pointer';
     _helpPanel.style.borderRadius = '6px 0 0 6px';
+    if (tab) tab.style.opacity = '1';
   }
 
   function _expandHelpPanel() {
     if (!_helpPanel) return;
-    var content = _helpPanel.querySelector('#bwbr-help-content');
     var tab = _helpPanel.querySelector('#bwbr-help-tab');
-    if (content) content.style.display = '';
-    if (tab) tab.style.display = 'none';
+    _helpPanel.style.width = '220px';
     _helpPanel.style.padding = '14px 18px';
     _helpPanel.style.opacity = '1';
     _helpPanel.style.cursor = 'default';
     _helpPanel.style.borderRadius = '8px 0 0 8px';
+    if (tab) tab.style.opacity = '0';
   }
 
   function hideHelpPanel() {
