@@ -820,24 +820,32 @@
   //  9. Combat mode help panel
   //     전투 모드 ON 시 오른쪽에서 슬라이드 인, OFF 시 슬라이드 아웃
   // ------------------------------------------------
-  /** 채팅 드로어 요소 탐색 */
-  function _findChatDrawer() {
-    return document.querySelector('.MuiDrawer-paperAnchorDockedRight')
+  /** 채팅 드로어 루트 요소 탐색 (paper의 부모 — overflow 제한 없음) */
+  function _findDrawerRoot() {
+    var paper = document.querySelector('.MuiDrawer-paperAnchorDockedRight')
       || document.querySelector('.MuiDrawer-paper');
+    if (!paper) return null;
+    // .MuiDrawer-root 는 paper의 부모
+    var root = paper.closest('.MuiDrawer-root') || paper.parentElement;
+    return root || paper;
   }
 
   function showHelpPanel() {
     if (_helpPanel) return;
 
-    var drawer = _findChatDrawer();
-    if (!drawer) return; // 드로어 없으면 표시 불가
+    var drawerRoot = _findDrawerRoot();
+    if (!drawerRoot) return;
+
+    // 루트에 position:relative 보장 (absolute 기준점)
+    if (getComputedStyle(drawerRoot).position === 'static') {
+      drawerRoot.style.position = 'relative';
+    }
 
     _helpPanel = document.createElement('div');
     _helpPanel.id = 'bwbr-combat-help';
 
     _helpPanel.style.cssText =
-      'position:absolute;top:80px;left:0;' +
-      'transform:translateX(0);' +
+      'position:absolute;top:80px;right:100%;' +
       'z-index:10;padding:14px 18px;' +
       'background:rgba(30,30,30,0.92);color:#eee;' +
       'border-radius:8px 0 0 8px;' +
@@ -845,8 +853,7 @@
       'font-family:"Roboto","Helvetica","Arial",sans-serif;' +
       'font-size:12px;line-height:1.7;' +
       'pointer-events:auto;' +
-      'transition:transform 0.35s cubic-bezier(0.2,0.8,0.3,1),' +
-      'opacity 0.35s,' +
+      'transition:opacity 0.35s,' +
       'width 0.35s cubic-bezier(0.2,0.8,0.3,1),' +
       'padding 0.35s cubic-bezier(0.2,0.8,0.3,1);' +
       'width:220px;border:1px solid rgba(255,255,255,0.1);border-right:none;' +
@@ -868,14 +875,13 @@
       'writing-mode:vertical-rl;font-size:11px;font-weight:bold;color:#42a5f5;' +
       'letter-spacing:2px;opacity:0;transition:opacity 0.25s;pointer-events:none;">⚔️ 전투</div>';
 
-    // 드로어의 자식으로 삽입 → 자동으로 드로어에 종속
-    drawer.appendChild(_helpPanel);
+    // 드로어 루트의 자식으로 삽입 (paper 바깥 → overflow:auto에 안 잘림)
+    drawerRoot.appendChild(_helpPanel);
 
-    // 슬라이드 인 (왼쪽으로 튀어나옴)
+    // 페이드 인
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
         if (_helpPanel) {
-          _helpPanel.style.transform = 'translateX(-100%)';
           _helpPanel.style.opacity = '1';
         }
       });
