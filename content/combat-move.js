@@ -820,32 +820,30 @@
   //  9. Combat mode help panel
   //     전투 모드 ON 시 오른쪽에서 슬라이드 인, OFF 시 슬라이드 아웃
   // ------------------------------------------------
-  /** 채팅 드로어 루트 요소 탐색 (paper의 부모 — overflow 제한 없음) */
-  function _findDrawerRoot() {
-    var paper = document.querySelector('.MuiDrawer-paperAnchorDockedRight')
+  /** 채팅 드로어 paper 요소 탐색 */
+  function _findDrawerPaper() {
+    return document.querySelector('.MuiDrawer-paperAnchorDockedRight')
+      || document.querySelector('.MuiDrawer-paperAnchorRight')
       || document.querySelector('.MuiDrawer-paper');
-    if (!paper) return null;
-    // .MuiDrawer-root 는 paper의 부모
-    var root = paper.closest('.MuiDrawer-root') || paper.parentElement;
-    return root || paper;
   }
 
   function showHelpPanel() {
     if (_helpPanel) return;
 
-    var drawerRoot = _findDrawerRoot();
-    if (!drawerRoot) return;
+    var paper = _findDrawerPaper();
+    if (!paper) return;
 
-    // 루트에 position:relative 보장 (absolute 기준점)
-    if (getComputedStyle(drawerRoot).position === 'static') {
-      drawerRoot.style.position = 'relative';
-    }
+    // paper의 왼쪽 가장자리 (position:fixed이므로 viewport 기준)
+    var paperLeft = paper.getBoundingClientRect().left;
 
     _helpPanel = document.createElement('div');
     _helpPanel.id = 'bwbr-combat-help';
 
+    // paper 자식이지만 position:fixed → overflow:auto 클리핑 무시
     _helpPanel.style.cssText =
-      'position:absolute;top:80px;right:100%;' +
+      'position:fixed;top:80px;' +
+      'left:' + paperLeft + 'px;' +
+      'transform:translateX(-100%);' +
       'z-index:10;padding:14px 18px;' +
       'background:rgba(30,30,30,0.92);color:#eee;' +
       'border-radius:8px 0 0 8px;' +
@@ -875,8 +873,8 @@
       'writing-mode:vertical-rl;font-size:11px;font-weight:bold;color:#42a5f5;' +
       'letter-spacing:2px;opacity:0;transition:opacity 0.25s;pointer-events:none;">⚔️ 전투</div>';
 
-    // 드로어 루트의 자식으로 삽입 (paper 바깥 → overflow:auto에 안 잘림)
-    drawerRoot.appendChild(_helpPanel);
+    // paper의 자식으로 삽입 (DOM 종속 → 드로어 숨기면 같이 사라짐)
+    paper.appendChild(_helpPanel);
 
     // 페이드 인
     requestAnimationFrame(function () {
