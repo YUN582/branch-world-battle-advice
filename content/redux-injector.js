@@ -1647,9 +1647,10 @@
       }
       if (!target) throw new Error(`캐릭터 "${targetName}" 없음`);
 
-      // 스테이터스 찾기
+      // 스테이터스 찾기 (정확 매칭 → 포함 매칭 폴백)
       const statusArr = target.status || [];
-      const idx = statusArr.findIndex(s => s.label === statusLabel);
+      let idx = statusArr.findIndex(s => s.label === statusLabel);
+      if (idx < 0) idx = statusArr.findIndex(s => s.label.includes(statusLabel) || statusLabel.includes(s.label));
       if (idx < 0) throw new Error(`스테이터스 "${statusLabel}" 없음`);
 
       const oldVal = parseInt(statusArr[idx][field], 10) || 0;
@@ -1737,7 +1738,8 @@
 
         const charId = char._id || id;
         const statusArr = char.status || [];
-        const idx = statusArr.findIndex(s => s.label === statusLabel);
+        let idx = statusArr.findIndex(s => s.label === statusLabel);
+        if (idx < 0) idx = statusArr.findIndex(s => s.label.includes(statusLabel) || statusLabel.includes(s.label));
         if (idx < 0) continue; // 해당 스탯이 없는 캐릭터는 건너뜀
 
         const oldVal = parseInt(statusArr[idx][field], 10) || 0;
