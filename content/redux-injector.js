@@ -2716,25 +2716,60 @@
       const ri = state.entities?.roomItems;
       if (!ri?.ids) return respond({ success: false });
 
-      // ── 방법 1: imageUrl 정확 매칭 (가장 신뢰) ──
+      // ── 방법 1: imageUrl 정확 매칭 ──
       const trackedUrl = props._trackedImageUrl || '';
+      const trackedPos = props._trackedPosition || null;
       if (trackedUrl) {
         function extractPath(url) {
           try { return new URL(url).pathname; } catch (e) { return url; }
         }
         const trackedPath = extractPath(trackedUrl);
 
+        // 같은 이미지의 패널이 여러 개일 수 있으므로 모두 수집
+        const imageMatches = [];
         for (const id of ri.ids) {
           const item = ri.entities?.[id];
           if (!item || !item.imageUrl) continue;
           if (item.imageUrl === trackedUrl || extractPath(item.imageUrl) === trackedPath) {
-            console.log(`%c[CE]%c 패널 식별 (imageUrl): "${item._id}"`,
-              'color: #ab47bc; font-weight: bold;', 'color: inherit;');
-            return respond({ success: true, panelId: item._id, imageUrl: item.imageUrl });
+            imageMatches.push(item);
           }
         }
-        console.log(`%c[CE]%c imageUrl 매칭 실패, 스코어링 폴백`,
-          'color: #ab47bc; font-weight: bold;', 'color: inherit;');
+
+        if (imageMatches.length === 1) {
+          // 유일 매칭
+          const item = imageMatches[0];
+          console.log(`%c[CE]%c 패널 식별 (imageUrl 유일): "${item._id}"`,
+            'color: #ab47bc; font-weight: bold;', 'color: inherit;');
+          return respond({ success: true, panelId: item._id, imageUrl: item.imageUrl });
+        } else if (imageMatches.length > 1 && trackedPos) {
+          // 같은 이미지 여러 개 → 위치로 구분 (가장 가까운 것 선택)
+          let closest = null;
+          let closestDist = Infinity;
+          for (const item of imageMatches) {
+            const ix = item.x ?? 0;
+            const iy = item.y ?? 0;
+            const dx = ix - trackedPos.x;
+            const dy = iy - trackedPos.y;
+            const dist = dx * dx + dy * dy;
+            if (dist < closestDist) {
+              closestDist = dist;
+              closest = item;
+            }
+          }
+          if (closest) {
+            console.log(`%c[CE]%c 패널 식별 (imageUrl+위치): "${closest._id}" (${imageMatches.length}개 중, dist=${Math.sqrt(closestDist).toFixed(1)})`,
+              'color: #ab47bc; font-weight: bold;', 'color: inherit;');
+            return respond({ success: true, panelId: closest._id, imageUrl: closest.imageUrl });
+          }
+        } else if (imageMatches.length > 1) {
+          console.log(`%c[CE]%c 같은 imageUrl ${imageMatches.length}개, 위치 정보 없음 → 스코어링 폴백`,
+            'color: #ab47bc; font-weight: bold;', 'color: inherit;');
+        }
+
+        if (imageMatches.length === 0) {
+          console.log(`%c[CE]%c imageUrl 매칭 실패, 스코어링 폴백`,
+            'color: #ab47bc; font-weight: bold;', 'color: inherit;');
+        }
       }
 
       // ── 방법 2: 속성 스코어링 (폴백) ──

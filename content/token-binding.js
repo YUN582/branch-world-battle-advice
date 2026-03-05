@@ -122,6 +122,7 @@
   //  다이얼로그 열릴 때 정확한 패널 식별에 사용
   // ------------------------------------------------
   let _lastClickedPanelImageUrl = null;
+  let _lastClickedPanelPosition = null;
 
   function extractTokenImageUrl(el) {
     if (!el) return null;
@@ -151,13 +152,22 @@
     return found;
   }
 
+  function extractTransformPosition(el) {
+    if (!el) return null;
+    const t = el.style.transform || '';
+    const m = t.match(/translate\(([\d.e+-]+)px,\s*([\d.e+-]+)px\)/);
+    if (m) return { x: parseFloat(m[1]), y: parseFloat(m[2]) };
+    return null;
+  }
+
   function trackPanelClick(e) {
     const movable = findMovableParent(e.target);
     if (movable) {
       const url = extractTokenImageUrl(movable);
       if (url) {
         _lastClickedPanelImageUrl = url;
-        LOG('패널 클릭 추적:', url.substring(0, 60) + '...');
+        _lastClickedPanelPosition = extractTransformPosition(movable);
+        LOG('패널 클릭 추적:', url.substring(0, 60) + '...', '위치:', _lastClickedPanelPosition);
       }
     }
   }
@@ -429,7 +439,8 @@
     // 폼 값 읽기 + 추적된 imageUrl 포함 (패널 식별용)
     const formProps = readFormValues(form);
     formProps._trackedImageUrl = _lastClickedPanelImageUrl || '';
-    LOG('폼 속성:', formProps, 'imageUrl:', formProps._trackedImageUrl ? formProps._trackedImageUrl.substring(0, 60) + '...' : '없음');
+    formProps._trackedPosition = _lastClickedPanelPosition || null;
+    LOG('폼 속성:', formProps, 'imageUrl:', formProps._trackedImageUrl ? formProps._trackedImageUrl.substring(0, 60) + '...' : '없음', '위치:', formProps._trackedPosition);
 
     // MAIN world에서 패널 식별
     const result = await identifyPanel(formProps);
