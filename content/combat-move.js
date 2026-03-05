@@ -74,8 +74,19 @@
   // ------------------------------------------------
   function extractTransformPosition(el) {
     if (!el) return null;
+    // 1) inline style → 2) computedStyle 폴백
     var t = el.style.transform || '';
+    if (!t || t === 'none') {
+      try { t = window.getComputedStyle(el).transform || ''; } catch (e) { t = ''; }
+    }
+    // translate(Xpx, Ypx)
     var m = t.match(/translate\(([\d.e+-]+)px,\s*([\d.e+-]+)px\)/);
+    if (m) return { x: parseFloat(m[1]), y: parseFloat(m[2]) };
+    // translate3d(Xpx, Ypx, Zpx)
+    m = t.match(/translate3d\(([\d.e+-]+)px,\s*([\d.e+-]+)px/);
+    if (m) return { x: parseFloat(m[1]), y: parseFloat(m[2]) };
+    // matrix(a,b,c,d,tx,ty)
+    m = t.match(/matrix\([^,]+,[^,]+,[^,]+,[^,]+,\s*([\d.e+-]+),\s*([\d.e+-]+)\)/);
     if (m) return { x: parseFloat(m[1]), y: parseFloat(m[2]) };
     return null;
   }
@@ -137,11 +148,38 @@
     return found;
   }
 
-  function handleTokenClick(tokenEl) {
+  /** .movable 조상 중 개별 패널 수준의 transform 을 가진 요소 찾기 */
+  function findPanelTransform(rawTarget) {
+    // 클릭 대상에서 위로 올라가며 모든 .movable를 수집
+    var el = rawTarget;
+    var movables = [];
+    for (var d = 0; el && d < 20; d++, el = el.parentElement) {
+      if (el instanceof HTMLElement && (el.className + '').indexOf('movable') !== -1) {
+        movables.push(el);
+      }
+    }
+    // 외부→내부 순서 (outermost first — token-binding과 동일 방식)
+    for (var i = movables.length - 1; i >= 0; i--) {
+      var raw = movables[i].style.transform || '(inline 없음)';
+      var computed = '';
+      try { computed = window.getComputedStyle(movables[i]).transform || '(없음)'; } catch (e) { computed = '(에러)'; }
+      console.log('[Branch Move] movable[' + i + '/' + movables.length + '] inline="' + raw + '" computed="' + computed + '"');
+      var pos = extractTransformPosition(movables[i]);
+      if (pos) {
+        console.log('[Branch Move] 패널 transform 발견: movable[' + i + '/' + movables.length + '] pos=(' + pos.x + ', ' + pos.y + ')');
+        return pos;
+      }
+    }
+    console.log('[Branch Move] ⚠️ 모든 movable(' + movables.length + '개)에서 transform 발견 못함');
+    return null;
+  }
+
+  function handleTokenClick(tokenEl, rawTarget) {
     var imageUrl = extractTokenImageUrl(tokenEl);
-    var position = extractTransformPosition(tokenEl);
-    LOG('토큰 클릭: imageUrl=' + (imageUrl ? imageUrl.substring(0, 80) + '...' : 'null') +
-        ', pos=' + (position ? '(' + position.x + ', ' + position.y + ')' : 'null'));
+    // rawTarget(원래 클릭 대상)부터 위로 탐색 — outermost movable부터 올라가면 패널 transform 발견 불가
+    var position = findPanelTransform(rawTarget || tokenEl);
+    console.log('[Branch Move] 토큰 클릭: imageUrl=' + (imageUrl ? imageUrl.substring(0, 60) + '...' : 'null') +
+        ', pos=' + (position ? '(' + position.x + ', ' + position.y + ')' : 'NULL'));
 
     if (!imageUrl) {
       LOG('이미지 URL을 찾을 수 없습니다');
@@ -207,7 +245,7 @@
       if (movable) {
         e.stopPropagation();
         e.preventDefault();
-        handleTokenClick(movable);
+        handleTokenClick(movable, e.target);
         return;
       }
       // 다른 곳 클릭 → 오버레이 해제
@@ -221,7 +259,7 @@
     if (token) {
       e.stopPropagation();
       e.preventDefault();
-      handleTokenClick(token);
+      handleTokenClick(token, e.target);
     }
   }
 

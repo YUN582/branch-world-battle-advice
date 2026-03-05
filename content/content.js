@@ -285,7 +285,7 @@
     if (!enabled) return;
     // @ 컷인 명령은 무시 (절대 전투 트리거가 아님)
     if (text.startsWith('@')) return;
-    log(`[입력 감지] "${text.substring(0, 80)}"`);
+    alwaysLog(`[입력 감지] "${text.substring(0, 80)}" (flowState=${combatCtrl.getFlowState()})`);
 
     // ★ 사용자 메시지가 Firestore에 도착할 때까지 대기할 프라미스 생성
     _userMessagePendingPromise = waitForUserMessageDelivery();
@@ -294,6 +294,8 @@
     const fs = combatCtrl.getFlowState();
     if (fs === 'IDLE' || fs === 'TURN_COMBAT') {
       combatCtrl.checkForCombatAssistTrigger(text);
+    } else {
+      alwaysLog(`[입력 감지] flowState="${fs}" — 전투 보조 체크 건너뜀`);
     }
 
     // 범용 트리거 엔진 매칭

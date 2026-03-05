@@ -2853,6 +2853,8 @@
       imageUrl = rawPayload;
     }
 
+    console.log(`[Branch Move MAIN] 요청 수신: imageUrl=${imageUrl ? imageUrl.substring(0, 60) + '...' : 'EMPTY'}, clickPos=${clickPos ? `(${clickPos.x}, ${clickPos.y})` : 'NULL'}, rawLen=${rawPayload.length}`);
+
     const fail = () => window.dispatchEvent(
       new CustomEvent('bwbr-char-move-data', { detail: { success: false } })
     );
