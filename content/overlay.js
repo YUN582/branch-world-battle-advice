@@ -414,10 +414,10 @@ window.BattleRollOverlay = class BattleRollOverlay {
         const isNew = !prevEffectLabels.has(eff.label);
         const effType = eff.def?.type || 'unknown';
         newEffectLabels.add(eff.label);
-        return `<div class="bwbr-effect-badge${isNew ? ' bwbr-effect-new' : ''}" data-effect-type="${effType}" data-effect-label="${this._esc(eff.label)}" title="${this._esc(eff.def?.desc || eff.label)}">
-          <button class="bwbr-effect-btn bwbr-effect-minus" data-effect-label="${this._esc(eff.label)}" title="-1">−</button>
+        return `<div class="bwbr-effect-badge${isNew ? ' bwbr-effect-new' : ''}" data-effect-type="${effType}" data-effect-label="${this._esc(eff.label)}" data-effect-desc="${this._esc(eff.def?.desc || eff.label)}">
+          <button class="bwbr-effect-btn bwbr-effect-minus" data-effect-label="${this._esc(eff.label)}">−</button>
           <span class="bwbr-effect-text">${this._esc(eff.def?.emoji || '')}${this._esc(eff.def?.name || eff.label)}${valText}</span>
-          <button class="bwbr-effect-btn bwbr-effect-plus" data-effect-label="${this._esc(eff.label)}" title="+1">+</button>
+          <button class="bwbr-effect-btn bwbr-effect-plus" data-effect-label="${this._esc(eff.label)}">+</button>
         </div>`;
       }).join('');
       statusEffectsHtml = `<div class="bwbr-status-effects">${badges}</div>`;
@@ -514,6 +514,33 @@ window.BattleRollOverlay = class BattleRollOverlay {
         if (this.onStatusEffectCallback) {
           this.onStatusEffectCallback(label, action);
         }
+      });
+    });
+
+    // 상태이상 배지 호버 → 코코포리아 네이티브 스타일 플로팅 툴팁
+    const effectBadges = container.querySelectorAll('.bwbr-effect-badge');
+    effectBadges.forEach(badge => {
+      badge.addEventListener('mouseenter', () => {
+        const desc = badge.dataset.effectDesc;
+        if (!desc) return;
+        let tip = document.getElementById('bwbr-effect-float-tip');
+        if (!tip) {
+          tip = document.createElement('div');
+          tip.id = 'bwbr-effect-float-tip';
+          tip.className = 'bwbr-effect-float-tooltip';
+          document.body.appendChild(tip);
+        }
+        tip.textContent = desc;
+        tip.classList.remove('bwbr-tip-visible');
+        const rect = badge.getBoundingClientRect();
+        tip.style.left = (rect.left + rect.width / 2) + 'px';
+        tip.style.top = (rect.top - 8) + 'px';
+        tip.style.transform = 'translate(-50%, -100%)';
+        requestAnimationFrame(() => tip.classList.add('bwbr-tip-visible'));
+      });
+      badge.addEventListener('mouseleave', () => {
+        const tip = document.getElementById('bwbr-effect-float-tip');
+        if (tip) tip.classList.remove('bwbr-tip-visible');
       });
     });
   }

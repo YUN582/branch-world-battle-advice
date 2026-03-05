@@ -756,6 +756,31 @@
   filter: brightness(1.2);
 }
 
+/* 네이티브 코코포리아 MUI 툴팁 스타일 (플로팅) */
+.bwbr-effect-float-tooltip {
+  position: fixed;
+  background: rgb(22, 22, 22);
+  color: #fff;
+  font-family: "Roboto", "Helvetica", "Arial", sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 4px;
+  max-width: 300px;
+  white-space: pre-wrap;
+  box-shadow: 0 1px 3px rgba(0,0,0,.2), 0 1px 1px rgba(0,0,0,.14), 0 2px 1px -1px rgba(0,0,0,.12);
+  z-index: 1500;
+  pointer-events: none;
+  line-height: 1.4;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.bwbr-effect-float-tooltip.bwbr-tip-visible {
+  opacity: 1;
+}
+
 .bwbr-effect-text {
   padding: 0 2px;
   white-space: nowrap;

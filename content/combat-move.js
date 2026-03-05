@@ -820,13 +820,32 @@
   //  9. Combat mode help panel
   //     전투 모드 ON 시 오른쪽에서 슬라이드 인, OFF 시 슬라이드 아웃
   // ------------------------------------------------
+  /** 채팅창 MuiDrawer 왼쪽 위치 계산 */
+  function getChatDrawerLeft() {
+    var drawer = document.querySelector('.MuiDrawer-root .MuiDrawer-paper');
+    if (drawer) {
+      var rect = drawer.getBoundingClientRect();
+      if (rect.width > 0) return rect.left;
+    }
+    // 폴백: textarea 기준
+    var ta = document.querySelector('textarea[name="text"]');
+    if (ta) {
+      var container = ta.closest('.MuiDrawer-paper') || ta.closest('[class*="Drawer"]');
+      if (container) return container.getBoundingClientRect().left;
+    }
+    return window.innerWidth;
+  }
+
   function showHelpPanel() {
     if (_helpPanel) return;
     _helpPanel = document.createElement('div');
     _helpPanel.id = 'bwbr-combat-help';
+
+    var chatLeft = getChatDrawerLeft();
     _helpPanel.style.cssText =
-      'position:fixed;top:50%;right:0;' +
-      'transform:translateY(-50%) translateX(100%);' +
+      'position:fixed;top:50%;' +
+      'left:' + chatLeft + 'px;' +
+      'transform:translateY(-50%) translateX(0);' +
       'z-index:13000;padding:14px 18px;' +
       'background:rgba(30,30,30,0.92);color:#eee;' +
       'border-radius:8px 0 0 8px;' +
@@ -834,8 +853,9 @@
       'font-family:"Roboto","Helvetica","Arial",sans-serif;' +
       'font-size:12px;line-height:1.7;' +
       'pointer-events:auto;' +
-      'transition:transform 0.35s cubic-bezier(0.2,0.8,0.3,1);' +
-      'max-width:220px;border:1px solid rgba(255,255,255,0.1);border-right:none;';
+      'transition:transform 0.35s cubic-bezier(0.2,0.8,0.3,1), opacity 0.35s;' +
+      'max-width:220px;border:1px solid rgba(255,255,255,0.1);border-right:none;' +
+      'opacity:0;';
 
     _helpPanel.innerHTML =
       '<div style="font-size:13px;font-weight:bold;margin-bottom:8px;color:#42a5f5;">' +
@@ -849,29 +869,31 @@
 
     document.body.appendChild(_helpPanel);
 
-    // 슬라이드 인 애니메이션 (오른쪽에서 왼쪽으로)
+    // 슬라이드 인 (채팅창 왼쪽에서 나타남)
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
-        if (_helpPanel) _helpPanel.style.transform = 'translateY(-50%) translateX(0)';
+        if (_helpPanel) {
+          _helpPanel.style.transform = 'translateY(-50%) translateX(-100%)';
+          _helpPanel.style.opacity = '1';
+        }
       });
     });
 
-    // 5초 후 자동으로 접힘 (반만 숨김)
+    // 5초 후 자동으로 접힘 (왼쪽으로 28px만 노출)
     setTimeout(function () {
       if (_helpPanel && _combatMode) {
-        _helpPanel.style.transform = 'translateY(-50%) translateX(calc(100% - 28px))';
+        _helpPanel.style.transform = 'translateY(-50%) translateX(calc(-100% + 28px))';
         _helpPanel.style.opacity = '0.6';
         _helpPanel.style.cursor = 'pointer';
-        // 호버하면 다시 펼침
         _helpPanel.addEventListener('mouseenter', function () {
           if (_helpPanel) {
-            _helpPanel.style.transform = 'translateY(-50%) translateX(0)';
+            _helpPanel.style.transform = 'translateY(-50%) translateX(-100%)';
             _helpPanel.style.opacity = '1';
           }
         });
         _helpPanel.addEventListener('mouseleave', function () {
           if (_helpPanel && _combatMode) {
-            _helpPanel.style.transform = 'translateY(-50%) translateX(calc(100% - 28px))';
+            _helpPanel.style.transform = 'translateY(-50%) translateX(calc(-100% + 28px))';
             _helpPanel.style.opacity = '0.6';
           }
         });
@@ -881,8 +903,7 @@
 
   function hideHelpPanel() {
     if (!_helpPanel) return;
-    // 슬라이드 아웃 (왼쪽에서 오른쪽으로 사라짐)
-    _helpPanel.style.transform = 'translateY(-50%) translateX(100%)';
+    _helpPanel.style.transform = 'translateY(-50%) translateX(0)';
     _helpPanel.style.opacity = '0';
     var panel = _helpPanel;
     _helpPanel = null;
