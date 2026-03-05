@@ -348,6 +348,7 @@
       'box-sizing:border-box;' +
       'pointer-events:auto;' +
       'cursor:pointer;' +
+      'z-index:1;' +
       'border-radius:2px;';
     currentTile.title = char.name + ' (현재 위치 — 클릭하면 취소)';
     _moveOverlay.appendChild(currentTile);
@@ -404,6 +405,7 @@
       'border:2px dashed rgba(76,175,80,0.8);' +
       'box-sizing:border-box;' +
       'pointer-events:none;' +
+      'z-index:2;' +
       'border-radius:2px;';
     // 좌상단 순번 라벨
     var lbl = document.createElement('div');
@@ -493,6 +495,7 @@
       'pointer-events:auto;' +
       'cursor:pointer;' +
       'border-radius:2px;' +
+      'z-index:3;' +
       'transition:background 0.12s,border-color 0.12s;';
 
     tile.title = '(' + targetX + ', ' + targetY + ') — 거리 ' + Math.round(fullDist) +

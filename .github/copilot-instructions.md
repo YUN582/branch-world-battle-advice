@@ -198,3 +198,9 @@ Format the checklist in Korean (matching the user's language) with checkboxes (-
 
 - **Commit messages MUST be written in Korean**: Format: version tag + Korean description. Example: `v1.2.3: 그리드 오버레이 개선, 전투 HP 복원 수정`
 - Squash trivial changes into a single commit. Do not split commits unnecessarily.
+- **Version bumping**: Every commit MUST include a version bump. Read the current version from `manifest.json` before committing. When committing autonomously (without the user explicitly requesting a commit), increment only the patch number (e.g., `1.2.82` → `1.2.83`). For user-requested commits, follow the user's version instruction if given; otherwise, increment patch. Update the `"version"` field in `manifest.json` as part of the commit. Commit message format: `vX.Y.Z: 설명`.
+- **Committing is allowed proactively** — you may commit on your own after completing a feature or fix. No need to ask permission to commit.
+
+### ⚠️ NEVER PUSH WITHOUT EXPLICIT PERMISSION ⚠️
+
+**`git push` is STRICTLY FORBIDDEN unless the user explicitly says "push", "푸시해", "올려" or similar.** This is a hard rule with ZERO exceptions. Pushing affects the remote repository and cannot be undone easily. Always let the user decide when to push. If you are unsure whether the user wants a push, DO NOT PUSH — ask first.
