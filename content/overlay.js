@@ -265,12 +265,10 @@ window.BattleRollOverlay = class BattleRollOverlay {
   }
 
   show() {
-    // 토글이 아닌 명시적 펼치기
-    if (this.isCollapsed) {
-      this.isCollapsed = false;
-      const body = this.element?.querySelector('#bwbr-body');
-      if (body) body.classList.remove('bwbr-collapsed');
-    }
+    this.ensureInjected();
+    this.isCollapsed = false;
+    const body = this.element?.querySelector('#bwbr-body');
+    if (body) body.classList.remove('bwbr-collapsed');
   }
 
   hide() {

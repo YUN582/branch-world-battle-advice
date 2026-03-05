@@ -294,6 +294,7 @@
     await _resetAllActionStats('⚔️ 전투 개시');
     combatEngine.nextTurn();
     _saveTurnCombatState();
+    await refreshTurnUI();
     sendTurnStartMessage();
 
     const startCutin = _pickCutin('battleStartSounds');
