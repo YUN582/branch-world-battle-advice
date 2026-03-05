@@ -838,12 +838,12 @@
     _helpPanel = document.createElement('div');
     _helpPanel.id = 'bwbr-combat-help';
 
-    // 외곽 컨테이너: 항상 같은 위치, 접힘/펼침 시 위치 불변
+    // 외곽 컨테이너: 오른쪽(드로어) 기준 고정, 접힘 시 width 축소로 오른쪽으로 접힘
     _helpPanel.style.cssText =
       'position:fixed;top:140px;' +
       'left:' + paperLeft + 'px;' +
       'transform:translateX(-100%);' +
-      'z-index:10;' +
+      'z-index:10;width:220px;' +
       'background:rgba(30,30,30,0.92);color:#eee;' +
       'border-radius:8px 0 0 8px;' +
       'box-shadow:-2px 0 16px rgba(0,0,0,0.4);' +
@@ -852,13 +852,13 @@
       'pointer-events:auto;' +
       'border:1px solid rgba(255,255,255,0.1);border-right:none;' +
       'opacity:0;overflow:hidden;box-sizing:border-box;' +
-      'transition:opacity 0.3s;';
+      'transition:opacity 0.3s, width 0.35s cubic-bezier(0.2,0.8,0.3,1);';
 
-    // 내부: content(펼침 전용) + tab(접힘 전용), 둘 다 항상 DOM에 존재
+    // content: 펼침 시 보임, 접힘 시 opacity로 숨김 (overflow:hidden이 잘라줌)
+    // tab: 접힘 시 보임, position:absolute로 좁은 폭에 맞춤
     _helpPanel.innerHTML =
       '<div id="bwbr-help-content" style="padding:14px 18px;white-space:nowrap;' +
-      'transition:opacity 0.3s, max-height 0.35s ease, padding 0.35s ease;' +
-      'max-height:300px;overflow:hidden;">' +
+      'transition:opacity 0.25s;">' +
       '<div style="font-size:13px;font-weight:bold;margin-bottom:8px;color:#42a5f5;">' +
       '⚔️ 전투 모드</div>' +
       '<div style="margin-bottom:4px;">🖱️ <b>토큰 클릭</b> — 이동 범위 표시</div>' +
@@ -868,11 +868,11 @@
       '<div style="margin-bottom:0;opacity:0.6;font-size:11px;margin-top:6px;">' +
       'Alt+* 로 전투 모드 토글</div>' +
       '</div>' +
-      '<div id="bwbr-help-tab" style="padding:8px 4px;text-align:center;' +
+      '<div id="bwbr-help-tab" style="position:absolute;top:0;left:0;right:0;bottom:0;' +
+      'display:flex;align-items:center;justify-content:center;' +
       'writing-mode:vertical-rl;font-size:11px;font-weight:bold;color:#42a5f5;' +
       'letter-spacing:2px;cursor:pointer;' +
-      'max-height:0;overflow:hidden;opacity:0;' +
-      'transition:opacity 0.3s, max-height 0.35s ease, padding 0.35s ease;">⚔️ 전투</div>';
+      'opacity:0;pointer-events:none;transition:opacity 0.25s;">⚔️ 전투</div>';
 
     paper.appendChild(_helpPanel);
 
@@ -903,16 +903,10 @@
     if (!_helpPanel) return;
     var content = _helpPanel.querySelector('#bwbr-help-content');
     var tab = _helpPanel.querySelector('#bwbr-help-tab');
-    if (content) {
-      content.style.maxHeight = '0';
-      content.style.padding = '0 18px';
-      content.style.opacity = '0';
-    }
-    if (tab) {
-      tab.style.maxHeight = '200px';
-      tab.style.padding = '8px 4px';
-      tab.style.opacity = '1';
-    }
+    // content를 먼저 투명하게 → width 줄이면 overflow:hidden이 잘라냄 (구겨짐 없음)
+    if (content) content.style.opacity = '0';
+    if (tab) tab.style.opacity = '1';
+    _helpPanel.style.width = '28px';
     _helpPanel.style.opacity = '0.7';
     _helpPanel.style.cursor = 'pointer';
   }
@@ -921,18 +915,14 @@
     if (!_helpPanel) return;
     var content = _helpPanel.querySelector('#bwbr-help-content');
     var tab = _helpPanel.querySelector('#bwbr-help-tab');
-    if (content) {
-      content.style.maxHeight = '300px';
-      content.style.padding = '14px 18px';
-      content.style.opacity = '1';
-    }
-    if (tab) {
-      tab.style.maxHeight = '0';
-      tab.style.padding = '0 4px';
-      tab.style.opacity = '0';
-    }
+    _helpPanel.style.width = '220px';
     _helpPanel.style.opacity = '1';
     _helpPanel.style.cursor = 'default';
+    if (tab) tab.style.opacity = '0';
+    // width 전환 후 content 페이드인
+    if (content) {
+      setTimeout(function () { content.style.opacity = '1'; }, 150);
+    }
   }
 
   function hideHelpPanel() {
