@@ -833,32 +833,32 @@
     var paper = _findDrawerPaper();
     if (!paper) return;
 
-    // paper의 왼쪽 가장자리 (position:fixed이므로 viewport 기준)
     var paperLeft = paper.getBoundingClientRect().left;
 
     _helpPanel = document.createElement('div');
     _helpPanel.id = 'bwbr-combat-help';
 
-    // paper 자식이지만 position:fixed → overflow:auto 클리핑 무시
+    // 외곽 컨테이너: 항상 같은 위치, 접힘/펼침 시 위치 불변
     _helpPanel.style.cssText =
-      'position:fixed;top:80px;' +
+      'position:fixed;top:140px;' +
       'left:' + paperLeft + 'px;' +
       'transform:translateX(-100%);' +
-      'z-index:10;padding:14px 18px;' +
+      'z-index:10;' +
       'background:rgba(30,30,30,0.92);color:#eee;' +
       'border-radius:8px 0 0 8px;' +
       'box-shadow:-2px 0 16px rgba(0,0,0,0.4);' +
       'font-family:"Roboto","Helvetica","Arial",sans-serif;' +
       'font-size:12px;line-height:1.7;' +
       'pointer-events:auto;' +
-      'transition:opacity 0.35s,' +
-      'width 0.35s cubic-bezier(0.2,0.8,0.3,1),' +
-      'padding 0.35s cubic-bezier(0.2,0.8,0.3,1);' +
-      'width:220px;border:1px solid rgba(255,255,255,0.1);border-right:none;' +
-      'opacity:0;overflow:hidden;box-sizing:border-box;';
+      'border:1px solid rgba(255,255,255,0.1);border-right:none;' +
+      'opacity:0;overflow:hidden;box-sizing:border-box;' +
+      'transition:opacity 0.3s;';
 
+    // 내부: content(펼침 전용) + tab(접힘 전용), 둘 다 항상 DOM에 존재
     _helpPanel.innerHTML =
-      '<div id="bwbr-help-content" style="min-width:184px;">' +
+      '<div id="bwbr-help-content" style="padding:14px 18px;white-space:nowrap;' +
+      'transition:opacity 0.3s, max-height 0.35s ease, padding 0.35s ease;' +
+      'max-height:300px;overflow:hidden;">' +
       '<div style="font-size:13px;font-weight:bold;margin-bottom:8px;color:#42a5f5;">' +
       '⚔️ 전투 모드</div>' +
       '<div style="margin-bottom:4px;">🖱️ <b>토큰 클릭</b> — 이동 범위 표시</div>' +
@@ -868,12 +868,12 @@
       '<div style="margin-bottom:0;opacity:0.6;font-size:11px;margin-top:6px;">' +
       'Alt+* 로 전투 모드 토글</div>' +
       '</div>' +
-      '<div id="bwbr-help-tab" style="position:absolute;top:0;left:0;right:0;bottom:0;' +
-      'display:flex;align-items:center;justify-content:center;' +
+      '<div id="bwbr-help-tab" style="padding:8px 4px;text-align:center;' +
       'writing-mode:vertical-rl;font-size:11px;font-weight:bold;color:#42a5f5;' +
-      'letter-spacing:2px;opacity:0;transition:opacity 0.25s;pointer-events:none;">⚔️ 전투</div>';
+      'letter-spacing:2px;cursor:pointer;' +
+      'max-height:0;overflow:hidden;opacity:0;' +
+      'transition:opacity 0.3s, max-height 0.35s ease, padding 0.35s ease;">⚔️ 전투</div>';
 
-    // paper의 자식으로 삽입 (DOM 종속 → 드로어 숨기면 같이 사라짐)
     paper.appendChild(_helpPanel);
 
     // 페이드 인
@@ -901,29 +901,42 @@
 
   function _collapseHelpPanel() {
     if (!_helpPanel) return;
+    var content = _helpPanel.querySelector('#bwbr-help-content');
     var tab = _helpPanel.querySelector('#bwbr-help-tab');
-    _helpPanel.style.width = '28px';
-    _helpPanel.style.padding = '6px 2px';
+    if (content) {
+      content.style.maxHeight = '0';
+      content.style.padding = '0 18px';
+      content.style.opacity = '0';
+    }
+    if (tab) {
+      tab.style.maxHeight = '200px';
+      tab.style.padding = '8px 4px';
+      tab.style.opacity = '1';
+    }
     _helpPanel.style.opacity = '0.7';
     _helpPanel.style.cursor = 'pointer';
-    _helpPanel.style.borderRadius = '6px 0 0 6px';
-    if (tab) tab.style.opacity = '1';
   }
 
   function _expandHelpPanel() {
     if (!_helpPanel) return;
+    var content = _helpPanel.querySelector('#bwbr-help-content');
     var tab = _helpPanel.querySelector('#bwbr-help-tab');
-    _helpPanel.style.width = '220px';
-    _helpPanel.style.padding = '14px 18px';
+    if (content) {
+      content.style.maxHeight = '300px';
+      content.style.padding = '14px 18px';
+      content.style.opacity = '1';
+    }
+    if (tab) {
+      tab.style.maxHeight = '0';
+      tab.style.padding = '0 4px';
+      tab.style.opacity = '0';
+    }
     _helpPanel.style.opacity = '1';
     _helpPanel.style.cursor = 'default';
-    _helpPanel.style.borderRadius = '8px 0 0 8px';
-    if (tab) tab.style.opacity = '0';
   }
 
   function hideHelpPanel() {
     if (!_helpPanel) return;
-    _helpPanel.style.transform = 'translateX(0)';
     _helpPanel.style.opacity = '0';
     var panel = _helpPanel;
     _helpPanel = null;
