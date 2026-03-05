@@ -1535,4 +1535,28 @@ window.BattleRollOverlay = class BattleRollOverlay {
     div.textContent = str || '';
     return div.innerHTML;
   }
+
+  /** 토글 바 위에 일시적 툴팁 표시 */
+  showToast(message, duration) {
+    this.ensureInjected();
+    if (!this.element) return;
+    const existing = this.element.querySelector('.bwbr-panel-toast');
+    if (existing) existing.remove();
+    const toast = document.createElement('div');
+    toast.className = 'bwbr-panel-toast';
+    toast.textContent = message;
+    Object.assign(toast.style, {
+      position: 'absolute', left: '0', right: '0', top: '100%',
+      background: '#d32f2f', color: '#fff', fontSize: '12px',
+      fontWeight: '500', padding: '6px 14px', textAlign: 'center',
+      opacity: '0', transition: 'opacity 0.3s',
+      zIndex: '11', pointerEvents: 'none'
+    });
+    this.element.querySelector('#bwbr-toggle').appendChild(toast);
+    requestAnimationFrame(() => { toast.style.opacity = '1'; });
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      setTimeout(() => toast.remove(), 400);
+    }, duration || 4000);
+  }
 };

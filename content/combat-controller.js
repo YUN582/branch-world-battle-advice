@@ -263,7 +263,9 @@
 
     const characters = await _requestCharacterData();
     if (!characters || characters.length === 0) {
-      overlay.addLog('전투 보조 시작 실패 — 캐릭터 데이터를 찾을 수 없습니다.', 'error');
+      overlay.addLog('전투 보조 시작 실패 — 활성화된 캐릭터가 없습니다.', 'error');
+      overlay.showToast('⚠️ 활성화된 캐릭터가 없습니다 — 맵에 캐릭터를 배치해주세요', 5000);
+      overlay.setStatus('idle', '대기 중');
       return;
     }
 
