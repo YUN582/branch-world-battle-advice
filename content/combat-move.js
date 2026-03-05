@@ -72,10 +72,19 @@
   // ------------------------------------------------
   //  3. MAIN world communication helpers
   // ------------------------------------------------
-  function requestCharForMove(imageUrl) {
+  function extractTransformPosition(el) {
+    if (!el) return null;
+    var t = el.style.transform || '';
+    var m = t.match(/translate\(([\d.e+-]+)px,\s*([\d.e+-]+)px\)/);
+    if (m) return { x: parseFloat(m[1]), y: parseFloat(m[2]) };
+    return null;
+  }
+
+  function requestCharForMove(imageUrl, position) {
+    var payload = { imageUrl: imageUrl, position: position || null };
     return BWBR_Bridge.request(
-      'bwbr-request-char-for-move', 'bwbr-char-move-data', imageUrl,
-      { sendAttr: 'data-bwbr-move-imageurl', timeout: 3000 }
+      'bwbr-request-char-for-move', 'bwbr-char-move-data', payload,
+      { sendAttr: 'data-bwbr-move-payload', timeout: 3000 }
     ).catch(function () { return { success: false }; });
   }
 
@@ -130,7 +139,9 @@
 
   function handleTokenClick(tokenEl) {
     var imageUrl = extractTokenImageUrl(tokenEl);
-    LOG('토큰 클릭: imageUrl=' + (imageUrl ? imageUrl.substring(0, 80) + '...' : 'null'));
+    var position = extractTransformPosition(tokenEl);
+    LOG('토큰 클릭: imageUrl=' + (imageUrl ? imageUrl.substring(0, 80) + '...' : 'null') +
+        ', pos=' + (position ? '(' + position.x + ', ' + position.y + ')' : 'null'));
 
     if (!imageUrl) {
       LOG('이미지 URL을 찾을 수 없습니다');
@@ -138,7 +149,7 @@
       return;
     }
 
-    requestCharForMove(imageUrl).then(function (result) {
+    requestCharForMove(imageUrl, position).then(function (result) {
       if (!result || !result.success) {
         LOG('매칭 실패 — memo에 〔캐릭터이름〕이 있는지 확인하세요');
         return;

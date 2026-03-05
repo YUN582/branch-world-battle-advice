@@ -2835,8 +2835,20 @@
   // ================================================================
   window.addEventListener('bwbr-request-char-for-move', () => {
     const el = document.documentElement;
-    const imageUrl = el.getAttribute('data-bwbr-move-imageurl') || '';
+    // 새 형식: JSON { imageUrl, position } / 구 형식: 문자열 imageUrl
+    const rawPayload = el.getAttribute('data-bwbr-move-payload') || el.getAttribute('data-bwbr-move-imageurl') || '';
+    el.removeAttribute('data-bwbr-move-payload');
     el.removeAttribute('data-bwbr-move-imageurl');
+
+    let imageUrl = '';
+    let clickPos = null;
+    try {
+      const parsed = JSON.parse(rawPayload);
+      imageUrl = parsed.imageUrl || '';
+      clickPos = parsed.position || null;
+    } catch {
+      imageUrl = rawPayload;
+    }
 
     const fail = () => window.dispatchEvent(
       new CustomEvent('bwbr-char-move-data', { detail: { success: false } })
@@ -2854,17 +2866,44 @@
     }
     const clickedPath = extractPath(imageUrl);
 
-    // 1) roomItems에서 imageUrl 매칭
-    let item = null;
+    // 1) roomItems에서 imageUrl 매칭 — 같은 이미지가 여러 개일 수 있으므로 모두 수집
+    const imageMatches = [];
     for (const id of ri.ids) {
       const it = ri.entities?.[id];
       if (!it || !it.active) continue;
       if (!it.imageUrl) continue;
       if (it.imageUrl === imageUrl || extractPath(it.imageUrl) === clickedPath) {
-        item = it;
-        break;
+        imageMatches.push(it);
       }
     }
+
+    let item = null;
+    if (imageMatches.length === 1) {
+      item = imageMatches[0];
+    } else if (imageMatches.length > 1 && clickPos) {
+      // 같은 이미지 여러 개 → DOM 위치(픽셀)을 네이티브 셀 단위로 변환하여 가장 가까운 것 선택
+      const NATIVE_CELL = 24;
+      const trkX = clickPos.x / NATIVE_CELL;
+      const trkY = clickPos.y / NATIVE_CELL;
+      console.log(`[Branch Move] 위치 변환: DOM(${clickPos.x}, ${clickPos.y})px → native(${trkX.toFixed(1)}, ${trkY.toFixed(1)})`);
+      let closestDist = Infinity;
+      for (const it of imageMatches) {
+        const ix = it.x ?? 0, iy = it.y ?? 0;
+        const dx = ix - trkX, dy = iy - trkY;
+        const dist = dx * dx + dy * dy;
+        console.log(`[Branch Move]   후보: "${it._id}" pos=(${ix}, ${iy}) dist=${Math.sqrt(dist).toFixed(1)}`);
+        if (dist < closestDist) {
+          closestDist = dist;
+          item = it;
+        }
+      }
+      console.log(`[Branch Move] 선택: "${item?._id}" (${imageMatches.length}개 중, dist=${Math.sqrt(closestDist).toFixed(1)})`);
+    } else if (imageMatches.length > 1) {
+      // 위치 정보 없으면 첫 번째 (레거시 폴백)
+      item = imageMatches[0];
+      console.log(`[Branch Move] 같은 imageUrl ${imageMatches.length}개, 위치 정보 없음 → 첫 번째 선택`);
+    }
+
     if (!item) {
       console.log(`[Branch Move] roomItem imageUrl 매칭 실패: "${imageUrl.substring(0, 80)}..."`);
       return fail();

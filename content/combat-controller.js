@@ -155,6 +155,8 @@
   // ══════════════════════════════════════════════════════════
 
   async function checkForCombatAssistTrigger(text) {
+    try {
+    _alwaysLog(`[전투 보조] 트리거 체크 진입: flowState=${flowState}, text="${text.substring(0, 40)}"`);
     if (combatEngine.parseCombatStartTrigger(text)) {
       _log('[전투 보조] 전투개시 트리거 감지!');
       startCombatAssist();
@@ -209,6 +211,10 @@
           _alwaysLog(`[전투 보조] 행동 소비 실패: ${result ? result.error : '타임아웃'}`);
         }
       }
+    }
+    } catch (err) {
+      _alwaysLog(`[전투 보조] checkForCombatAssistTrigger 예외: ${err.message}`);
+      console.error('[전투 보조] 예외:', err);
     }
   }
 
