@@ -17,7 +17,7 @@
 
 (function () {
   'use strict';
-  console.log('[Branch Move] combat-move.js v1.2.108 loaded');
+  console.log('[Branch Move] combat-move.js v1.2.109 loaded');
 
   var CELL_PX = 24;
   var NATIVE_CELL = 24;       // 코코포리아 기본 셀 = 24px
@@ -910,7 +910,7 @@
     document.addEventListener('contextmenu', onCombatContextMenu, true);
     updateFabLabel();
     showHelpPanel();
-    showToast('⚔️ 전투 모드 활성화', 2000);
+    showToast('전투 모드 활성화', 2000);
     LOG('전투 모드 ON');
   }
 
@@ -1221,24 +1221,23 @@
     var old = document.querySelectorAll('.bwbr-combat-toast');
     for (var i = 0; i < old.length; i++) old[i].remove();
 
-    var toast = document.createElement('div');
-    toast.className = 'bwbr-combat-toast';
-    toast.style.cssText =
-      'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);' +
-      'z-index:14000;padding:8px 20px;border-radius:6px;' +
-      'background:rgba(33,150,243,0.92);color:#fff;font-size:13px;' +
-      'font-weight:500;box-shadow:0 3px 12px rgba(0,0,0,0.3);' +
-      'pointer-events:none;opacity:0;transition:opacity 0.3s;' +
-      'font-family:"Roboto","Helvetica","Arial",sans-serif;';
-    toast.textContent = msg;
-    document.body.appendChild(toast);
-
-    requestAnimationFrame(function () {
-      toast.style.opacity = '1';
-    });
+    var root = document.querySelector('#root > div') || document.body;
+    var box = document.getElementById('bwbr-toast-container');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'bwbr-toast-container';
+      box.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:14000;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none';
+      root.appendChild(box);
+    }
+    var t = document.createElement('div');
+    t.className = 'bwbr-combat-toast';
+    t.style.cssText = 'background:rgba(50,50,50,0.92);color:#fff;padding:6px 16px;border-radius:4px;font-size:0.875rem;box-shadow:0 3px 8px rgba(0,0,0,0.3);max-width:344px;opacity:0;transform:translateY(100%);transition:opacity 225ms,transform 225ms;pointer-events:auto;white-space:pre-line;font-family:"Roboto","Helvetica","Arial",sans-serif';
+    t.textContent = msg;
+    box.appendChild(t);
+    requestAnimationFrame(function () { t.style.opacity = '1'; t.style.transform = 'none'; });
     setTimeout(function () {
-      toast.style.opacity = '0';
-      setTimeout(function () { toast.remove(); }, 400);
+      t.style.opacity = '0'; t.style.transform = 'translateY(100%)';
+      setTimeout(function () { t.remove(); }, 225);
     }, dur);
   }
 
