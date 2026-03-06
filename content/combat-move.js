@@ -17,7 +17,7 @@
 
 (function () {
   'use strict';
-  console.log('[Branch Move] combat-move.js v1.2.107 loaded');
+  console.log('[Branch Move] combat-move.js v1.2.108 loaded');
 
   var CELL_PX = 24;
   var NATIVE_CELL = 24;       // 코코포리아 기본 셀 = 24px
@@ -238,12 +238,12 @@
     }
   }
 
-  /** 전투 모드 시 우클릭 차단 */
+  /** 전투 모드 시 우클릭 차단 (캐릭터 선택 드롭다운만 허용) */
   function onCombatContextMenu(e) {
     if (!_combatMode) return;
-    // 채팅 패널(MuiDrawer) 내부는 차단하지 않음
-    if (e.target.closest && e.target.closest('.MuiDrawer-root')) return;
-    // 전투 모드일 때 보드 영역의 우클릭 차단
+    // 캐릭터 선택 드롭다운(MuiPopover) 내부는 허용
+    if (e.target.closest && e.target.closest('.MuiPopover-root')) return;
+    // 전투 모드일 때 모든 우클릭 차단
     e.stopPropagation();
     e.preventDefault();
   }
@@ -328,12 +328,6 @@
       showMoveRange(item, charData);
     }));
 
-    // ── 편집 ──
-    ul.appendChild(_ctxMenuItem('편집', function () {
-      closeCombatContextMenu();
-      window.dispatchEvent(new CustomEvent('bwbr-character-edit', { detail: { name: charData.name } }));
-    }));
-
     // ── 도약 (미구현) ──
     ul.appendChild(_ctxMenuItem('도약', null, true));
 
@@ -346,6 +340,12 @@
       'margin:4px 0;border:none;height:1px;flex-shrink:0;' +
       'background-color:rgba(255,255,255,0.12);';
     ul.appendChild(hr);
+
+    // ── 편집 ──
+    ul.appendChild(_ctxMenuItem('편집', function () {
+      closeCombatContextMenu();
+      window.dispatchEvent(new CustomEvent('bwbr-character-edit', { detail: { name: charData.name } }));
+    }));
 
     // ── 캐릭터 목록에 표시 (hideStatus 토글) ──
     ul.appendChild(_ctxMenuItem('캐릭터 목록에 표시', function () {
@@ -910,6 +910,7 @@
     document.addEventListener('contextmenu', onCombatContextMenu, true);
     updateFabLabel();
     showHelpPanel();
+    showToast('⚔️ 전투 모드 활성화', 2000);
     LOG('전투 모드 ON');
   }
 
@@ -923,6 +924,7 @@
     document.removeEventListener('contextmenu', onCombatContextMenu, true);
     updateFabLabel();
     hideHelpPanel();
+    showToast('전투 모드 비활성화', 2000);
     LOG('전투 모드 OFF');
   }
 
@@ -1173,18 +1175,6 @@
       });
     });
 
-    // 5초 후 얇은 탭으로 접힘
-    setTimeout(function () {
-      if (_helpPanel && _combatMode) {
-        _collapseHelpPanel();
-        _helpPanel.addEventListener('mouseenter', function () {
-          _expandHelpPanel();
-        });
-        _helpPanel.addEventListener('mouseleave', function () {
-          if (_combatMode) _collapseHelpPanel();
-        });
-      }
-    }, 5000);
   }
 
   function _collapseHelpPanel() {
@@ -1303,14 +1293,15 @@
     }, 5000);
   })();
 
-  // Alt+* 단축키로 전투 모드 토글
+  // Alt+* 단축키로 전투 모드 토글 (capture phase — 항상 동작)
   document.addEventListener('keydown', function(e) {
     // NumPad multiply = '*', 또는 Shift+8 = '*'
-    if (e.altKey && (e.key === '*' || e.code === 'NumpadMultiply')) {
+    if (e.altKey && (e.key === '*' || e.code === 'NumpadMultiply' || (e.shiftKey && e.code === 'Digit8'))) {
       e.preventDefault();
+      e.stopPropagation();
       toggleCombatMode();
     }
-  });
+  }, true);
 
   // 글로벌 API
   window.__bwbrCombatMove = {

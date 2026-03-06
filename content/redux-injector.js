@@ -3337,7 +3337,7 @@
             const item = state.entities?.roomItems?.entities?.[id];
             if (!item) continue;
             const ref = sdk.doc(itemsCol, id);
-            ops.push({ type: 'set', ref, data: { visible: !item.visible, updatedAt: Date.now() }, options: { merge: true } });
+            ops.push({ type: 'set', ref, data: { visible: item.visible === false, updatedAt: Date.now() }, options: { merge: true } });
           }
           count = await _batchCommit(sdk, ops);
           _dbg(`%c[CE]%c ✅ 패널 ${count}개 표시 전환`,

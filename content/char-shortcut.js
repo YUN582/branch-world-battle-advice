@@ -530,14 +530,14 @@
       }
     }
 
-    // 이미지 기반 폴백 — 캐릭터 아이콘이 포함된 요소 감지
+    // 이미지 기반 폴백 — 캐릭터 선택 드롭다운(MuiPopover) 내부만 허용
+    if (!target.closest('.MuiPopover-root')) return null;
+
     var img = (target.tagName === 'IMG') ? target : null;
     if (!img) {
-      // target 내부의 img도 탐색 (클릭 대상이 wrapper div인 경우)
       img = target.querySelector && target.querySelector('img[src]');
     }
     if (!img) {
-      // 부모 몇 단계를 거슬러 올라가며 img 포함 컨테이너 탐색
       var up = target.parentElement;
       for (var u = 0; up && u < 3; u++, up = up.parentElement) {
         var found = up.querySelector && up.querySelector('img[src]');
@@ -547,7 +547,6 @@
     if (img && img.src) {
       var charMatch = matchCharacterByImage(img.src);
       if (charMatch) {
-        // MuiDialog(편집) 내부에서는 무시
         if (target.closest('.MuiDialog-root')) return null;
         return { name: charMatch.name, iconUrl: charMatch.iconUrl };
       }
