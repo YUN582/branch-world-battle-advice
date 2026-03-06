@@ -17,7 +17,7 @@
 
 (function () {
   'use strict';
-  console.log('[Branch Move] combat-move.js v1.2.103 loaded');
+  console.log('[Branch Move] combat-move.js v1.2.104 loaded');
 
   var CELL_PX = 24;
   var NATIVE_CELL = 24;       // 코코포리아 기본 셀 = 24px
@@ -25,6 +25,26 @@
   var _gridCellPx = 96;       // _gridSize * NATIVE_CELL
   var LOG_PREFIX = '%c[Branch Move]%c';
   var LOG_STYLE = 'color:#2196f3;font-weight:bold';
+
+  // 네이티브 코코포리아 스타일 툴팁 헬퍼
+  function _createTooltip(text) {
+    var el = document.createElement('div');
+    el.setAttribute('data-bwbr-tooltip', '');
+    el.style.cssText =
+      'position:fixed;z-index:1500;pointer-events:none;' +
+      'background:rgb(22,22,22);color:#fff;' +
+      'font:500 12px/1.4 Roboto,Helvetica,Arial,sans-serif;' +
+      'padding:4px 8px;border-radius:4px;max-width:300px;' +
+      'box-shadow:0 1px 3px rgba(0,0,0,.2),0 1px 1px rgba(0,0,0,.14),0 2px 1px -1px rgba(0,0,0,.12);' +
+      'white-space:pre-line;opacity:0;transition:opacity 0.2s cubic-bezier(0.4,0,0.2,1);';
+    el.textContent = text;
+    requestAnimationFrame(function () { el.style.opacity = '1'; });
+    return el;
+  }
+  function _positionTooltip(el, ev) {
+    el.style.left = (ev.clientX + 12) + 'px';
+    el.style.top = (ev.clientY + 14) + 'px';
+  }
 
   function LOG() {
     if (!window._BWBR_DEBUG) return;
@@ -404,7 +424,20 @@
       'cursor:pointer;' +
       'z-index:1;' +
       'border-radius:2px;';
-    currentTile.title = char.name + ' (현재 위치 — 클릭하면 취소)';
+    // 네이티브 코코포리아 스타일 툴팁
+    var curTooltipEl = null;
+    var curTooltipText = char.name + ' (현재 위치 — 클릭하면 취소)';
+    currentTile.addEventListener('mouseenter', function (ev) {
+      curTooltipEl = _createTooltip(curTooltipText);
+      _positionTooltip(curTooltipEl, ev);
+      document.body.appendChild(curTooltipEl);
+    });
+    currentTile.addEventListener('mousemove', function (ev) {
+      if (curTooltipEl) _positionTooltip(curTooltipEl, ev);
+    });
+    currentTile.addEventListener('mouseleave', function () {
+      if (curTooltipEl) { curTooltipEl.remove(); curTooltipEl = null; }
+    });
     _moveOverlay.appendChild(currentTile);
 
     // 이동 거리 라벨 (현재 위치 위에 표시)
@@ -552,18 +585,25 @@
       'z-index:3;' +
       'transition:background 0.12s,border-color 0.12s;';
 
-    tile.title = '(' + targetX + ', ' + targetY + ') — 거리 ' + Math.round(fullDist) +
+    // 네이티브 코코포리아 스타일 툴팁
+    var tooltipText = '(' + targetX + ', ' + targetY + ') — 거리 ' + Math.round(fullDist) +
       (_waypoints.length > 0 ? ' (경유 ' + _waypoints.length + '개)' : '') +
-      '\nShift+클릭: 경유지 추가\n클릭: 최종 이동';
-
-    // 호버 효과: 토큰이 이동할 위치를 윤곽으로 표시
-    tile.addEventListener('mouseenter', function () {
+      '\nShift+클릭: 경유지 추가 / 클릭: 최종 이동';
+    var tooltipEl = null;
+    tile.addEventListener('mouseenter', function (ev) {
       tile.style.background = 'rgba(66,165,245,0.30)';
       tile.style.borderColor = 'rgba(66,165,245,0.8)';
+      tooltipEl = _createTooltip(tooltipText);
+      _positionTooltip(tooltipEl, ev);
+      document.body.appendChild(tooltipEl);
+    });
+    tile.addEventListener('mousemove', function (ev) {
+      if (tooltipEl) _positionTooltip(tooltipEl, ev);
     });
     tile.addEventListener('mouseleave', function () {
       tile.style.background = 'transparent';
       tile.style.borderColor = 'transparent';
+      if (tooltipEl) { tooltipEl.remove(); tooltipEl = null; }
     });
 
     // 클릭 → Shift면 경유지, 아니면 최종 이동
@@ -666,6 +706,8 @@
   }
 
   function clearMoveOverlay() {
+    // 잔여 툴팁 제거
+    document.querySelectorAll('[data-bwbr-tooltip]').forEach(function (t) { t.remove(); });
     if (_moveOverlay) {
       _moveOverlay.remove();
       _moveOverlay = null;
@@ -1100,8 +1142,18 @@
     document.documentElement.removeAttribute('data-bwbr-context-move-url');
     if (!imageUrl) return;
 
+    // token-binding의 우클릭 추적 데이터로 위치 가져오기
+    var position = null;
+    if (window.BWBR_getLastClickedPanel) {
+      var last = window.BWBR_getLastClickedPanel();
+      if (last && last.position) {
+        position = last.position;
+        LOG('우클릭 전투이동 위치: (' + position.x + ', ' + position.y + ')');
+      }
+    }
+
     LOG('우클릭 전투이동: imageUrl=' + imageUrl.substring(0, 60) + '...');
-    requestCharForMove(imageUrl).then(function (result) {
+    requestCharForMove(imageUrl, position).then(function (result) {
       if (!result || !result.success) {
         LOG('전투이동 매칭 실패');
         return;

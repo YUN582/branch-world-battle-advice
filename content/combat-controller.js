@@ -154,9 +154,9 @@
   // 전투 보조 시스템 (턴 관리)
   // ══════════════════════════════════════════════════════════
 
-  async function checkForCombatAssistTrigger(text) {
+  async function checkForCombatAssistTrigger(text, skipActionConsume) {
     try {
-    _alwaysLog(`[전투 보조] 트리거 체크 진입: flowState=${flowState}, text="${text.substring(0, 40)}"`);
+    _alwaysLog(`[전투 보조] 트리거 체크 진입: flowState=${flowState}, text="${text.substring(0, 40)}"${skipActionConsume ? ' (행동소비 생략)' : ''}`);
     if (combatEngine.parseCombatStartTrigger(text)) {
       _log('[전투 보조] 전투개시 트리거 감지!');
       startCombatAssist();
@@ -179,6 +179,8 @@
       advanceTurn();
       return;
     }
+
+    if (skipActionConsume) return;
 
     if (flowState === STATE.TURN_COMBAT) {
       const mainMatch = /《[^》]+》/.test(text);

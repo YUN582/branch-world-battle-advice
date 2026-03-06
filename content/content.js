@@ -293,7 +293,20 @@
     // 전투 보조 시스템 트리거는 항상 먼저 체크 (범용 트리거와 독립 실행)
     const fs = combatCtrl.getFlowState();
     if (fs === 'IDLE' || fs === 'TURN_COMBAT') {
-      combatCtrl.checkForCombatAssistTrigger(text);
+      // 턴제: 화자가 현재 차례 캐릭터일 때만 행동 소비 (전투개시/종료는 항상 처리)
+      if (fs === 'TURN_COMBAT' && _cachedSpeakerName) {
+        const ce = combatCtrl.getCombatEngine && combatCtrl.getCombatEngine();
+        const curChar = ce && ce.getState() && ce.getState().currentCharacter;
+        if (curChar && curChar.name !== _cachedSpeakerName) {
+          alwaysLog(`[입력 감지] 화자="${_cachedSpeakerName}" ≠ 현재차례="${curChar.name}" — 행동 소비 건너뜀 (전투개시/종료만 체크)`);
+          // 전투 개시/종료 트리거만 체크 (행동 소비 제외)
+          combatCtrl.checkForCombatAssistTrigger(text, true);
+        } else {
+          combatCtrl.checkForCombatAssistTrigger(text);
+        }
+      } else {
+        combatCtrl.checkForCombatAssistTrigger(text);
+      }
     } else {
       alwaysLog(`[입력 감지] flowState="${fs}" — 전투 보조 체크 건너뜀`);
     }
