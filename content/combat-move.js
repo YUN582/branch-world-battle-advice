@@ -176,14 +176,19 @@
 
   function handleTokenClick(tokenEl, rawTarget) {
     var imageUrl = extractTokenImageUrl(tokenEl);
-    // rawTarget(원래 클릭 대상)부터 위로 탐색
-    var position = findPanelTransform(rawTarget || tokenEl);
-    // 폴백: token-binding의 pointerdown 추적 데이터 활용 (pointerdown은 click보다 먼저 발생)
+    // 1) pointerdown 캐시 (가장 안정적 — token-binding 방식과 동일)
+    var position = _lastPointerDownPos;
+    _lastPointerDownPos = null;
+    // 2) 폴백: rawTarget에서 직접 탐색
+    if (!position) {
+      position = findPanelTransform(rawTarget || tokenEl);
+    }
+    // 3) 폴백: token-binding의 pointerdown 추적 데이터
     if (!position && window.BWBR_getLastClickedPanel) {
       var last = window.BWBR_getLastClickedPanel();
       if (last && last.position) {
         position = last.position;
-        console.log('[Branch Move] token-binding 폴백 위치 사용: (' + position.x + ', ' + position.y + ')');
+        console.log('[Branch Move] token-binding 폴백 위치: (' + position.x + ', ' + position.y + ')');
       }
     }
     console.log('[Branch Move] 토큰 클릭: imageUrl=' + (imageUrl ? imageUrl.substring(0, 60) + '...' : 'null') +
@@ -211,10 +216,16 @@
   // ------------------------------------------------
 
   /** 전투 모드 시 드래그 차단 (pointerdown capture) */
+  var _lastPointerDownPos = null;  // pointerdown 시점의 위치 캐시
   function onCombatPointerDown(e) {
     if (!_combatMode && !_contextMoveActive) return;
     var movable = findTokenElement(e.target);
     if (movable) {
+      // ★ pointerdown 시점에 위치 추출 (click보다 안정적 — token-binding과 동일 타이밍)
+      _lastPointerDownPos = extractTransformPosition(movable);
+      console.log('[Branch Move] pointerdown 위치 캐시: ' +
+        (_lastPointerDownPos ? '(' + _lastPointerDownPos.x + ', ' + _lastPointerDownPos.y + ')' : 'NULL') +
+        ' (inline="' + (movable.style.transform || '') + '")');
       e.stopPropagation();   // 코코포리아 드래그 핸들러에 도달 못하게
       e.preventDefault();
     }
@@ -605,9 +616,16 @@
           var moveMsg = '【이동👣】| ' + Math.round(finalDist) + '칸 이동' +
             (allSteps.length > 1 ? ' (' + allSteps.length + '단계)' : '');
           sendChatAsChar(moveMsg, char.name, char.iconUrl, char.color);
-          // 전투 보조: 이동 메시지에 대해 행동 소비 트리거 (수동 입력과 동일하게)
-          if (window.BWBR_CombatController && window.BWBR_CombatController.checkForCombatAssistTrigger) {
-            window.BWBR_CombatController.checkForCombatAssistTrigger(moveMsg);
+          // 전투 보조: 이동된 캐릭터가 현재 차례일 때만 행동 소비
+          if (window.BWBR_CombatController) {
+            var cc = window.BWBR_CombatController;
+            var ce = cc.getCombatEngine && cc.getCombatEngine();
+            var curChar = ce && ce.getState() && ce.getState().currentCharacter;
+            if (curChar && curChar.name === char.name) {
+              cc.checkForCombatAssistTrigger(moveMsg);
+            } else {
+              console.log('[Branch Move] 행동 소비 생략: 이동="' + char.name + '" ≠ 현재차례="' + (curChar ? curChar.name : 'null') + '"');
+            }
           }
         } else {
           LOG('이동 실패');
