@@ -493,18 +493,24 @@
     }, false);
   }
 
-  /** 캐릭터 선택 드롭다운(MuiPopover) 내부의 캐릭터 아이템 감지 */
+  /** 캐릭터 선택 드롭다운 / 화면 캐릭터 목록 내부의 캐릭터 아이템 감지 */
   function findCharacterItemFromTarget(target) {
-    // 캐릭터 선택 팝업(MuiPopover) 내부에서만 동작 — 채팅 영역 제외
-    if (!target.closest || !target.closest('.MuiPopover-root')) return null;
+    if (!target.closest) return null;
+
+    // 채팅 메시지 영역은 제외
+    if (target.closest('[class*="ChatMessage"], [data-testid="chat-messages"]')) return null;
+
+    // .movable(보드 토큰)은 제외 (별도 MUI 메뉴에서 처리)
+    if (target.closest('.movable')) return null;
 
     var el = target;
     for (var d = 0; el && d < 12; d++, el = el.parentElement) {
       if (el === document.body) return null;
 
-      // MuiListItemButton (캐릭터 드롭다운 아이템)
+      // MuiListItemButton (캐릭터 드롭다운/화면 캐릭터 목록 아이템)
       if (el.classList && el.classList.contains('MuiListItemButton-root')) {
-        return extractCharFromElement(el);
+        var info = extractCharFromElement(el);
+        if (info) return info;
       }
 
       // role="option" (MUI Autocomplete 폴백)
@@ -517,6 +523,18 @@
         return extractCharFromElement(el);
       }
     }
+
+    // 이미지 기반 폴백 — 캐릭터 아이콘이 포함된 요소 감지
+    var img = target.closest('img') || (target.tagName === 'IMG' ? target : null);
+    if (img && img.src) {
+      var charMatch = matchCharacterByImage(img.src);
+      if (charMatch) {
+        // MuiDialog(편집) 내부에서는 무시
+        if (target.closest('.MuiDialog-root')) return null;
+        return { name: charMatch.name, iconUrl: charMatch.iconUrl };
+      }
+    }
+
     return null;
   }
 

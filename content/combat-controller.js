@@ -551,6 +551,17 @@
     try {
       const characters = await _requestCharacterData();
       if (characters && characters.length > 0) {
+        // 새 캐릭터 감지 및 turnOrder에 추가
+        if (flowState === STATE.TURN_COMBAT) {
+          const added = combatEngine.addNewCharacters(characters);
+          if (added.length > 0) {
+            const names = added.map(e => e.name).join(', ');
+            _alwaysLog(`[전투 보조] 새 캐릭터 ${added.length}명 전투 참가: ${names}`);
+            overlay.addLog(`➕ ${names} 전투 참가`, 'info');
+            chat.sendSystemMessage(`〔 ➕ 전투 참가 〕\n${added.map(e => `${e.name} (이니셔티브 ${e.initiative})`).join('\n')}`);
+            _saveTurnCombatState();
+          }
+        }
         combatEngine.refreshOriginalData(characters);
       }
     } catch (e) {

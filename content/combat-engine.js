@@ -569,6 +569,60 @@ window.CombatEngine = class CombatEngine {
     this._log('originalData 갱신 완료');
   }
 
+  /**
+   * 전투 중 새로 추가된 캐릭터를 turnOrder에 삽입합니다.
+   * 이니셔티브 순서에 맞게 삽입하되, 현재 차례 이전에는 넣지 않습니다.
+   * @param {Array} characters - 최신 활성 캐릭터 배열
+   * @returns {Array} 새로 추가된 캐릭터 엔트리 배열
+   */
+  addNewCharacters(characters) {
+    if (!characters || !this.turnOrder || !this.inCombat) return [];
+
+    const existingIds = new Set(this.turnOrder.map(e => e.id));
+    const existingNames = new Set(this.turnOrder.map(e => e.name));
+
+    const newChars = characters.filter(c =>
+      c.active !== false && !existingIds.has(c._id) && !existingNames.has(c.name)
+    );
+
+    if (newChars.length === 0) return [];
+
+    const added = [];
+    for (const char of newChars) {
+      const mainParam = this.getParamValue(char, '주 행동') || this.getParamValue(char, '주행동');
+      const subParam = this.getParamValue(char, '보조 행동') || this.getParamValue(char, '보조행동');
+      const mainMax = parseInt(mainParam) || 1;
+      const subMax = parseInt(subParam) || 1;
+
+      const entry = {
+        id: char._id,
+        name: char.name,
+        initiative: char.initiative || 0,
+        mainActions: mainMax,
+        mainActionsMax: mainMax,
+        subActions: subMax,
+        subActionsMax: subMax,
+        movement: this.getParamValue(char, '이동거리') || '?',
+        iconUrl: char.iconUrl || null,
+        originalData: char
+      };
+
+      // 이니셔티브 순서에 맞게 현재 차례 이후에 삽입
+      let insertIdx = this.turnOrder.length;
+      for (let i = this.currentTurnIndex + 1; i < this.turnOrder.length; i++) {
+        if (this.turnOrder[i].initiative < entry.initiative) {
+          insertIdx = i;
+          break;
+        }
+      }
+      this.turnOrder.splice(insertIdx, 0, entry);
+      added.push(entry);
+      this._log(`새 캐릭터 추가: ${entry.name} (이니셔티브 ${entry.initiative}) → 위치 ${insertIdx}`);
+    }
+
+    return added;
+  }
+
   // ── 상태이상 duration 관리 ─────────────────────────────────
 
   /**

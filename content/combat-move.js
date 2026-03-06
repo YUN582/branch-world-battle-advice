@@ -17,7 +17,7 @@
 
 (function () {
   'use strict';
-  console.log('[Branch Move] combat-move.js v1.2.104 loaded');
+  console.log('[Branch Move] combat-move.js v1.2.106 loaded');
 
   var CELL_PX = 24;
   var NATIVE_CELL = 24;       // 코코포리아 기본 셀 = 24px
@@ -221,34 +221,190 @@
   //     전투 모드 ON일 때 모든 클릭을 관리
   // ------------------------------------------------
 
-  /** 전투 모드 시 드래그 차단 (pointerdown capture) */
+  /** 전투 모드 시 pointerdown 위치 캐시 (드래그는 차단하지 않음) */
   var _lastPointerDownPos = null;  // pointerdown 시점의 위치 캐시
+  var _pointerDownScreenPos = null; // 화면 좌표 (드래그 판별용)
   function onCombatPointerDown(e) {
     if (!_combatMode && !_contextMoveActive) return;
     var movable = findTokenElement(e.target);
     if (movable) {
       // ★ pointerdown 시점에 위치 추출 (click보다 안정적 — token-binding과 동일 타이밍)
       _lastPointerDownPos = extractTransformPosition(movable);
+      _pointerDownScreenPos = { x: e.clientX, y: e.clientY };
       console.log('[Branch Move] pointerdown 위치 캐시: ' +
         (_lastPointerDownPos ? '(' + _lastPointerDownPos.x + ', ' + _lastPointerDownPos.y + ')' : 'NULL') +
         ' (inline="' + (movable.style.transform || '') + '")');
-      e.stopPropagation();   // 코코포리아 드래그 핸들러에 도달 못하게
-      e.preventDefault();
+      // 드래그는 차단하지 않음 — 클릭 이벤트에서 처리
     }
   }
 
-  /** 전투 모드 시 우클릭 차단 (contextmenu capture) */
+  /** 전투 모드 시 우클릭 — 차단하지 않음 (네이티브 메뉴 허용) */
   function onCombatContextMenu(e) {
+    // 이동 오버레이 표시 중일 때만 차단
     if (!_combatMode) return;
-    var movable = findTokenElement(e.target);
-    if (movable) {
+    if (_moveOverlay && e.target.closest && e.target.closest('[data-bwbr-move-tile]')) {
       e.stopPropagation();
       e.preventDefault();
     }
   }
 
+  /** 클릭이 드래그인지 판별 (5px 이상 이동 = 드래그) */
+  function _wasDrag(e) {
+    if (!_pointerDownScreenPos) return false;
+    var dx = e.clientX - _pointerDownScreenPos.x;
+    var dy = e.clientY - _pointerDownScreenPos.y;
+    return (dx * dx + dy * dy) > 25;
+  }
+
+  /** 전투 모드 컨텍스트 메뉴 닫기 */
+  var _combatCtxMenu = null;
+  function closeCombatContextMenu() {
+    if (_combatCtxMenu) { _combatCtxMenu.remove(); _combatCtxMenu = null; }
+  }
+
+  /** 전투 모드용 컨텍스트 메뉴 표시 (토큰 클릭 시) */
+  function showCombatContextMenu(e, tokenEl, rawTarget) {
+    closeCombatContextMenu();
+
+    var imageUrl = extractTokenImageUrl(tokenEl);
+    var position = _lastPointerDownPos;
+    _lastPointerDownPos = null;
+    if (!position) position = findPanelTransform(rawTarget || tokenEl);
+    if (!position && window.BWBR_getLastClickedPanel) {
+      var last = window.BWBR_getLastClickedPanel();
+      if (last && last.position) position = last.position;
+    }
+    if (!imageUrl) return;
+
+    requestCharForMove(imageUrl, position).then(function (result) {
+      if (!result || !result.success) {
+        LOG('토큰 매칭 실패 — 바인딩 안 된 패널');
+        return;
+      }
+      _buildCombatMenu(e.clientX, e.clientY, result.item, result.char, imageUrl, position);
+    });
+  }
+
+  /** 컨텍스트 메뉴 DOM 빌드 */
+  function _buildCombatMenu(x, y, item, charData, imageUrl, position) {
+    var wrap = document.createElement('div');
+    wrap.className = 'bwbr-combat-ctx';
+    wrap.style.cssText =
+      'position:fixed;z-index:13000;' +
+      'background:rgba(50,50,50,0.96);border-radius:4px;' +
+      'box-shadow:0 5px 15px rgba(0,0,0,0.4);' +
+      'padding:4px 0;min-width:160px;color:#fff;' +
+      'font-size:0.875rem;font-family:"Roboto","Helvetica","Arial",sans-serif';
+    wrap.style.left = x + 'px';
+    wrap.style.top = y + 'px';
+
+    // 헤더 (캐릭터 이름)
+    var hdr = document.createElement('div');
+    hdr.style.cssText =
+      'padding:4px 16px 8px;font-size:0.75rem;' +
+      'color:rgba(255,255,255,0.5);user-select:none;' +
+      'border-bottom:1px solid rgba(255,255,255,0.12);margin-bottom:4px';
+    hdr.textContent = charData.name;
+    wrap.appendChild(hdr);
+
+    // ── 편집 ──
+    wrap.appendChild(_ctxMenuItem('편집', function () {
+      closeCombatContextMenu();
+      window.dispatchEvent(new CustomEvent('bwbr-character-edit', { detail: { name: charData.name } }));
+    }));
+
+    // ── 도약 (전투 이동: 이동거리 기반) ──
+    wrap.appendChild(_ctxMenuItem('도약', function () {
+      closeCombatContextMenu();
+      _selectedItem = { item: item, char: charData };
+      showMoveRange(item, charData);
+    }));
+
+    // ── 돌진 (전투 이동: 이동거리 × 2 직선) ──
+    wrap.appendChild(_ctxMenuItem('돌진', function () {
+      closeCombatContextMenu();
+      _selectedItem = { item: item, char: charData };
+      showMoveRange(item, charData);
+    }));
+
+    // 구분선
+    var sep = document.createElement('div');
+    sep.style.cssText = 'border-bottom:1px solid rgba(255,255,255,0.12);margin:4px 0';
+    wrap.appendChild(sep);
+
+    // ── 캐릭터 목록에 표시 (hideStatus 토글) ──
+    wrap.appendChild(_ctxMenuItem('캐릭터 목록에 표시', function () {
+      closeCombatContextMenu();
+      // bwbr-char-batch-op: toggleHideStatus
+      var payload = JSON.stringify({ op: 'toggleHideStatus', ids: [charData._id] });
+      document.documentElement.setAttribute('data-bwbr-char-batch-op', payload);
+      document.dispatchEvent(new CustomEvent('bwbr-char-batch-op'));
+      window.dispatchEvent(new CustomEvent('bwbr-char-batch-op'));
+    }));
+
+    // ── 패널 숨기기 (visible 토글) ──
+    wrap.appendChild(_ctxMenuItem('패널 숨기기', function () {
+      closeCombatContextMenu();
+      var payload = JSON.stringify({ op: 'toggleVisible', ids: [item._id] });
+      document.documentElement.setAttribute('data-bwbr-panel-batch-op', payload);
+      document.dispatchEvent(new CustomEvent('bwbr-panel-batch-op'));
+      window.dispatchEvent(new CustomEvent('bwbr-panel-batch-op'));
+    }));
+
+    // ── 삭제 ──
+    wrap.appendChild(_ctxMenuItem('삭제', function () {
+      closeCombatContextMenu();
+      var payload = JSON.stringify({ op: 'delete', ids: [item._id] });
+      document.documentElement.setAttribute('data-bwbr-panel-batch-op', payload);
+      document.dispatchEvent(new CustomEvent('bwbr-panel-batch-op'));
+      window.dispatchEvent(new CustomEvent('bwbr-panel-batch-op'));
+    }));
+
+    document.body.appendChild(wrap);
+    _combatCtxMenu = wrap;
+
+    // 화면 밖으로 나가지 않도록 위치 보정
+    requestAnimationFrame(function () {
+      var r = wrap.getBoundingClientRect();
+      if (r.right > innerWidth) wrap.style.left = (innerWidth - r.width - 8) + 'px';
+      if (r.bottom > innerHeight) wrap.style.top = (innerHeight - r.height - 8) + 'px';
+    });
+
+    // 메뉴 외부 클릭 시 닫기
+    var closeHandler = function (ev) {
+      if (_combatCtxMenu && !_combatCtxMenu.contains(ev.target)) {
+        closeCombatContextMenu();
+        document.removeEventListener('mousedown', closeHandler, true);
+      }
+    };
+    setTimeout(function () { document.addEventListener('mousedown', closeHandler, true); }, 0);
+  }
+
+  function _ctxMenuItem(label, onClick) {
+    var d = document.createElement('div');
+    d.textContent = label;
+    d.style.cssText = 'padding:6px 16px;cursor:pointer;user-select:none';
+    d.onmouseenter = function () { d.style.backgroundColor = 'rgba(255,255,255,0.08)'; };
+    d.onmouseleave = function () { d.style.backgroundColor = ''; };
+    d.addEventListener('click', function (ev) { ev.stopPropagation(); onClick(); });
+    return d;
+  }
+
   function onCombatClick(e) {
     if (!_combatMode) return;
+
+    // 전투 컨텍스트 메뉴가 열려있으면 닫고 무시
+    if (_combatCtxMenu) {
+      closeCombatContextMenu();
+      return;
+    }
+
+    // 드래그였으면 무시 (네이티브 드래그 이동)
+    if (_wasDrag(e)) {
+      _pointerDownScreenPos = null;
+      return;
+    }
+    _pointerDownScreenPos = null;
 
     // 이동 타일 클릭 → 타일의 자체 핸들러가 처리 (간섭 안 함)
     if (e.target.closest && e.target.closest('[data-bwbr-move-tile]')) return;
@@ -265,12 +421,14 @@
 
     // 오버레이가 표시 중일 때
     if (_moveOverlay) {
-      // 다른 토큰 클릭 → 새 토큰의 범위 표시
+      // 다른 토큰 클릭 → 새 토큰의 컨텍스트 메뉴
       var movable = findTokenElement(e.target);
       if (movable) {
         e.stopPropagation();
         e.preventDefault();
-        handleTokenClick(movable, e.target);
+        clearMoveOverlay();
+        _selectedItem = null;
+        showCombatContextMenu(e, movable, e.target);
         return;
       }
       // 다른 곳 클릭 → 오버레이 해제
@@ -279,12 +437,12 @@
       return;
     }
 
-    // 오버레이 없음 → 토큰 클릭 시 범위 표시
+    // 오버레이 없음 → 토큰 클릭 시 전투 모드 컨텍스트 메뉴 표시
     var token = findTokenElement(e.target);
     if (token) {
       e.stopPropagation();
       e.preventDefault();
-      handleTokenClick(token, e.target);
+      showCombatContextMenu(e, token, e.target);
     }
   }
 
@@ -725,7 +883,6 @@
     _combatMode = true;
     document.addEventListener('click', onCombatClick, true);
     document.addEventListener('pointerdown', onCombatPointerDown, true);
-    document.addEventListener('mousedown', onCombatPointerDown, true);
     document.addEventListener('contextmenu', onCombatContextMenu, true);
     updateFabLabel();
     showHelpPanel();
@@ -735,10 +892,10 @@
   function disableCombatMode() {
     _combatMode = false;
     clearMoveOverlay();
+    closeCombatContextMenu();
     _selectedItem = null;
     document.removeEventListener('click', onCombatClick, true);
     document.removeEventListener('pointerdown', onCombatPointerDown, true);
-    document.removeEventListener('mousedown', onCombatPointerDown, true);
     document.removeEventListener('contextmenu', onCombatContextMenu, true);
     updateFabLabel();
     hideHelpPanel();
@@ -967,8 +1124,8 @@
       'transition:opacity 0.25s;">' +
       '<div style="font-size:13px;font-weight:bold;margin-bottom:8px;color:#42a5f5;">' +
       '⚔️ 전투 모드</div>' +
-      '<div style="margin-bottom:4px;">🖱️ <b>토큰 클릭</b> — 이동 범위 표시</div>' +
-      '<div style="margin-bottom:4px;">🖱️ <b>클릭</b> — 최종 이동</div>' +
+      '<div style="margin-bottom:4px;">🖱️ <b>토큰 클릭</b> — 전투 메뉴</div>' +
+      '<div style="margin-bottom:4px;">🖱️ <b>드래그</b> — 토큰 이동</div>' +
       '<div style="margin-bottom:4px;">⇧ <b>Shift+클릭</b> — 경유지 추가</div>' +
       '<div style="margin-bottom:4px;">🟡 <b>현재 위치 클릭</b> — 취소</div>' +
       '<div style="margin-bottom:0;opacity:0.6;font-size:11px;margin-top:6px;">' +
@@ -1165,7 +1322,6 @@
         _contextMoveActive = true;
         document.addEventListener('click', onContextMoveClick, true);
         document.addEventListener('pointerdown', onCombatPointerDown, true);
-        document.addEventListener('mousedown', onCombatPointerDown, true);
       }
     });
   });
@@ -1196,7 +1352,6 @@
     _selectedItem = null;
     document.removeEventListener('click', onContextMoveClick, true);
     document.removeEventListener('pointerdown', onCombatPointerDown, true);
-    document.removeEventListener('mousedown', onCombatPointerDown, true);
   }
 
   LOG('module loaded');
