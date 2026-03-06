@@ -2855,9 +2855,10 @@
 
     console.log(`[Branch Move MAIN] 요청 수신: imageUrl=${imageUrl ? imageUrl.substring(0, 60) + '...' : 'EMPTY'}, clickPos=${clickPos ? `(${clickPos.x}, ${clickPos.y})` : 'NULL'}, rawLen=${rawPayload.length}`);
 
-    const fail = () => window.dispatchEvent(
-      new CustomEvent('bwbr-char-move-data', { detail: { success: false } })
-    );
+    const fail = () => {
+      document.documentElement.setAttribute('data-bwbr-char-move-result', JSON.stringify({ success: false }));
+      window.dispatchEvent(new CustomEvent('bwbr-char-move-data'));
+    };
 
     if (!imageUrl || !reduxStore) return fail();
 
@@ -2914,29 +2915,29 @@
       return fail();
     }
 
-    // ── 성공 응답 헬퍼 ──
+    // ── 성공 응답 헬퍼 (DOM 속성 브릿지 — MAIN→ISOLATED 크로스-월드 안정성) ──
     const succeed = (charObj) => {
       console.log(`[Branch Move] 매칭: item "${item._id}" → 캐릭터 "${charObj.name}"`);
-      window.dispatchEvent(new CustomEvent('bwbr-char-move-data', {
-        detail: {
-          success: true,
-          item: {
-            _id: item._id,
-            x: item.x ?? 0,
-            y: item.y ?? 0,
-            width: item.width ?? 4,
-            height: item.height ?? 4
-          },
-          char: {
-            _id: charObj._id,
-            name: charObj.name || '',
-            iconUrl: charObj.iconUrl || '',
-            color: charObj.color || '#e0e0e0',
-            params: charObj.params || [],
-            commands: charObj.commands || ''
-          }
+      const result = {
+        success: true,
+        item: {
+          _id: item._id,
+          x: item.x ?? 0,
+          y: item.y ?? 0,
+          width: item.width ?? 4,
+          height: item.height ?? 4
+        },
+        char: {
+          _id: charObj._id,
+          name: charObj.name || '',
+          iconUrl: charObj.iconUrl || '',
+          color: charObj.color || '#e0e0e0',
+          params: charObj.params || [],
+          commands: charObj.commands || ''
         }
-      }));
+      };
+      document.documentElement.setAttribute('data-bwbr-char-move-result', JSON.stringify(result));
+      window.dispatchEvent(new CustomEvent('bwbr-char-move-data'));
     };
 
     const rc = state.entities?.roomCharacters;
@@ -2992,11 +2993,15 @@
   //  bwbr-move-item { itemId, x, y }
   //  → bwbr-move-item-result { success }
   // ================================================================
-  window.addEventListener('bwbr-move-item', async (e) => {
-    const { itemId, x, y } = e.detail || {};
-    const respond = (detail) => window.dispatchEvent(
-      new CustomEvent('bwbr-move-item-result', { detail })
-    );
+  window.addEventListener('bwbr-move-item', async () => {
+    const el = document.documentElement;
+    const raw = el.getAttribute('data-bwbr-move-item');
+    el.removeAttribute('data-bwbr-move-item');
+    const { itemId, x, y } = raw ? JSON.parse(raw) : {};
+    const respond = (detail) => {
+      el.setAttribute('data-bwbr-move-item-result', JSON.stringify(detail));
+      window.dispatchEvent(new CustomEvent('bwbr-move-item-result'));
+    };
 
     try {
       const sdk = acquireFirestoreSDK();

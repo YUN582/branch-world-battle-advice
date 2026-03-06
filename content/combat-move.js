@@ -17,6 +17,7 @@
 
 (function () {
   'use strict';
+  console.log('[Branch Move] combat-move.js v1.2.103 loaded');
 
   var CELL_PX = 24;
   var NATIVE_CELL = 24;       // 코코포리아 기본 셀 = 24px
@@ -95,31 +96,16 @@
     var payload = { imageUrl: imageUrl, position: position || null };
     return BWBR_Bridge.request(
       'bwbr-request-char-for-move', 'bwbr-char-move-data', payload,
-      { sendAttr: 'data-bwbr-move-payload', timeout: 3000 }
+      { sendAttr: 'data-bwbr-move-payload', recvAttr: 'data-bwbr-char-move-result', timeout: 3000 }
     ).catch(function () { return { success: false }; });
   }
 
   function moveItem(itemId, x, y) {
-    return new Promise(function (resolve) {
-      var done = false;
-      var handler = function (e) {
-        if (done) return;
-        done = true;
-        window.removeEventListener('bwbr-move-item-result', handler);
-        resolve(e.detail);
-      };
-      window.addEventListener('bwbr-move-item-result', handler);
-      window.dispatchEvent(new CustomEvent('bwbr-move-item', {
-        detail: { itemId: itemId, x: x, y: y }
-      }));
-      setTimeout(function () {
-        if (!done) {
-          done = true;
-          window.removeEventListener('bwbr-move-item-result', handler);
-          resolve({ success: false });
-        }
-      }, 5000);
-    });
+    return BWBR_Bridge.request(
+      'bwbr-move-item', 'bwbr-move-item-result',
+      { itemId: itemId, x: x, y: y },
+      { sendAttr: 'data-bwbr-move-item', recvAttr: 'data-bwbr-move-item-result', timeout: 5000 }
+    ).catch(function () { return { success: false }; });
   }
 
   /** 특정 캐릭터로 채팅 메시지 전송 (Firestore 직접) */
@@ -621,6 +607,7 @@
             var cc = window.BWBR_CombatController;
             var ce = cc.getCombatEngine && cc.getCombatEngine();
             var curChar = ce && ce.getState() && ce.getState().currentCharacter;
+            console.log('[Branch Move] 행동 소비 체크: 이동캐릭="' + char.name + '", 현재차례="' + (curChar ? curChar.name : 'null') + '", 일치=' + (curChar ? curChar.name === char.name : false));
             if (curChar && curChar.name === char.name) {
               cc.checkForCombatAssistTrigger(moveMsg);
             } else {
