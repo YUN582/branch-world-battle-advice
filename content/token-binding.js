@@ -154,8 +154,18 @@
 
   function extractTransformPosition(el) {
     if (!el) return null;
-    const t = el.style.transform || '';
-    const m = t.match(/translate\(([\d.e+-]+)px,\s*([\d.e+-]+)px\)/);
+    let t = el.style.transform || '';
+    if (!t || t === 'none') {
+      try { t = window.getComputedStyle(el).transform || ''; } catch (e) { t = ''; }
+    }
+    // translate(Xpx, Ypx)
+    let m = t.match(/translate\(([\d.e+-]+)px,\s*([\d.e+-]+)px\)/);
+    if (m) return { x: parseFloat(m[1]), y: parseFloat(m[2]) };
+    // translate3d(Xpx, Ypx, Zpx)
+    m = t.match(/translate3d\(([\d.e+-]+)px,\s*([\d.e+-]+)px/);
+    if (m) return { x: parseFloat(m[1]), y: parseFloat(m[2]) };
+    // matrix(a,b,c,d,tx,ty)
+    m = t.match(/matrix\([^,]+,[^,]+,[^,]+,[^,]+,\s*([\d.e+-]+),\s*([\d.e+-]+)\)/);
     if (m) return { x: parseFloat(m[1]), y: parseFloat(m[2]) };
     return null;
   }
@@ -176,6 +186,11 @@
   document.addEventListener('contextmenu', trackPanelClick, true);
   document.addEventListener('dblclick', trackPanelClick, true);
   document.addEventListener('pointerdown', trackPanelClick, true);
+
+  // 다른 모듈(combat-move 등)이 마지막 클릭 패널 위치를 참조할 수 있도록 공개
+  window.BWBR_getLastClickedPanel = function () {
+    return { imageUrl: _lastClickedPanelImageUrl, position: _lastClickedPanelPosition };
+  };
 
   // ------------------------------------------------
   //  Read form values from panel edit dialog

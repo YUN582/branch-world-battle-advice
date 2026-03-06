@@ -176,8 +176,16 @@
 
   function handleTokenClick(tokenEl, rawTarget) {
     var imageUrl = extractTokenImageUrl(tokenEl);
-    // rawTarget(원래 클릭 대상)부터 위로 탐색 — outermost movable부터 올라가면 패널 transform 발견 불가
+    // rawTarget(원래 클릭 대상)부터 위로 탐색
     var position = findPanelTransform(rawTarget || tokenEl);
+    // 폴백: token-binding의 pointerdown 추적 데이터 활용 (pointerdown은 click보다 먼저 발생)
+    if (!position && window.BWBR_getLastClickedPanel) {
+      var last = window.BWBR_getLastClickedPanel();
+      if (last && last.position) {
+        position = last.position;
+        console.log('[Branch Move] token-binding 폴백 위치 사용: (' + position.x + ', ' + position.y + ')');
+      }
+    }
     console.log('[Branch Move] 토큰 클릭: imageUrl=' + (imageUrl ? imageUrl.substring(0, 60) + '...' : 'null') +
         ', pos=' + (position ? '(' + position.x + ', ' + position.y + ')' : 'NULL'));
 
@@ -594,11 +602,13 @@
       executePathSequence(item._id, allSteps, 0, function (allOk) {
         if (allOk) {
           LOG(char.name + ' 경로 이동: ' + allSteps.length + '단계, 총 ' + Math.round(finalDist) + '칸');
-          sendChatAsChar(
-            '【이동👣】| ' + Math.round(finalDist) + '칸 이동' +
-            (allSteps.length > 1 ? ' (' + allSteps.length + '단계)' : ''),
-            char.name, char.iconUrl, char.color
-          );
+          var moveMsg = '【이동👣】| ' + Math.round(finalDist) + '칸 이동' +
+            (allSteps.length > 1 ? ' (' + allSteps.length + '단계)' : '');
+          sendChatAsChar(moveMsg, char.name, char.iconUrl, char.color);
+          // 전투 보조: 이동 메시지에 대해 행동 소비 트리거 (수동 입력과 동일하게)
+          if (window.BWBR_CombatController && window.BWBR_CombatController.checkForCombatAssistTrigger) {
+            window.BWBR_CombatController.checkForCombatAssistTrigger(moveMsg);
+          }
         } else {
           LOG('이동 실패');
           showToast('이동 실패', 2000);
