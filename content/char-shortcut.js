@@ -454,28 +454,64 @@
 
   function setupCharListRightClick() {
     var menu = null;
-    document.addEventListener('contextmenu', function (e) {
-      if (!enabled) return;
-      if (menu) { menu.remove(); menu = null; }
+    var _rightClickCache = null;
 
-      // input/textarea에서는 무시
+    // ── mousedown capture (button=2) ──
+    // MUI ClickAwayListener가 mousedown에서 팝오버를 닫으므로,
+    // contextmenu 이벤트 시점에는 캐릭터 드롭다운이 이미 DOM에서 제거됨.
+    // 따라서 mousedown 시점에 캐릭터 정보를 선점 캐시한다.
+    document.addEventListener('mousedown', function (e) {
+      _rightClickCache = null;
+      if (e.button !== 2) return;
+      if (!enabled) return;
       var tag = (e.target.tagName || '').toLowerCase();
       if (tag === 'input' || tag === 'textarea') return;
-
-      // 보드 토큰은 MUI 메뉴에서 처리
       if (findTokenElement(e.target)) return;
 
-      // 캠릭터 선택 드롭다운 내부의 캐릭터 아이템 감지
       var info = findCharacterItemFromTarget(e.target);
       if (!info) return;
 
-      // DOM에서 활성화 상태 확인
       var isActive = true;
-      var itemEl = e.target.closest ? e.target.closest('.MuiListItemButton-root, [role="option"]') : null;
+      var itemEl = e.target.closest
+        ? e.target.closest('.MuiListItemButton-root, .MuiListItem-root, [role="option"]')
+        : null;
       if (itemEl) {
         var itemText = itemEl.textContent || '';
         if (itemText.indexOf('비활성화 상태') !== -1) isActive = false;
       }
+      _rightClickCache = { info: info, isActive: isActive };
+    }, true);
+
+    // ── contextmenu ──
+    document.addEventListener('contextmenu', function (e) {
+      if (!enabled) return;
+      if (menu) { menu.remove(); menu = null; }
+
+      var tag = (e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+      if (findTokenElement(e.target)) return;
+
+      // 1) 직접 감지 시도
+      var info = findCharacterItemFromTarget(e.target);
+      var isActive = true;
+      if (info) {
+        var itemEl = e.target.closest
+          ? e.target.closest('.MuiListItemButton-root, .MuiListItem-root, [role="option"]')
+          : null;
+        if (itemEl) {
+          var itemText = itemEl.textContent || '';
+          if (itemText.indexOf('비활성화 상태') !== -1) isActive = false;
+        }
+      }
+
+      // 2) 직접 감지 실패 → mousedown 선점 캐시 사용
+      if (!info && _rightClickCache) {
+        info = _rightClickCache.info;
+        isActive = _rightClickCache.isActive;
+      }
+      _rightClickCache = null;
+
+      if (!info) return;
 
       e.preventDefault();
       e.stopPropagation();

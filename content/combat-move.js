@@ -397,9 +397,9 @@
       'appearance:none;outline:0;border:0;margin:0;cursor:pointer;' +
       'user-select:none;vertical-align:middle;-webkit-tap-highlight-color:transparent;' +
       'font-family:"Roboto","Helvetica","Arial",sans-serif;font-weight:400;' +
-      'font-size:1rem;line-height:1.5;letter-spacing:0.00938em;' +
-      'padding:6px 16px;box-sizing:border-box;white-space:nowrap;' +
-      'min-height:36px;color:#fff;background-color:transparent;' +
+      'font-size:14px;line-height:20.02px;letter-spacing:0.14994px;' +
+      'padding:4px 16px;box-sizing:border-box;white-space:nowrap;' +
+      'min-height:32px;color:#fff;background-color:transparent;' +
       'text-decoration:none;transition:background-color 150ms cubic-bezier(0.4,0,0.2,1);' +
       'list-style:none;';
     if (disabled) {

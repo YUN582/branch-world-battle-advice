@@ -7,7 +7,7 @@
 > 업데이트 시 webpack 모듈 ID 및 minified 프로퍼티명이 변경될 수 있습니다.
 >
 > 아래 모듈 ID·프로퍼티명은 **2026-02-16 기준**이며, 변경 시 재탐색이 필요합니다.
-> DOM 구조 레퍼런스는 **2026-02-24 ~ 2026-03-03 기준** (섹션 11 참조).
+> DOM 구조 레퍼런스는 **2026-02-24 ~ 2026-03-07 기준** (섹션 11 참조).
 > rooms/roomScenes 엔티티 구조는 **2026-02-27 기준** (섹션 9.1, 9.2, 13 참조).
 > UI 디자인 시스템(테마 규칙)은 **2026-03-02 기준** (섹션 14 참조).
 > 토큰 바인딩 시스템은 **2026-03-02 기준** (섹션 15 참조).
@@ -1469,6 +1469,33 @@ div.MuiListItemButton-root [role="button"]
 - `"비활성화 상태"` = 캐릭터가 보드에서 제거(집어넣기)되어 있음
 - 이 텍스트로 active/inactive 상태를 DOM에서 직접 판별 가능
 
+#### ⚠️ ClickAwayListener 동작 (중요)
+
+> **기준**: 2026-03-07 (콘솔 진단으로 확인)
+
+MUI Popover 내부의 `ClickAwayListener`는 **`mousedown`** 이벤트에서 팝오버를 닫는다.
+`contextmenu` 이벤트는 `mouseup` 이후에 발생하므로, **우클릭 시 contextmenu 핸들러가 실행될 시점에는 팝오버가 이미 DOM에서 제거된 상태**이다.
+
+이벤트 순서: `mousedown` → (MUI가 팝오버 닫음) → `mouseup` → `contextmenu` (팝오버 없음)
+
+**대응 패턴**: capture-phase `mousedown` (button===2) 리스너에서 캐릭터 정보를 **선점 캐시**하고, `contextmenu` 핸들러에서 직접 감지 실패 시 캐시를 폴백으로 사용한다.
+
+```js
+// mousedown capture에서 선점 캐시
+document.addEventListener('mousedown', function(e) {
+  cache = null;
+  if (e.button !== 2) return;
+  var info = findCharacterItemFromTarget(e.target); // 팝오버가 아직 DOM에 있음
+  if (info) cache = info;
+}, true); // capture!
+
+// contextmenu에서 폴백
+document.addEventListener('contextmenu', function(e) {
+  var info = findCharacterItemFromTarget(e.target); // 대부분 null (팝오버 이미 닫힘)
+  if (!info && cache) info = cache;               // 캐시 폴백
+}, false);
+```
+
 #### 뱃지(키 라벨) 주입 위치
 
 ```
@@ -1647,6 +1674,55 @@ body
 **패널 메뉴와의 구분**:
 - 토큰 메뉴: `"집어넣기"`, `"확대 보기"` 포함
 - 패널 메뉴: `"위치 고정"`, `"패널 숨기기"` 포함 → 확장 프로그램이 주입하지 않음
+
+#### 네이티브 MUI MenuItem 정확한 CSS 값
+
+> **기준**: 2026-03-07 (콘솔 진단 — `getComputedStyle()`로 측정)
+
+**MuiPaper-root.MuiMenu-paper:**
+
+| 속성 | 값 |
+|------|----|
+| `background-color` | `rgba(44, 44, 44, 0.87)` |
+| `border-radius` | `4px` |
+| `padding` | `0px` (UL에 패딩 위임) |
+| `box-shadow` | elevation-8 (섹션 14 참조) |
+
+**ul.MuiList-root:**
+
+| 속성 | 값 |
+|------|----|
+| `padding` | `8px 0px` |
+
+**li.MuiMenuItem-root:**
+
+| 속성 | 값 |
+|------|----|
+| `font-family` | `Roboto, Helvetica, Arial, sans-serif` |
+| `font-size` | `14px` |
+| `font-weight` | `400` |
+| `line-height` | `20.02px` |
+| `letter-spacing` | `0.14994px` |
+| `padding` | `4px 16px` |
+| `min-height` | `32px` |
+| `color` | `rgb(255, 255, 255)` |
+| hover `background-color` | `rgba(255, 255, 255, 0.08)` |
+
+**MuiPopover-root:**
+
+| 속성 | 값 |
+|------|----|
+| `position` | `fixed` |
+| `z-index` | `1300` |
+
+**MuiBackdrop-root:**
+
+| 속성 | 값 |
+|------|----|
+| `background-color` | `rgba(0, 0, 0, 0)` (투명) |
+| `opacity` | `1` |
+
+**className 구성**: `MuiButtonBase-root MuiMenuItem-root MuiMenuItem-gutters css-rml83f`
 
 ---
 
