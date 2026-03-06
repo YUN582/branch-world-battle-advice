@@ -507,10 +507,16 @@
     for (var d = 0; el && d < 12; d++, el = el.parentElement) {
       if (el === document.body) return null;
 
-      // MuiListItemButton (캐릭터 드롭다운/화면 캐릭터 목록 아이템)
+      // MuiListItemButton (캐릭터 드롭다운 아이템)
       if (el.classList && el.classList.contains('MuiListItemButton-root')) {
         var info = extractCharFromElement(el);
         if (info) return info;
+      }
+
+      // MuiListItem (내 캐릭터 목록 등 일반 리스트 아이템)
+      if (el.classList && el.classList.contains('MuiListItem-root')) {
+        var info2 = extractCharFromElement(el);
+        if (info2) return info2;
       }
 
       // role="option" (MUI Autocomplete 폴백)
@@ -525,7 +531,19 @@
     }
 
     // 이미지 기반 폴백 — 캐릭터 아이콘이 포함된 요소 감지
-    var img = target.closest('img') || (target.tagName === 'IMG' ? target : null);
+    var img = (target.tagName === 'IMG') ? target : null;
+    if (!img) {
+      // target 내부의 img도 탐색 (클릭 대상이 wrapper div인 경우)
+      img = target.querySelector && target.querySelector('img[src]');
+    }
+    if (!img) {
+      // 부모 몇 단계를 거슬러 올라가며 img 포함 컨테이너 탐색
+      var up = target.parentElement;
+      for (var u = 0; up && u < 3; u++, up = up.parentElement) {
+        var found = up.querySelector && up.querySelector('img[src]');
+        if (found) { img = found; break; }
+      }
+    }
     if (img && img.src) {
       var charMatch = matchCharacterByImage(img.src);
       if (charMatch) {

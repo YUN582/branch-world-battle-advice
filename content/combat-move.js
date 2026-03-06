@@ -17,7 +17,7 @@
 
 (function () {
   'use strict';
-  console.log('[Branch Move] combat-move.js v1.2.106 loaded');
+  console.log('[Branch Move] combat-move.js v1.2.107 loaded');
 
   var CELL_PX = 24;
   var NATIVE_CELL = 24;       // 코코포리아 기본 셀 = 24px
@@ -238,14 +238,14 @@
     }
   }
 
-  /** 전투 모드 시 우클릭 — 차단하지 않음 (네이티브 메뉴 허용) */
+  /** 전투 모드 시 우클릭 차단 */
   function onCombatContextMenu(e) {
-    // 이동 오버레이 표시 중일 때만 차단
     if (!_combatMode) return;
-    if (_moveOverlay && e.target.closest && e.target.closest('[data-bwbr-move-tile]')) {
-      e.stopPropagation();
-      e.preventDefault();
-    }
+    // 채팅 패널(MuiDrawer) 내부는 차단하지 않음
+    if (e.target.closest && e.target.closest('.MuiDrawer-root')) return;
+    // 전투 모드일 때 보드 영역의 우클릭 차단
+    e.stopPropagation();
+    e.preventDefault();
   }
 
   /** 클릭이 드래그인지 판별 (5px 이상 이동 = 드래그) */
@@ -285,57 +285,71 @@
     });
   }
 
-  /** 컨텍스트 메뉴 DOM 빌드 */
+  /** 네이티브 코코포리아 스타일 컨텍스트 메뉴 DOM 빌드 */
   function _buildCombatMenu(x, y, item, charData, imageUrl, position) {
-    var wrap = document.createElement('div');
-    wrap.className = 'bwbr-combat-ctx';
-    wrap.style.cssText =
-      'position:fixed;z-index:13000;' +
-      'background:rgba(50,50,50,0.96);border-radius:4px;' +
-      'box-shadow:0 5px 15px rgba(0,0,0,0.4);' +
-      'padding:4px 0;min-width:160px;color:#fff;' +
-      'font-size:0.875rem;font-family:"Roboto","Helvetica","Arial",sans-serif';
-    wrap.style.left = x + 'px';
-    wrap.style.top = y + 'px';
+    // MuiPopover-root (최외곽)
+    var popover = document.createElement('div');
+    popover.className = 'bwbr-combat-ctx';
+    popover.style.cssText =
+      'position:fixed;inset:0;z-index:1300;';
 
-    // 헤더 (캐릭터 이름)
-    var hdr = document.createElement('div');
-    hdr.style.cssText =
-      'padding:4px 16px 8px;font-size:0.75rem;' +
-      'color:rgba(255,255,255,0.5);user-select:none;' +
-      'border-bottom:1px solid rgba(255,255,255,0.12);margin-bottom:4px';
-    hdr.textContent = charData.name;
-    wrap.appendChild(hdr);
+    // 투명 백드롭 (클릭 시 닫기)
+    var backdrop = document.createElement('div');
+    backdrop.style.cssText =
+      'position:fixed;inset:0;z-index:-1;' +
+      'background-color:transparent;-webkit-tap-highlight-color:transparent;';
+    backdrop.addEventListener('click', function () { closeCombatContextMenu(); });
+    popover.appendChild(backdrop);
+
+    // MuiPaper-root.MuiMenu-paper
+    var paper = document.createElement('div');
+    paper.style.cssText =
+      'position:absolute;overflow-x:hidden;overflow-y:auto;' +
+      'min-width:16px;min-height:16px;max-width:calc(100% - 32px);max-height:calc(100% - 96px);' +
+      'outline:0;opacity:1;transform:none;' +
+      'background-color:rgba(44,44,44,0.87);color:#fff;' +
+      'border-radius:4px;' +
+      'box-shadow:0px 5px 5px -3px rgba(0,0,0,0.2),0px 8px 10px 1px rgba(0,0,0,0.14),0px 3px 14px 2px rgba(0,0,0,0.12);' +
+      'transition:opacity 251ms cubic-bezier(0.4,0,0.2,1),transform 167ms cubic-bezier(0.4,0,0.2,1);';
+    paper.style.left = x + 'px';
+    paper.style.top = y + 'px';
+
+    // ul.MuiList-root (role="menu")
+    var ul = document.createElement('ul');
+    ul.setAttribute('role', 'menu');
+    ul.style.cssText =
+      'list-style:none;margin:0;padding:8px 0;' +
+      'position:relative;outline:0;';
+
+    // ── 이동 (전투 이동: 이동거리 기반) ──
+    ul.appendChild(_ctxMenuItem('이동', function () {
+      closeCombatContextMenu();
+      _selectedItem = { item: item, char: charData };
+      showMoveRange(item, charData);
+    }));
 
     // ── 편집 ──
-    wrap.appendChild(_ctxMenuItem('편집', function () {
+    ul.appendChild(_ctxMenuItem('편집', function () {
       closeCombatContextMenu();
       window.dispatchEvent(new CustomEvent('bwbr-character-edit', { detail: { name: charData.name } }));
     }));
 
-    // ── 도약 (전투 이동: 이동거리 기반) ──
-    wrap.appendChild(_ctxMenuItem('도약', function () {
-      closeCombatContextMenu();
-      _selectedItem = { item: item, char: charData };
-      showMoveRange(item, charData);
-    }));
+    // ── 도약 (미구현) ──
+    ul.appendChild(_ctxMenuItem('도약', null, true));
 
-    // ── 돌진 (전투 이동: 이동거리 × 2 직선) ──
-    wrap.appendChild(_ctxMenuItem('돌진', function () {
-      closeCombatContextMenu();
-      _selectedItem = { item: item, char: charData };
-      showMoveRange(item, charData);
-    }));
+    // ── 돌진 (미구현) ──
+    ul.appendChild(_ctxMenuItem('돌진', null, true));
 
-    // 구분선
-    var sep = document.createElement('div');
-    sep.style.cssText = 'border-bottom:1px solid rgba(255,255,255,0.12);margin:4px 0';
-    wrap.appendChild(sep);
+    // 구분선 (MuiDivider)
+    var hr = document.createElement('hr');
+    hr.style.cssText =
+      'margin:4px 0;border:none;height:1px;flex-shrink:0;' +
+      'background-color:rgba(255,255,255,0.12);';
+    ul.appendChild(hr);
 
     // ── 캐릭터 목록에 표시 (hideStatus 토글) ──
-    wrap.appendChild(_ctxMenuItem('캐릭터 목록에 표시', function () {
+    ul.appendChild(_ctxMenuItem('캐릭터 목록에 표시', function () {
       closeCombatContextMenu();
-      // bwbr-char-batch-op: toggleHideStatus
       var payload = JSON.stringify({ op: 'toggleHideStatus', ids: [charData._id] });
       document.documentElement.setAttribute('data-bwbr-char-batch-op', payload);
       document.dispatchEvent(new CustomEvent('bwbr-char-batch-op'));
@@ -343,7 +357,7 @@
     }));
 
     // ── 패널 숨기기 (visible 토글) ──
-    wrap.appendChild(_ctxMenuItem('패널 숨기기', function () {
+    ul.appendChild(_ctxMenuItem('패널 숨기기', function () {
       closeCombatContextMenu();
       var payload = JSON.stringify({ op: 'toggleVisible', ids: [item._id] });
       document.documentElement.setAttribute('data-bwbr-panel-batch-op', payload);
@@ -352,7 +366,7 @@
     }));
 
     // ── 삭제 ──
-    wrap.appendChild(_ctxMenuItem('삭제', function () {
+    ul.appendChild(_ctxMenuItem('삭제', function () {
       closeCombatContextMenu();
       var payload = JSON.stringify({ op: 'delete', ids: [item._id] });
       document.documentElement.setAttribute('data-bwbr-panel-batch-op', payload);
@@ -360,34 +374,44 @@
       window.dispatchEvent(new CustomEvent('bwbr-panel-batch-op'));
     }));
 
-    document.body.appendChild(wrap);
-    _combatCtxMenu = wrap;
+    paper.appendChild(ul);
+    popover.appendChild(paper);
+    document.body.appendChild(popover);
+    _combatCtxMenu = popover;
 
     // 화면 밖으로 나가지 않도록 위치 보정
     requestAnimationFrame(function () {
-      var r = wrap.getBoundingClientRect();
-      if (r.right > innerWidth) wrap.style.left = (innerWidth - r.width - 8) + 'px';
-      if (r.bottom > innerHeight) wrap.style.top = (innerHeight - r.height - 8) + 'px';
+      var r = paper.getBoundingClientRect();
+      if (r.right > innerWidth) paper.style.left = (innerWidth - r.width - 8) + 'px';
+      if (r.bottom > innerHeight) paper.style.top = (innerHeight - r.height - 8) + 'px';
     });
-
-    // 메뉴 외부 클릭 시 닫기
-    var closeHandler = function (ev) {
-      if (_combatCtxMenu && !_combatCtxMenu.contains(ev.target)) {
-        closeCombatContextMenu();
-        document.removeEventListener('mousedown', closeHandler, true);
-      }
-    };
-    setTimeout(function () { document.addEventListener('mousedown', closeHandler, true); }, 0);
   }
 
-  function _ctxMenuItem(label, onClick) {
-    var d = document.createElement('div');
-    d.textContent = label;
-    d.style.cssText = 'padding:6px 16px;cursor:pointer;user-select:none';
-    d.onmouseenter = function () { d.style.backgroundColor = 'rgba(255,255,255,0.08)'; };
-    d.onmouseleave = function () { d.style.backgroundColor = ''; };
-    d.addEventListener('click', function (ev) { ev.stopPropagation(); onClick(); });
-    return d;
+  /** 네이티브 MUI MenuItem 스타일 (li.MuiMenuItem-root) */
+  function _ctxMenuItem(label, onClick, disabled) {
+    var li = document.createElement('li');
+    li.setAttribute('role', 'menuitem');
+    li.textContent = label;
+    li.style.cssText =
+      'display:flex;align-items:center;justify-content:flex-start;' +
+      'appearance:none;outline:0;border:0;margin:0;cursor:pointer;' +
+      'user-select:none;vertical-align:middle;-webkit-tap-highlight-color:transparent;' +
+      'font-family:"Roboto","Helvetica","Arial",sans-serif;font-weight:400;' +
+      'font-size:1rem;line-height:1.5;letter-spacing:0.00938em;' +
+      'padding:6px 16px;box-sizing:border-box;white-space:nowrap;' +
+      'min-height:36px;color:#fff;background-color:transparent;' +
+      'text-decoration:none;transition:background-color 150ms cubic-bezier(0.4,0,0.2,1);' +
+      'list-style:none;';
+    if (disabled) {
+      li.style.opacity = '0.38';
+      li.style.pointerEvents = 'none';
+      li.style.cursor = 'default';
+    } else {
+      li.onmouseenter = function () { li.style.backgroundColor = 'rgba(255,255,255,0.08)'; };
+      li.onmouseleave = function () { li.style.backgroundColor = 'transparent'; };
+      li.addEventListener('click', function (ev) { ev.stopPropagation(); onClick(); });
+    }
+    return li;
   }
 
   function onCombatClick(e) {
@@ -1101,11 +1125,11 @@
     _helpPanel = document.createElement('div');
     _helpPanel.id = 'bwbr-combat-help';
 
-    // 외곽 컨테이너: 오른쪽(드로어) 기준 고정, 접힘 시 width 축소로 오른쪽으로 접힘
+    // 초기 상태: 오른쪽으로 밀려나 있음 (translateX(0) = 드로어 안쪽에 숨김)
     _helpPanel.style.cssText =
       'position:fixed;top:140px;' +
       'left:' + paperLeft + 'px;' +
-      'transform:translateX(-100%);' +
+      'transform:translateX(0);' +
       'z-index:10;width:220px;' +
       'background:rgba(30,30,30,0.92);color:#eee;' +
       'border-radius:8px 0 0 8px;' +
@@ -1115,7 +1139,7 @@
       'pointer-events:auto;' +
       'border:1px solid rgba(255,255,255,0.1);border-right:none;' +
       'opacity:0;overflow:hidden;box-sizing:border-box;' +
-      'transition:opacity 0.3s, width 0.35s cubic-bezier(0.2,0.8,0.3,1);';
+      'transition:transform 0.4s cubic-bezier(0.22,1,0.36,1), opacity 0.3s ease, width 0.35s cubic-bezier(0.2,0.8,0.3,1);';
 
     // content: 펼침 시 보임, 접힘 시 opacity로 숨김 (overflow:hidden이 잘라줌)
     // tab: 접힘 시 보임, position:absolute로 좁은 폭에 맞춤
@@ -1139,11 +1163,12 @@
 
     paper.appendChild(_helpPanel);
 
-    // 페이드 인
+    // 슬라이드 인: 오른쪽에서 왼쪽으로 자연스럽게 나오기
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
         if (_helpPanel) {
           _helpPanel.style.opacity = '1';
+          _helpPanel.style.transform = 'translateX(-100%)';
         }
       });
     });
@@ -1190,10 +1215,12 @@
 
   function hideHelpPanel() {
     if (!_helpPanel) return;
+    // 슬라이드 아웃: 왼쪽에서 오른쪽으로 드로어 안으로 돌아감
     _helpPanel.style.opacity = '0';
+    _helpPanel.style.transform = 'translateX(0)';
     var panel = _helpPanel;
     _helpPanel = null;
-    setTimeout(function () { panel.remove(); }, 400);
+    setTimeout(function () { panel.remove(); }, 450);
   }
 
   // ------------------------------------------------
