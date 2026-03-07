@@ -71,11 +71,17 @@
   function refreshCharacterCache() {
     window.dispatchEvent(new CustomEvent('bwbr-request-all-characters'));
   }
-  window.addEventListener('bwbr-all-characters-data', function (e) {
-    if (e.detail?.characters?.length) {
-      cachedCharacters = e.detail.characters;
-      log('캐릭터 캐시: ' + cachedCharacters.length + '명');
-    }
+  window.addEventListener('bwbr-all-characters-data', function () {
+    // MAIN→ISOLATED: event.detail은 크로스-월드에서 신뢰 불가 → DOM 속성 사용
+    var raw = document.documentElement.getAttribute('data-bwbr-all-characters-data');
+    if (!raw) return;
+    try {
+      var data = JSON.parse(raw);
+      if (data.characters && data.characters.length) {
+        cachedCharacters = data.characters;
+        log('캐릭터 캐시: ' + cachedCharacters.length + '명');
+      }
+    } catch (_) {}
   });
 
   function matchCharacterByImage(imageUrl) {
