@@ -510,54 +510,65 @@
     return open + '<path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"></path></svg>';
   }
 
-  // ── MUI 스타일 툴팁 (공유 싱글톤) ──
-  var _muiTip = null;
-  var _muiTipTimer = 0;
-  function ensureMuiTooltip() {
-    if (_muiTip) return _muiTip;
-    _muiTip = document.createElement('div');
-    _muiTip.style.cssText = [
-      'position:fixed', 'z-index:20000', 'pointer-events:none',
-      'background-color:rgba(97,97,97,0.92)', 'color:#fff',
+  // ── MUI Tooltip 정확한 복제 (싱글톤 popper+inner 구조) ──
+  // 실측값: bg=rgb(22,22,22), color=#fff, font-size:12px, padding:4px 8px,
+  //         border-radius:4px, z-index:1500,
+  //         transition: opacity 200ms cubic, transform 133ms cubic
+  var _tipPopper = null;
+  var _tipInner = null;
+  var _tipTimer = 0;
+  function ensureTooltip() {
+    if (_tipPopper) return;
+    _tipPopper = document.createElement('div');
+    _tipPopper.style.cssText = 'position:fixed;z-index:1500;pointer-events:none;inset:0 auto auto 0;margin:0';
+    _tipInner = document.createElement('div');
+    _tipInner.style.cssText = [
+      'background-color:rgb(22,22,22)', 'color:#fff',
       'font-family:"Roboto","Helvetica","Arial",sans-serif',
-      'font-size:0.6875rem', 'font-weight:500', 'line-height:1.4',
+      'font-size:12px', 'font-weight:500', 'line-height:1.4',
       'letter-spacing:0.01071em', 'padding:4px 8px',
       'border-radius:4px', 'max-width:300px', 'word-wrap:break-word',
-      'opacity:0', 'transform:scale(0.75)', 'transform-origin:bottom center',
-      'transition:opacity 200ms cubic-bezier(0.4,0,0.2,1),transform 200ms cubic-bezier(0.4,0,0.2,1)'
+      'white-space:nowrap',
+      'opacity:0', 'transform:scale(0.75,0.5625)',
+      'transform-origin:top center',
+      'transition:opacity 200ms cubic-bezier(0.4,0,0.2,1),transform 133ms cubic-bezier(0.4,0,0.2,1)'
     ].join(';');
-    document.body.appendChild(_muiTip);
-    return _muiTip;
+    _tipPopper.appendChild(_tipInner);
+    document.body.appendChild(_tipPopper);
   }
   function showMuiTooltip(el, text) {
-    clearTimeout(_muiTipTimer);
-    var tip = ensureMuiTooltip();
-    tip.textContent = text;
-    tip.style.opacity = '0';
-    tip.style.transform = 'scale(0.75)';
-    tip.style.display = 'block';
+    clearTimeout(_tipTimer);
+    ensureTooltip();
+    _tipInner.textContent = text;
+    // 측정을 위해 투명하게 먼저 배치
+    _tipPopper.style.visibility = 'hidden';
+    _tipPopper.style.display = 'block';
+    _tipInner.style.opacity = '0';
+    _tipInner.style.transform = 'scale(0.75,0.5625)';
     var r = el.getBoundingClientRect();
-    // 위에 배치 (placement=top)
-    tip.style.left = '0px'; tip.style.top = '0px';
-    var tw = tip.offsetWidth, th = tip.offsetHeight;
+    var tw = _tipInner.offsetWidth, th = _tipInner.offsetHeight;
+    var gap = 8;
+    // placement: bottom (버튼 아래)
     var left = r.left + r.width / 2 - tw / 2;
-    var top = r.top - th - 6;
-    if (top < 4) top = r.bottom + 6;
+    var top = r.bottom + gap;
+    // 화면 밖 보정
+    if (top + th > window.innerHeight - 4) { top = r.top - th - gap; _tipInner.style.transformOrigin = 'bottom center'; }
+    else { _tipInner.style.transformOrigin = 'top center'; }
     if (left < 4) left = 4;
     if (left + tw > window.innerWidth - 4) left = window.innerWidth - tw - 4;
-    tip.style.left = left + 'px';
-    tip.style.top = top + 'px';
+    _tipPopper.style.transform = 'translate(' + Math.round(left) + 'px,' + Math.round(top) + 'px)';
+    _tipPopper.style.visibility = '';
     requestAnimationFrame(function () {
-      tip.style.opacity = '1';
-      tip.style.transform = 'scale(1)';
+      _tipInner.style.opacity = '1';
+      _tipInner.style.transform = 'none';
     });
   }
   function hideMuiTooltip() {
-    if (!_muiTip) return;
-    _muiTip.style.opacity = '0';
-    _muiTip.style.transform = 'scale(0.75)';
-    _muiTipTimer = setTimeout(function () {
-      if (_muiTip) _muiTip.style.display = 'none';
+    if (!_tipInner) return;
+    _tipInner.style.opacity = '0';
+    _tipInner.style.transform = 'scale(0.75,0.5625)';
+    _tipTimer = setTimeout(function () {
+      if (_tipPopper) _tipPopper.style.display = 'none';
     }, 200);
   }
   function attachMuiTooltip(el, getText) {
