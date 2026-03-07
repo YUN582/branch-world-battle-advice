@@ -33,7 +33,7 @@
     await loadEnabled();
     setupKeyboardListener();
     setupTokenMenuInjector();
-    setupCharListRightClick();
+    setupCharStatusPanelInjector();
     setupCharListKeyLabels();
     suppressNativeContextMenu();
     refreshCharacterCache();
@@ -466,179 +466,97 @@
   }
 
   // ================================================================
-  //  채팅 패널 캐릭터 리스트 우클릭
-  //  이미지 기반 매칭 — DOM 구조에 의존하지 않음
+  //  화면 캐릭터 상태 패널 — hideStatus 토글 아이콘 주입
+  //  캐릭터 초상화 클릭 시 나오는 상태창의 편집/집어넣기 아이콘 사이에 주입
   // ================================================================
 
-  function setupCharListRightClick() {
-    var menu = null;
-    var _rightClickCache = null;
-
-    // ── mousedown capture (button=2) ──
-    // MUI ClickAwayListener가 mousedown에서 팝오버를 닫으므로,
-    // contextmenu 이벤트 시점에는 캐릭터 드롭다운이 이미 DOM에서 제거됨.
-    // 따라서 mousedown 시점에 캐릭터 정보를 선점 캐시한다.
-    document.addEventListener('mousedown', function (e) {
-      _rightClickCache = null;
-      if (e.button !== 2) return;
-      if (!enabled) return;
-      var tag = (e.target.tagName || '').toLowerCase();
-      if (tag === 'input' || tag === 'textarea') return;
-      if (findTokenElement(e.target)) return;
-
-      var info = findCharacterItemFromTarget(e.target);
-      if (!info) return;
-
-      var isActive = true;
-      var itemEl = e.target.closest
-        ? e.target.closest('.MuiListItemButton-root, .MuiListItem-root, [role="option"]')
-        : null;
-      if (itemEl) {
-        var itemText = itemEl.textContent || '';
-        if (itemText.indexOf('비활성화 상태') !== -1) isActive = false;
-      }
-      _rightClickCache = { info: info, isActive: isActive };
-    }, true);
-
-    // ── contextmenu ──
-    document.addEventListener('contextmenu', function (e) {
-      if (!enabled) return;
-      if (menu) { menu.remove(); menu = null; }
-
-      var tag = (e.target.tagName || '').toLowerCase();
-      if (tag === 'input' || tag === 'textarea') return;
-      if (findTokenElement(e.target)) return;
-
-      // 1) 직접 감지 시도
-      var info = findCharacterItemFromTarget(e.target);
-      var isActive = true;
-      if (info) {
-        var itemEl = e.target.closest
-          ? e.target.closest('.MuiListItemButton-root, .MuiListItem-root, [role="option"]')
-          : null;
-        if (itemEl) {
-          var itemText = itemEl.textContent || '';
-          if (itemText.indexOf('비활성화 상태') !== -1) isActive = false;
-        }
-      }
-
-      // 2) 직접 감지 실패 → mousedown 선점 캐시 사용
-      if (!info && _rightClickCache) {
-        info = _rightClickCache.info;
-        isActive = _rightClickCache.isActive;
-      }
-      _rightClickCache = null;
-
-      if (!info) return;
-
-      e.preventDefault();
-      e.stopPropagation();
-
-      menu = buildCustomMenu(e.clientX, e.clientY, info.name, info.iconUrl, isActive);
-      document.body.appendChild(menu);
-
-      var close = function (ev) {
-        if (menu && !menu.contains(ev.target)) {
-          menu.remove(); menu = null;
-          document.removeEventListener('mousedown', close, true);
-        }
-      };
-      setTimeout(function () { document.addEventListener('mousedown', close, true); }, 0);
-    }, false);
+  function setupCharStatusPanelInjector() {
+    // MuiBadge-root 안에 MuiAvatar-root가 있는 영역 근처의 아이콘 버튼들을 감시
+    var obs = new MutationObserver(function () {
+      // 이미 주입된 버튼이 있으면 스킵
+      if (document.querySelector('.bwbr-hide-status-btn')) return;
+      injectHideStatusButton();
+    });
+    obs.observe(document.body, { childList: true, subtree: true });
+    // 초기 1회
+    setTimeout(injectHideStatusButton, 2000);
   }
 
-  /** 캐릭터 선택 드롭다운 / 화면 캐릭터 목록 내부의 캐릭터 아이템 감지 */
-  function findCharacterItemFromTarget(target) {
-    if (!target.closest) return null;
+  function injectHideStatusButton() {
+    // 화면 캐릭터 상태 패널의 아이콘 바를 찾는다
+    // 구조: DIV.sc-geBDJh > DIV.sc-yECoe > DIV.sc-eSoXjr 내부에
+    //        편집(✏️) 및 집어넣기(📦) IconButton이 있음
+    // 편집 아이콘: SVG with path containing "M3 17.25V21h3.75" (MUI Edit icon)
+    // 집어넣기 아이콘: SVG with path containing "M19 3H5" (MUI Archive/Inbox icon)
+    var editBtns = document.querySelectorAll('button.MuiIconButton-root, button.MuiButtonBase-root');
+    for (var i = 0; i < editBtns.length; i++) {
+      var btn = editBtns[i];
+      // 이미 처리된 영역 스킵
+      if (btn.parentElement && btn.parentElement.querySelector('.bwbr-hide-status-btn')) continue;
 
-    // 채팅 메시지 영역은 제외
-    if (target.closest('[class*="ChatMessage"], [data-testid="chat-messages"]')) return null;
-
-    // .movable(보드 토큰)은 제외 (별도 MUI 메뉴에서 처리)
-    if (target.closest('.movable')) return null;
-
-    var el = target;
-    for (var d = 0; el && d < 12; d++, el = el.parentElement) {
-      if (el === document.body) return null;
-
-      // MuiListItemButton (캐릭터 드롭다운 아이템)
-      if (el.classList && el.classList.contains('MuiListItemButton-root')) {
-        var info = extractCharFromElement(el);
-        if (info) return info;
-      }
-
-      // MuiListItem (내 캐릭터 목록 등 일반 리스트 아이템)
-      if (el.classList && el.classList.contains('MuiListItem-root')) {
-        var info2 = extractCharFromElement(el);
-        if (info2) return info2;
-      }
-
-      // role="option" (MUI Autocomplete 폴백)
-      if (el.getAttribute && el.getAttribute('role') === 'option') {
-        return extractCharFromElement(el);
-      }
-
-      // downshift item 폴백
-      if (el.id && /^downshift-.+-item/.test(el.id)) {
-        return extractCharFromElement(el);
-      }
-
-      // styled-components 캐릭터 아이템 — MuiPopover > MuiPaper 직계 자식
-      // (MuiListItemButton 없이 sc-* 클래스만 사용하는 드롭다운 변형)
-      if (el.parentElement && el.parentElement.classList &&
-          el.parentElement.classList.contains('MuiPaper-root') &&
-          el.closest('.MuiPopover-root') &&
-          !el.closest('.MuiDialog-root') && !el.closest('.MuiMenu-paper')) {
-        var info3 = extractCharFromElement(el);
-        if (info3) return info3;
-      }
-    }
-
-    // 이미지 기반 폴백 — MuiPopover 또는 화면 캐릭터 상태 패널(MuiAvatar-root 포함)
-    // (MuiDialog, .movable 내부는 이미 상단에서 제외됨)
-    var inPopover = !!target.closest('.MuiPopover-root');
-    var nearAvatar = !!target.closest('.MuiAvatar-root');
-    if (!nearAvatar) {
-      // target 위로 올라가며 MuiAvatar-root 를 포함하는 조상 탐색
-      var up2 = target;
-      for (var a = 0; up2 && a < 6; a++, up2 = up2.parentElement) {
-        if (up2.querySelector && up2.querySelector('.MuiAvatar-root')) { nearAvatar = true; break; }
-      }
-    }
-    if (!inPopover && !nearAvatar) return null;
-
-    var img = (target.tagName === 'IMG') ? target : null;
-    if (!img) {
-      // MuiAvatar-root 내부 이미지 우선 검색
-      var avatarEl = target.closest('.MuiAvatar-root');
-      if (!avatarEl) {
-        var up3 = target;
-        for (var a2 = 0; up3 && a2 < 6; a2++, up3 = up3.parentElement) {
-          avatarEl = up3.querySelector && up3.querySelector('.MuiAvatar-root');
-          if (avatarEl) break;
+      var svg = btn.querySelector('svg');
+      if (!svg) continue;
+      var paths = svg.querySelectorAll('path');
+      var isEditBtn = false;
+      for (var p = 0; p < paths.length; p++) {
+        var d = paths[p].getAttribute('d') || '';
+        // MUI EditIcon path 시작 부분
+        if (d.indexOf('M3 17.25') !== -1 || d.indexOf('m14.06 9.02') !== -1 ||
+            d.indexOf('M14.06 9.02') !== -1 || d.indexOf('M3 17.2') !== -1) {
+          isEditBtn = true; break;
         }
       }
-      if (avatarEl) img = avatarEl.querySelector('img[src]');
-    }
-    if (!img) {
-      img = target.querySelector && target.querySelector('img[src]');
-    }
-    if (!img) {
-      var up = target.parentElement;
-      for (var u = 0; up && u < 3; u++, up = up.parentElement) {
-        var found = up.querySelector && up.querySelector('img[src]');
-        if (found) { img = found; break; }
-      }
-    }
-    if (img && img.src) {
-      var charMatch = matchCharacterByImage(img.src);
-      if (charMatch) {
-        if (target.closest('.MuiDialog-root')) return null;
-        return { name: charMatch.name, iconUrl: charMatch.iconUrl };
-      }
-    }
+      if (!isEditBtn) continue;
 
-    return null;
+      // 편집 버튼의 형제 중 집어넣기 버튼이 있는지 확인
+      var parent = btn.parentElement;
+      if (!parent) continue;
+      var siblings = parent.querySelectorAll('button');
+      if (siblings.length < 2) continue;
+
+      // 이 패널까지 올라가서 캐릭터 이미지 찾기
+      var panelEl = parent;
+      for (var u = 0; u < 6 && panelEl; u++, panelEl = panelEl.parentElement) {
+        if (panelEl.querySelector && panelEl.querySelector('.MuiAvatar-root img[src]')) break;
+      }
+      if (!panelEl) continue;
+      var avatarImg = panelEl.querySelector('.MuiAvatar-root img[src]');
+      if (!avatarImg) continue;
+
+      // 캐릭터 식별
+      var charData = matchCharacterByImage(avatarImg.src);
+      if (!charData) continue;
+
+      // hideStatus 토글 버튼 생성
+      var hideBtn = document.createElement('button');
+      hideBtn.className = 'bwbr-hide-status-btn MuiButtonBase-root MuiIconButton-root';
+      hideBtn.title = '화면 캐릭터 목록에 표시/숨김';
+      hideBtn.style.cssText = btn.style.cssText || '';
+      // 기존 아이콘 버튼 스타일 복사
+      var cs = window.getComputedStyle(btn);
+      hideBtn.style.padding = cs.padding;
+      hideBtn.style.color = cs.color;
+      hideBtn.style.fontSize = cs.fontSize;
+
+      // 눈 아이콘 SVG (MUI Visibility)
+      hideBtn.innerHTML = '<svg focusable="false" aria-hidden="true" viewBox="0 0 24 24" style="width:1em;height:1em;fill:currentColor;font-size:' + cs.fontSize + '">' +
+        '<path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"></path>' +
+        '</svg>';
+
+      hideBtn.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        var cd = matchCharacterByImage(avatarImg.src);
+        if (!cd) { showToast('캐릭터를 식별할 수 없습니다', 2000); return; }
+        var payload = JSON.stringify({ op: 'toggleHideStatus', ids: [cd._id] });
+        document.documentElement.setAttribute('data-bwbr-char-batch-op', payload);
+        document.dispatchEvent(new CustomEvent('bwbr-char-batch-op'));
+        window.dispatchEvent(new CustomEvent('bwbr-char-batch-op'));
+        showToast(cd.name + ' 목록 표시 전환', 2000);
+      });
+
+      // 편집 버튼 바로 뒤에 삽입
+      btn.parentNode.insertBefore(hideBtn, btn.nextSibling);
+    }
   }
 
   /** 캐릭터 항목에서 이름 추출 — DOM 텍스트 직접 읽기 (캐시 의존 X) */
@@ -670,83 +588,6 @@
       if (c) return { name: c.name, iconUrl: c.iconUrl };
     }
     return null;
-  }
-
-  /** 커스텀 우클릭 메뉴 */
-  function buildCustomMenu(x, y, charName, iconUrl, isActive) {
-    var wrap = document.createElement('div');
-    wrap.className = 'bwbr-ctx-menu';
-    wrap.style.cssText = 'position:fixed;z-index:13000;background:rgba(50,50,50,0.96);border-radius:4px;box-shadow:0 5px 15px rgba(0,0,0,0.4);padding:4px 0;min-width:160px;color:#fff;font-size:0.875rem;font-family:"Roboto","Helvetica","Arial",sans-serif';
-    wrap.style.left = x + 'px';
-    wrap.style.top = y + 'px';
-
-    var hdr = document.createElement('div');
-    hdr.style.cssText = 'padding:4px 16px 8px;font-size:0.75rem;color:rgba(255,255,255,0.5);user-select:none;border-bottom:1px solid rgba(255,255,255,0.12);margin-bottom:4px';
-    hdr.textContent = charName;
-    wrap.appendChild(hdr);
-
-    // 편집
-    wrap.appendChild(ctxItem('편집', function () {
-      wrap.remove();
-      dispatchCharAction('bwbr-character-edit', charName);
-    }));
-
-    // 확대 보기
-    if (iconUrl) {
-      wrap.appendChild(ctxItem('확대 보기', function () { wrap.remove(); openZoomView(iconUrl); }));
-    }
-
-    // 단축키 지정
-    wrap.appendChild(ctxItem('단축키 지정', function () { wrap.remove(); openBindDialog(charName); }));
-
-    var curKey = findBindingForCharacter(charName);
-    if (curKey) {
-      wrap.appendChild(ctxItem('단축키 해제 (' + fmtKey(curKey) + ')', function () {
-        wrap.remove(); delete bindings[curKey]; saveBindings();
-        showToast(charName + ' 해제됨', 2000);
-      }));
-    }
-
-    // 구분선
-    var sep = document.createElement('div');
-    sep.style.cssText = 'border-bottom:1px solid rgba(255,255,255,0.12);margin:4px 0';
-    wrap.appendChild(sep);
-
-    // 집어넣기/꺼내기 (DOM의 활성화 상태에 따라 토글)
-    var isOnBoard = (isActive !== undefined) ? isActive : true;
-    wrap.appendChild(ctxItem(isOnBoard ? '집어넣기' : '꺼내기', function () {
-      wrap.remove();
-      dispatchCharAction('bwbr-character-store', charName);
-    }));
-
-    // 복제
-    wrap.appendChild(ctxItem('복제', function () {
-      wrap.remove();
-      dispatchCharAction('bwbr-character-copy', charName);
-    }));
-
-    // 삭제
-    wrap.appendChild(ctxItem('삭제', function () {
-      wrap.remove();
-      dispatchCharAction('bwbr-character-delete', charName);
-    }));
-
-    requestAnimationFrame(function () {
-      var r = wrap.getBoundingClientRect();
-      if (r.right > innerWidth) wrap.style.left = (innerWidth - r.width - 8) + 'px';
-      if (r.bottom > innerHeight) wrap.style.top = (innerHeight - r.height - 8) + 'px';
-    });
-    return wrap;
-  }
-
-  function ctxItem(label, onClick) {
-    var d = document.createElement('div');
-    d.textContent = label;
-    d.style.cssText = 'padding:6px 16px;cursor:pointer;user-select:none';
-    d.onmouseenter = function () { d.style.backgroundColor = 'rgba(255,255,255,0.08)'; };
-    d.onmouseleave = function () { d.style.backgroundColor = ''; };
-    d.addEventListener('click', function (e) { e.stopPropagation(); onClick(); });
-    return d;
   }
 
   // ================================================================
