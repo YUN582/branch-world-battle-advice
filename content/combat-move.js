@@ -262,12 +262,13 @@
     if (!_combatCtxMenu) return;
     var el = _combatCtxMenu;
     _combatCtxMenu = null;
-    var paper = el.querySelector('div[style*="border-radius"]');
+    var paper = el.querySelector('[data-bwbr-combat-paper]');
     if (paper) {
       paper.style.opacity = '0';
       paper.style.transform = 'scale(0.75)';
-      paper.addEventListener('transitionend', function () { el.remove(); }, { once: true });
-      setTimeout(function () { if (el.parentNode) el.remove(); }, 300);
+      var onEnd = function () { if (el.parentNode) el.remove(); };
+      paper.addEventListener('transitionend', onEnd, { once: true });
+      setTimeout(onEnd, 300);
     } else {
       el.remove();
     }
@@ -314,6 +315,7 @@
 
     // MuiPaper-root.MuiMenu-paper
     var paper = document.createElement('div');
+    paper.setAttribute('data-bwbr-combat-paper', '1');
     paper.style.cssText =
       'position:absolute;overflow-x:hidden;overflow-y:auto;' +
       'min-width:16px;min-height:16px;max-width:calc(100% - 32px);max-height:calc(100% - 96px);' +
@@ -396,10 +398,11 @@
       if (r.right > innerWidth) paper.style.left = (innerWidth - r.width - 8) + 'px';
       if (r.bottom > innerHeight) paper.style.top = (innerHeight - r.height - 8) + 'px';
       // 트리거 Grow 애니메이션 (opacity 0 + scale 0.75 → 1)
-      requestAnimationFrame(function () {
+      // setTimeout 사용 — rAF 중첩은 동일 프레임에 합쳐질 수 있음
+      setTimeout(function () {
         paper.style.opacity = '1';
         paper.style.transform = 'scale(1)';
-      });
+      }, 10);
     });
   }
 

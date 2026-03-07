@@ -564,6 +564,16 @@
       if (el.id && /^downshift-.+-item/.test(el.id)) {
         return extractCharFromElement(el);
       }
+
+      // styled-components 캐릭터 아이템 — MuiPopover > MuiPaper 직계 자식
+      // (MuiListItemButton 없이 sc-* 클래스만 사용하는 드롭다운 변형)
+      if (el.parentElement && el.parentElement.classList &&
+          el.parentElement.classList.contains('MuiPaper-root') &&
+          el.closest('.MuiPopover-root') &&
+          !el.closest('.MuiDialog-root') && !el.closest('.MuiMenu-paper')) {
+        var info3 = extractCharFromElement(el);
+        if (info3) return info3;
+      }
     }
 
     // 이미지 기반 폴백 — 캐릭터 선택 드롭다운(MuiPopover) 내부만 허용
