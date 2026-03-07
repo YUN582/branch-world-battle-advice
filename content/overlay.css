@@ -756,7 +756,7 @@
   filter: brightness(1.2);
 }
 
-/* 네이티브 코코포리아 MUI 툴팁 스타일 (플로팅) */
+/* 네이티브 코코포리아 MUI 툴팁 스타일 (플로팅, placement=top) */
 .bwbr-effect-float-tooltip {
   position: fixed;
   background: rgb(22, 22, 22);
@@ -768,13 +768,14 @@
   border-radius: 4px;
   max-width: 300px;
   white-space: pre-wrap;
-  box-shadow: 0 1px 3px rgba(0,0,0,.2), 0 1px 1px rgba(0,0,0,.14), 0 2px 1px -1px rgba(0,0,0,.12);
   z-index: 1500;
   pointer-events: none;
   line-height: 1.4;
   text-align: center;
+  transform-origin: center bottom;
   opacity: 0;
-  transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: opacity 200ms cubic-bezier(0.4, 0, 0.2, 1),
+              transform 133ms cubic-bezier(0.4, 0, 0.2, 1) 0ms;
 }
 
 .bwbr-effect-float-tooltip.bwbr-tip-visible {

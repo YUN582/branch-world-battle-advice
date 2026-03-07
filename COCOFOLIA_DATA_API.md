@@ -2902,18 +2902,31 @@ H4와 H0 (또는 H00)의 상호작용 특성입니다.
 | transform-origin | `center top` (PlacementBottom) |
 | word-wrap | `break-word` |
 
-**Enter 애니메이션** (마우스 올림):
+**Enter 애니메이션** (마우스 올림, rAF 프레임 캡처 검증 완료 2026-03-07):
 ```
-opacity:    0 → 1     (200ms, cubic-bezier(0.4, 0, 0.2, 1), delay 0ms)
-transform:  scale(0.75, 0.5625) → none  (133ms, cubic-bezier(0.4, 0, 0.2, 1), delay 0ms)
+transition: opacity 200ms cubic-bezier(0.4, 0, 0.2, 1),
+            transform 133ms cubic-bezier(0.4, 0, 0.2, 1) 0ms;
+opacity:    0 → 1     (~200ms)
+transform:  scale(0.75, 0.5625) → matrix(1,0,0,1,0,0) → none  (~133ms, scale 도달 후 identity 유지)
 ```
+- 0ms: opacity=0, scale(0.75, 0.5625)
+- ~56ms: opacity≈0.307, scale(0.912, 0.846)
+- ~132ms: opacity≈0.917, scale(1, 1) — transform 완료
+- ~200ms: opacity=1, transform: none — 완전 정착, inline style에서 `transform: none` 적용
 
-**Exit 애니메이션** (마우스 뗌):
+**Exit 애니메이션** (마우스 뗌, rAF 프레임 캡처 검증 완료 2026-03-07):
 ```
-opacity:    1 → 0     (200ms, cubic-bezier(0.4, 0, 0.2, 1), delay 0ms)
-transform:  none → scale(0.75, 0.5625)  (133ms, cubic-bezier(0.4, 0, 0.2, 1), delay 67ms ← 핵심!)
-→ transition 완료 후 (~200ms) Popper는 DOM에서 완전 제거됨
+transition: opacity 200ms cubic-bezier(0.4, 0, 0.2, 1),
+            transform 133ms cubic-bezier(0.4, 0, 0.2, 1) 67ms;  ← 67ms delay 핵심!
+opacity:    1 → 0     (~200ms, delay 없음)
+transform:  none → scale(0.75, 0.5625)  (~133ms, 67ms delay 후 시작)
 ```
+- 0ms: inline style에 `scale(0.75, 0.5625)` + transition delay 67ms 설정
+- ~7ms: opacity 감소 시작 (0.997), transform은 아직 identity (delay 중)
+- ~70ms: opacity≈0.506, transform 감소 시작 (0.9998→0.9969)
+- ~140ms: opacity≈0.132, scale(0.855, 0.747)
+- ~195ms: opacity≈0.002, scale(0.751, 0.565)
+- ~200ms: DOM에서 완전 제거됨
 
 #### Slider
 

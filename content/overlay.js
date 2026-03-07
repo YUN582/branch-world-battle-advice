@@ -533,12 +533,23 @@ window.BattleRollOverlay = class BattleRollOverlay {
         const rect = badge.getBoundingClientRect();
         tip.style.left = (rect.left + rect.width / 2) + 'px';
         tip.style.top = (rect.top - 8) + 'px';
-        tip.style.transform = 'translate(-50%, -100%)';
-        requestAnimationFrame(() => tip.classList.add('bwbr-tip-visible'));
+        tip.style.transition = 'opacity 200ms cubic-bezier(0.4,0,0.2,1),transform 133ms cubic-bezier(0.4,0,0.2,1) 0ms';
+        tip.style.transform = 'translate(-50%, -100%) scale(0.75, 0.5625)';
+        tip.style.opacity = '0';
+        requestAnimationFrame(() => {
+          tip.style.transform = 'translate(-50%, -100%)';
+          tip.style.opacity = '1';
+          tip.classList.add('bwbr-tip-visible');
+        });
       });
       badge.addEventListener('mouseleave', () => {
         const tip = document.getElementById('bwbr-effect-float-tip');
-        if (tip) tip.classList.remove('bwbr-tip-visible');
+        if (tip) {
+          tip.classList.remove('bwbr-tip-visible');
+          tip.style.transition = 'opacity 200ms cubic-bezier(0.4,0,0.2,1),transform 133ms cubic-bezier(0.4,0,0.2,1) 67ms';
+          tip.style.transform = 'translate(-50%, -100%) scale(0.75, 0.5625)';
+          tip.style.opacity = '0';
+        }
       });
     });
   }
