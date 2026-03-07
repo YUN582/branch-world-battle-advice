@@ -80,10 +80,11 @@
 
   function matchCharacterByImage(imageUrl) {
     if (!imageUrl || !cachedCharacters.length) return null;
+    var a = extractStoragePath(imageUrl);
     for (var i = 0; i < cachedCharacters.length; i++) {
       var c = cachedCharacters[i];
       if (!c.iconUrl) continue;
-      var a = extractStoragePath(imageUrl), b = extractStoragePath(c.iconUrl);
+      var b = extractStoragePath(c.iconUrl);
       if (a && b && a === b) return c;
       if (imageUrl.indexOf(c.iconUrl) !== -1 || c.iconUrl.indexOf(imageUrl) !== -1) return c;
     }
@@ -91,7 +92,18 @@
   }
   function extractStoragePath(url) {
     if (!url) return '';
-    try { var m = url.match(/\/o\/([^?]+)/); return m ? decodeURIComponent(m[1]) : ''; }
+    try {
+      // Firebase Storage: /o/users%2F.../files%2F... → users/.../files/...
+      var m = url.match(/\/o\/([^?]+)/);
+      if (m) return decodeURIComponent(m[1]);
+      // ccfolia CDN: storage.ccfolia-cdn.net/users/.../files/...
+      var m2 = url.match(/ccfolia-cdn\.net\/(.+?)(?:\?|$)/);
+      if (m2) return decodeURIComponent(m2[1]);
+      // 일반 경로 추출 (도메인 이후)
+      var m3 = url.match(/\/users\/[^?]+/);
+      if (m3) return m3[0];
+      return '';
+    }
     catch (_) { return ''; }
   }
 
