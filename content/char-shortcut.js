@@ -536,7 +536,7 @@
       'white-space:nowrap',
       'margin-top:14px', 'transform-origin:center top',
       'opacity:0', 'transform:scale(0.75,0.5625)',
-      'transition:opacity 200ms cubic-bezier(0.4,0,0.2,1),transform 133ms cubic-bezier(0.4,0,0.2,1)'
+      'transition:opacity 200ms cubic-bezier(0.4,0,0.2,1),transform 133ms cubic-bezier(0.4,0,0.2,1) 0ms'
     ].join(';');
     _tipPopper.appendChild(_tipInner);
     document.body.appendChild(_tipPopper);
@@ -560,18 +560,20 @@
     if (x + tw > document.documentElement.clientWidth - 4) x = document.documentElement.clientWidth - tw - 4;
     _tipPopper.style.transform = 'translate(' + x + 'px,' + y + 'px)';
     requestAnimationFrame(function () {
+      _tipInner.style.transition = 'opacity 200ms cubic-bezier(0.4,0,0.2,1),transform 133ms cubic-bezier(0.4,0,0.2,1) 0ms';
       _tipInner.style.opacity = '1';
       _tipInner.style.transform = 'none';
     });
   }
   function hideMuiTooltip() {
     if (!_tipInner) return;
+    _tipInner.style.transition = 'opacity 200ms cubic-bezier(0.4,0,0.2,1),transform 133ms cubic-bezier(0.4,0,0.2,1) 67ms';
     _tipInner.style.opacity = '0';
     _tipInner.style.transform = 'scale(0.75,0.5625)';
     clearTimeout(_tipTimer);
     _tipTimer = setTimeout(function () {
       if (_tipPopper) _tipPopper.style.display = 'none';
-    }, 250);
+    }, 210);
   }
   function attachMuiTooltip(el, getText) {
     el.addEventListener('mouseenter', function () { showMuiTooltip(el, getText()); });

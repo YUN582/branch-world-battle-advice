@@ -2858,21 +2858,62 @@ H4와 H0 (또는 H00)의 상호작용 특성입니다.
 | divider color | `rgba(255,255,255,0.08)` |
 | divider margin | `0 16px` |
 
-#### Tooltip
+#### Tooltip (실측 2026-03-07)
+
+**DOM 구조** (Popper → Inner 2중 구조):
+```html
+<div role="tooltip" class="MuiPopper-root MuiTooltip-popper css-t3d3gi"
+     style="position: absolute; inset: 0px auto auto 0px; margin: 0px;
+            transform: translate(Xpx, Ypx);"
+     data-popper-placement="bottom">
+  <div class="MuiTooltip-tooltip MuiTooltip-tooltipPlacementBottom css-1vuhgrr"
+       style="opacity: 1; transform: none;
+              transition: opacity 200ms cubic-bezier(0.4, 0, 0.2, 1),
+                          transform 133ms cubic-bezier(0.4, 0, 0.2, 1);">
+    캐릭터 편집
+  </div>
+</div>
+```
+
+**Popper (외부 컨테이너)**
+
+| 속성 | 값 |
+|------|-----|
+| position | `absolute` |
+| inset | `0px auto auto 0px` |
+| margin | `0px` |
+| transform | `translate(Xpx, Ypx)` — X=버튼 center−tooltip width/2, Y=버튼 bottom |
+| z-index | `1500` |
+| background | 투명 (`rgba(0,0,0,0)`) |
+
+**Inner div (실제 툴팁)**
 
 | 속성 | 값 |
 |------|-----|
 | background | `rgb(22, 22, 22)` |
 | color | `#fff` |
-| font | 12px / 500 / Roboto |
+| font | 12px / 500 / Roboto, Helvetica, Arial, sans-serif |
+| line-height | 1.4em |
+| letter-spacing | 0.01071em |
 | padding | `4px 8px` |
 | border-radius | `4px` |
 | max-width | `300px` |
-| box-shadow | `0 1px 3px rgba(0,0,0,.2), 0 1px 1px rgba(0,0,0,.14), 0 2px 1px -1px rgba(0,0,0,.12)` |
-| transition | `opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1)` |
-| enterDelay | ~100ms |
-| margin (below) | `14px 2px 2px` |
-| z-index | `1500` |
+| margin-top | `14px` (PlacementBottom — 버튼과의 간격) |
+| transform-origin | `center top` (PlacementBottom) |
+| word-wrap | `break-word` |
+
+**Enter 애니메이션** (마우스 올림):
+```
+opacity:    0 → 1     (200ms, cubic-bezier(0.4, 0, 0.2, 1), delay 0ms)
+transform:  scale(0.75, 0.5625) → none  (133ms, cubic-bezier(0.4, 0, 0.2, 1), delay 0ms)
+```
+
+**Exit 애니메이션** (마우스 뗌):
+```
+opacity:    1 → 0     (200ms, cubic-bezier(0.4, 0, 0.2, 1), delay 0ms)
+transform:  none → scale(0.75, 0.5625)  (133ms, cubic-bezier(0.4, 0, 0.2, 1), delay 67ms ← 핵심!)
+→ transition 완료 후 (~200ms) Popper는 DOM에서 완전 제거됨
+```
 
 #### Slider
 
