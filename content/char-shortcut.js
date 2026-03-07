@@ -471,90 +471,81 @@
   // ================================================================
 
   function setupCharStatusPanelInjector() {
-    // MuiBadge-root 안에 MuiAvatar-root가 있는 영역 근처의 아이콘 버튼들을 감시
+    var _timer = 0;
     var obs = new MutationObserver(function () {
-      // 이미 주입된 버튼이 있으면 스킵
-      if (document.querySelector('.bwbr-hide-status-btn')) return;
-      injectHideStatusButton();
+      clearTimeout(_timer);
+      _timer = setTimeout(injectHideStatusButton, 80);
     });
     obs.observe(document.body, { childList: true, subtree: true });
-    // 초기 1회
-    setTimeout(injectHideStatusButton, 2000);
+  }
+
+  /** 상태 패널 툴바에서 캐릭터 이름 텍스트 매칭으로 식별 */
+  function findCharacterFromPanel(toolbarEl) {
+    if (!cachedCharacters.length) return null;
+    var nameMap = {};
+    for (var c = 0; c < cachedCharacters.length; c++) {
+      nameMap[cachedCharacters[c].name] = cachedCharacters[c];
+    }
+    var el = toolbarEl;
+    for (var u = 0; u < 5 && el; u++, el = el.parentElement) {
+      var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false);
+      var node;
+      while ((node = walker.nextNode())) {
+        // 우리가 주입한 버튼 내부 텍스트는 스킵
+        if (node.parentElement && node.parentElement.closest('.bwbr-hide-status-btn')) continue;
+        var txt = node.textContent.trim();
+        if (txt && nameMap[txt]) return nameMap[txt];
+      }
+    }
+    return null;
   }
 
   function injectHideStatusButton() {
-    // 화면 캐릭터 상태 패널의 아이콘 바를 찾는다
-    // 구조: DIV.sc-geBDJh > DIV.sc-yECoe > DIV.sc-eSoXjr 내부에
-    //        편집(✏️) 및 집어넣기(📦) IconButton이 있음
-    // 편집 아이콘: SVG with path containing "M3 17.25V21h3.75" (MUI Edit icon)
-    // 집어넣기 아이콘: SVG with path containing "M19 3H5" (MUI Archive/Inbox icon)
-    var editBtns = document.querySelectorAll('button.MuiIconButton-root, button.MuiButtonBase-root');
-    for (var i = 0; i < editBtns.length; i++) {
-      var btn = editBtns[i];
-      // 이미 처리된 영역 스킵
-      if (btn.parentElement && btn.parentElement.querySelector('.bwbr-hide-status-btn')) continue;
+    // 상태 패널 툴바의 편집 아이콘(M3 17.25) 중
+    // 형제 버튼이 2+인 것만 대상 (스텟 행 단독 버튼 제외)
+    var allPaths = document.querySelectorAll('button.MuiIconButton-root svg path');
+    for (var i = 0; i < allPaths.length; i++) {
+      var d = allPaths[i].getAttribute('d') || '';
+      if (d.indexOf('M3 17.25') === -1) continue;
 
-      var svg = btn.querySelector('svg');
-      if (!svg) continue;
-      var paths = svg.querySelectorAll('path');
-      var isEditBtn = false;
-      for (var p = 0; p < paths.length; p++) {
-        var d = paths[p].getAttribute('d') || '';
-        // MUI EditIcon path 시작 부분
-        if (d.indexOf('M3 17.25') !== -1 || d.indexOf('m14.06 9.02') !== -1 ||
-            d.indexOf('M14.06 9.02') !== -1 || d.indexOf('M3 17.2') !== -1) {
-          isEditBtn = true; break;
-        }
-      }
-      if (!isEditBtn) continue;
-
-      // 편집 버튼의 형제 중 집어넣기 버튼이 있는지 확인
+      var btn = allPaths[i].closest('button');
+      if (!btn) continue;
       var parent = btn.parentElement;
       if (!parent) continue;
-      var siblings = parent.querySelectorAll('button');
-      if (siblings.length < 2) continue;
+      if (parent.querySelectorAll('button').length < 2) continue;
+      if (parent.querySelector('.bwbr-hide-status-btn')) continue;
 
-      // 이 패널까지 올라가서 캐릭터 이미지 찾기
-      var panelEl = parent;
-      for (var u = 0; u < 6 && panelEl; u++, panelEl = panelEl.parentElement) {
-        if (panelEl.querySelector && panelEl.querySelector('.MuiAvatar-root img[src]')) break;
-      }
-      if (!panelEl) continue;
-      var avatarImg = panelEl.querySelector('.MuiAvatar-root img[src]');
-      if (!avatarImg) continue;
-
-      // 캐릭터 식별
-      var charData = matchCharacterByImage(avatarImg.src);
+      // 캐릭터 식별 — 이미지 대신 이름 텍스트 매칭
+      var charData = findCharacterFromPanel(parent);
       if (!charData) continue;
 
-      // hideStatus 토글 버튼 생성
+      // 형제 버튼과 동일한 클래스 사용 → UI 일치
       var hideBtn = document.createElement('button');
-      hideBtn.className = 'bwbr-hide-status-btn MuiButtonBase-root MuiIconButton-root';
-      hideBtn.title = '화면 캐릭터 목록에 표시/숨김';
-      hideBtn.style.cssText = btn.style.cssText || '';
-      // 기존 아이콘 버튼 스타일 복사
-      var cs = window.getComputedStyle(btn);
-      hideBtn.style.padding = cs.padding;
-      hideBtn.style.color = cs.color;
-      hideBtn.style.fontSize = cs.fontSize;
+      hideBtn.className = 'bwbr-hide-status-btn ' + btn.className;
+      hideBtn.title = charData.name + ' 목록 표시/숨김';
+      hideBtn.type = 'button';
+      hideBtn.tabIndex = 0;
 
-      // 눈 아이콘 SVG (MUI Visibility)
-      hideBtn.innerHTML = '<svg focusable="false" aria-hidden="true" viewBox="0 0 24 24" style="width:1em;height:1em;fill:currentColor;font-size:' + cs.fontSize + '">' +
+      // 형제 SVG 구조 복사
+      var sibSvg = btn.querySelector('svg');
+      var svgCls = sibSvg ? (sibSvg.getAttribute('class') || '') : '';
+      hideBtn.innerHTML = '<svg' + (svgCls ? ' class="' + svgCls + '"' : '') +
+        ' focusable="false" aria-hidden="true" viewBox="0 0 24 24">' +
         '<path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"></path>' +
         '</svg>';
 
-      hideBtn.addEventListener('click', function (ev) {
-        ev.stopPropagation();
-        var cd = matchCharacterByImage(avatarImg.src);
-        if (!cd) { showToast('캐릭터를 식별할 수 없습니다', 2000); return; }
-        var payload = JSON.stringify({ op: 'toggleHideStatus', ids: [cd._id] });
-        document.documentElement.setAttribute('data-bwbr-char-batch-op', payload);
-        document.dispatchEvent(new CustomEvent('bwbr-char-batch-op'));
-        window.dispatchEvent(new CustomEvent('bwbr-char-batch-op'));
-        showToast(cd.name + ' 목록 표시 전환', 2000);
-      });
+      // 클로저로 charData 캡처
+      (function (id, name) {
+        hideBtn.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          var payload = JSON.stringify({ op: 'toggleHideStatus', ids: [id] });
+          document.documentElement.setAttribute('data-bwbr-char-batch-op', payload);
+          document.dispatchEvent(new CustomEvent('bwbr-char-batch-op'));
+          window.dispatchEvent(new CustomEvent('bwbr-char-batch-op'));
+          showToast(name + ' 목록 표시 전환', 2000);
+        });
+      })(charData._id, charData.name);
 
-      // 편집 버튼 바로 뒤에 삽입
       btn.parentNode.insertBefore(hideBtn, btn.nextSibling);
     }
   }
