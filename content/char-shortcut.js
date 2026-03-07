@@ -576,10 +576,32 @@
       }
     }
 
-    // 이미지 기반 폴백 — 캐릭터 선택 드롭다운(MuiPopover) 내부만 허용
-    if (!target.closest('.MuiPopover-root')) return null;
+    // 이미지 기반 폴백 — MuiPopover 또는 화면 캐릭터 상태 패널(MuiAvatar-root 포함)
+    // (MuiDialog, .movable 내부는 이미 상단에서 제외됨)
+    var inPopover = !!target.closest('.MuiPopover-root');
+    var nearAvatar = !!target.closest('.MuiAvatar-root');
+    if (!nearAvatar) {
+      // target 위로 올라가며 MuiAvatar-root 를 포함하는 조상 탐색
+      var up2 = target;
+      for (var a = 0; up2 && a < 6; a++, up2 = up2.parentElement) {
+        if (up2.querySelector && up2.querySelector('.MuiAvatar-root')) { nearAvatar = true; break; }
+      }
+    }
+    if (!inPopover && !nearAvatar) return null;
 
     var img = (target.tagName === 'IMG') ? target : null;
+    if (!img) {
+      // MuiAvatar-root 내부 이미지 우선 검색
+      var avatarEl = target.closest('.MuiAvatar-root');
+      if (!avatarEl) {
+        var up3 = target;
+        for (var a2 = 0; up3 && a2 < 6; a2++, up3 = up3.parentElement) {
+          avatarEl = up3.querySelector && up3.querySelector('.MuiAvatar-root');
+          if (avatarEl) break;
+        }
+      }
+      if (avatarEl) img = avatarEl.querySelector('img[src]');
+    }
     if (!img) {
       img = target.querySelector && target.querySelector('img[src]');
     }
