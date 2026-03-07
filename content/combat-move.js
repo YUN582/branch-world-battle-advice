@@ -259,7 +259,18 @@
   /** 전투 모드 컨텍스트 메뉴 닫기 */
   var _combatCtxMenu = null;
   function closeCombatContextMenu() {
-    if (_combatCtxMenu) { _combatCtxMenu.remove(); _combatCtxMenu = null; }
+    if (!_combatCtxMenu) return;
+    var el = _combatCtxMenu;
+    _combatCtxMenu = null;
+    var paper = el.querySelector('div[style*="border-radius"]');
+    if (paper) {
+      paper.style.opacity = '0';
+      paper.style.transform = 'scale(0.75)';
+      paper.addEventListener('transitionend', function () { el.remove(); }, { once: true });
+      setTimeout(function () { if (el.parentNode) el.remove(); }, 300);
+    } else {
+      el.remove();
+    }
   }
 
   /** 전투 모드용 컨텍스트 메뉴 표시 (토큰 클릭 시) */
@@ -306,7 +317,7 @@
     paper.style.cssText =
       'position:absolute;overflow-x:hidden;overflow-y:auto;' +
       'min-width:16px;min-height:16px;max-width:calc(100% - 32px);max-height:calc(100% - 96px);' +
-      'outline:0;opacity:1;transform:none;' +
+      'outline:0;opacity:0;transform:scale(0.75);transform-origin:top left;' +
       'background-color:rgba(44,44,44,0.87);color:#fff;' +
       'border-radius:4px;' +
       'box-shadow:0px 5px 5px -3px rgba(0,0,0,0.2),0px 8px 10px 1px rgba(0,0,0,0.14),0px 3px 14px 2px rgba(0,0,0,0.12);' +
@@ -356,10 +367,10 @@
       window.dispatchEvent(new CustomEvent('bwbr-char-batch-op'));
     }));
 
-    // ── 패널 숨기기 (visible 토글) ──
+    // ── 패널 숨기기 (active 토글 — ccfolia 네이티브 동작과 동일) ──
     ul.appendChild(_ctxMenuItem('패널 숨기기', function () {
       closeCombatContextMenu();
-      var payload = JSON.stringify({ op: 'toggleVisible', ids: [item._id] });
+      var payload = JSON.stringify({ op: 'toggleActive', ids: [item._id] });
       document.documentElement.setAttribute('data-bwbr-panel-batch-op', payload);
       document.dispatchEvent(new CustomEvent('bwbr-panel-batch-op'));
       window.dispatchEvent(new CustomEvent('bwbr-panel-batch-op'));
@@ -379,11 +390,16 @@
     document.body.appendChild(popover);
     _combatCtxMenu = popover;
 
-    // 화면 밖으로 나가지 않도록 위치 보정
+    // 화면 밖으로 나가지 않도록 위치 보정 + Grow 진입 애니메이션
     requestAnimationFrame(function () {
       var r = paper.getBoundingClientRect();
       if (r.right > innerWidth) paper.style.left = (innerWidth - r.width - 8) + 'px';
       if (r.bottom > innerHeight) paper.style.top = (innerHeight - r.height - 8) + 'px';
+      // 트리거 Grow 애니메이션 (opacity 0 + scale 0.75 → 1)
+      requestAnimationFrame(function () {
+        paper.style.opacity = '1';
+        paper.style.transform = 'scale(1)';
+      });
     });
   }
 
