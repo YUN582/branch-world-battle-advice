@@ -500,6 +500,16 @@
     return null;
   }
 
+  function visibilitySvg(svgCls, hidden) {
+    var open = '<svg' + (svgCls ? ' class="' + svgCls + '"' : '') + ' focusable="false" aria-hidden="true" viewBox="0 0 24 24">';
+    if (hidden) {
+      // VisibilityOff — 현재 숨겨진 상태 → 클릭하면 표시
+      return open + '<path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"></path></svg>';
+    }
+    // Visibility — 현재 표시 중 → 클릭하면 숨김
+    return open + '<path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"></path></svg>';
+  }
+
   function injectHideStatusButton() {
     // 상태 패널 툴바의 편집 아이콘(M3 17.25) 중
     // 형제 버튼이 2+인 것만 대상 (스텟 행 단독 버튼 제외)
@@ -515,36 +525,40 @@
       if (parent.querySelectorAll('button').length < 2) continue;
       if (parent.querySelector('.bwbr-hide-status-btn')) continue;
 
-      // 캐릭터 식별 — 이미지 대신 이름 텍스트 매칭
+      // 캐릭터 식별 — 이름 텍스트 매칭
       var charData = findCharacterFromPanel(parent);
       if (!charData) continue;
+
+      // 형제 SVG 클래스 복사
+      var sibSvg = btn.querySelector('svg');
+      var svgCls = sibSvg ? (sibSvg.getAttribute('class') || '') : '';
 
       // 형제 버튼과 동일한 클래스 사용 → UI 일치
       var hideBtn = document.createElement('button');
       hideBtn.className = 'bwbr-hide-status-btn ' + btn.className;
-      hideBtn.title = charData.name + ' 목록 표시/숨김';
       hideBtn.type = 'button';
       hideBtn.tabIndex = 0;
 
-      // 형제 SVG 구조 복사
-      var sibSvg = btn.querySelector('svg');
-      var svgCls = sibSvg ? (sibSvg.getAttribute('class') || '') : '';
-      hideBtn.innerHTML = '<svg' + (svgCls ? ' class="' + svgCls + '"' : '') +
-        ' focusable="false" aria-hidden="true" viewBox="0 0 24 24">' +
-        '<path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"></path>' +
-        '</svg>';
+      // 초기 아이콘: hideStatus 상태에 따라
+      var isHidden = !!charData.hideStatus;
+      hideBtn.innerHTML = visibilitySvg(svgCls, isHidden);
+      hideBtn.title = isHidden ? charData.name + ' 화면에 표시' : charData.name + ' 화면에서 숨기기';
 
-      // 클로저로 charData 캡처
-      (function (id, name) {
+      // 클로저로 상태 캡처
+      (function (id, name, sc) {
+        var hidden = isHidden;
         hideBtn.addEventListener('click', function (ev) {
           ev.stopPropagation();
+          hidden = !hidden;
           var payload = JSON.stringify({ op: 'toggleHideStatus', ids: [id] });
           document.documentElement.setAttribute('data-bwbr-char-batch-op', payload);
           document.dispatchEvent(new CustomEvent('bwbr-char-batch-op'));
           window.dispatchEvent(new CustomEvent('bwbr-char-batch-op'));
-          showToast(name + ' 목록 표시 전환', 2000);
+          hideBtn.innerHTML = visibilitySvg(sc, hidden);
+          hideBtn.title = hidden ? name + ' 화면에 표시' : name + ' 화면에서 숨기기';
+          showToast(name + (hidden ? ' 화면에서 숨김' : ' 화면에 표시'), 2000);
         });
-      })(charData._id, charData.name);
+      })(charData._id, charData.name, svgCls);
 
       btn.parentNode.insertBefore(hideBtn, btn.nextSibling);
     }
