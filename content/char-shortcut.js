@@ -510,6 +510,64 @@
     return open + '<path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"></path></svg>';
   }
 
+  // ── MUI 스타일 툴팁 (공유 싱글톤) ──
+  var _muiTip = null;
+  var _muiTipTimer = 0;
+  function ensureMuiTooltip() {
+    if (_muiTip) return _muiTip;
+    _muiTip = document.createElement('div');
+    _muiTip.style.cssText = [
+      'position:fixed', 'z-index:20000', 'pointer-events:none',
+      'background-color:rgba(97,97,97,0.92)', 'color:#fff',
+      'font-family:"Roboto","Helvetica","Arial",sans-serif',
+      'font-size:0.6875rem', 'font-weight:500', 'line-height:1.4',
+      'letter-spacing:0.01071em', 'padding:4px 8px',
+      'border-radius:4px', 'max-width:300px', 'word-wrap:break-word',
+      'opacity:0', 'transform:scale(0.75)', 'transform-origin:bottom center',
+      'transition:opacity 200ms cubic-bezier(0.4,0,0.2,1),transform 200ms cubic-bezier(0.4,0,0.2,1)'
+    ].join(';');
+    document.body.appendChild(_muiTip);
+    return _muiTip;
+  }
+  function showMuiTooltip(el, text) {
+    clearTimeout(_muiTipTimer);
+    var tip = ensureMuiTooltip();
+    tip.textContent = text;
+    tip.style.opacity = '0';
+    tip.style.transform = 'scale(0.75)';
+    tip.style.display = 'block';
+    var r = el.getBoundingClientRect();
+    // 위에 배치 (placement=top)
+    tip.style.left = '0px'; tip.style.top = '0px';
+    var tw = tip.offsetWidth, th = tip.offsetHeight;
+    var left = r.left + r.width / 2 - tw / 2;
+    var top = r.top - th - 6;
+    if (top < 4) top = r.bottom + 6;
+    if (left < 4) left = 4;
+    if (left + tw > window.innerWidth - 4) left = window.innerWidth - tw - 4;
+    tip.style.left = left + 'px';
+    tip.style.top = top + 'px';
+    requestAnimationFrame(function () {
+      tip.style.opacity = '1';
+      tip.style.transform = 'scale(1)';
+    });
+  }
+  function hideMuiTooltip() {
+    if (!_muiTip) return;
+    _muiTip.style.opacity = '0';
+    _muiTip.style.transform = 'scale(0.75)';
+    _muiTipTimer = setTimeout(function () {
+      if (_muiTip) _muiTip.style.display = 'none';
+    }, 200);
+  }
+  function attachMuiTooltip(el, getText) {
+    el.addEventListener('mouseenter', function () { showMuiTooltip(el, getText()); });
+    el.addEventListener('mouseleave', hideMuiTooltip);
+    el.addEventListener('click', hideMuiTooltip);
+    el.addEventListener('focus', function () { showMuiTooltip(el, getText()); });
+    el.addEventListener('blur', hideMuiTooltip);
+  }
+
   function injectHideStatusButton() {
     // 상태 패널 툴바의 편집 아이콘(M3 17.25) 중
     // 형제 버튼이 2+인 것만 대상 (스텟 행 단독 버튼 제외)
@@ -542,11 +600,12 @@
       // 초기 아이콘: hideStatus 상태에 따라
       var isHidden = !!charData.hideStatus;
       hideBtn.innerHTML = visibilitySvg(svgCls, isHidden);
-      hideBtn.title = isHidden ? charData.name + ' 화면에 표시' : charData.name + ' 화면에서 숨기기';
 
       // 클로저로 상태 캡처
       (function (id, name, sc) {
         var hidden = isHidden;
+        function tipText() { return hidden ? name + ' 화면에 표시' : name + ' 화면에서 숨기기'; }
+        attachMuiTooltip(hideBtn, tipText);
         hideBtn.addEventListener('click', function (ev) {
           ev.stopPropagation();
           hidden = !hidden;
@@ -555,7 +614,6 @@
           document.dispatchEvent(new CustomEvent('bwbr-char-batch-op'));
           window.dispatchEvent(new CustomEvent('bwbr-char-batch-op'));
           hideBtn.innerHTML = visibilitySvg(sc, hidden);
-          hideBtn.title = hidden ? name + ' 화면에 표시' : name + ' 화면에서 숨기기';
           showToast(name + (hidden ? ' 화면에서 숨김' : ' 화면에 표시'), 2000);
         });
       })(charData._id, charData.name, svgCls);
