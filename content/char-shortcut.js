@@ -510,27 +510,32 @@
     return open + '<path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"></path></svg>';
   }
 
-  // ── MUI Tooltip 정확한 복제 (싱글톤 popper+inner 구조) ──
-  // 실측값: bg=rgb(22,22,22), color=#fff, font-size:12px, padding:4px 8px,
-  //         border-radius:4px, z-index:1500,
-  //         transition: opacity 200ms cubic, transform 133ms cubic
+  // ── MUI Tooltip 정확한 복제 (ccfolia 실측 기반) ──
+  // Popper: position:absolute, inset:0 auto auto 0, transform:translate(X,Y)
+  //         z-index:1500, data-popper-placement="bottom"
+  // Inner:  bg=rgb(22,22,22), 12px, padding 4px 8px, border-radius 4px
+  //         margin-top:14px (tooltipPlacementBottom)
+  //         enter: opacity 0→1 200ms, transform scale(0.75,0.5625)→none 133ms
+  //         exit:  opacity 1→0 200ms, transform none→scale(0.75,0.5625) 133ms
+  //         easing: cubic-bezier(0.4,0,0.2,1)
   var _tipPopper = null;
   var _tipInner = null;
   var _tipTimer = 0;
   function ensureTooltip() {
     if (_tipPopper) return;
     _tipPopper = document.createElement('div');
-    _tipPopper.style.cssText = 'position:fixed;z-index:1500;pointer-events:none;inset:0 auto auto 0;margin:0';
+    _tipPopper.setAttribute('role', 'tooltip');
+    _tipPopper.style.cssText = 'position:absolute;z-index:1500;pointer-events:none;inset:0px auto auto 0px;margin:0px';
     _tipInner = document.createElement('div');
     _tipInner.style.cssText = [
       'background-color:rgb(22,22,22)', 'color:#fff',
       'font-family:"Roboto","Helvetica","Arial",sans-serif',
-      'font-size:12px', 'font-weight:500', 'line-height:1.4',
+      'font-size:12px', 'font-weight:500', 'line-height:1.4em',
       'letter-spacing:0.01071em', 'padding:4px 8px',
       'border-radius:4px', 'max-width:300px', 'word-wrap:break-word',
       'white-space:nowrap',
+      'margin-top:14px', 'transform-origin:center top',
       'opacity:0', 'transform:scale(0.75,0.5625)',
-      'transform-origin:top center',
       'transition:opacity 200ms cubic-bezier(0.4,0,0.2,1),transform 133ms cubic-bezier(0.4,0,0.2,1)'
     ].join(';');
     _tipPopper.appendChild(_tipInner);
@@ -540,24 +545,20 @@
     clearTimeout(_tipTimer);
     ensureTooltip();
     _tipInner.textContent = text;
-    // 측정을 위해 투명하게 먼저 배치
-    _tipPopper.style.visibility = 'hidden';
     _tipPopper.style.display = 'block';
     _tipInner.style.opacity = '0';
     _tipInner.style.transform = 'scale(0.75,0.5625)';
+    _tipInner.style.transformOrigin = 'center top';
+    // top 배치가 불가능하면 bottom, 아니면 bottom 기본
     var r = el.getBoundingClientRect();
-    var tw = _tipInner.offsetWidth, th = _tipInner.offsetHeight;
-    var gap = 8;
-    // placement: bottom (버튼 아래)
-    var left = r.left + r.width / 2 - tw / 2;
-    var top = r.bottom + gap;
-    // 화면 밖 보정
-    if (top + th > window.innerHeight - 4) { top = r.top - th - gap; _tipInner.style.transformOrigin = 'bottom center'; }
-    else { _tipInner.style.transformOrigin = 'top center'; }
-    if (left < 4) left = 4;
-    if (left + tw > window.innerWidth - 4) left = window.innerWidth - tw - 4;
-    _tipPopper.style.transform = 'translate(' + Math.round(left) + 'px,' + Math.round(top) + 'px)';
-    _tipPopper.style.visibility = '';
+    var scrollX = window.pageXOffset || 0;
+    var scrollY = window.pageYOffset || 0;
+    var tw = _tipPopper.offsetWidth;
+    var x = Math.round(r.left + scrollX + r.width / 2 - tw / 2);
+    var y = Math.round(r.bottom + scrollY);
+    if (x < 4) x = 4;
+    if (x + tw > document.documentElement.clientWidth - 4) x = document.documentElement.clientWidth - tw - 4;
+    _tipPopper.style.transform = 'translate(' + x + 'px,' + y + 'px)';
     requestAnimationFrame(function () {
       _tipInner.style.opacity = '1';
       _tipInner.style.transform = 'none';
@@ -567,9 +568,10 @@
     if (!_tipInner) return;
     _tipInner.style.opacity = '0';
     _tipInner.style.transform = 'scale(0.75,0.5625)';
+    clearTimeout(_tipTimer);
     _tipTimer = setTimeout(function () {
       if (_tipPopper) _tipPopper.style.display = 'none';
-    }, 200);
+    }, 250);
   }
   function attachMuiTooltip(el, getText) {
     el.addEventListener('mouseenter', function () { showMuiTooltip(el, getText()); });
