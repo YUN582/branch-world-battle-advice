@@ -3286,6 +3286,8 @@
         visible:   !!it.visible,
         active:    !!it.active,
         locked:    !!it.locked,
+        closed:    !!it.closed,
+        withoutOwner: !!it.withoutOwner,
         order:     it.order ?? 0,
         x:         it.x ?? 0,
         y:         it.y ?? 0,
@@ -3467,7 +3469,7 @@
           if (!ids?.length) throw new Error('대상 ID 없음');
           const mode = updates?.mode;
           const visOps = [];
-          const currentUid = state.app?.state?.uid || '';
+          const currentUid = state.app?.state?.uid || state.app?.user?.uid || '';
           for (const id of ids) {
             let fields = { updatedAt: Date.now() };
             switch (mode) {

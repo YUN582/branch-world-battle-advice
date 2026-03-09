@@ -325,10 +325,34 @@
     var intersecting = movables.filter(function (el) {
       return rectsIntersect(sRect, el.getBoundingClientRect());
     });
+    console.log('[CE MS] processSelection modifier=' + modifier + ' intersecting=' + intersecting.length + '/' + movables.length);
     if (intersecting.length === 0) return;
 
     requestRoomItems().then(function (items) {
+      // 타입별 통계
+      var types = {};
+      items.forEach(function (it) { types[it.type] = (types[it.type] || 0) + 1; });
+      console.log('[CE MS] Redux items: ' + items.length + ' 타입별: ' + JSON.stringify(types));
+
       var matchMap = matchMovablesToItems(intersecting, items);
+      console.log('[CE MS] 매칭 결과: ' + matchMap.size + '/' + intersecting.length);
+
+      // 매칭 실패 디버그
+      if (matchMap.size < intersecting.length) {
+        for (var di = 0; di < intersecting.length; di++) {
+          if (!matchMap.has(intersecting[di])) {
+            var uel = intersecting[di];
+            var uPos = extractTransform(uel);
+            var uImg = normalizeStoragePath(extractImageUrl(uel));
+            console.log('[CE MS] ❌ 미매칭 DOM[' + di + '] pos=(' +
+              Math.round(uPos.x / NATIVE_CELL) + ',' + Math.round(uPos.y / NATIVE_CELL) +
+              ') size=' + uel.offsetWidth + 'x' + uel.offsetHeight +
+              ' img=' + (uImg ? uImg.slice(-30) : 'NONE'));
+          }
+        }
+      }
+
+      var kept = 0;
       matchMap.forEach(function (item, el) {
         // 수식키에 따른 타입 필터
         if (modifier === 'alt' && item.type !== 'object') return;
@@ -336,10 +360,9 @@
         // 'ctrlalt' → 필터 없음
         _selectedItems.set(el, item);
         highlightEl(el, item.type);
+        kept++;
       });
-      if (_selectedItems.size > 0) {
-        console.log('[CE Multi-Select] ' + _selectedItems.size + '개 아이템 선택됨 (총 후보: ' + intersecting.length + ', 매칭: ' + matchMap.size + ')');
-      }
+      console.log('[CE MS] 타입필터(' + modifier + ') 후: ' + kept + '개 선택됨');
     });
   }
 
@@ -348,7 +371,22 @@
   // ============================================================
 
   function removeContextMenu() {
-    if (_ctxMenuEl) { _ctxMenuEl.remove(); _ctxMenuEl = null; }
+    if (!_ctxMenuEl) return;
+    var container = _ctxMenuEl;
+    _ctxMenuEl = null;
+    // 포인터 이벤트 즉시 차단 (사라지기 애니메이션 중 상호작용 방지)
+    container.style.pointerEvents = 'none';
+    var paper = container.children[1]; // [0]=backdrop, [1]=paper
+    if (paper) {
+      paper.style.transition =
+        'opacity 370ms cubic-bezier(0.4,0,0.2,1) 0ms,' +
+        'transform 246ms cubic-bezier(0.4,0,0.2,1) 123ms';
+      paper.style.opacity = '0';
+      paper.style.transform = 'scale(0.75, 0.5625)';
+      setTimeout(function () { container.remove(); }, 400);
+    } else {
+      container.remove();
+    }
   }
 
   function _mkRow(label, shortcut, action, opts) {
@@ -425,10 +463,11 @@
       'box-shadow:0px 5px 5px -3px rgba(0,0,0,0.2),' +
       '0px 8px 10px 1px rgba(0,0,0,0.14),' +
       '0px 3px 14px 2px rgba(0,0,0,0.12);' +
-      'outline:0;overflow:auto;' +
-      'opacity:0;transform:scale(0.75);transform-origin:top left;' +
-      'transition:opacity 251ms cubic-bezier(0.4,0,0.2,1) 0ms,' +
-      'transform 167ms cubic-bezier(0.4,0,0.2,1) 0ms;';
+      'outline:0;overflow-x:hidden;overflow-y:auto;' +
+      'max-height:calc(100% - 96px);max-width:calc(100% - 32px);' +
+      'opacity:0;transform:scale(0.75, 0.5625);' +
+      'transition:opacity 364ms cubic-bezier(0.4,0,0.2,1) 0ms,' +
+      'transform 242ms cubic-bezier(0.4,0,0.2,1) 0ms;';
 
     var ul = document.createElement('ul');
     ul.setAttribute('role', 'menu');
@@ -448,10 +487,7 @@
     ul.appendChild(hdr);
     ul.appendChild(_mkDivider());
 
-    var single = count === 1;
-    ul.appendChild(_mkRow('편집', '', function () { triggerNativeEdit(); }, { disabled: !single }));
     ul.appendChild(_mkRow(lockLabel, 'L', function () { doBatchLock(); }));
-    ul.appendChild(_mkRow('전투이동', '', null, { disabled: true }));
     ul.appendChild(_mkRow('패널 숨기기', 'S', function () { doBatchToggleActive(); }));
     ul.appendChild(_mkDivider());
     ul.appendChild(_mkRow('전체 공개하기', 'O', function () { doBatchVisibility('public'); }));
@@ -460,7 +496,6 @@
     ul.appendChild(_mkRow('자신 외에 공개', 'W', function () { doBatchVisibility('except-self'); }));
     ul.appendChild(_mkDivider());
     ul.appendChild(_mkRow('회전', 'R / Shift+R', function () { doBatchRotate(90); }));
-    ul.appendChild(_mkRow('확대 보기', 'E', null, { disabled: !single }));
     ul.appendChild(_mkDivider());
     ul.appendChild(_mkRow('복제', 'Ctrl+D', function () { doBatchDuplicate(); }));
     ul.appendChild(_mkRow('삭제', 'Ctrl+⌫', function () { doBatchDelete(); }, { danger: true }));
@@ -473,15 +508,18 @@
     container.appendChild(paper);
     document.body.appendChild(container);
 
-    // 화면 밖 넘침 보정
+    // 화면 밖 넘침 보정 + 나타나기 애니메이션
     paper.style.left = x + 'px';
     paper.style.top = y + 'px';
-    // 렌더 후 크기 확인
     requestAnimationFrame(function () {
       var pr = paper.getBoundingClientRect();
-      if (x + pr.width > window.innerWidth) paper.style.left = Math.max(0, window.innerWidth - pr.width - 8) + 'px';
-      if (y + pr.height > window.innerHeight) paper.style.top = Math.max(0, window.innerHeight - pr.height - 8) + 'px';
-      // 애니메이션 시작
+      var finalX = x, finalY = y;
+      if (x + pr.width > window.innerWidth) finalX = Math.max(0, window.innerWidth - pr.width - 8);
+      if (y + pr.height > window.innerHeight) finalY = Math.max(0, window.innerHeight - pr.height - 8);
+      paper.style.left = finalX + 'px';
+      paper.style.top = finalY + 'px';
+      // transformOrigin = 클릭 위치 기준 (네이티브 MUI Grow와 동일)
+      paper.style.transformOrigin = (x - finalX) + 'px ' + (y - finalY) + 'px';
       paper.style.opacity = '1';
       paper.style.transform = 'scale(1)';
     });
@@ -553,15 +591,6 @@
       console.log('[CE Multi-Select] ' + ids.length + '개 삭제');
       clearSelection();
     }).catch(function (e) { console.error('[CE Multi-Select] delete:', e); });
-  }
-
-  /** 단일 선택 시 네이티브 편집 다이얼로그 열기 (더블클릭 시뮬레이션) */
-  function triggerNativeEdit() {
-    if (_selectedItems.size !== 1) return;
-    var el = _selectedItems.keys().next().value;
-    clearSelection();
-    // ccfolia 는 더블클릭으로 편집 다이얼로그를 연다
-    el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
   }
 
   // ============================================================
