@@ -21,9 +21,11 @@
   // ============================================================
   //  State
   // ============================================================
-  var _selectedItems = new Map();   // domElement → { _id, type, x, y, ... }
-  var _itemsCache = [];             // 캐시된 roomItems
+  var _selectedItems = new Map();   // domElement → { _id, type, x, y, _source?, ... }
+  var _itemsCache = [];             // 캐시된 roomItems (스크린)
   var _itemsCacheTime = 0;
+  var _markersCache = [];           // 캐시된 markers
+  var _markersCacheTime = 0;
 
   // 선택 사각형
   var _isSelecting = false;
@@ -145,6 +147,7 @@
   //  Cross-World Bridge (ISOLATED ↔ MAIN)
   // ============================================================
 
+  /** 스크린/배경 패널 목록 (roomItems) */
   function requestRoomItems() {
     if (_itemsCache.length && Date.now() - _itemsCacheTime < 800) {
       return Promise.resolve(_itemsCache);
@@ -172,6 +175,43 @@
     });
   }
 
+  /** 마커 목록 (room.markers) */
+  function requestMarkerItems() {
+    if (_markersCache.length && Date.now() - _markersCacheTime < 800) {
+      return Promise.resolve(_markersCache);
+    }
+    return new Promise(function (resolve) {
+      var el = document.documentElement;
+      var timer;
+      var handler = function () {
+        window.removeEventListener('bwbr-marker-list-data', handler);
+        clearTimeout(timer);
+        var raw = el.getAttribute('data-bwbr-marker-list-data');
+        el.removeAttribute('data-bwbr-marker-list-data');
+        var data = raw ? JSON.parse(raw) : { items: [] };
+        _markersCache = data.items || [];
+        _markersCacheTime = Date.now();
+        // 마커에 _source 태그 추가
+        _markersCache.forEach(function (m) { m._source = 'marker'; });
+        resolve(_markersCache);
+      };
+      window.addEventListener('bwbr-marker-list-data', handler);
+      el.setAttribute('data-bwbr-request-marker-list', '');
+      window.dispatchEvent(new CustomEvent('bwbr-request-marker-list'));
+      timer = setTimeout(function () {
+        window.removeEventListener('bwbr-marker-list-data', handler);
+        resolve(_markersCache);
+      }, 3000);
+    });
+  }
+
+  /** 스크린 + 마커 양쪽 모두 요청 */
+  function requestAllBoardItems() {
+    return Promise.all([requestRoomItems(), requestMarkerItems()]).then(function (results) {
+      return results[0].concat(results[1]);
+    });
+  }
+
   function batchOp(op, ids, updates) {
     return new Promise(function (resolve, reject) {
       var el = document.documentElement;
@@ -189,6 +229,30 @@
       timer = setTimeout(function () {
         window.removeEventListener('bwbr-panel-batch-op-result', handler);
         reject(new Error('batch op timeout'));
+      }, 10000);
+    });
+  }
+
+  /** 마커 전용 batch op (room 문서의 markers 필드) */
+  function markerBatchOp(op, ids, extra) {
+    return new Promise(function (resolve, reject) {
+      var el = document.documentElement;
+      var timer;
+      var handler = function () {
+        window.removeEventListener('bwbr-marker-batch-op-result', handler);
+        clearTimeout(timer);
+        var raw = el.getAttribute('data-bwbr-marker-batch-op-result');
+        el.removeAttribute('data-bwbr-marker-batch-op-result');
+        resolve(raw ? JSON.parse(raw) : {});
+      };
+      window.addEventListener('bwbr-marker-batch-op-result', handler);
+      var payload = { op: op, ids: ids };
+      if (extra) payload.extra = extra;
+      el.setAttribute('data-bwbr-marker-batch-op', JSON.stringify(payload));
+      window.dispatchEvent(new CustomEvent('bwbr-marker-batch-op'));
+      timer = setTimeout(function () {
+        window.removeEventListener('bwbr-marker-batch-op-result', handler);
+        reject(new Error('marker batch op timeout'));
       }, 10000);
     });
   }
@@ -328,11 +392,16 @@
     console.log('[CE MS] processSelection modifier=' + modifier + ' intersecting=' + intersecting.length + '/' + movables.length);
     if (intersecting.length === 0) return;
 
-    requestRoomItems().then(function (items) {
-      // 타입별 통계
-      var types = {};
-      items.forEach(function (it) { types[it.type] = (types[it.type] || 0) + 1; });
-      console.log('[CE MS] Redux items: ' + items.length + ' 타입별: ' + JSON.stringify(types));
+    // 스크린(alt) → roomItems만, 마커(ctrl) → markers만, 전체(ctrlalt) → 둘 다
+    var fetchPromise;
+    if (modifier === 'alt') fetchPromise = requestRoomItems();
+    else if (modifier === 'ctrl') fetchPromise = requestMarkerItems();
+    else fetchPromise = requestAllBoardItems();
+
+    fetchPromise.then(function (items) {
+      var screenCount = 0, markerCount = 0;
+      items.forEach(function (it) { if (it._source === 'marker') markerCount++; else screenCount++; });
+      console.log('[CE MS] 데이터: 스크린=' + screenCount + ' 마커=' + markerCount);
 
       var matchMap = matchMovablesToItems(intersecting, items);
       console.log('[CE MS] 매칭 결과: ' + matchMap.size + '/' + intersecting.length);
@@ -352,17 +421,12 @@
         }
       }
 
-      var kept = 0;
       matchMap.forEach(function (item, el) {
-        // 수식키에 따른 타입 필터
-        if (modifier === 'alt' && item.type !== 'object') return;
-        if (modifier === 'ctrl' && item.type !== 'plane') return;
-        // 'ctrlalt' → 필터 없음
+        var itemType = item._source === 'marker' ? 'marker' : 'screen';
         _selectedItems.set(el, item);
-        highlightEl(el, item.type);
-        kept++;
+        highlightEl(el, item._source === 'marker' ? 'plane' : 'object');
       });
-      console.log('[CE MS] 타입필터(' + modifier + ') 후: ' + kept + '개 선택됨');
+      console.log('[CE MS] 최종: ' + _selectedItems.size + '개 선택됨');
     });
   }
 
@@ -476,24 +540,34 @@
       'min-width:200px;max-width:320px;';
     paper.appendChild(ul);
 
-    // 헤더 – 선택 수
+    // 선택된 아이템 source 분석
+    var src = getSelectedIdsBySource();
+    var hasScreens = src.screenIds.length > 0;
+    var hasMarkers = src.markerIds.length > 0;
+
+    // 헤더 – 선택 수 + 유형 정보
     var hdr = document.createElement('li');
     hdr.setAttribute('role', 'presentation');
     hdr.style.cssText =
       'padding:4px 16px 6px;color:#90caf9;font-size:12px;' +
       'font-family:Roboto,Helvetica,Arial,sans-serif;' +
       'list-style:none;cursor:default;';
-    hdr.textContent = count + '개 선택됨';
+    var hdrParts = [];
+    if (hasScreens) hdrParts.push('스크린 ' + src.screenIds.length);
+    if (hasMarkers) hdrParts.push('마커 ' + src.markerIds.length);
+    hdr.textContent = count + '개 선택됨' + (hdrParts.length ? ' (' + hdrParts.join(', ') + ')' : '');
     ul.appendChild(hdr);
     ul.appendChild(_mkDivider());
 
     ul.appendChild(_mkRow(lockLabel, 'L', function () { doBatchLock(); }));
-    ul.appendChild(_mkRow('패널 숨기기', 'S', function () { doBatchToggleActive(); }));
+    // 패널 숨기기: 스크린 전용 (마커에 active 없음)
+    ul.appendChild(_mkRow('패널 숨기기', 'S', function () { doBatchToggleActive(); }, { disabled: !hasScreens }));
     ul.appendChild(_mkDivider());
-    ul.appendChild(_mkRow('전체 공개하기', 'O', function () { doBatchVisibility('public'); }));
-    ul.appendChild(_mkRow('비공개로 하기', 'T', function () { doBatchVisibility('private'); }));
-    ul.appendChild(_mkRow('자신만 보기', '', function () { doBatchVisibility('self'); }));
-    ul.appendChild(_mkRow('자신 외에 공개', 'W', function () { doBatchVisibility('except-self'); }));
+    // 공개 설정: 스크린 전용 (마커에 visible/closed/withoutOwner 없음)
+    ul.appendChild(_mkRow('전체 공개하기', 'O', function () { doBatchVisibility('public'); }, { disabled: !hasScreens }));
+    ul.appendChild(_mkRow('비공개로 하기', 'T', function () { doBatchVisibility('private'); }, { disabled: !hasScreens }));
+    ul.appendChild(_mkRow('자신만 보기', '', function () { doBatchVisibility('self'); }, { disabled: !hasScreens }));
+    ul.appendChild(_mkRow('자신 외에 공개', 'W', function () { doBatchVisibility('except-self'); }, { disabled: !hasScreens }));
     ul.appendChild(_mkDivider());
     ul.appendChild(_mkRow('회전', 'R / Shift+R', function () { doBatchRotate(90); }));
     ul.appendChild(_mkDivider());
@@ -529,68 +603,88 @@
   }
 
   // ============================================================
-  //  Batch Operations
+  //  Batch Operations — 스크린/마커 자동 분리
   // ============================================================
+
+  /** 선택된 아이템을 source별로 분리: { screenIds: [...], markerIds: [...] } */
+  function getSelectedIdsBySource() {
+    var screenIds = [], markerIds = [];
+    _selectedItems.forEach(function (item) {
+      if (!item._id) return;
+      if (item._source === 'marker') markerIds.push(item._id);
+      else screenIds.push(item._id);
+    });
+    return { screenIds: screenIds, markerIds: markerIds };
+  }
 
   function getSelectedIds() {
     var ids = [];
-    _selectedItems.forEach(function (item) {
-      if (item._id) ids.push(item._id);
-    });
+    _selectedItems.forEach(function (item) { if (item._id) ids.push(item._id); });
     return ids;
   }
 
   function doBatchLock() {
-    var ids = getSelectedIds();
-    if (!ids.length) return;
-    batchOp('lock', ids).then(function () {
-      console.log('[CE Multi-Select] ' + ids.length + '개 위치 고정 전환');
-      // 캐시된 locked 상태 토글
+    var s = getSelectedIdsBySource();
+    var promises = [];
+    if (s.screenIds.length) promises.push(batchOp('lock', s.screenIds));
+    if (s.markerIds.length) promises.push(markerBatchOp('lock', s.markerIds));
+    Promise.all(promises).then(function () {
+      console.log('[CE MS] 위치 고정 전환 (스크린:' + s.screenIds.length + ' 마커:' + s.markerIds.length + ')');
       _selectedItems.forEach(function (item) { item.locked = !item.locked; });
-    }).catch(function (e) { console.error('[CE Multi-Select] lock:', e); });
+    }).catch(function (e) { console.error('[CE MS] lock:', e); });
   }
 
   function doBatchToggleActive() {
-    var ids = getSelectedIds();
-    if (!ids.length) return;
-    batchOp('toggleActive', ids).then(function () {
-      console.log('[CE Multi-Select] ' + ids.length + '개 활성 전환');
+    // 마커에는 active 개념 없음 → 스크린만
+    var s = getSelectedIdsBySource();
+    if (!s.screenIds.length) return;
+    batchOp('toggleActive', s.screenIds).then(function () {
+      console.log('[CE MS] ' + s.screenIds.length + '개 활성 전환');
       clearSelection();
-    }).catch(function (e) { console.error('[CE Multi-Select] active:', e); });
+    }).catch(function (e) { console.error('[CE MS] active:', e); });
   }
 
   function doBatchVisibility(mode) {
-    var ids = getSelectedIds();
-    if (!ids.length) return;
-    batchOp('setVisibility', ids, { mode: mode }).then(function () {
-      console.log('[CE Multi-Select] ' + ids.length + '개 공개 상태 → ' + mode);
-    }).catch(function (e) { console.error('[CE Multi-Select] visibility:', e); });
+    // 마커에는 visible/closed/withoutOwner 없음 → 스크린만
+    var s = getSelectedIdsBySource();
+    console.log('[CE MS] doBatchVisibility mode=' + mode + ' screenIds=' + s.screenIds.length +
+      ' markerIds=' + s.markerIds.length + ' ids:', s.screenIds);
+    if (!s.screenIds.length) { console.warn('[CE MS] 가시성 변경 대상 스크린 없음'); return; }
+    batchOp('setVisibility', s.screenIds, { mode: mode }).then(function (res) {
+      console.log('[CE MS] 가시성 결과:', res);
+    }).catch(function (e) { console.error('[CE MS] visibility:', e); });
   }
 
   function doBatchRotate(angle) {
-    var ids = getSelectedIds();
-    if (!ids.length) return;
-    batchOp('rotate', ids, { angle: angle }).then(function () {
-      console.log('[CE Multi-Select] ' + ids.length + '개 회전 ' + angle + '°');
-    }).catch(function (e) { console.error('[CE Multi-Select] rotate:', e); });
+    var s = getSelectedIdsBySource();
+    var promises = [];
+    if (s.screenIds.length) promises.push(batchOp('rotate', s.screenIds, { angle: angle }));
+    // 마커 회전은 미지원
+    Promise.all(promises).then(function () {
+      console.log('[CE MS] 회전 ' + angle + '°');
+    }).catch(function (e) { console.error('[CE MS] rotate:', e); });
   }
 
   function doBatchDuplicate() {
-    var ids = getSelectedIds();
-    if (!ids.length) return;
-    batchOp('duplicate', ids).then(function () {
-      console.log('[CE Multi-Select] ' + ids.length + '개 복제');
+    var s = getSelectedIdsBySource();
+    var promises = [];
+    if (s.screenIds.length) promises.push(batchOp('duplicate', s.screenIds));
+    if (s.markerIds.length) promises.push(markerBatchOp('duplicate', s.markerIds));
+    Promise.all(promises).then(function () {
+      console.log('[CE MS] 복제 (스크린:' + s.screenIds.length + ' 마커:' + s.markerIds.length + ')');
       clearSelection();
-    }).catch(function (e) { console.error('[CE Multi-Select] duplicate:', e); });
+    }).catch(function (e) { console.error('[CE MS] duplicate:', e); });
   }
 
   function doBatchDelete() {
-    var ids = getSelectedIds();
-    if (!ids.length) return;
-    batchOp('delete', ids).then(function () {
-      console.log('[CE Multi-Select] ' + ids.length + '개 삭제');
+    var s = getSelectedIdsBySource();
+    var promises = [];
+    if (s.screenIds.length) promises.push(batchOp('delete', s.screenIds));
+    if (s.markerIds.length) promises.push(markerBatchOp('delete', s.markerIds));
+    Promise.all(promises).then(function () {
+      console.log('[CE MS] 삭제 (스크린:' + s.screenIds.length + ' 마커:' + s.markerIds.length + ')');
       clearSelection();
-    }).catch(function (e) { console.error('[CE Multi-Select] delete:', e); });
+    }).catch(function (e) { console.error('[CE MS] delete:', e); });
   }
 
   // ============================================================
@@ -660,27 +754,29 @@
       return;
     }
 
-    var ids = getSelectedIds();
-    if (ids.length > 0) {
-      // 이미 선택 시점에 매칭된 _id 를 그대로 사용 (re-matching 불필요)
-      // 드래그 후에는 DOM 위치가 변해 re-match 가 실패하므로 저장된 ID 사용
-      batchOp('move', ids, { dx: dxGrid, dy: dyGrid }).then(function (result) {
-        if (result && result.success) {
-          console.log('[CE Multi-Select] ' + ids.length + '개 이동 (dx:' + dxGrid + ', dy:' + dyGrid + ')');
+    var s = getSelectedIdsBySource();
+    var movePayload = { dx: dxGrid, dy: dyGrid };
+    var promises = [];
+    if (s.screenIds.length) promises.push(batchOp('move', s.screenIds, movePayload));
+    if (s.markerIds.length) promises.push(markerBatchOp('move', s.markerIds, movePayload));
+    if (promises.length > 0) {
+      Promise.all(promises).then(function (results) {
+        var allOk = results.every(function (r) { return r && r.success; });
+        if (allOk) {
+          console.log('[CE MS] 이동 (스크린:' + s.screenIds.length + ' 마커:' + s.markerIds.length + ' dx:' + dxGrid + ' dy:' + dyGrid + ')');
           _selectedItems.forEach(function (item) {
             item.x = (item.x || 0) + dxGrid;
             item.y = (item.y || 0) + dyGrid;
           });
         } else {
-          console.error('[CE Multi-Select] 이동 실패:', result);
-          // 실패 시 시각적 원위치 복원
+          console.error('[CE MS] 이동 일부 실패:', results);
           _selectedItems.forEach(function (_item, el) {
             var init = _groupDragInitial.get(el);
             if (init) el.style.transform = 'translate(' + init.x + 'px, ' + init.y + 'px)';
           });
         }
       }).catch(function (err) {
-        console.error('[CE Multi-Select] 이동 실패:', err);
+        console.error('[CE MS] 이동 실패:', err);
         _selectedItems.forEach(function (_item, el) {
           var init = _groupDragInitial.get(el);
           if (init) el.style.transform = 'translate(' + init.x + 'px, ' + init.y + 'px)';

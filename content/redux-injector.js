@@ -4043,19 +4043,19 @@
   // ================================================================
   //  마커 일괄 조작 (room 문서의 markers 필드 업데이트)
   //  bwbr-marker-batch-op → bwbr-marker-batch-op-result
-  //  op: 'delete' | 'duplicate'
+  //  op: 'delete' | 'duplicate' | 'move' | 'lock'
   // ================================================================
   function _markerBatchHandler() {
     const raw = document.documentElement.getAttribute('data-bwbr-marker-batch-op');
     if (!raw) return;
     document.documentElement.removeAttribute('data-bwbr-marker-batch-op');
-    const { op, ids } = JSON.parse(raw);
-    console.log('[CE] [MarkerBatch] op:', op, 'ids:', ids?.length);
-    _markerBatchHandlerAsync(op, ids);
+    const { op, ids, extra } = JSON.parse(raw);
+    console.log('[CE] [MarkerBatch] op:', op, 'ids:', ids?.length, 'extra:', extra);
+    _markerBatchHandlerAsync(op, ids, extra);
   }
   window.addEventListener('bwbr-marker-batch-op', _markerBatchHandler);
   document.addEventListener('bwbr-marker-batch-op', _markerBatchHandler);
-  async function _markerBatchHandlerAsync(op, ids) {
+  async function _markerBatchHandlerAsync(op, ids, extra) {
 
     const respond = (d) => {
       document.documentElement.setAttribute('data-bwbr-marker-batch-op-result', JSON.stringify(d));
@@ -4111,6 +4111,27 @@
             }
             break;
           }
+          case 'move': {
+            if (!ids?.length) throw new Error('대상 ID 없음');
+            const dx = extra?.dx || 0, dy = extra?.dy || 0;
+            for (const id of ids) {
+              if (!(id in room.markers)) continue;
+              const m = room.markers[id];
+              updateData[`markers.${id}.x`] = (m.x || 0) + dx;
+              updateData[`markers.${id}.y`] = (m.y || 0) + dy;
+              count++;
+            }
+            break;
+          }
+          case 'lock': {
+            if (!ids?.length) throw new Error('대상 ID 없음');
+            for (const id of ids) {
+              if (!(id in room.markers)) continue;
+              updateData[`markers.${id}.locked`] = !room.markers[id].locked;
+              count++;
+            }
+            break;
+          }
           default:
             throw new Error(`알 수 없는 마커 배치 작업: ${op}`);
         }
@@ -4122,9 +4143,9 @@
         throw new Error('writeBatch 미지원 — 마커 조작 불가');
       }
 
-      _dbg(`%c[CE]%c ✅ 마커 ${count}개 ${op === 'delete' ? '삭제' : '복제'}`,
-        op === 'delete' ? 'color: #f44336; font-weight: bold;' : 'color: #2196f3; font-weight: bold;',
-        'color: inherit;');
+      const opNames = { delete: '삭제', duplicate: '복제', move: '이동', lock: '고정전환' };
+      _dbg(`%c[CE]%c ✅ 마커 ${count}개 ${opNames[op] || op}`,
+        'color: #2196f3; font-weight: bold;', 'color: inherit;');
       respond({ success: true, count });
 
     } catch (err) {

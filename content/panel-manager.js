@@ -251,23 +251,51 @@
     s.itemMap.clear();
     const usedIds = new Set();
 
+    // Helper: Redux 아이템의 이미지 pathname 추출
+    function rItemPath(it) {
+      try { return new URL(it.imageUrl).pathname; } catch { return it.imageUrl || ''; }
+    }
+
+    // Phase 1: 이미지 + z/w/h 모두 일치 (가장 강한 매칭)
     for (const domItem of listItems) {
+      if (s.itemMap.has(domItem)) continue;
       const domPath = extractImagePath(domItem);
       const domSec  = parseSecondary(domItem);
-      for (const reduxItem of items) {
-        if (usedIds.has(reduxItem._id)) continue;
-        let rPath = '';
-        try { rPath = new URL(reduxItem.imageUrl).pathname; } catch { rPath = reduxItem.imageUrl || ''; }
-        if (domPath && rPath && domPath === rPath) { s.itemMap.set(domItem, reduxItem); usedIds.add(reduxItem._id); break; }
-        if (domSec && reduxItem.z === domSec.z && reduxItem.width === domSec.w && reduxItem.height === domSec.h) {
-          s.itemMap.set(domItem, reduxItem); usedIds.add(reduxItem._id); break;
+      if (!domPath || !domSec) continue;
+      for (const ri of items) {
+        if (usedIds.has(ri._id)) continue;
+        if (domPath === rItemPath(ri) && ri.z === domSec.z && ri.width === domSec.w && ri.height === domSec.h) {
+          s.itemMap.set(domItem, ri); usedIds.add(ri._id); break;
         }
       }
     }
-    const domIdxMap = [...listItems].map((li, i) => ({ li, i })).filter(x => !s.itemMap.has(x.li));
+    // Phase 2: 이미지만 일치 (z/w/h 없거나 다른 경우)
+    for (const domItem of listItems) {
+      if (s.itemMap.has(domItem)) continue;
+      const domPath = extractImagePath(domItem);
+      if (!domPath) continue;
+      for (const ri of items) {
+        if (usedIds.has(ri._id)) continue;
+        if (domPath === rItemPath(ri)) { s.itemMap.set(domItem, ri); usedIds.add(ri._id); break; }
+      }
+    }
+    // Phase 3: z/w/h만 일치
+    for (const domItem of listItems) {
+      if (s.itemMap.has(domItem)) continue;
+      const domSec = parseSecondary(domItem);
+      if (!domSec) continue;
+      for (const ri of items) {
+        if (usedIds.has(ri._id)) continue;
+        if (ri.z === domSec.z && ri.width === domSec.w && ri.height === domSec.h) {
+          s.itemMap.set(domItem, ri); usedIds.add(ri._id); break;
+        }
+      }
+    }
+    // Phase 4: 순서 기반 폴백
+    const domLeftover = [...listItems].filter(li => !s.itemMap.has(li));
     const reduxLeftover = items.filter(it => !usedIds.has(it._id));
-    for (let k = 0; k < Math.min(domIdxMap.length, reduxLeftover.length); k++) {
-      s.itemMap.set(domIdxMap[k].li, reduxLeftover[k]); usedIds.add(reduxLeftover[k]._id);
+    for (let k = 0; k < Math.min(domLeftover.length, reduxLeftover.length); k++) {
+      s.itemMap.set(domLeftover[k], reduxLeftover[k]); usedIds.add(reduxLeftover[k]._id);
     }
     // 매핑된 DOM 아이템에 data-bwbr-id 부여
     for (const [domItem, data] of s.itemMap) {
