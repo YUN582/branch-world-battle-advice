@@ -3554,6 +3554,65 @@
   });
 
   // ================================================================
+  //  가시성 필드 변경 모니터링 (진단용)
+  //  bwbr-vis-monitor-start → 감시 시작 (Redux subscribe)
+  //  bwbr-vis-monitor-stop  → 감시 중지
+  //  변경 감지 시 → bwbr-vis-change (data-bwbr-vis-change)
+  // ================================================================
+  let _visMonitorUnsub = null;
+  window.addEventListener('bwbr-vis-monitor-start', () => {
+    if (_visMonitorUnsub) { _visMonitorUnsub(); _visMonitorUnsub = null; }
+    if (!reduxStore) { console.error('[CE VIS-MON] Redux store 없음'); return; }
+    const FIELDS = ['visible','closed','withoutOwner','owner','active','locked','freezed','ownerName'];
+    let prev = {};
+    function snap() {
+      const ri = reduxStore.getState().entities?.roomItems;
+      if (!ri?.ids) return {};
+      const s = {};
+      for (const id of ri.ids) {
+        const it = ri.entities[id];
+        if (!it) continue;
+        const f = {};
+        for (const k of FIELDS) f[k] = it[k];
+        s[id] = f;
+      }
+      return s;
+    }
+    prev = snap();
+    const uid = reduxStore.getState().app?.state?.uid || reduxStore.getState().app?.user?.uid || '';
+    console.log('%c[CE VIS-MON]%c ✅ 감시 시작 — roomItems ' + Object.keys(prev).length + '개, uid=' + uid,
+      'color:#ff9800;font-weight:bold', 'color:inherit');
+    _visMonitorUnsub = reduxStore.subscribe(() => {
+      const cur = snap();
+      for (const id in cur) {
+        if (!prev[id]) continue;
+        const changes = {};
+        for (const k of FIELDS) {
+          if (prev[id][k] !== cur[id][k]) changes[k] = { from: prev[id][k], to: cur[id][k] };
+        }
+        if (Object.keys(changes).length > 0) {
+          console.log('%c═══ 필드 변경 감지 ═══', 'color:#ff9800;font-weight:bold;font-size:14px');
+          console.log('아이템 ID:', id);
+          for (const [k, v] of Object.entries(changes)) {
+            console.log('  %c' + k + '%c: %c' + JSON.stringify(v.from) + '%c → %c' + JSON.stringify(v.to),
+              'color:#2196f3;font-weight:bold', 'color:inherit',
+              'color:#f44336', 'color:inherit', 'color:#4caf50');
+          }
+          // bridge로도 전달
+          const el = document.documentElement;
+          el.setAttribute('data-bwbr-vis-change', JSON.stringify({ id, changes }));
+          window.dispatchEvent(new CustomEvent('bwbr-vis-change'));
+        }
+      }
+      prev = cur;
+    });
+  });
+  window.addEventListener('bwbr-vis-monitor-stop', () => {
+    if (_visMonitorUnsub) { _visMonitorUnsub(); _visMonitorUnsub = null; }
+    console.log('[CE VIS-MON] 감시 종료');
+  });
+
+  // ================================================================
   //  시나리오 텍스트(노트) 목록 조회
   //  bwbr-request-note-list → bwbr-note-list-data
   // ================================================================

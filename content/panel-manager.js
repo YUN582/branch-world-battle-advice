@@ -249,54 +249,109 @@
     const s = getState(paper);
     const listItems = getListItems(paper);
     s.itemMap.clear();
-    const usedIds = new Set();
 
     // Helper: Redux 아이템의 이미지 pathname 추출
     function rItemPath(it) {
       try { return new URL(it.imageUrl).pathname; } catch { return it.imageUrl || ''; }
     }
 
-    // Phase 1: 이미지 + z/w/h 모두 일치 (가장 강한 매칭)
-    for (const domItem of listItems) {
-      if (s.itemMap.has(domItem)) continue;
-      const domPath = extractImagePath(domItem);
-      const domSec  = parseSecondary(domItem);
-      if (!domPath || !domSec) continue;
-      for (const ri of items) {
-        if (usedIds.has(ri._id)) continue;
-        if (domPath === rItemPath(ri) && ri.z === domSec.z && ri.width === domSec.w && ri.height === domSec.h) {
-          s.itemMap.set(domItem, ri); usedIds.add(ri._id); break;
+    // 기본 정렬이면 순서 기반 매핑 (가장 안정적)
+    if (!s.sortMode || s.sortMode === 'default') {
+      for (let i = 0; i < Math.min(listItems.length, items.length); i++) {
+        s.itemMap.set(listItems[i], items[i]);
+      }
+    } else {
+      // 커스텀 정렬 시: 점수 기반 매칭 (Hungarian-like greedy)
+      // 각 DOM아이템의 fingerprint 정보 추출
+      const domInfos = listItems.map(li => ({
+        el: li,
+        path: extractImagePath(li),
+        sec: parseSecondary(li)
+      }));
+
+      // 점수 행렬 — domInfos[i] × items[j]
+      const usedJ = new Set();
+      const assignments = new Array(domInfos.length).fill(-1);
+
+      // Pass 1: 이미지+z/w/h 모두 고유한 매칭 (1:1인 경우만)
+      for (let i = 0; i < domInfos.length; i++) {
+        const d = domInfos[i];
+        if (!d.path || !d.sec) continue;
+        const candidates = [];
+        for (let j = 0; j < items.length; j++) {
+          if (usedJ.has(j)) continue;
+          const r = items[j];
+          if (d.path === rItemPath(r) && d.sec.z === r.z && d.sec.w === r.width && d.sec.h === r.height) {
+            candidates.push(j);
+          }
+        }
+        if (candidates.length === 1) {
+          assignments[i] = candidates[0];
+          usedJ.add(candidates[0]);
+        }
+      }
+
+      // Pass 2: 이미지만 고유한 매칭
+      for (let i = 0; i < domInfos.length; i++) {
+        if (assignments[i] >= 0) continue;
+        const d = domInfos[i];
+        if (!d.path) continue;
+        const candidates = [];
+        for (let j = 0; j < items.length; j++) {
+          if (usedJ.has(j)) continue;
+          if (d.path === rItemPath(items[j])) candidates.push(j);
+        }
+        if (candidates.length === 1) {
+          assignments[i] = candidates[0];
+          usedJ.add(candidates[0]);
+        }
+      }
+
+      // Pass 3: 중복 그룹 내 순서 기반 매칭
+      // 같은 fingerprint끼리 그룹 → Redux에서도 같은 fingerprint 그룹 → 순서대로 배정
+      const domGroups = new Map(); // fingerprint → [domIdx]
+      for (let i = 0; i < domInfos.length; i++) {
+        if (assignments[i] >= 0) continue;
+        const d = domInfos[i];
+        const fp = (d.path || '') + '|' + (d.sec ? d.sec.z + ',' + d.sec.w + ',' + d.sec.h : '');
+        if (!domGroups.has(fp)) domGroups.set(fp, []);
+        domGroups.get(fp).push(i);
+      }
+      for (const [fp, domIdxes] of domGroups) {
+        // 같은 fingerprint의 남은 Redux 아이템 찾기
+        const reduxCandidates = [];
+        for (let j = 0; j < items.length; j++) {
+          if (usedJ.has(j)) continue;
+          const r = items[j];
+          const rp = rItemPath(r);
+          const rfp = (rp || '') + '|' + (r.z + ',' + r.width + ',' + r.height);
+          if (rfp === fp || (!domInfos[domIdxes[0]].path && !domInfos[domIdxes[0]].sec)) {
+            reduxCandidates.push(j);
+          }
+        }
+        for (let k = 0; k < Math.min(domIdxes.length, reduxCandidates.length); k++) {
+          assignments[domIdxes[k]] = reduxCandidates[k];
+          usedJ.add(reduxCandidates[k]);
+        }
+      }
+
+      // Pass 4: 최종 폴백 — 남은 것끼리 순서대로
+      const leftDom = [];
+      for (let i = 0; i < assignments.length; i++) { if (assignments[i] < 0) leftDom.push(i); }
+      const leftRedux = [];
+      for (let j = 0; j < items.length; j++) { if (!usedJ.has(j)) leftRedux.push(j); }
+      for (let k = 0; k < Math.min(leftDom.length, leftRedux.length); k++) {
+        assignments[leftDom[k]] = leftRedux[k];
+      }
+
+      // 결과 적용
+      for (let i = 0; i < assignments.length; i++) {
+        if (assignments[i] >= 0) {
+          s.itemMap.set(listItems[i], items[assignments[i]]);
         }
       }
     }
-    // Phase 2: 이미지만 일치 (z/w/h 없거나 다른 경우)
-    for (const domItem of listItems) {
-      if (s.itemMap.has(domItem)) continue;
-      const domPath = extractImagePath(domItem);
-      if (!domPath) continue;
-      for (const ri of items) {
-        if (usedIds.has(ri._id)) continue;
-        if (domPath === rItemPath(ri)) { s.itemMap.set(domItem, ri); usedIds.add(ri._id); break; }
-      }
-    }
-    // Phase 3: z/w/h만 일치
-    for (const domItem of listItems) {
-      if (s.itemMap.has(domItem)) continue;
-      const domSec = parseSecondary(domItem);
-      if (!domSec) continue;
-      for (const ri of items) {
-        if (usedIds.has(ri._id)) continue;
-        if (ri.z === domSec.z && ri.width === domSec.w && ri.height === domSec.h) {
-          s.itemMap.set(domItem, ri); usedIds.add(ri._id); break;
-        }
-      }
-    }
-    // Phase 4: 순서 기반 폴백
-    const domLeftover = [...listItems].filter(li => !s.itemMap.has(li));
-    const reduxLeftover = items.filter(it => !usedIds.has(it._id));
-    for (let k = 0; k < Math.min(domLeftover.length, reduxLeftover.length); k++) {
-      s.itemMap.set(domLeftover[k], reduxLeftover[k]); usedIds.add(reduxLeftover[k]._id);
-    }
+
     // 매핑된 DOM 아이템에 data-bwbr-id 부여
     for (const [domItem, data] of s.itemMap) {
       domItem.dataset.bwbrId = data._id;
