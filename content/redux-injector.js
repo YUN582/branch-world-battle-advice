@@ -3489,6 +3489,7 @@
             }
           }
           for (const id of ids) {
+            // merge:true 이므로 모든 공개 필드를 명시적으로 설정해야 이전 상태 잔류 방지
             let fields = { updatedAt: Date.now() };
             switch (mode) {
               case 'public':
@@ -3499,14 +3500,21 @@
                 break;
               case 'private':
                 fields.closed = true;
+                fields.withoutOwner = false;
+                fields.owner = null;
+                fields.ownerName = null;
                 break;
               case 'self':
                 fields.closed = true;
+                fields.withoutOwner = false;
                 fields.owner = currentUid;
                 fields.ownerName = ownerName;
                 break;
               case 'except-self':
+                fields.closed = false;
                 fields.withoutOwner = true;
+                fields.owner = null;
+                fields.ownerName = null;
                 break;
               default: continue;
             }
