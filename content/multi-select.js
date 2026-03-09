@@ -544,6 +544,12 @@
     var src = getSelectedIdsBySource();
     var hasScreens = src.screenIds.length > 0;
     var hasMarkers = src.markerIds.length > 0;
+    var onlyMarkers = hasMarkers && !hasScreens;
+
+    // freezed 상태 확인 (마커 전용)
+    var allFreezed = true;
+    _selectedItems.forEach(function (item) { if (item._source === 'marker' && !item.freezed) allFreezed = false; });
+    var freezeLabel = allFreezed ? '크기 고정 해제' : '크기 고정';
 
     // 헤더 – 선택 수 + 유형 정보
     var hdr = document.createElement('li');
@@ -559,17 +565,26 @@
     ul.appendChild(hdr);
     ul.appendChild(_mkDivider());
 
+    // ── 공통: 위치 고정 ──
     ul.appendChild(_mkRow(lockLabel, 'L', function () { doBatchLock(); }));
-    // 패널 숨기기: 스크린 전용 (마커에 active 없음)
-    ul.appendChild(_mkRow('패널 숨기기', 'S', function () { doBatchToggleActive(); }, { disabled: !hasScreens }));
-    ul.appendChild(_mkDivider());
-    // 공개 설정: 스크린 전용 (마커에 visible/closed/withoutOwner 없음)
-    ul.appendChild(_mkRow('전체 공개하기', 'O', function () { doBatchVisibility('public'); }, { disabled: !hasScreens }));
-    ul.appendChild(_mkRow('비공개로 하기', 'T', function () { doBatchVisibility('private'); }, { disabled: !hasScreens }));
-    ul.appendChild(_mkRow('자신만 보기', '', function () { doBatchVisibility('self'); }, { disabled: !hasScreens }));
-    ul.appendChild(_mkRow('자신 외에 공개', 'W', function () { doBatchVisibility('except-self'); }, { disabled: !hasScreens }));
-    ul.appendChild(_mkDivider());
-    ul.appendChild(_mkRow('회전', 'R / Shift+R', function () { doBatchRotate(90); }));
+
+    // ── 마커 전용: 크기 고정 ──
+    if (hasMarkers) {
+      ul.appendChild(_mkRow(freezeLabel, 'F', function () { doBatchFreeze(); }));
+    }
+
+    // ── 스크린 전용 항목 ──
+    if (hasScreens) {
+      ul.appendChild(_mkRow('패널 숨기기', 'S', function () { doBatchToggleActive(); }));
+      ul.appendChild(_mkDivider());
+      ul.appendChild(_mkRow('전체 공개하기', 'O', function () { doBatchVisibility('public'); }));
+      ul.appendChild(_mkRow('비공개로 하기', 'T', function () { doBatchVisibility('private'); }));
+      ul.appendChild(_mkRow('자신만 보기', '', function () { doBatchVisibility('self'); }));
+      ul.appendChild(_mkRow('자신 외에 공개', 'W', function () { doBatchVisibility('except-self'); }));
+      ul.appendChild(_mkDivider());
+      ul.appendChild(_mkRow('회전', 'R / Shift+R', function () { doBatchRotate(90); }));
+    }
+
     ul.appendChild(_mkDivider());
     ul.appendChild(_mkRow('복제', 'Ctrl+D', function () { doBatchDuplicate(); }));
     ul.appendChild(_mkRow('삭제', 'Ctrl+⌫', function () { doBatchDelete(); }, { danger: true }));
@@ -632,6 +647,18 @@
       console.log('[CE MS] 위치 고정 전환 (스크린:' + s.screenIds.length + ' 마커:' + s.markerIds.length + ')');
       _selectedItems.forEach(function (item) { item.locked = !item.locked; });
     }).catch(function (e) { console.error('[CE MS] lock:', e); });
+  }
+
+  function doBatchFreeze() {
+    // 크기 고정: 마커 전용 (freezed 필드)
+    var s = getSelectedIdsBySource();
+    if (!s.markerIds.length) return;
+    markerBatchOp('freeze', s.markerIds).then(function () {
+      console.log('[CE MS] 크기 고정 전환 마커:' + s.markerIds.length);
+      _selectedItems.forEach(function (item) {
+        if (item._source === 'marker') item.freezed = !item.freezed;
+      });
+    }).catch(function (e) { console.error('[CE MS] freeze:', e); });
   }
 
   function doBatchToggleActive() {
@@ -894,6 +921,8 @@
     switch (e.key.toUpperCase()) {
       case 'L':
         e.preventDefault(); doBatchLock(); break;
+      case 'F':
+        e.preventDefault(); doBatchFreeze(); break;
       case 'S':
         e.preventDefault(); doBatchToggleActive(); break;
       case 'O':

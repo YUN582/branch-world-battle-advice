@@ -4132,6 +4132,15 @@
             }
             break;
           }
+          case 'freeze': {
+            if (!ids?.length) throw new Error('대상 ID 없음');
+            for (const id of ids) {
+              if (!(id in room.markers)) continue;
+              updateData[`markers.${id}.freezed`] = !room.markers[id].freezed;
+              count++;
+            }
+            break;
+          }
           default:
             throw new Error(`알 수 없는 마커 배치 작업: ${op}`);
         }
@@ -4143,7 +4152,7 @@
         throw new Error('writeBatch 미지원 — 마커 조작 불가');
       }
 
-      const opNames = { delete: '삭제', duplicate: '복제', move: '이동', lock: '고정전환' };
+      const opNames = { delete: '삭제', duplicate: '복제', move: '이동', lock: '고정전환', freeze: '크기고정전환' };
       _dbg(`%c[CE]%c ✅ 마커 ${count}개 ${opNames[op] || op}`,
         'color: #2196f3; font-weight: bold;', 'color: inherit;');
       respond({ success: true, count });
