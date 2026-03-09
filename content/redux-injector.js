@@ -3524,6 +3524,34 @@
   }
 
   // ================================================================
+  //  다중 선택: 아이템 공개 필드 진단
+  //  bwbr-ms-inspect-item → bwbr-ms-inspect-item-result
+  //  { itemId } → { visible, closed, withoutOwner, owner, active, locked, ... }
+  // ================================================================
+  window.addEventListener('bwbr-ms-inspect-item', () => {
+    const el = document.documentElement;
+    const raw = el.getAttribute('data-bwbr-ms-inspect-item');
+    el.removeAttribute('data-bwbr-ms-inspect-item');
+    const { itemId } = raw ? JSON.parse(raw) : {};
+    const respond = (d) => {
+      el.setAttribute('data-bwbr-ms-inspect-item-result', JSON.stringify(d));
+      window.dispatchEvent(new CustomEvent('bwbr-ms-inspect-item-result'));
+    };
+    if (!reduxStore || !itemId) return respond({ error: 'no store or id' });
+    const state = reduxStore.getState();
+    const it = state.entities?.roomItems?.entities?.[itemId];
+    if (!it) return respond({ error: 'item not found: ' + itemId });
+    const uid = state.app?.state?.uid || state.app?.user?.uid || '';
+    respond({
+      _id: it._id, type: it.type,
+      visible: it.visible, closed: it.closed,
+      withoutOwner: it.withoutOwner, owner: it.owner,
+      active: it.active, locked: it.locked,
+      currentUid: uid
+    });
+  });
+
+  // ================================================================
   //  시나리오 텍스트(노트) 목록 조회
   //  bwbr-request-note-list → bwbr-note-list-data
   // ================================================================

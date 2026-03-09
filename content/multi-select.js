@@ -118,10 +118,27 @@
     return best;
   }
 
-  /** 보드 영역(zoom 컨테이너) 안 요소인지 확인 */
-  function isOnBoard(el) {
-    var zoom = getZoomContainer();
-    return zoom ? zoom.contains(el) : false;
+  /** UI 요소(다이얼로그, 패널, 입력 등)인지 판별 — true면 선택 시작 금지 */
+  function isUIElement(el) {
+    if (!el) return true;
+    // 이미 열린 컨텍스트 메뉴
+    if (_ctxMenuEl && _ctxMenuEl.contains(el)) return true;
+    var cur = el;
+    while (cur && cur !== document.body) {
+      // MUI 다이얼로그, 팝오버, 드로어, 채팅 입력 등
+      if (cur.classList && (
+          cur.classList.contains('MuiDialog-root') ||
+          cur.classList.contains('MuiPopover-root') ||
+          cur.classList.contains('MuiDrawer-root') ||
+          cur.classList.contains('MuiPaper-root')))
+        return true;
+      // 채팅/입력 영역
+      var tag = (cur.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return true;
+      if (cur.getAttribute && cur.getAttribute('role') === 'dialog') return true;
+      cur = cur.parentElement;
+    }
+    return false;
   }
 
   // ============================================================
@@ -212,10 +229,17 @@
   //  Selection — Visual Feedback
   // ============================================================
 
-  function highlightEl(el) {
-    el.style.outline = '2px dashed rgba(33,150,243,0.85)';
+  // 스크린(object)=파랑, 마커(plane)=주황
+  var COLOR_SCREEN = 'rgba(33,150,243,0.85)'; // #2196F3
+  var COLOR_MARKER = 'rgba(255,152,0,0.85)';  // #FF9800
+  var COLOR_SCREEN_BG = 'rgba(33,150,243,0.08)';
+  var COLOR_MARKER_BG = 'rgba(255,152,0,0.08)';
+
+  function highlightEl(el, type) {
+    var c = (type === 'plane') ? COLOR_MARKER : COLOR_SCREEN;
+    el.style.outline = '2px dashed ' + c;
     el.style.outlineOffset = '2px';
-    el.setAttribute('data-bwbr-multisel', '');
+    el.setAttribute('data-bwbr-multisel', type || 'object');
   }
 
   function unhighlightEl(el) {
@@ -234,12 +258,16 @@
   //  Selection Rectangle
   // ============================================================
 
-  function createSelectionRect() {
+  function createSelectionRect(modifier) {
     var r = document.createElement('div');
     r.id = 'bwbr-multisel-rect';
+    var isMarker = modifier === 'ctrl';
+    var bColor = isMarker ? COLOR_MARKER : COLOR_SCREEN;
+    var bgColor = isMarker ? COLOR_MARKER_BG : COLOR_SCREEN_BG;
+    if (modifier === 'ctrlalt') { bColor = 'rgba(156,39,176,0.8)'; bgColor = 'rgba(156,39,176,0.08)'; }
     r.style.cssText =
-      'position:fixed;border:2px dashed rgba(33,150,243,0.8);' +
-      'background:rgba(33,150,243,0.08);z-index:1300;pointer-events:none;';
+      'position:fixed;border:2px dashed ' + bColor + ';' +
+      'background:' + bgColor + ';z-index:1300;pointer-events:none;';
     document.body.appendChild(r);
     return r;
   }
@@ -279,7 +307,7 @@
         if (modifier === 'ctrl' && item.type !== 'plane') continue;
         // 'ctrlalt' → 필터 없음
         _selectedItems.set(el, item);
-        highlightEl(el);
+        highlightEl(el, item.type);
       }
       if (_selectedItems.size > 0) {
         console.log('[CE Multi-Select] ' + _selectedItems.size + '개 아이템 선택됨');
@@ -302,20 +330,25 @@
 
   function _mkRow(label, shortcut, action, opts) {
     opts = opts || {};
-    var row = document.createElement('div');
+    var row = document.createElement('li');
+    row.setAttribute('role', 'menuitem');
+    row.setAttribute('tabindex', '-1');
     row.style.cssText =
       'display:flex;align-items:center;justify-content:space-between;' +
-      'padding:6px 16px;cursor:pointer;white-space:nowrap;' +
-      (opts.danger ? 'color:#ef5350;' : '') +
+      'padding:6px 16px;min-height:36px;cursor:pointer;white-space:nowrap;' +
+      'list-style:none;font-size:14px;line-height:1.5;letter-spacing:0.00938em;' +
+      'box-sizing:border-box;position:relative;overflow:hidden;' +
+      (opts.danger ? 'color:#ef5350;' : 'color:rgba(255,255,255,0.87);') +
       (opts.disabled ? 'opacity:0.38;pointer-events:none;' : '');
     row.onmouseenter = function () { if (!opts.disabled) row.style.background = 'rgba(255,255,255,0.08)'; };
     row.onmouseleave = function () { row.style.background = ''; };
     var lbl = document.createElement('span');
     lbl.textContent = label;
+    lbl.style.flex = '1';
     row.appendChild(lbl);
     if (shortcut) {
       var sc = document.createElement('span');
-      sc.style.cssText = 'color:rgba(255,255,255,0.45);font-size:12px;margin-left:32px;';
+      sc.style.cssText = 'color:rgba(255,255,255,0.38);font-size:13px;margin-left:24px;';
       sc.textContent = shortcut;
       row.appendChild(sc);
     }
@@ -330,8 +363,10 @@
   }
 
   function _mkDivider() {
-    var d = document.createElement('div');
-    d.style.cssText = 'height:1px;background:rgba(255,255,255,0.12);margin:4px 0;';
+    var d = document.createElement('li');
+    d.setAttribute('role', 'separator');
+    d.style.cssText = 'height:0;margin:0;border:0;list-style:none;' +
+      'border-bottom:1px solid rgba(255,255,255,0.12);margin:4px 0;';
     return d;
   }
 
@@ -340,24 +375,33 @@
     var count = _selectedItems.size;
     if (count === 0) return;
 
+    // 선택된 아이템들의 locked 상태 확인
+    var allLocked = true;
+    _selectedItems.forEach(function (item) { if (!item.locked) allLocked = false; });
+    var lockLabel = allLocked ? '위치 고정 해제' : '위치 고정';
+
     var menu = document.createElement('div');
     menu.id = 'bwbr-multisel-ctx';
+    menu.setAttribute('role', 'menu');
     menu.style.cssText =
-      'position:fixed;z-index:1400;background:#303030;border-radius:4px;' +
-      'padding:8px 0;min-width:220px;box-shadow:0 4px 20px rgba(0,0,0,0.5);' +
-      'font-family:"Roboto","Noto Sans KR",sans-serif;font-size:14px;color:#fff;' +
-      'user-select:none;';
+      'position:fixed;z-index:1400;background-color:#303030;border-radius:4px;' +
+      'padding:8px 0;min-width:200px;max-width:320px;' +
+      'box-shadow:0px 5px 5px -3px rgba(0,0,0,0.2), 0px 8px 10px 1px rgba(0,0,0,0.14), 0px 3px 14px 2px rgba(0,0,0,0.12);' +
+      'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans KR","Helvetica Neue",Arial,sans-serif;' +
+      'font-size:14px;color:rgba(255,255,255,0.87);user-select:none;outline:0;' +
+      'overflow:auto;';
 
     // 헤더 – 선택 수
-    var hdr = document.createElement('div');
-    hdr.style.cssText = 'padding:4px 16px 6px;color:#90caf9;font-size:12px;';
+    var hdr = document.createElement('li');
+    hdr.setAttribute('role', 'presentation');
+    hdr.style.cssText = 'padding:4px 16px 6px;color:#90caf9;font-size:12px;list-style:none;cursor:default;';
     hdr.textContent = count + '개 선택됨';
     menu.appendChild(hdr);
     menu.appendChild(_mkDivider());
 
     var single = count === 1;
     menu.appendChild(_mkRow('편집', '', function () { triggerNativeEdit(); }, { disabled: !single }));
-    menu.appendChild(_mkRow('위치 고정', 'L', function () { doBatchLock(); }));
+    menu.appendChild(_mkRow(lockLabel, 'L', function () { doBatchLock(); }));
     menu.appendChild(_mkRow('전투이동', '', null, { disabled: true }));
     menu.appendChild(_mkRow('패널 숨기기', 'S', function () { doBatchToggleActive(); }));
     menu.appendChild(_mkDivider());
@@ -404,6 +448,8 @@
     if (!ids.length) return;
     batchOp('lock', ids).then(function () {
       console.log('[CE Multi-Select] ' + ids.length + '개 위치 고정 전환');
+      // 캐시된 locked 상태 토글
+      _selectedItems.forEach(function (item) { item.locked = !item.locked; });
     }).catch(function (e) { console.error('[CE Multi-Select] lock:', e); });
   }
 
@@ -528,16 +574,32 @@
 
     var ids = getSelectedIds();
     if (ids.length > 0) {
-      batchOp('move', ids, { dx: dxGrid, dy: dyGrid }).then(function () {
-        console.log('[CE Multi-Select] ' + ids.length + '개 이동 (dx:' + dxGrid + ', dy:' + dyGrid + ')');
-        // 캐시 갱신
-        _selectedItems.forEach(function (item) {
-          item.x = (item.x || 0) + dxGrid;
-          item.y = (item.y || 0) + dyGrid;
+      // 이동 전에 아이템 캐시를 갱신하여 최신 _id 확인 (복제 후 이동 대응)
+      _itemsCacheTime = 0;  // 캐시 무효화
+      requestRoomItems().then(function (freshItems) {
+        // 선택된 요소들의 _id를 갱신된 데이터로 재매칭
+        var freshIds = [];
+        _selectedItems.forEach(function (oldItem, el) {
+          var matched = matchMovableToItem(el, freshItems);
+          if (matched) {
+            _selectedItems.set(el, matched); // 최신 데이터로 교체
+            freshIds.push(matched._id);
+          } else if (oldItem._id) {
+            freshIds.push(oldItem._id);
+          }
         });
+        if (freshIds.length === 0) return;
+        return batchOp('move', freshIds, { dx: dxGrid, dy: dyGrid });
+      }).then(function (result) {
+        if (result) {
+          console.log('[CE Multi-Select] ' + ids.length + '개 이동 (dx:' + dxGrid + ', dy:' + dyGrid + ')');
+          _selectedItems.forEach(function (item) {
+            item.x = (item.x || 0) + dxGrid;
+            item.y = (item.y || 0) + dyGrid;
+          });
+        }
       }).catch(function (err) {
         console.error('[CE Multi-Select] 이동 실패:', err);
-        // 원위치 복원
         _selectedItems.forEach(function (_item, el) {
           var init = _groupDragInitial.get(el);
           if (init) el.style.transform = 'translate(' + init.x + 'px, ' + init.y + 'px)';
@@ -564,13 +626,13 @@
     var isCtrl = !e.altKey && e.ctrlKey;
     var isCtrlAlt = e.altKey && e.ctrlKey;
 
-    // ── 선택 모드 시작 ──
-    if ((isAlt || isCtrl || isCtrlAlt) && e.button === 0 && isOnBoard(e.target)) {
+    // ── 선택 모드 시작 (UI 요소 위가 아닌 모든 곳에서 가능) ──
+    if ((isAlt || isCtrl || isCtrlAlt) && e.button === 0 && !isUIElement(e.target)) {
       _isSelecting = true;
       _selectModifier = isCtrlAlt ? 'ctrlalt' : (isAlt ? 'alt' : 'ctrl');
       _selectStart = { x: e.clientX, y: e.clientY };
       clearSelection();
-      _selectRectEl = createSelectionRect();
+      _selectRectEl = createSelectionRect(_selectModifier);
       updateSelectionRect(_selectRectEl, _selectStart, _selectStart);
       e.preventDefault();
       e.stopPropagation();
@@ -582,10 +644,10 @@
       if (startGroupDrag(e)) return;
     }
 
-    // ── 보드 빈 곳 클릭 → 선택 해제 ──
+    // ── 빈 곳 클릭 → 선택 해제 ──
     if (_selectedItems.size > 0 && e.button === 0 && !e.altKey && !e.ctrlKey) {
       var mv = findTopMovable(e.target);
-      if (isOnBoard(e.target) && !mv) {
+      if (!mv && !isUIElement(e.target)) {
         clearSelection();
       }
     }
