@@ -194,35 +194,65 @@
   }
 
   // ============================================================
-  //  DOM ↔ Redux Item Matching
+  //  DOM ↔ Redux Item Matching (bipartite, scored)
   // ============================================================
 
-  function matchMovableToItem(movableEl, items) {
-    var domUrl = normalizeStoragePath(extractImageUrl(movableEl));
-    var domPos = extractTransform(movableEl);
-    var gridX = Math.round(domPos.x / NATIVE_CELL);
-    var gridY = Math.round(domPos.y / NATIVE_CELL);
+  /**
+   * 모든 intersecting DOM 요소를 한 번에 Redux items에 매칭합니다.
+   * usedIds 를 통해 중복 매칭을 방지합니다.
+   * @param {Element[]} movables  DOM .movable 요소 배열
+   * @param {Object[]}  items     Redux roomItems (requestRoomItems 결과)
+   * @returns {Map<Element, Object>}  el → item 매핑
+   */
+  function matchMovablesToItems(movables, items) {
+    var result = new Map();
+    var usedIds = new Set();
 
-    // 1) imageUrl 매칭
-    if (domUrl) {
-      var urlMatches = items.filter(function (it) {
-        return normalizeStoragePath(it.imageUrl) === domUrl;
-      });
-      if (urlMatches.length === 1) return urlMatches[0];
-      if (urlMatches.length > 1) {
-        // 같은 이미지가 복수일 때 위치로 구분
-        var posMatch = urlMatches.find(function (it) {
-          return it.x === gridX && it.y === gridY;
-        });
-        return posMatch || urlMatches[0];
+    // 각 movable 에 대해 최고 점수 item 을 찾는다
+    for (var i = 0; i < movables.length; i++) {
+      var el = movables[i];
+      var domUrl = normalizeStoragePath(extractImageUrl(el));
+      var domPos = extractTransform(el);
+      var gridX = Math.round(domPos.x / NATIVE_CELL);
+      var gridY = Math.round(domPos.y / NATIVE_CELL);
+      var domW = Math.round((parseInt(el.style.width, 10) || el.offsetWidth) / NATIVE_CELL);
+      var domH = Math.round((parseInt(el.style.height, 10) || el.offsetHeight) / NATIVE_CELL);
+
+      var bestItem = null;
+      var bestScore = -1;
+
+      for (var j = 0; j < items.length; j++) {
+        var it = items[j];
+        if (usedIds.has(it._id)) continue;
+
+        var score = 0;
+        // 위치 일치 (±1 허용)
+        if (it.x === gridX && it.y === gridY) score += 100;
+        else if (Math.abs(it.x - gridX) <= 1 && Math.abs(it.y - gridY) <= 1) score += 30;
+        else continue;  // 위치가 너무 다르면 후보 제외
+
+        // 이미지 URL 일치
+        if (domUrl && normalizeStoragePath(it.imageUrl) === domUrl) score += 200;
+
+        // 크기 일치
+        if (domW > 0 && domH > 0) {
+          var iw = it.width || 0, ih = it.height || 0;
+          if (iw === domW && ih === domH) score += 50;
+          else if (Math.abs(iw - domW) <= 1 && Math.abs(ih - domH) <= 1) score += 20;
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestItem = it;
+        }
+      }
+
+      if (bestItem && bestScore >= 30) {
+        usedIds.add(bestItem._id);
+        result.set(el, bestItem);
       }
     }
-
-    // 2) 위치 매칭 (폴백)
-    var posFallback = items.find(function (it) {
-      return it.x === gridX && it.y === gridY;
-    });
-    return posFallback || null;
+    return result;
   }
 
   // ============================================================
@@ -298,19 +328,17 @@
     if (intersecting.length === 0) return;
 
     requestRoomItems().then(function (items) {
-      for (var i = 0; i < intersecting.length; i++) {
-        var el = intersecting[i];
-        var item = matchMovableToItem(el, items);
-        if (!item) continue;
+      var matchMap = matchMovablesToItems(intersecting, items);
+      matchMap.forEach(function (item, el) {
         // 수식키에 따른 타입 필터
-        if (modifier === 'alt' && item.type !== 'object') continue;
-        if (modifier === 'ctrl' && item.type !== 'plane') continue;
+        if (modifier === 'alt' && item.type !== 'object') return;
+        if (modifier === 'ctrl' && item.type !== 'plane') return;
         // 'ctrlalt' → 필터 없음
         _selectedItems.set(el, item);
         highlightEl(el, item.type);
-      }
+      });
       if (_selectedItems.size > 0) {
-        console.log('[CE Multi-Select] ' + _selectedItems.size + '개 아이템 선택됨');
+        console.log('[CE Multi-Select] ' + _selectedItems.size + '개 아이템 선택됨 (총 후보: ' + intersecting.length + ', 매칭: ' + matchMap.size + ')');
       }
     });
   }
@@ -321,11 +349,6 @@
 
   function removeContextMenu() {
     if (_ctxMenuEl) { _ctxMenuEl.remove(); _ctxMenuEl = null; }
-    document.removeEventListener('pointerdown', _closeCtxOnOutside, true);
-  }
-
-  function _closeCtxOnOutside(e) {
-    if (_ctxMenuEl && !_ctxMenuEl.contains(e.target)) removeContextMenu();
   }
 
   function _mkRow(label, shortcut, action, opts) {
@@ -333,22 +356,27 @@
     var row = document.createElement('li');
     row.setAttribute('role', 'menuitem');
     row.setAttribute('tabindex', '-1');
+    row.className = 'bwbr-ms-menuitem';
     row.style.cssText =
       'display:flex;align-items:center;justify-content:space-between;' +
-      'padding:6px 16px;min-height:36px;cursor:pointer;white-space:nowrap;' +
-      'list-style:none;font-size:14px;line-height:1.5;letter-spacing:0.00938em;' +
+      'padding:4px 16px;min-height:32px;cursor:pointer;white-space:nowrap;' +
+      'list-style:none;font-family:Roboto,Helvetica,Arial,sans-serif;' +
+      'font-size:14px;font-weight:400;line-height:20.02px;' +
+      'letter-spacing:0.14994px;' +
       'box-sizing:border-box;position:relative;overflow:hidden;' +
-      (opts.danger ? 'color:#ef5350;' : 'color:rgba(255,255,255,0.87);') +
+      'transition:background-color 150ms cubic-bezier(0.4,0,0.2,1) 0ms;' +
+      '-webkit-tap-highlight-color:transparent;' +
+      (opts.danger ? 'color:#ef5350;' : 'color:rgb(255,255,255);') +
       (opts.disabled ? 'opacity:0.38;pointer-events:none;' : '');
-    row.onmouseenter = function () { if (!opts.disabled) row.style.background = 'rgba(255,255,255,0.08)'; };
-    row.onmouseleave = function () { row.style.background = ''; };
+    row.onmouseenter = function () { if (!opts.disabled) row.style.backgroundColor = 'rgba(255,255,255,0.08)'; };
+    row.onmouseleave = function () { row.style.backgroundColor = ''; };
     var lbl = document.createElement('span');
     lbl.textContent = label;
     lbl.style.flex = '1';
     row.appendChild(lbl);
     if (shortcut) {
       var sc = document.createElement('span');
-      sc.style.cssText = 'color:rgba(255,255,255,0.38);font-size:13px;margin-left:24px;';
+      sc.style.cssText = 'color:rgba(255,255,255,0.3);font-size:12px;margin-left:24px;';
       sc.textContent = shortcut;
       row.appendChild(sc);
     }
@@ -365,8 +393,8 @@
   function _mkDivider() {
     var d = document.createElement('li');
     d.setAttribute('role', 'separator');
-    d.style.cssText = 'height:0;margin:0;border:0;list-style:none;' +
-      'border-bottom:1px solid rgba(255,255,255,0.12);margin:4px 0;';
+    d.style.cssText = 'height:0;margin:4px 0;padding:0;border:0;list-style:none;' +
+      'border-bottom:1px solid rgba(255,255,255,0.12);';
     return d;
   }
 
@@ -380,55 +408,86 @@
     _selectedItems.forEach(function (item) { if (!item.locked) allLocked = false; });
     var lockLabel = allLocked ? '위치 고정 해제' : '위치 고정';
 
-    var menu = document.createElement('div');
-    menu.id = 'bwbr-multisel-ctx';
-    menu.setAttribute('role', 'menu');
-    menu.style.cssText =
-      'position:fixed;z-index:1400;background-color:#303030;border-radius:4px;' +
-      'padding:8px 0;min-width:200px;max-width:320px;' +
-      'box-shadow:0px 5px 5px -3px rgba(0,0,0,0.2), 0px 8px 10px 1px rgba(0,0,0,0.14), 0px 3px 14px 2px rgba(0,0,0,0.12);' +
-      'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans KR","Helvetica Neue",Arial,sans-serif;' +
-      'font-size:14px;color:rgba(255,255,255,0.87);user-select:none;outline:0;' +
-      'overflow:auto;';
+    // ── Backdrop (투명, 클릭으로 메뉴 닫기) ──
+    var backdrop = document.createElement('div');
+    backdrop.style.cssText =
+      'position:fixed;inset:0;z-index:1300;background-color:transparent;';
+    backdrop.addEventListener('pointerdown', function (e) {
+      e.stopPropagation();
+      removeContextMenu();
+    });
+
+    // ── Menu Paper (MUI elevation-8 스타일) ──
+    var paper = document.createElement('div');
+    paper.style.cssText =
+      'position:fixed;z-index:1300;' +
+      'background-color:rgba(44,44,44,0.87);border-radius:4px;' +
+      'box-shadow:0px 5px 5px -3px rgba(0,0,0,0.2),' +
+      '0px 8px 10px 1px rgba(0,0,0,0.14),' +
+      '0px 3px 14px 2px rgba(0,0,0,0.12);' +
+      'outline:0;overflow:auto;' +
+      'opacity:0;transform:scale(0.75);transform-origin:top left;' +
+      'transition:opacity 251ms cubic-bezier(0.4,0,0.2,1) 0ms,' +
+      'transform 167ms cubic-bezier(0.4,0,0.2,1) 0ms;';
+
+    var ul = document.createElement('ul');
+    ul.setAttribute('role', 'menu');
+    ul.style.cssText =
+      'list-style:none;margin:0;padding:8px 0;outline:0;' +
+      'min-width:200px;max-width:320px;';
+    paper.appendChild(ul);
 
     // 헤더 – 선택 수
     var hdr = document.createElement('li');
     hdr.setAttribute('role', 'presentation');
-    hdr.style.cssText = 'padding:4px 16px 6px;color:#90caf9;font-size:12px;list-style:none;cursor:default;';
+    hdr.style.cssText =
+      'padding:4px 16px 6px;color:#90caf9;font-size:12px;' +
+      'font-family:Roboto,Helvetica,Arial,sans-serif;' +
+      'list-style:none;cursor:default;';
     hdr.textContent = count + '개 선택됨';
-    menu.appendChild(hdr);
-    menu.appendChild(_mkDivider());
+    ul.appendChild(hdr);
+    ul.appendChild(_mkDivider());
 
     var single = count === 1;
-    menu.appendChild(_mkRow('편집', '', function () { triggerNativeEdit(); }, { disabled: !single }));
-    menu.appendChild(_mkRow(lockLabel, 'L', function () { doBatchLock(); }));
-    menu.appendChild(_mkRow('전투이동', '', null, { disabled: true }));
-    menu.appendChild(_mkRow('패널 숨기기', 'S', function () { doBatchToggleActive(); }));
-    menu.appendChild(_mkDivider());
-    menu.appendChild(_mkRow('전체 공개하기', 'O', function () { doBatchVisibility('public'); }));
-    menu.appendChild(_mkRow('비공개로 하기', 'T', function () { doBatchVisibility('private'); }));
-    menu.appendChild(_mkRow('자신만 보기', 'T', function () { doBatchVisibility('self'); }));
-    menu.appendChild(_mkRow('자신 외에 공개', 'W', function () { doBatchVisibility('except-self'); }));
-    menu.appendChild(_mkDivider());
-    menu.appendChild(_mkRow('회전', 'R / Shift+R', function () { doBatchRotate(90); }));
-    menu.appendChild(_mkRow('확대 보기', 'E', null, { disabled: !single }));
-    menu.appendChild(_mkDivider());
-    menu.appendChild(_mkRow('복제', 'Ctrl+D', function () { doBatchDuplicate(); }));
-    menu.appendChild(_mkRow('삭제', 'Ctrl+⌫', function () { doBatchDelete(); }, { danger: true }));
+    ul.appendChild(_mkRow('편집', '', function () { triggerNativeEdit(); }, { disabled: !single }));
+    ul.appendChild(_mkRow(lockLabel, 'L', function () { doBatchLock(); }));
+    ul.appendChild(_mkRow('전투이동', '', null, { disabled: true }));
+    ul.appendChild(_mkRow('패널 숨기기', 'S', function () { doBatchToggleActive(); }));
+    ul.appendChild(_mkDivider());
+    ul.appendChild(_mkRow('전체 공개하기', 'O', function () { doBatchVisibility('public'); }));
+    ul.appendChild(_mkRow('비공개로 하기', 'T', function () { doBatchVisibility('private'); }));
+    ul.appendChild(_mkRow('자신만 보기', '', function () { doBatchVisibility('self'); }));
+    ul.appendChild(_mkRow('자신 외에 공개', 'W', function () { doBatchVisibility('except-self'); }));
+    ul.appendChild(_mkDivider());
+    ul.appendChild(_mkRow('회전', 'R / Shift+R', function () { doBatchRotate(90); }));
+    ul.appendChild(_mkRow('확대 보기', 'E', null, { disabled: !single }));
+    ul.appendChild(_mkDivider());
+    ul.appendChild(_mkRow('복제', 'Ctrl+D', function () { doBatchDuplicate(); }));
+    ul.appendChild(_mkRow('삭제', 'Ctrl+⌫', function () { doBatchDelete(); }, { danger: true }));
 
-    document.body.appendChild(menu);
+    // ── 컨테이너 (Popover 역할) ──
+    var container = document.createElement('div');
+    container.id = 'bwbr-multisel-ctx';
+    container.style.cssText = 'position:fixed;inset:0;z-index:1300;';
+    container.appendChild(backdrop);
+    container.appendChild(paper);
+    document.body.appendChild(container);
 
     // 화면 밖 넘침 보정
-    var mr = menu.getBoundingClientRect();
-    if (x + mr.width > window.innerWidth) x = window.innerWidth - mr.width - 8;
-    if (y + mr.height > window.innerHeight) y = window.innerHeight - mr.height - 8;
-    menu.style.left = Math.max(0, x) + 'px';
-    menu.style.top = Math.max(0, y) + 'px';
+    paper.style.left = x + 'px';
+    paper.style.top = y + 'px';
+    // 렌더 후 크기 확인
+    requestAnimationFrame(function () {
+      var pr = paper.getBoundingClientRect();
+      if (x + pr.width > window.innerWidth) paper.style.left = Math.max(0, window.innerWidth - pr.width - 8) + 'px';
+      if (y + pr.height > window.innerHeight) paper.style.top = Math.max(0, window.innerHeight - pr.height - 8) + 'px';
+      // 애니메이션 시작
+      paper.style.opacity = '1';
+      paper.style.transform = 'scale(1)';
+    });
 
-    _ctxMenuEl = menu;
-    setTimeout(function () {
-      document.addEventListener('pointerdown', _closeCtxOnOutside, true);
-    }, 50);
+    _ctxMenuEl = container;
+    // _closeCtxOnOutside 는 backdrop 이 처리하므로 별도 등록 불필요
   }
 
   // ============================================================
@@ -574,28 +633,21 @@
 
     var ids = getSelectedIds();
     if (ids.length > 0) {
-      // 이동 전에 아이템 캐시를 갱신하여 최신 _id 확인 (복제 후 이동 대응)
-      _itemsCacheTime = 0;  // 캐시 무효화
-      requestRoomItems().then(function (freshItems) {
-        // 선택된 요소들의 _id를 갱신된 데이터로 재매칭
-        var freshIds = [];
-        _selectedItems.forEach(function (oldItem, el) {
-          var matched = matchMovableToItem(el, freshItems);
-          if (matched) {
-            _selectedItems.set(el, matched); // 최신 데이터로 교체
-            freshIds.push(matched._id);
-          } else if (oldItem._id) {
-            freshIds.push(oldItem._id);
-          }
-        });
-        if (freshIds.length === 0) return;
-        return batchOp('move', freshIds, { dx: dxGrid, dy: dyGrid });
-      }).then(function (result) {
-        if (result) {
+      // 이미 선택 시점에 매칭된 _id 를 그대로 사용 (re-matching 불필요)
+      // 드래그 후에는 DOM 위치가 변해 re-match 가 실패하므로 저장된 ID 사용
+      batchOp('move', ids, { dx: dxGrid, dy: dyGrid }).then(function (result) {
+        if (result && result.success) {
           console.log('[CE Multi-Select] ' + ids.length + '개 이동 (dx:' + dxGrid + ', dy:' + dyGrid + ')');
           _selectedItems.forEach(function (item) {
             item.x = (item.x || 0) + dxGrid;
             item.y = (item.y || 0) + dyGrid;
+          });
+        } else {
+          console.error('[CE Multi-Select] 이동 실패:', result);
+          // 실패 시 시각적 원위치 복원
+          _selectedItems.forEach(function (_item, el) {
+            var init = _groupDragInitial.get(el);
+            if (init) el.style.transform = 'translate(' + init.x + 'px, ' + init.y + 'px)';
           });
         }
       }).catch(function (err) {
@@ -616,11 +668,8 @@
   // ============================================================
 
   function onPointerDown(e) {
-    // 컨텍스트 메뉴 열린 상태에서 다른 곳 클릭 → 닫기만
-    if (_ctxMenuEl && !_ctxMenuEl.contains(e.target)) {
-      removeContextMenu();
-      // 이벤트는 통과
-    }
+    // 컨텍스트 메뉴가 열려있으면 backdrop 이 닫기를 처리하므로 무시
+    if (_ctxMenuEl && _ctxMenuEl.contains(e.target)) return;
 
     var isAlt = e.altKey && !e.ctrlKey;
     var isCtrl = !e.altKey && e.ctrlKey;
