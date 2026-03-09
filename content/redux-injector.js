@@ -3285,10 +3285,15 @@
         memo:      it.memo || '',
         visible:   !!it.visible,
         active:    !!it.active,
+        locked:    !!it.locked,
         order:     it.order ?? 0,
+        x:         it.x ?? 0,
+        y:         it.y ?? 0,
         z:         it.z ?? 0,
         width:     it.width ?? 0,
         height:    it.height ?? 0,
+        angle:     it.angle ?? 0,
+        owner:     it.owner || '',
         createdAt: it.createdAt || 0
       }));
 
@@ -3408,6 +3413,102 @@
           count = await _batchCommit(sdk, ops);
           _dbg(`%c[CE]%c ✅ 패널 ${count}개 복제`,
             'color: #2196f3; font-weight: bold;', 'color: inherit;');
+          respond({ success: true, count });
+          break;
+        }
+
+        // ── 다중 선택: 일괄 이동 (상대 좌표) ──
+        case 'move': {
+          if (!ids?.length) throw new Error('대상 ID 없음');
+          const dx = updates?.dx || 0;
+          const dy = updates?.dy || 0;
+          const moveOps = [];
+          for (const id of ids) {
+            const item = state.entities?.roomItems?.entities?.[id];
+            if (!item) continue;
+            moveOps.push({
+              type: 'set',
+              ref: sdk.doc(itemsCol, id),
+              data: { x: (item.x || 0) + dx, y: (item.y || 0) + dy, updatedAt: Date.now() },
+              options: { merge: true }
+            });
+          }
+          count = await _batchCommit(sdk, moveOps);
+          _dbg(`%c[CE]%c ✅ 패널 ${count}개 이동 (dx:${dx}, dy:${dy})`,
+            'color: #4caf50; font-weight: bold;', 'color: inherit;');
+          respond({ success: true, count });
+          break;
+        }
+
+        // ── 다중 선택: 위치 고정 토글 ──
+        case 'lock': {
+          if (!ids?.length) throw new Error('대상 ID 없음');
+          const lockOps = [];
+          for (const id of ids) {
+            const item = state.entities?.roomItems?.entities?.[id];
+            if (!item) continue;
+            lockOps.push({
+              type: 'set',
+              ref: sdk.doc(itemsCol, id),
+              data: { locked: !item.locked, updatedAt: Date.now() },
+              options: { merge: true }
+            });
+          }
+          count = await _batchCommit(sdk, lockOps);
+          _dbg(`%c[CE]%c ✅ 패널 ${count}개 위치 고정 전환`,
+            'color: #4caf50; font-weight: bold;', 'color: inherit;');
+          respond({ success: true, count });
+          break;
+        }
+
+        // ── 다중 선택: 공개 상태 설정 ──
+        // updates.mode: 'public' | 'private' | 'self' | 'except-self'
+        case 'setVisibility': {
+          if (!ids?.length) throw new Error('대상 ID 없음');
+          const mode = updates?.mode;
+          const visOps = [];
+          const currentUid = state.app?.state?.uid || '';
+          for (const id of ids) {
+            let fields = { updatedAt: Date.now() };
+            switch (mode) {
+              case 'public':      fields.visible = true;  fields.closed = false; fields.withoutOwner = false; break;
+              case 'private':     fields.visible = false; fields.closed = true;  fields.withoutOwner = false; break;
+              case 'self':        fields.visible = true;  fields.closed = true;  fields.withoutOwner = false; fields.owner = currentUid; break;
+              case 'except-self': fields.visible = true;  fields.closed = false; fields.withoutOwner = true;  break;
+              default: continue;
+            }
+            visOps.push({
+              type: 'set',
+              ref: sdk.doc(itemsCol, id),
+              data: fields,
+              options: { merge: true }
+            });
+          }
+          count = await _batchCommit(sdk, visOps);
+          _dbg(`%c[CE]%c ✅ 패널 ${count}개 공개 상태 → ${mode}`,
+            'color: #4caf50; font-weight: bold;', 'color: inherit;');
+          respond({ success: true, count });
+          break;
+        }
+
+        // ── 다중 선택: 일괄 회전 (상대 각도) ──
+        case 'rotate': {
+          if (!ids?.length) throw new Error('대상 ID 없음');
+          const angleDelta = updates?.angle || 90;
+          const rotOps = [];
+          for (const id of ids) {
+            const item = state.entities?.roomItems?.entities?.[id];
+            if (!item) continue;
+            rotOps.push({
+              type: 'set',
+              ref: sdk.doc(itemsCol, id),
+              data: { angle: ((item.angle || 0) + angleDelta) % 360, updatedAt: Date.now() },
+              options: { merge: true }
+            });
+          }
+          count = await _batchCommit(sdk, rotOps);
+          _dbg(`%c[CE]%c ✅ 패널 ${count}개 회전 (${angleDelta}°)`,
+            'color: #4caf50; font-weight: bold;', 'color: inherit;');
           respond({ success: true, count });
           break;
         }

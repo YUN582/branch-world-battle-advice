@@ -1,0 +1,10 @@
+{
+  "id": "multi-select",
+  "name": "다중 선택 모듈",
+  "version": "1.0.0",
+  "type": "data",
+  "description": "Alt/Ctrl+드래그로 스크린/마커 패널을 다중 선택하고 일괄 조작합니다.",
+  "author": "CE",
+  "tags": ["ui", "selection", "batch"],
+  "minCoreVersion": "1.2.123"
+}
