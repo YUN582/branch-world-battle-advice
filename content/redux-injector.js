@@ -3478,13 +3478,18 @@
 
         // ── 다중 선택: 공개 상태 설정 ──
         // updates.mode: 'public' | 'private' | 'self' | 'except-self'
-        // ★ visible 필드는 건드리지 않음! ccfolia는 closed/withoutOwner/owner/ownerName만 사용
+        // ★ 네이티브 ccfolia 진단 결과 (2025-06 확인):
+        //   전체 공개:   closed=false, withoutOwner=false, owner=null, ownerName=null
+        //   비공개:      closed=true (+ withoutOwner=false)
+        //   자신만 보기: closed=true, owner=uid, ownerName=charName
+        //   자신 외 공개: closed=true, withoutOwner=true, owner=uid, ownerName=charName
         case 'setVisibility': {
           if (!ids?.length) throw new Error('대상 ID 없음');
           const mode = updates?.mode;
           const visOps = [];
           const currentUid = state.app?.state?.uid || state.app?.user?.uid || '';
-          // ownerName: speaking 캐릭터 이름 또는 사용자 이름
+
+          // ownerName 취득: speaking 캐릭터 → room member → 폴백
           let ownerName = '';
           const rc = state.entities?.roomCharacters;
           if (rc?.ids) {
@@ -3493,15 +3498,24 @@
               if (ch?.speaking) { ownerName = ch.name || ''; break; }
             }
           }
-          // 첫 번째 아이템의 현재 상태 로깅 (진단)
-          const ri = state.entities?.roomItems;
-          if (ri?.entities?.[ids[0]]) {
-            const samp = ri.entities[ids[0]];
-            _dbg(`[CE VIS 진단] 쓰기 전 아이템[${ids[0]}]: closed=${samp.closed} withoutOwner=${samp.withoutOwner} owner=${samp.owner} ownerName=${samp.ownerName}`);
+          if (!ownerName) {
+            // room member 이름 폴백
+            const members = state.app?.room?.members;
+            if (members?.entities?.[currentUid]) {
+              ownerName = members.entities[currentUid].name || '';
+            }
+          }
+          if (!ownerName) {
+            // roomMembers entity 폴백
+            const rm = state.entities?.roomMembers;
+            if (rm?.entities?.[currentUid]) {
+              ownerName = rm.entities[currentUid].name || rm.entities[currentUid].displayName || '';
+            }
           }
 
+          _dbg(`[CE VIS] mode=${mode} uid=${currentUid} ownerName="${ownerName}"`);
+
           for (const id of ids) {
-            // batch.update 사용 — merge:true 의존 제거, 기존 문서에 필드만 덮어씀
             let fields = { updatedAt: Date.now() };
             switch (mode) {
               case 'public':
@@ -3513,20 +3527,18 @@
               case 'private':
                 fields.closed = true;
                 fields.withoutOwner = false;
-                fields.owner = null;
-                fields.ownerName = null;
                 break;
               case 'self':
                 fields.closed = true;
-                fields.withoutOwner = false;
                 fields.owner = currentUid;
                 fields.ownerName = ownerName;
                 break;
               case 'except-self':
-                fields.closed = false;
+                // ★ 네이티브: closed=true, withoutOwner=true, owner=uid, ownerName=charName
+                fields.closed = true;
                 fields.withoutOwner = true;
-                fields.owner = null;
-                fields.ownerName = null;
+                fields.owner = currentUid;
+                fields.ownerName = ownerName;
                 break;
               default: continue;
             }
@@ -3536,19 +3548,8 @@
               data: fields
             });
           }
-          _dbg(`[CE VIS 진단] 쓰기 데이터:`, visOps[0]?.data);
+          _dbg(`[CE VIS] 쓰기 데이터:`, visOps[0]?.data);
           count = await _batchCommit(sdk, visOps);
-
-          // 쓰기 후 Redux 상태 확인 (2초 후)
-          setTimeout(() => {
-            const st2 = reduxStore?.getState();
-            const ri2 = st2?.entities?.roomItems;
-            if (ri2?.entities?.[ids[0]]) {
-              const s2 = ri2.entities[ids[0]];
-              _dbg(`[CE VIS 진단] 쓰기 후 아이템[${ids[0]}]: closed=${s2.closed} withoutOwner=${s2.withoutOwner} owner=${s2.owner} ownerName=${s2.ownerName}`);
-            }
-          }, 2000);
-
           _dbg(`%c[CE]%c ✅ 패널 ${count}개 공개 상태 → ${mode} (uid=${currentUid}, ownerName=${ownerName})`,
             'color: #4caf50; font-weight: bold;', 'color: inherit;');
           respond({ success: true, count });
