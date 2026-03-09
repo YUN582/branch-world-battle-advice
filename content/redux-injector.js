@@ -3278,6 +3278,14 @@
     const items = ri.ids
       .map(id => ri.entities[id])
       .filter(it => !!it)
+      .sort((a, b) => {
+        // ccfolia 패널 목록과 동일한 정렬: order ASC → createdAt ASC → _id ASC
+        const oa = a.order ?? 0, ob = b.order ?? 0;
+        if (oa !== ob) return oa - ob;
+        const ca = a.createdAt || 0, cb = b.createdAt || 0;
+        if (ca !== cb) return ca - cb;
+        return (a._id || '').localeCompare(b._id || '');
+      })
       .map(it => ({
         _id:       it._id,
         type:      it.type,
@@ -3465,18 +3473,41 @@
 
         // ── 다중 선택: 공개 상태 설정 ──
         // updates.mode: 'public' | 'private' | 'self' | 'except-self'
+        // ★ visible 필드는 건드리지 않음! ccfolia는 closed/withoutOwner/owner/ownerName만 사용
         case 'setVisibility': {
           if (!ids?.length) throw new Error('대상 ID 없음');
           const mode = updates?.mode;
           const visOps = [];
           const currentUid = state.app?.state?.uid || state.app?.user?.uid || '';
+          // ownerName: speaking 캐릭터 이름 또는 사용자 이름
+          let ownerName = '';
+          const rc = state.entities?.roomCharacters;
+          if (rc?.ids) {
+            for (const cid of rc.ids) {
+              const ch = rc.entities?.[cid];
+              if (ch?.speaking) { ownerName = ch.name || ''; break; }
+            }
+          }
           for (const id of ids) {
             let fields = { updatedAt: Date.now() };
             switch (mode) {
-              case 'public':      fields.visible = true;  fields.closed = false; fields.withoutOwner = false; break;
-              case 'private':     fields.visible = false; fields.closed = true;  fields.withoutOwner = false; break;
-              case 'self':        fields.visible = true;  fields.closed = true;  fields.withoutOwner = false; fields.owner = currentUid; break;
-              case 'except-self': fields.visible = true;  fields.closed = false; fields.withoutOwner = true;  break;
+              case 'public':
+                fields.closed = false;
+                fields.withoutOwner = false;
+                fields.owner = null;
+                fields.ownerName = null;
+                break;
+              case 'private':
+                fields.closed = true;
+                break;
+              case 'self':
+                fields.closed = true;
+                fields.owner = currentUid;
+                fields.ownerName = ownerName;
+                break;
+              case 'except-self':
+                fields.withoutOwner = true;
+                break;
               default: continue;
             }
             visOps.push({
@@ -3487,7 +3518,7 @@
             });
           }
           count = await _batchCommit(sdk, visOps);
-          _dbg(`%c[CE]%c ✅ 패널 ${count}개 공개 상태 → ${mode}`,
+          _dbg(`%c[CE]%c ✅ 패널 ${count}개 공개 상태 → ${mode} (uid=${currentUid}, ownerName=${ownerName})`,
             'color: #4caf50; font-weight: bold;', 'color: inherit;');
           respond({ success: true, count });
           break;
