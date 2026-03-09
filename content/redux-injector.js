@@ -639,7 +639,7 @@
    * writeBatch가 없으면 순차 폴백합니다.
    *
    * @param {object} sdk - Firestore SDK
-   * @param {Array<{type: 'set'|'delete', ref, data?, options?}>} ops - 작업 목록
+   * @param {Array<{type: 'set'|'delete'|'update', ref, data?, options?}>} ops - 작업 목록
    * @returns {Promise<number>} 커밋된 작업 수
    */
   async function _batchCommit(sdk, ops) {
@@ -649,6 +649,10 @@
     if (!sdk.writeBatch) {
       for (const op of ops) {
         if (op.type === 'delete') await sdk.deleteDoc(op.ref);
+        else if (op.type === 'update') {
+          if (sdk.updateDoc) await sdk.updateDoc(op.ref, op.data);
+          else await sdk.setDoc(op.ref, op.data, { merge: true });
+        }
         else await sdk.setDoc(op.ref, op.data, op.options || {});
       }
       return ops.length;
@@ -662,6 +666,7 @@
       const batch = sdk.writeBatch(sdk.db);
       for (const op of chunk) {
         if (op.type === 'delete') batch.delete(op.ref);
+        else if (op.type === 'update') batch.update(op.ref, op.data);
         else batch.set(op.ref, op.data, op.options || {});
       }
       await batch.commit();
@@ -3488,8 +3493,15 @@
               if (ch?.speaking) { ownerName = ch.name || ''; break; }
             }
           }
+          // 첫 번째 아이템의 현재 상태 로깅 (진단)
+          const ri = state.entities?.roomItems;
+          if (ri?.entities?.[ids[0]]) {
+            const samp = ri.entities[ids[0]];
+            _dbg(`[CE VIS 진단] 쓰기 전 아이템[${ids[0]}]: closed=${samp.closed} withoutOwner=${samp.withoutOwner} owner=${samp.owner} ownerName=${samp.ownerName}`);
+          }
+
           for (const id of ids) {
-            // merge:true 이므로 모든 공개 필드를 명시적으로 설정해야 이전 상태 잔류 방지
+            // batch.update 사용 — merge:true 의존 제거, 기존 문서에 필드만 덮어씀
             let fields = { updatedAt: Date.now() };
             switch (mode) {
               case 'public':
@@ -3519,13 +3531,24 @@
               default: continue;
             }
             visOps.push({
-              type: 'set',
+              type: 'update',
               ref: sdk.doc(itemsCol, id),
-              data: fields,
-              options: { merge: true }
+              data: fields
             });
           }
+          _dbg(`[CE VIS 진단] 쓰기 데이터:`, visOps[0]?.data);
           count = await _batchCommit(sdk, visOps);
+
+          // 쓰기 후 Redux 상태 확인 (2초 후)
+          setTimeout(() => {
+            const st2 = reduxStore?.getState();
+            const ri2 = st2?.entities?.roomItems;
+            if (ri2?.entities?.[ids[0]]) {
+              const s2 = ri2.entities[ids[0]];
+              _dbg(`[CE VIS 진단] 쓰기 후 아이템[${ids[0]}]: closed=${s2.closed} withoutOwner=${s2.withoutOwner} owner=${s2.owner} ownerName=${s2.ownerName}`);
+            }
+          }, 2000);
+
           _dbg(`%c[CE]%c ✅ 패널 ${count}개 공개 상태 → ${mode} (uid=${currentUid}, ownerName=${ownerName})`,
             'color: #4caf50; font-weight: bold;', 'color: inherit;');
           respond({ success: true, count });
