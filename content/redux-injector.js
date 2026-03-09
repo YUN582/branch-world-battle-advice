@@ -3675,6 +3675,137 @@
   });
 
   // ================================================================
+  //  Firestore 쓰기 인터셉터 (네이티브 ccfolia 동작 진단)
+  //  콘솔에서: window.dispatchEvent(new CustomEvent('bwbr-fs-intercept-start'))
+  //  종료:    window.dispatchEvent(new CustomEvent('bwbr-fs-intercept-stop'))
+  //
+  //  활성화 후 ccfolia 네이티브 UI로 아이템 공개 상태 변경하면
+  //  실제 Firestore 쓰기 호출(WriteBatch.set/update, setDoc 등)이 로깅됨
+  // ================================================================
+  let _fsIntActive = false;
+  let _fsIntCleanup = null;
+
+  window.addEventListener('bwbr-fs-intercept-start', () => {
+    if (_fsIntActive) { console.log('[CE FS-INT] 이미 활성화됨'); return; }
+    const sdk = acquireFirestoreSDK();
+    if (!sdk || !reduxStore) { console.error('[CE FS-INT] SDK 또는 Redux 없음'); return; }
+
+    const cleanups = [];
+
+    // ── 1. WriteBatch 프로토타입 패치 ──
+    if (sdk.writeBatch) {
+      try {
+        const testBatch = sdk.writeBatch(sdk.db);
+        const proto = Object.getPrototypeOf(testBatch);
+        const origSet = proto.set, origUpdate = proto.update;
+
+        proto.set = function(ref, data, options) {
+          if (ref?.path?.includes('/items/')) {
+            console.log('%c══ [FS-INT] WriteBatch.set ══', 'color:#e91e63;font-weight:bold;font-size:14px');
+            console.log('  path:', ref.path);
+            try { console.log('  data:', JSON.parse(JSON.stringify(data))); } catch(e) { console.log('  data (raw):', data); }
+            console.log('  options:', options);
+            console.trace('  콜스택');
+          }
+          return origSet.call(this, ref, data, options);
+        };
+        proto.update = function(ref, ...args) {
+          if (ref?.path?.includes('/items/')) {
+            console.log('%c══ [FS-INT] WriteBatch.update ══', 'color:#e91e63;font-weight:bold;font-size:14px');
+            console.log('  path:', ref.path);
+            try { console.log('  data:', JSON.parse(JSON.stringify(args))); } catch(e) { console.log('  data (raw):', args); }
+            console.trace('  콜스택');
+          }
+          return origUpdate.call(this, ref, ...args);
+        };
+        cleanups.push(() => { proto.set = origSet; proto.update = origUpdate; });
+        console.log('[CE FS-INT] WriteBatch 프로토타입 패치 ✅');
+      } catch (e) { console.warn('[CE FS-INT] WriteBatch 패치 실패:', e.message); }
+    }
+
+    // ── 2. fsMod 내 setDoc 래핑 시도 ──
+    try {
+      const req = acquireWebpackRequire();
+      if (req) {
+        const fsMod = req(_FS_CONFIG.firestoreModId);
+        if (fsMod) {
+          const sdKey = _FS_CONFIG.fsKeys.setDoc;
+          const origFn = fsMod[sdKey];
+          if (typeof origFn === 'function') {
+            const wrapper = function(...args) {
+              if (args[0]?.path?.includes('/items/')) {
+                console.log('%c══ [FS-INT] setDoc (모듈) ══', 'color:#9c27b0;font-weight:bold;font-size:14px');
+                console.log('  path:', args[0].path);
+                try { console.log('  data:', JSON.parse(JSON.stringify(args[1]))); } catch(e) { console.log('  data (raw):', args[1]); }
+                console.log('  options:', args[2]);
+                console.trace('  콜스택');
+              }
+              return origFn.apply(this, args);
+            };
+            try {
+              Object.defineProperty(fsMod, sdKey, { get() { return wrapper; }, configurable: true });
+              cleanups.push(() => { try { Object.defineProperty(fsMod, sdKey, { get() { return origFn; }, configurable: true }); } catch(e){} });
+              console.log('[CE FS-INT] setDoc 래핑 ✅ (defineProperty)');
+            } catch (e1) {
+              try { fsMod[sdKey] = wrapper; cleanups.push(() => { fsMod[sdKey] = origFn; }); console.log('[CE FS-INT] setDoc 래핑 ✅ (직접 할당)'); }
+              catch (e2) { console.log('[CE FS-INT] setDoc 래핑 실패 — webpack getter 보호:', e1.message); }
+            }
+          }
+          // updateDoc도 탐색
+          for (const [key, fn] of Object.entries(fsMod)) {
+            if (typeof fn !== 'function' || key === sdKey) continue;
+            const str = fn.toString();
+            if (str.length < 500 && (str.includes('update') || str.includes('merge'))) {
+              // updateDoc 후보 — 너무 많을 수 있으니 이름 힌트로 필터링
+            }
+          }
+        }
+      }
+    } catch (e) { console.warn('[CE FS-INT] fsMod 패치 오류:', e.message); }
+
+    // ── 3. Redux dispatch 래핑 (액션 추적) ──
+    const origDispatch = reduxStore.dispatch;
+    const wrappedDispatch = function(action) {
+      if (action?.type) {
+        const t = action.type.toLowerCase();
+        if (t.includes('room') || t.includes('item') || t.includes('entity') || t.includes('visibility')) {
+          console.log('%c[FS-INT] Redux dispatch%c', 'color:#2196f3;font-weight:bold', 'color:inherit',
+            action.type, action.payload != null ? action.payload : '');
+        }
+      }
+      return origDispatch.call(this, action);
+    };
+    reduxStore.dispatch = wrappedDispatch;
+    cleanups.push(() => { reduxStore.dispatch = origDispatch; });
+
+    // ── 4. vis-monitor도 자동 시작 ──
+    window.dispatchEvent(new CustomEvent('bwbr-vis-monitor-start'));
+
+    _fsIntActive = true;
+    _fsIntCleanup = () => {
+      for (const fn of cleanups) { try { fn(); } catch(e) {} }
+      window.dispatchEvent(new CustomEvent('bwbr-vis-monitor-stop'));
+      _fsIntActive = false;
+      _fsIntCleanup = null;
+    };
+
+    console.log('%c═══════════════════════════════════════════════', 'color:#e91e63;font-size:14px');
+    console.log('%c[CE FS-INT] ✅ Firestore 인터셉터 활성화', 'color:#e91e63;font-weight:bold;font-size:16px');
+    console.log('%c═══════════════════════════════════════════════', 'color:#e91e63;font-size:14px');
+    console.log('▶ 이제 아이템 하나를 우클릭 → 공개 상태 변경:');
+    console.log('  1) 전체 공개 → 비공개');
+    console.log('  2) 비공개 → 자신만 보기');
+    console.log('  3) 자신만 보기 → 자신 외 공개');
+    console.log('  4) 자신 외 공개 → 전체 공개');
+    console.log('각 변경 사이 2초 기다린 후 전체 콘솔 로그를 복사해 공유해 주세요');
+  });
+
+  window.addEventListener('bwbr-fs-intercept-stop', () => {
+    if (_fsIntCleanup) _fsIntCleanup();
+    console.log('[CE FS-INT] 인터셉터 비활성화');
+  });
+
+  // ================================================================
   //  시나리오 텍스트(노트) 목록 조회
   //  bwbr-request-note-list → bwbr-note-list-data
   // ================================================================
