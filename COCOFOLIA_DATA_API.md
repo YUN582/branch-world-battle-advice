@@ -1567,28 +1567,29 @@ IMG
 
 | 요소 | 셀렉터 | 특징 |
 |------|--------|------|
-| 대화창 전체 | `.MuiPaper-root.MuiPaper-elevation6[class*="sc-"]` | position: absolute, z-index: 102 |
-| 스탠딩 이미지 | 대화창 내부 `img` | 첫 번째 자식, 캐릭터 스탠딩 |
+| 대화창 전체 | `.MuiPaper-root.MuiPaper-elevation6:has(> img)` | position: absolute, z-index: 102, 스탠딩 이미지 포함 |
+| 스탠딩 이미지 | `.MuiPaper-root.MuiPaper-elevation6 > img` | 대화창 직접 자식 |
 | 텍스트 컨테이너 | `.MuiPaper-root.MuiPaper-elevation6` (내부) | z-index: 1, 텍스트 영역 |
 | 메시지 텍스트 | `.MuiTypography-body1` | 실제 대사 내용 |
 
 #### ⚠️ 셀렉터 주의사항
 
 - `sc-*` 클래스는 styled-components 빌드마다 변경됨 → **직접 의존하지 말 것**
-- `MuiPaper-elevation6`은 대화창 외 다른 곳에서도 사용될 수 있음
-- 가장 신뢰할 수 있는 탐지: `MuiPaper-elevation6` + `position: absolute` + 높은 `z-index`
+- `MuiPaper-elevation6`은 채팅 사이드바(MuiDrawer)에서도 사용됨
+- **대화창 구분법**: 직접 자식으로 `img`(스탠딩)가 있는지 → `:has(> img)` 셀렉터
+- 채팅 사이드바는 `inDrawer: true`, 대화창은 `inDrawer: false`
 
 #### CSS 스케일링 예시
 
 ```css
-/* 대화창 전체 확대 */
-.MuiPaper-root.MuiPaper-elevation6[class*="sc-"] {
+/* 대화창 전체 확대 (스탠딩 있는 것만 타겟) */
+.MuiPaper-root.MuiPaper-elevation6:has(> img) {
   transform: scale(1.5);
   transform-origin: bottom center;
 }
 
 /* 스탠딩 이미지만 확대 */
-.MuiPaper-root.MuiPaper-elevation6[class*="sc-"] > img {
+.MuiPaper-root.MuiPaper-elevation6 > img {
   transform: scale(1.5);
   transform-origin: bottom center;
 }

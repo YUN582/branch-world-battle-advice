@@ -20,11 +20,17 @@
   let _chatBubbleScale = 1.0;
 
   /**
-   * 대화창(말풍선) DOM 셀렉터
-   * MuiPaper-elevation6 + position:absolute + 높은 z-index
-   * sc-* 클래스는 빌드마다 변경되므로 MUI 클래스만 사용
+   * 대화창(비주얼노벨 식) DOM 셀렉터
+   * - MuiPaper-elevation6 중 직접 자식으로 img(스탠딩)가 있는 것
+   * - 채팅 사이드바(MuiDrawer 내부)는 img가 직접 자식이 아니므로 제외됨
+   * - :has() 셀렉터는 모든 최신 브라우저에서 지원 (2023~)
    */
-  const CHAT_BUBBLE_SELECTOR = '.MuiPaper-root.MuiPaper-elevation6[class*="sc-"]';
+  const CHAT_BUBBLE_SELECTOR = '.MuiPaper-root.MuiPaper-elevation6:has(> img)';
+
+  /**
+   * 스탠딩 이미지 셀렉터
+   */
+  const STANDING_IMG_SELECTOR = '.MuiPaper-root.MuiPaper-elevation6 > img';
 
   /**
    * 스케일 CSS를 주입/갱신합니다.
@@ -54,11 +60,10 @@
     }
 
     // ── 대화창 내 스탠딩 이미지 스케일 ──
-    // 대화창 직접 자식 또는 손자 img
+    // 대화창 직접 자식 img (스탠딩)
     if (standingScale !== 1.0) {
       css += `
-        ${CHAT_BUBBLE_SELECTOR} > img,
-        ${CHAT_BUBBLE_SELECTOR} > div > img {
+        ${STANDING_IMG_SELECTOR} {
           transform: scale(${standingScale});
           transform-origin: bottom center;
         }
@@ -101,7 +106,8 @@
     updateScale,
     getScale,
     removeScale,
-    CHAT_BUBBLE_SELECTOR
+    CHAT_BUBBLE_SELECTOR,
+    STANDING_IMG_SELECTOR
   };
 
 })();
