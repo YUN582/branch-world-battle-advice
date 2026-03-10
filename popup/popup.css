@@ -575,6 +575,13 @@ input[type="checkbox"]:checked + .toggle-slider.small::after {
   margin-bottom: 12px;
 }
 
+/* 설정 구분선 */
+.settings-divider {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin: 16px 0;
+}
+
 .field-label {
   display: block;
   font-size: 12px;
