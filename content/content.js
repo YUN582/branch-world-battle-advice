@@ -155,6 +155,14 @@
     // 사이트 UI에 음량 슬라이더 주입
     injectSiteVolumeSlider();
 
+    // 화면 표시 스케일 적용 (스탠딩/대화창 크기)
+    if (window.BWBR_DisplayScale) {
+      window.BWBR_DisplayScale.updateScale(
+        config.general.standingScale ?? 1.0,
+        config.general.chatBubbleScale ?? 1.0
+      );
+    }
+
     // 저장된 턴 전투 상태 복원 시도 (새로고침 후)
     const restored = await combatCtrl.tryRestore();
     if (restored) {
@@ -390,6 +398,12 @@
         chat.updateConfig(config);
         applySiteVolume(config.general.siteVolume ?? 1.0);
         syncSiteVolumeSlider(config.general.siteVolume ?? 1.0);
+        if (window.BWBR_DisplayScale) {
+          window.BWBR_DisplayScale.updateScale(
+            config.general.standingScale ?? 1.0,
+            config.general.chatBubbleScale ?? 1.0
+          );
+        }
         sendResponse({ success: true });
         break;
 
@@ -432,6 +446,18 @@
           removeSiteVolumeSlider();
         }
         alwaysLog(`더 나은 사운드바 ${message.betterSoundbar ? '활성화' : '비활성화'}`);
+        sendResponse({ success: true });
+        break;
+
+      case 'BWBR_SET_DISPLAY_SCALE':
+        config.general.standingScale = message.standingScale ?? config.general.standingScale;
+        config.general.chatBubbleScale = message.chatBubbleScale ?? config.general.chatBubbleScale;
+        if (window.BWBR_DisplayScale) {
+          window.BWBR_DisplayScale.updateScale(
+            config.general.standingScale,
+            config.general.chatBubbleScale
+          );
+        }
         sendResponse({ success: true });
         break;
 

@@ -23,7 +23,9 @@
       sfxVolume: 0.45,
       siteVolume: 1.0,
       betterSoundbar: true,
-      language: 'ko'
+      language: 'ko',
+      standingScale: 1.0,
+      chatBubbleScale: 1.0
     },
     selectors: {
       chatContainer: ['[class*="MuiList-root"]', '[class*="chat-log"]', '[class*="message-list"]', '[role="log"]', '[class*="scroll"]'],
@@ -201,6 +203,10 @@
     $('toggle-autoComplete').checked = cfg.general.autoComplete !== false;
     $('toggle-charShortcuts').checked = cfg.general.charShortcuts !== false;
     $('toggle-betterSoundbar').checked = cfg.general.betterSoundbar !== false;
+    $('gen-standingScale').value = cfg.general.standingScale ?? 1.0;
+    $('gen-standingScale-val').textContent = Math.round((cfg.general.standingScale ?? 1.0) * 100) + '%';
+    $('gen-chatBubbleScale').value = cfg.general.chatBubbleScale ?? 1.0;
+    $('gen-chatBubbleScale-val').textContent = Math.round((cfg.general.chatBubbleScale ?? 1.0) * 100) + '%';
     $('toggle-debugMode').checked = cfg.general.debugMode;
 
     // ── 로컬 효과음 (커스텀 롤 사운드) ──
@@ -222,6 +228,8 @@
     cfg.general.autoComplete = $('toggle-autoComplete').checked;
     cfg.general.charShortcuts = $('toggle-charShortcuts').checked;
     cfg.general.betterSoundbar = $('toggle-betterSoundbar').checked;
+    cfg.general.standingScale = parseFloat($('gen-standingScale').value) || 1.0;
+    cfg.general.chatBubbleScale = parseFloat($('gen-chatBubbleScale').value) || 1.0;
     cfg.general.debugMode = $('toggle-debugMode').checked;
 
     // ── 전투 모듈 설정 (동적 패널 열려 있으면 수집, 아니면 현재 값 유지) ──
@@ -251,6 +259,26 @@
     // 효과음 볼륨 슬라이더 실시간 표시
     $('gen-sfxVolume').addEventListener('input', (e) => {
       $('gen-sfxVolume-val').textContent = Math.round(e.target.value * 100) + '%';
+    });
+
+    // 스탠딩 크기 슬라이더 실시간 표시 + 즉시 적용
+    $('gen-standingScale').addEventListener('input', (e) => {
+      $('gen-standingScale-val').textContent = Math.round(e.target.value * 100) + '%';
+      sendToContent({
+        type: 'BWBR_SET_DISPLAY_SCALE',
+        standingScale: parseFloat(e.target.value),
+        chatBubbleScale: parseFloat($('gen-chatBubbleScale').value)
+      });
+    });
+
+    // 대화창 크기 슬라이더 실시간 표시 + 즉시 적용
+    $('gen-chatBubbleScale').addEventListener('input', (e) => {
+      $('gen-chatBubbleScale-val').textContent = Math.round(e.target.value * 100) + '%';
+      sendToContent({
+        type: 'BWBR_SET_DISPLAY_SCALE',
+        standingScale: parseFloat($('gen-standingScale').value),
+        chatBubbleScale: parseFloat(e.target.value)
+      });
     });
 
     // 더 나은 사운드바 토글 (즉시 적용)
