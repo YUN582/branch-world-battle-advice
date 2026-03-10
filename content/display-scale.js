@@ -53,8 +53,8 @@
     if (chatBubbleScale !== 1.0) {
       css += `
         ${CHAT_BUBBLE_SELECTOR} {
-          transform: scale(${chatBubbleScale});
-          transform-origin: bottom center;
+          transform: scale(${chatBubbleScale}) !important;
+          transform-origin: bottom center !important;
         }
       `;
     }
@@ -64,8 +64,8 @@
     if (standingScale !== 1.0) {
       css += `
         ${STANDING_IMG_SELECTOR} {
-          transform: scale(${standingScale});
-          transform-origin: bottom center;
+          transform: scale(${standingScale}) !important;
+          transform-origin: bottom center !important;
         }
       `;
     }
