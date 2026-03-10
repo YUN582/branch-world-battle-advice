@@ -1543,6 +1543,59 @@ IMG
 
 ---
 
+### 11.3b 대화창(말풍선) DOM 구조
+
+> **기준**: 2026-03-10 (콘솔 진단으로 확인)
+
+채팅 메시지 전송 시 화면 하단에 표시되는 대화창(말풍선)의 DOM 구조입니다.
+캐릭터 이름, 스탠딩 이미지, 메시지 텍스트가 포함됩니다.
+
+#### 계층 구조
+
+```
+#root
+└─ sc-LvPkz (메인 래퍼)
+   └─ sc-geBDJh (뷰포트, position: absolute, 1372×1319)
+      └─ MuiPaper-root.MuiPaper-elevation6.sc-jHUtOf (대화창, position: absolute, z-index: 102, 720×144)
+         ├─ IMG (스탠딩 이미지, 240×351)
+         └─ MuiPaper-root.MuiPaper-elevation6.sc-bRuaPG (텍스트 컨테이너, position: relative, z-index: 1)
+            └─ sc-bOCgnY (텍스트 영역)
+               └─ P.MuiTypography-body1 (메시지 텍스트)
+```
+
+#### 핵심 특성
+
+| 요소 | 셀렉터 | 특징 |
+|------|--------|------|
+| 대화창 전체 | `.MuiPaper-root.MuiPaper-elevation6[class*="sc-"]` | position: absolute, z-index: 102 |
+| 스탠딩 이미지 | 대화창 내부 `img` | 첫 번째 자식, 캐릭터 스탠딩 |
+| 텍스트 컨테이너 | `.MuiPaper-root.MuiPaper-elevation6` (내부) | z-index: 1, 텍스트 영역 |
+| 메시지 텍스트 | `.MuiTypography-body1` | 실제 대사 내용 |
+
+#### ⚠️ 셀렉터 주의사항
+
+- `sc-*` 클래스는 styled-components 빌드마다 변경됨 → **직접 의존하지 말 것**
+- `MuiPaper-elevation6`은 대화창 외 다른 곳에서도 사용될 수 있음
+- 가장 신뢰할 수 있는 탐지: `MuiPaper-elevation6` + `position: absolute` + 높은 `z-index`
+
+#### CSS 스케일링 예시
+
+```css
+/* 대화창 전체 확대 */
+.MuiPaper-root.MuiPaper-elevation6[class*="sc-"] {
+  transform: scale(1.5);
+  transform-origin: bottom center;
+}
+
+/* 스탠딩 이미지만 확대 */
+.MuiPaper-root.MuiPaper-elevation6[class*="sc-"] > img {
+  transform: scale(1.5);
+  transform-origin: bottom center;
+}
+```
+
+---
+
 ### 11.4 토큰 우클릭 컨텍스트 메뉴 (MUI)
 
 보드 위 캐릭터 토큰을 우클릭하면 나타나는 네이티브 MUI 메뉴입니다.
