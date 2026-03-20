@@ -195,8 +195,12 @@
 
     // 불완전 셀 중앙 정렬 클리핑
     // background-position을 오프셋해서 그리드 패턴을 중앙 배치 + clip-path로 양쪽 불완전 셀 제거
-    var exX = Math.round(W % _cellPx);
-    var exY = Math.round(H % _cellPx);
+    // ── 브라우저 줌 보정: 비정수 DPR(105%, 115%, 135% 등)에서 computedStyle 크기에
+    //    소수점 오차가 생겨 cellPx의 정수배인 전경이 비배수로 판정되는 것을 방지 (1px 허용 오차)
+    var rawExX = W % _cellPx;
+    var rawExY = H % _cellPx;
+    var exX = (rawExX < 1 || rawExX > _cellPx - 1) ? 0 : Math.round(rawExX);
+    var exY = (rawExY < 1 || rawExY > _cellPx - 1) ? 0 : Math.round(rawExY);
     var offX = Math.round(exX / 2);
     var offY = Math.round(exY / 2);
     var posVal = offX + 'px ' + offY + 'px';
