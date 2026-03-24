@@ -5742,4 +5742,75 @@
     }
   });
 
+  // ================================================================
+  //  배치 모드: 패널 일괄 생성 (스테이징 → 확정)
+  //  Content Script에서 bwbr-create-panels-batch 이벤트로 요청
+  // ================================================================
+  window.addEventListener('bwbr-create-panels-batch', async () => {
+    const _raw = document.documentElement.getAttribute('data-bwbr-create-panels-batch');
+    document.documentElement.removeAttribute('data-bwbr-create-panels-batch');
+    const panels = _raw ? JSON.parse(_raw) : [];
+    const respond = (detail) => {
+      document.documentElement.setAttribute('data-bwbr-create-panels-batch-result', JSON.stringify(detail));
+      window.dispatchEvent(new CustomEvent('bwbr-create-panels-batch-result', { detail }));
+    };
+
+    try {
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) throw new Error('Firestore SDK 없음');
+      if (!reduxStore) throw new Error('Redux Store 없음');
+
+      const roomId = getRoomId();
+      if (!roomId) throw new Error('방 ID를 찾을 수 없음');
+
+      const state = reduxStore.getState();
+      const uid = state.app?.state?.uid || '';
+      const itemsCol = sdk.collection(sdk.db, 'rooms', roomId, 'items');
+      const now = Date.now();
+      const ids = [];
+
+      for (const p of panels) {
+        const newId = _generateFirestoreId();
+        const newRef = sdk.doc(itemsCol, newId);
+        const itemData = {
+          type: p.type || 'plane',
+          x: p.x ?? 0,
+          y: p.y ?? 0,
+          z: p.z ?? 150,
+          width: p.width ?? 4,
+          height: p.height ?? 4,
+          angle: p.angle ?? 0,
+          locked: p.locked ?? false,
+          freezed: p.freezed ?? false,
+          visible: true,
+          closed: false,
+          withoutOwner: false,
+          active: true,
+          owner: uid,
+          ownerName: '',
+          ownerColor: '',
+          memo: p.memo || '',
+          imageUrl: p.imageUrl || '',
+          coverImageUrl: '',
+          clickAction: '',
+          deckId: null,
+          order: -1,
+          createdAt: now,
+          updatedAt: now
+        };
+        await sdk.setDoc(newRef, itemData);
+        ids.push(newId);
+      }
+
+      _dbg(`%c[CE]%c ✅ 패널 일괄 생성: ${ids.length}개`,
+        'color: #4caf50; font-weight: bold;', 'color: inherit;');
+
+      respond({ success: true, ids });
+
+    } catch (err) {
+      console.error('[CE] 패널 일괄 생성 실패:', err);
+      respond({ success: false, error: err.message });
+    }
+  });
+
 })();

@@ -14,6 +14,8 @@ var TOOL_ICONS = {
   draw: '<path fill="currentColor" d="M20.71 7.04C21.1 6.65 21.1 6 20.71 5.63L18.37 3.29C18 2.9 17.35 2.9 16.96 3.29L15.12 5.12L18.87 8.87M3 17.25V21H6.75L17.81 9.93L14.06 6.18L3 17.25Z"/>'
 };
 
+var CELL_PX = 24;  // ccfolia 1타일 = 24px
+
 // ── CSS 주입 ────────────────────────────────────────────────────
 
 (function injectStyles() {
@@ -123,7 +125,7 @@ var TOOL_ICONS = {
 }
 
 .bwbr-place-settings--open {
-  max-height: 400px;
+  max-height: 600px;
   opacity: 1;
   padding: 12px;
 }
@@ -245,7 +247,80 @@ var TOOL_ICONS = {
   color: #fff;
 }
 
-/* ── 배치 오버레이 (캔버스 영역) ───────────────── */
+/* ── 이미지 소스 메뉴 ──────────────────────────── */
+
+.bwbr-place-source-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eee;
+  margin-bottom: 4px;
+}
+
+.bwbr-place-source-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fafafa;
+  font-size: 13px;
+  color: #333;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.bwbr-place-source-btn:hover {
+  background: #f0f0f0;
+  border-color: #bbb;
+}
+
+.bwbr-place-current-image {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  margin-top: 4px;
+}
+
+.bwbr-place-current-image img {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+}
+
+.bwbr-place-current-image span {
+  font-size: 12px;
+  color: #666;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.bwbr-place-current-image .bwbr-place-clear-img {
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: none;
+  color: #999;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.bwbr-place-current-image .bwbr-place-clear-img:hover {
+  color: #e53935;
+}
+
+/* ── 배치 오버레이 ─────────────────────────────── */
 
 .bwbr-placement-overlay {
   position: fixed;
@@ -259,7 +334,11 @@ var TOOL_ICONS = {
   display: block;
 }
 
-/* ── 배치 프리뷰 (드래그 중 표시) ──────────────── */
+.bwbr-placement-overlay--no-image {
+  cursor: not-allowed;
+}
+
+/* ── 배치 프리뷰 (드래그 중) ───────────────────── */
 
 .bwbr-placement-preview {
   position: fixed;
@@ -281,6 +360,98 @@ var TOOL_ICONS = {
   opacity: 0.7;
 }
 
+/* ── 스테이징된 오브젝트 (맵 위 프리뷰) ────────── */
+
+.bwbr-staged-item {
+  position: absolute;
+  border: 2px solid #42a5f5;
+  background: rgba(66, 165, 245, 0.08);
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.bwbr-staged-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0.65;
+}
+
+.bwbr-staged-badge {
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #42a5f5;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+/* ── 확인 바 (하단 중앙) ───────────────────────── */
+
+.bwbr-place-confirm-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 105;
+  display: none;
+  align-items: center;
+  gap: 12px;
+  background: #fff;
+  border-radius: 12px;
+  padding: 8px 16px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+}
+
+.bwbr-place-confirm-bar--visible {
+  display: flex;
+}
+
+.bwbr-place-staged-count {
+  font-size: 13px;
+  color: #666;
+  white-space: nowrap;
+  min-width: 60px;
+  text-align: center;
+}
+
+.bwbr-place-confirm-bar-btn {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.bwbr-place-cancel-btn {
+  background: #f5f5f5;
+  color: #666;
+}
+
+.bwbr-place-cancel-btn:hover {
+  background: #eee;
+  color: #e53935;
+}
+
+.bwbr-place-confirm-btn {
+  background: #42a5f5;
+  color: #fff;
+}
+
+.bwbr-place-confirm-btn:hover {
+  background: #2196f3;
+}
+
 /* ── 회전 표시 ─────────────────────────────────── */
 
 .bwbr-placement-angle-indicator {
@@ -291,7 +462,7 @@ var TOOL_ICONS = {
   padding: 4px 12px;
   border-radius: 6px;
   pointer-events: none;
-  z-index: 105;
+  z-index: 106;
   display: none;
   white-space: nowrap;
 }
@@ -330,7 +501,10 @@ var _state = {
   },
 
   // 이미지 배치용
-  pendingImage: null      // { url, file, width, height }
+  pendingImage: null,     // { dataUrl, file, width, height }
+
+  // 스테이징 (일괄 배치)
+  stagedObjects: []       // [{ id, mapCoords, angle, imageDataUrl, settings }]
 };
 
 
@@ -342,6 +516,10 @@ var _overlay = null;
 var _preview = null;
 var _angleIndicator = null;
 var _toolButtons = {};
+var _imageSourceMenu = null;
+var _currentImagePreview = null;
+var _confirmBar = null;
+var _stagedCountEl = null;
 
 
 // ── 초기화 ──────────────────────────────────────────────────────
@@ -349,6 +527,7 @@ var _toolButtons = {};
 function init() {
   createToolbar();
   createOverlay();
+  createConfirmBar();
   registerFabButton();
   setupKeyboard();
 }
@@ -358,7 +537,6 @@ function init() {
 
 function registerFabButton() {
   if (!window.BWBR_FabButtons) {
-    // FAB 인프라 아직 미로드 → 재시도
     setTimeout(registerFabButton, 500);
     return;
   }
@@ -385,7 +563,7 @@ function togglePlacementMode() {
   } else {
     _toolbar.classList.remove('bwbr-placement-toolbar--open');
     deactivateTool();
-    _settingsPanel.classList.remove('bwbr-place-settings--open');
+    clearAllStaged();
   }
 }
 
@@ -393,13 +571,12 @@ function togglePlacementMode() {
 // ── 도구 전환 ───────────────────────────────────────────────────
 
 function activateTool(toolId) {
-  // 이전 도구 비활성화
+  // 이전 도구 비활성화 (스타일만)
   if (_state.currentTool && _toolButtons[_state.currentTool]) {
     _toolButtons[_state.currentTool].classList.remove('bwbr-place-tool-btn--active');
   }
 
   if (_state.currentTool === toolId) {
-    // 같은 도구 다시 클릭 → 해제
     deactivateTool();
     return;
   }
@@ -412,9 +589,16 @@ function activateTool(toolId) {
   // 패널 설정 열기
   _settingsPanel.classList.add('bwbr-place-settings--open');
 
-  // 도구별 초기화
+  // 이미지 소스 메뉴 표시/숨김
   if (toolId === 'image') {
-    promptImageSource();
+    if (_imageSourceMenu) _imageSourceMenu.style.display = '';
+    // 오버레이 활성화 (이미지 미선택 시 커서 변경)
+    _overlay.classList.add('bwbr-placement-overlay--active');
+    updateOverlayCursor();
+  } else {
+    if (_imageSourceMenu) _imageSourceMenu.style.display = 'none';
+    _overlay.classList.add('bwbr-placement-overlay--active');
+    _overlay.classList.remove('bwbr-placement-overlay--no-image');
   }
 }
 
@@ -424,10 +608,18 @@ function deactivateTool() {
   }
   _state.currentTool = null;
   _state.placing = false;
-  _state.pendingImage = null;
   _overlay.classList.remove('bwbr-placement-overlay--active');
+  _overlay.classList.remove('bwbr-placement-overlay--no-image');
   _preview.classList.remove('bwbr-placement-preview--visible');
   _settingsPanel.classList.remove('bwbr-place-settings--open');
+}
+
+function updateOverlayCursor() {
+  if (_state.currentTool === 'image' && !_state.pendingImage) {
+    _overlay.classList.add('bwbr-placement-overlay--no-image');
+  } else {
+    _overlay.classList.remove('bwbr-placement-overlay--no-image');
+  }
 }
 
 
@@ -437,7 +629,7 @@ function createToolbar() {
   _toolbar = document.createElement('div');
   _toolbar.className = 'bwbr-placement-toolbar';
 
-  // 패널 설정 영역 (맨 위 = flex column-reverse이므로 DOM 첫번째)
+  // 패널 설정 영역
   _settingsPanel = createSettingsPanel();
   _toolbar.appendChild(_settingsPanel);
 
@@ -469,7 +661,11 @@ function createSettingsPanel() {
   var panel = document.createElement('div');
   panel.className = 'bwbr-place-settings';
 
-  // 타입 토글 (마커/스크린)
+  // 이미지 소스 메뉴 (이미지 도구용)
+  _imageSourceMenu = createImageSourceMenu();
+  panel.appendChild(_imageSourceMenu);
+
+  // 타입 토글
   var typeField = createField('타입');
   var typeToggle = document.createElement('div');
   typeToggle.className = 'bwbr-place-type-toggle';
@@ -493,7 +689,7 @@ function createSettingsPanel() {
   typeField.appendChild(typeToggle);
   panel.appendChild(typeField);
 
-  // 겹침 우선도 (z)
+  // 겹침 우선도
   var zField = createField('겹침 우선도');
   var zInput = document.createElement('input');
   zInput.type = 'number';
@@ -506,7 +702,7 @@ function createSettingsPanel() {
   zField.appendChild(zInput);
   panel.appendChild(zField);
 
-  // 패널 메모
+  // 메모
   var memoField = createField('패널 메모');
   var memoInput = document.createElement('textarea');
   memoInput.placeholder = '메모 입력...';
@@ -517,78 +713,84 @@ function createSettingsPanel() {
   panel.appendChild(memoField);
 
   // 위치 고정
-  var lockField = createToggleField('위치 고정', false, function (val) {
+  panel.appendChild(createToggleField('위치 고정', false, function (val) {
     _state.panelSettings.locked = val;
-  });
-  panel.appendChild(lockField);
+  }));
 
   // 사이즈 고정
-  var freezeField = createToggleField('사이즈 고정', false, function (val) {
+  panel.appendChild(createToggleField('사이즈 고정', false, function (val) {
     _state.panelSettings.freezed = val;
-  });
-  panel.appendChild(freezeField);
+  }));
 
   return panel;
 }
 
-function createField(label) {
-  var div = document.createElement('div');
-  div.className = 'bwbr-place-field';
-  var lbl = document.createElement('span');
-  lbl.className = 'bwbr-place-field-label';
-  lbl.textContent = label;
-  div.appendChild(lbl);
-  return div;
+
+// ── 이미지 소스 메뉴 ────────────────────────────────────────────
+
+function createImageSourceMenu() {
+  var menu = document.createElement('div');
+  menu.className = 'bwbr-place-source-menu';
+  menu.style.display = 'none'; // 이미지 도구 선택 시에만 보임
+
+  var localBtn = document.createElement('button');
+  localBtn.className = 'bwbr-place-source-btn';
+  localBtn.textContent = '📁 로컬 이미지';
+  localBtn.addEventListener('click', selectLocalImage);
+  menu.appendChild(localBtn);
+
+  var ccoBtn = document.createElement('button');
+  ccoBtn.className = 'bwbr-place-source-btn';
+  ccoBtn.textContent = '🖼️ 코코포리아 이미지';
+  ccoBtn.addEventListener('click', selectCcofoliaImage);
+  menu.appendChild(ccoBtn);
+
+  // 현재 선택된 이미지 프리뷰
+  _currentImagePreview = document.createElement('div');
+  _currentImagePreview.className = 'bwbr-place-current-image';
+  _currentImagePreview.style.display = 'none';
+  menu.appendChild(_currentImagePreview);
+
+  return menu;
 }
 
-function createToggleField(label, defaultVal, onChange) {
-  var row = document.createElement('label');
-  var span = document.createElement('span');
-  span.textContent = label;
-  row.appendChild(span);
+function updateCurrentImagePreview() {
+  if (!_currentImagePreview) return;
 
-  var toggle = document.createElement('div');
-  toggle.className = 'bwbr-place-toggle';
-  var input = document.createElement('input');
-  input.type = 'checkbox';
-  input.checked = !!defaultVal;
-  var slider = document.createElement('span');
-  slider.className = 'bwbr-place-slider';
-  input.addEventListener('change', function () { onChange(input.checked); });
-  toggle.appendChild(input);
-  toggle.appendChild(slider);
-  row.appendChild(toggle);
-  return row;
+  if (_state.pendingImage) {
+    var fileName = _state.pendingImage.file
+      ? _state.pendingImage.file.name
+      : '이미지';
+    _currentImagePreview.innerHTML = '';
+
+    var img = document.createElement('img');
+    img.src = _state.pendingImage.dataUrl;
+    _currentImagePreview.appendChild(img);
+
+    var name = document.createElement('span');
+    name.textContent = fileName;
+    _currentImagePreview.appendChild(name);
+
+    var clearBtn = document.createElement('button');
+    clearBtn.className = 'bwbr-place-clear-img';
+    clearBtn.textContent = '✕';
+    clearBtn.addEventListener('click', function () {
+      _state.pendingImage = null;
+      updateCurrentImagePreview();
+      updateOverlayCursor();
+    });
+    _currentImagePreview.appendChild(clearBtn);
+
+    _currentImagePreview.style.display = '';
+  } else {
+    _currentImagePreview.style.display = 'none';
+  }
 }
 
 
-// ── 배치 오버레이 (투명 캔버스) ─────────────────────────────────
+// ── 로컬 이미지 선택 ────────────────────────────────────────────
 
-function createOverlay() {
-  _overlay = document.createElement('div');
-  _overlay.className = 'bwbr-placement-overlay';
-  document.body.appendChild(_overlay);
-
-  _preview = document.createElement('div');
-  _preview.className = 'bwbr-placement-preview';
-  document.body.appendChild(_preview);
-
-  _angleIndicator = document.createElement('div');
-  _angleIndicator.className = 'bwbr-placement-angle-indicator';
-  document.body.appendChild(_angleIndicator);
-
-  // 드래그 이벤트
-  _overlay.addEventListener('mousedown', onOverlayMouseDown);
-  _overlay.addEventListener('mousemove', onOverlayMouseMove);
-  _overlay.addEventListener('mouseup', onOverlayMouseUp);
-}
-
-
-// ── 이미지 소스 선택 ────────────────────────────────────────────
-
-function promptImageSource() {
-  // 간단한 선택 다이얼로그: 로컬 파일 vs ccfolia 피커
-  // 우선 로컬 파일 업로드부터 구현
+function selectLocalImage() {
   var fileInput = document.createElement('input');
   fileInput.type = 'file';
   fileInput.accept = 'image/*';
@@ -608,8 +810,8 @@ function promptImageSource() {
             width: img.naturalWidth,
             height: img.naturalHeight
           };
-          // 오버레이 활성화 → 사용자가 맵에 클릭/드래그로 배치
-          _overlay.classList.add('bwbr-placement-overlay--active');
+          updateCurrentImagePreview();
+          updateOverlayCursor();
         };
         img.src = e.target.result;
       };
@@ -620,10 +822,71 @@ function promptImageSource() {
 
   fileInput.addEventListener('cancel', function () {
     fileInput.remove();
-    deactivateTool();
+    // 취소해도 도구 해제하지 않음 — 연속 배치 지원
   });
 
   fileInput.click();
+}
+
+
+// ── 코코포리아 이미지 선택 (TODO) ───────────────────────────────
+
+function selectCcofoliaImage() {
+  // TODO: ccfolia 이미지 피커 브릿지 연동
+  console.log('[CE 배치] 코코포리아 이미지 선택 — 미구현');
+}
+
+
+// ── 유틸: 필드/토글 생성 ────────────────────────────────────────
+
+function createField(label) {
+  var div = document.createElement('div');
+  div.className = 'bwbr-place-field';
+  var lbl = document.createElement('span');
+  lbl.className = 'bwbr-place-field-label';
+  lbl.textContent = label;
+  div.appendChild(lbl);
+  return div;
+}
+
+function createToggleField(label, defaultVal, onChange) {
+  var row = document.createElement('label');
+  var span = document.createElement('span');
+  span.textContent = label;
+  row.appendChild(span);
+  var toggle = document.createElement('div');
+  toggle.className = 'bwbr-place-toggle';
+  var input = document.createElement('input');
+  input.type = 'checkbox';
+  input.checked = !!defaultVal;
+  var slider = document.createElement('span');
+  slider.className = 'bwbr-place-slider';
+  input.addEventListener('change', function () { onChange(input.checked); });
+  toggle.appendChild(input);
+  toggle.appendChild(slider);
+  row.appendChild(toggle);
+  return row;
+}
+
+
+// ── 배치 오버레이 ───────────────────────────────────────────────
+
+function createOverlay() {
+  _overlay = document.createElement('div');
+  _overlay.className = 'bwbr-placement-overlay';
+  document.body.appendChild(_overlay);
+
+  _preview = document.createElement('div');
+  _preview.className = 'bwbr-placement-preview';
+  document.body.appendChild(_preview);
+
+  _angleIndicator = document.createElement('div');
+  _angleIndicator.className = 'bwbr-placement-angle-indicator';
+  document.body.appendChild(_angleIndicator);
+
+  _overlay.addEventListener('mousedown', onOverlayMouseDown);
+  _overlay.addEventListener('mousemove', onOverlayMouseMove);
+  _overlay.addEventListener('mouseup', onOverlayMouseUp);
 }
 
 
@@ -631,6 +894,9 @@ function promptImageSource() {
 
 function onOverlayMouseDown(e) {
   if (e.button !== 0) return;
+
+  // 이미지 도구에서 이미지 미선택 시 무시
+  if (_state.currentTool === 'image' && !_state.pendingImage) return;
 
   _state.placing = true;
   _state.drag.startX = e.clientX;
@@ -641,7 +907,6 @@ function onOverlayMouseDown(e) {
   updatePreview();
   _preview.classList.add('bwbr-placement-preview--visible');
 
-  // 이미지 프리뷰
   if (_state.currentTool === 'image' && _state.pendingImage) {
     _preview.innerHTML = '<img src="' + _state.pendingImage.dataUrl + '" alt="">';
   }
@@ -661,10 +926,10 @@ function onOverlayMouseUp(e) {
   _preview.innerHTML = '';
 
   var rect = getPreviewRect();
-  if (rect.w < 5 && rect.h < 5) return; // 너무 작은 클릭 무시
+  if (rect.w < 5 && rect.h < 5) return;
 
-  // ccfolia 맵 좌표로 변환 후 패널 생성 요청
-  commitPlacement(rect);
+  // 스테이징 (Firestore에 바로 쓰지 않음)
+  stageObject(rect);
 }
 
 function updatePreview() {
@@ -689,79 +954,173 @@ function getPreviewRect() {
 }
 
 
-// ── 배치 확정 (Firestore 패널 생성) ─────────────────────────────
+// ── 스테이징 시스템 ─────────────────────────────────────────────
 
-function commitPlacement(screenRect) {
-  // 화면 좌표 → ccfolia 맵 좌표 변환
+function stageObject(screenRect) {
   var mapCoords = screenToMapCoords(screenRect);
   if (!mapCoords) return;
 
-  console.log('[CE 배치] 화면:', screenRect, '→ 타일:', mapCoords, '(zoom:', getZoomScale().toFixed(2) + ')');
+  console.log('[CE 배치] 스테이징:', screenRect, '→ 타일:', mapCoords);
 
-  var panelData = {
-    type: _state.panelSettings.type,
-    x: mapCoords.x,
-    y: mapCoords.y,
-    z: _state.panelSettings.z,
-    width: mapCoords.width,
-    height: mapCoords.height,
+  var obj = {
+    id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+    mapCoords: mapCoords,
     angle: _state.angle,
-    memo: _state.panelSettings.memo,
-    locked: _state.panelSettings.locked,
-    freezed: _state.panelSettings.freezed,
-    imageUrl: '',
-    active: true,
-    visible: true,
-    closed: false,
-    withoutOwner: false,
-    owner: '',
-    ownerName: '',
-    ownerColor: '',
-    coverImageUrl: '',
-    clickAction: '',
-    deckId: null,
-    order: -1
+    imageDataUrl: _state.pendingImage ? _state.pendingImage.dataUrl : null,
+    settings: {
+      type: _state.panelSettings.type,
+      z: _state.panelSettings.z,
+      memo: _state.panelSettings.memo,
+      locked: _state.panelSettings.locked,
+      freezed: _state.panelSettings.freezed
+    }
   };
 
-  // 이미지 배치: 이미지 URL 설정 필요
-  if (_state.currentTool === 'image' && _state.pendingImage) {
-    // TODO: 이미지를 Firebase Storage에 업로드하고 URL을 받아야 함
-    // 임시: dataUrl을 직접 사용 (작동하지 않을 수 있음)
-    panelData.imageUrl = _state.pendingImage.dataUrl;
+  _state.stagedObjects.push(obj);
+  renderStagedItem(obj);
+  updateConfirmBar();
+  // 오버레이 유지 → 연속 배치 가능
+}
+
+
+// ── 스테이징 렌더링 (맵 위 프리뷰) ─────────────────────────────
+
+function renderStagedItem(obj) {
+  var zoomEl = getZoomContainer();
+  if (!zoomEl) return;
+
+  var mc = obj.mapCoords;
+  var el = document.createElement('div');
+  el.className = 'bwbr-staged-item';
+  el.dataset.stagedId = obj.id;
+  el.style.left = (mc.x * CELL_PX) + 'px';
+  el.style.top = (mc.y * CELL_PX) + 'px';
+  el.style.width = (mc.width * CELL_PX) + 'px';
+  el.style.height = (mc.height * CELL_PX) + 'px';
+
+  if (obj.angle) {
+    el.style.transform = 'rotate(' + obj.angle + 'deg)';
   }
 
-  // 브릿지 이벤트로 MAIN world에 패널 생성 요청
+  if (obj.imageDataUrl) {
+    var img = document.createElement('img');
+    img.src = obj.imageDataUrl;
+    el.appendChild(img);
+  }
+
+  // 번호 배지
+  var badge = document.createElement('span');
+  badge.className = 'bwbr-staged-badge';
+  badge.textContent = _state.stagedObjects.length;
+  el.appendChild(badge);
+
+  zoomEl.appendChild(el);
+}
+
+function clearAllStaged() {
+  _state.stagedObjects = [];
+  document.querySelectorAll('.bwbr-staged-item').forEach(function (el) { el.remove(); });
+  updateConfirmBar();
+}
+
+function renumberStagedBadges() {
+  _state.stagedObjects.forEach(function (obj, i) {
+    var el = document.querySelector('[data-staged-id="' + obj.id + '"]');
+    if (el) {
+      var badge = el.querySelector('.bwbr-staged-badge');
+      if (badge) badge.textContent = i + 1;
+    }
+  });
+}
+
+function undoLastStaged() {
+  if (_state.stagedObjects.length === 0) return;
+  var last = _state.stagedObjects.pop();
+  var el = document.querySelector('[data-staged-id="' + last.id + '"]');
+  if (el) el.remove();
+  renumberStagedBadges();
+  updateConfirmBar();
+}
+
+
+// ── 확인 바 (하단 중앙) ─────────────────────────────────────────
+
+function createConfirmBar() {
+  _confirmBar = document.createElement('div');
+  _confirmBar.className = 'bwbr-place-confirm-bar';
+
+  var cancelBtn = document.createElement('button');
+  cancelBtn.className = 'bwbr-place-confirm-bar-btn bwbr-place-cancel-btn';
+  cancelBtn.textContent = '전체 취소';
+  cancelBtn.addEventListener('click', clearAllStaged);
+
+  _stagedCountEl = document.createElement('span');
+  _stagedCountEl.className = 'bwbr-place-staged-count';
+  _stagedCountEl.textContent = '0개';
+
+  var confirmBtn = document.createElement('button');
+  confirmBtn.className = 'bwbr-place-confirm-bar-btn bwbr-place-confirm-btn';
+  confirmBtn.textContent = '✓ 확인';
+  confirmBtn.addEventListener('click', commitAllStaged);
+
+  _confirmBar.appendChild(cancelBtn);
+  _confirmBar.appendChild(_stagedCountEl);
+  _confirmBar.appendChild(confirmBtn);
+
+  document.body.appendChild(_confirmBar);
+}
+
+function updateConfirmBar() {
+  var count = _state.stagedObjects.length;
+  if (count > 0) {
+    _confirmBar.classList.add('bwbr-place-confirm-bar--visible');
+    _stagedCountEl.textContent = count + '개 배치됨';
+  } else {
+    _confirmBar.classList.remove('bwbr-place-confirm-bar--visible');
+  }
+}
+
+
+// ── 일괄 확정 (Firestore) ───────────────────────────────────────
+
+function commitAllStaged() {
+  if (_state.stagedObjects.length === 0) return;
+
+  var panels = _state.stagedObjects.map(function (obj) {
+    return {
+      type: obj.settings.type,
+      x: obj.mapCoords.x,
+      y: obj.mapCoords.y,
+      z: obj.settings.z,
+      width: obj.mapCoords.width,
+      height: obj.mapCoords.height,
+      angle: obj.angle,
+      memo: obj.settings.memo,
+      locked: obj.settings.locked,
+      freezed: obj.settings.freezed,
+      imageUrl: obj.imageDataUrl || ''
+    };
+  });
+
+  console.log('[CE 배치] 일괄 확정:', panels.length + '개');
+
   document.documentElement.setAttribute(
-    'data-bwbr-create-panel',
-    JSON.stringify(panelData)
+    'data-bwbr-create-panels-batch',
+    JSON.stringify(panels)
   );
-  window.dispatchEvent(new CustomEvent('bwbr-create-panel'));
+  window.dispatchEvent(new CustomEvent('bwbr-create-panels-batch'));
 
-  // 상태 초기화
-  _state.angle = 0;
-  _state.pendingImage = null;
-
-  // 오버레이 비활성화 (계속 배치하려면 도구 다시 클릭)
-  _overlay.classList.remove('bwbr-placement-overlay--active');
+  clearAllStaged();
 }
 
 
 // ── 맵 좌표 유틸리티 ────────────────────────────────────────────
 
-var CELL_PX = 24;  // ccfolia 1타일 = 24px
-
-/**
- * zoom 컨테이너 찾기 (.movable 토큰의 부모)
- */
 function getZoomContainer() {
   var m = document.querySelector('.movable');
   return m ? m.parentElement : null;
 }
 
-/**
- * zoom 컨테이너의 scale 값 추출
- * transform: matrix(scale, 0, 0, scale, ...) 또는 scale(N) 파싱
- */
 function getZoomScale() {
   var zoomEl = getZoomContainer();
   if (!zoomEl) return 1;
@@ -771,53 +1130,28 @@ function getZoomScale() {
   return m ? parseFloat(m[1]) : 1;
 }
 
-/**
- * 맵 원점의 화면 좌표를 구합니다.
- * zoom 컨테이너 내부 (0,0)에 임시 probe 요소를 삽입하여
- * getBoundingClientRect()로 화면 위치를 측정합니다.
- * @returns {{ x: number, y: number } | null}
- */
 function getMapOriginOnScreen() {
   var zoomEl = getZoomContainer();
   if (!zoomEl) return null;
-
   var probe = document.createElement('div');
   probe.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;pointer-events:none;';
   zoomEl.appendChild(probe);
   var rect = probe.getBoundingClientRect();
   zoomEl.removeChild(probe);
-
   return { x: rect.left, y: rect.top };
 }
 
-/**
- * 화면 좌표(screenRect) → ccfolia 맵 타일 좌표 변환
- *
- * 변환 체인:
- *   screen position
- *   → (- mapOrigin) : 맵 원점 기준 상대 위치 (화면 픽셀)
- *   → (÷ zoomScale) : zoom 보정 → 맵 픽셀
- *   → (÷ 24)        : 맵 픽셀 → 타일 좌표
- *
- * @param {{ x: number, y: number, w: number, h: number }} screenRect
- * @returns {{ x: number, y: number, width: number, height: number } | null}
- */
 function screenToMapCoords(screenRect) {
   var origin = getMapOriginOnScreen();
   if (!origin) {
-    console.warn('[CE 배치] 맵 요소를 찾을 수 없습니다. (.movable 토큰이 없음)');
+    console.warn('[CE 배치] 맵 요소를 찾을 수 없습니다.');
     return null;
   }
-
   var scale = getZoomScale();
-
-  // 화면 픽셀 → 맵 픽셀 (zoom 역변환)
   var mapPxX = (screenRect.x - origin.x) / scale;
   var mapPxY = (screenRect.y - origin.y) / scale;
   var mapPxW = screenRect.w / scale;
   var mapPxH = screenRect.h / scale;
-
-  // 맵 픽셀 → 타일 좌표
   return {
     x: Math.round(mapPxX / CELL_PX),
     y: Math.round(mapPxY / CELL_PX),
@@ -835,30 +1169,31 @@ function setupKeyboard() {
 
     // R: 회전 (15도 단위)
     if (e.key === 'r' || e.key === 'R') {
-      // 입력 필드 내에서는 무시
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-
       e.preventDefault();
       _state.angle = (_state.angle + (e.shiftKey ? -15 : 15)) % 360;
       if (_state.angle < 0) _state.angle += 360;
-
-      // 프리뷰 업데이트
-      if (_state.placing) {
-        updatePreview();
-      }
-
-      // 각도 표시
+      if (_state.placing) updatePreview();
       showAngleIndicator();
     }
 
-    // Escape: 배치 모드 종료
+    // Ctrl+Z: 마지막 스테이징 취소
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (_state.stagedObjects.length > 0) {
+        e.preventDefault();
+        undoLastStaged();
+      }
+    }
+
+    // Escape: 단계별 취소
     if (e.key === 'Escape') {
       if (_state.placing) {
-        // 배치 중이면 배치 취소
         _state.placing = false;
         _preview.classList.remove('bwbr-placement-preview--visible');
         _preview.innerHTML = '';
-        _overlay.classList.remove('bwbr-placement-overlay--active');
+      } else if (_state.stagedObjects.length > 0) {
+        clearAllStaged();
       } else if (_state.currentTool) {
         deactivateTool();
       } else {
@@ -876,7 +1211,6 @@ function showAngleIndicator() {
   _angleIndicator.style.top = '50%';
   _angleIndicator.style.transform = 'translate(-50%, -50%)';
   _angleIndicator.classList.add('bwbr-placement-angle-indicator--visible');
-
   clearTimeout(_angleTimeout);
   _angleTimeout = setTimeout(function () {
     _angleIndicator.classList.remove('bwbr-placement-angle-indicator--visible');
@@ -886,7 +1220,6 @@ function showAngleIndicator() {
 
 // ── 모듈 시작 ───────────────────────────────────────────────────
 
-// DOM 준비 후 초기화
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
 } else {
