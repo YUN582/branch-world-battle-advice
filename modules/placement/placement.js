@@ -696,6 +696,8 @@ function commitPlacement(screenRect) {
   var mapCoords = screenToMapCoords(screenRect);
   if (!mapCoords) return;
 
+  console.log('[CE 배치] 화면:', screenRect, '→ 타일:', mapCoords, '(zoom:', getZoomScale().toFixed(2) + ')');
+
   var panelData = {
     type: _state.panelSettings.type,
     x: mapCoords.x,
@@ -744,29 +746,83 @@ function commitPlacement(screenRect) {
 }
 
 
-// ── 화면 좌표 → 맵 좌표 변환 ────────────────────────────────────
+// ── 맵 좌표 유틸리티 ────────────────────────────────────────────
 
+var CELL_PX = 24;  // ccfolia 1타일 = 24px
+
+/**
+ * zoom 컨테이너 찾기 (.movable 토큰의 부모)
+ */
+function getZoomContainer() {
+  var m = document.querySelector('.movable');
+  return m ? m.parentElement : null;
+}
+
+/**
+ * zoom 컨테이너의 scale 값 추출
+ * transform: matrix(scale, 0, 0, scale, ...) 또는 scale(N) 파싱
+ */
+function getZoomScale() {
+  var zoomEl = getZoomContainer();
+  if (!zoomEl) return 1;
+  var t = getComputedStyle(zoomEl).transform;
+  if (!t || t === 'none') return 1;
+  var m = t.match(/matrix\(([^,]+)/);
+  return m ? parseFloat(m[1]) : 1;
+}
+
+/**
+ * 맵 원점의 화면 좌표를 구합니다.
+ * zoom 컨테이너 내부 (0,0)에 임시 probe 요소를 삽입하여
+ * getBoundingClientRect()로 화면 위치를 측정합니다.
+ * @returns {{ x: number, y: number } | null}
+ */
+function getMapOriginOnScreen() {
+  var zoomEl = getZoomContainer();
+  if (!zoomEl) return null;
+
+  var probe = document.createElement('div');
+  probe.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;pointer-events:none;';
+  zoomEl.appendChild(probe);
+  var rect = probe.getBoundingClientRect();
+  zoomEl.removeChild(probe);
+
+  return { x: rect.left, y: rect.top };
+}
+
+/**
+ * 화면 좌표(screenRect) → ccfolia 맵 타일 좌표 변환
+ *
+ * 변환 체인:
+ *   screen position
+ *   → (- mapOrigin) : 맵 원점 기준 상대 위치 (화면 픽셀)
+ *   → (÷ zoomScale) : zoom 보정 → 맵 픽셀
+ *   → (÷ 24)        : 맵 픽셀 → 타일 좌표
+ *
+ * @param {{ x: number, y: number, w: number, h: number }} screenRect
+ * @returns {{ x: number, y: number, width: number, height: number } | null}
+ */
 function screenToMapCoords(screenRect) {
-  // ccfolia의 맵 컨테이너를 찾아서 변환 행렬 역산
-  // 맵은 transform: translate + scale 이 적용된 div
-  var mapEl = document.querySelector('[data-testid="room"]') ||
-              document.querySelector('[class*="Room"]') ||
-              document.querySelector('main > div > div');
-
-  if (!mapEl) {
-    console.warn('[CE 배치] 맵 요소를 찾을 수 없습니다.');
+  var origin = getMapOriginOnScreen();
+  if (!origin) {
+    console.warn('[CE 배치] 맵 요소를 찾을 수 없습니다. (.movable 토큰이 없음)');
     return null;
   }
 
-  // TODO: 실제 ccfolia 맵 좌표 변환 로직
-  // 현재는 진단 스크립트로 확인 후 구현 예정
-  // 임시: 화면 픽셀을 대략적 타일 단위로 변환 (1타일 ≈ 50px 가정)
-  var TILE_PX = 50;
+  var scale = getZoomScale();
+
+  // 화면 픽셀 → 맵 픽셀 (zoom 역변환)
+  var mapPxX = (screenRect.x - origin.x) / scale;
+  var mapPxY = (screenRect.y - origin.y) / scale;
+  var mapPxW = screenRect.w / scale;
+  var mapPxH = screenRect.h / scale;
+
+  // 맵 픽셀 → 타일 좌표
   return {
-    x: Math.round(screenRect.x / TILE_PX),
-    y: Math.round(screenRect.y / TILE_PX),
-    width: Math.max(1, Math.round(screenRect.w / TILE_PX)),
-    height: Math.max(1, Math.round(screenRect.h / TILE_PX))
+    x: Math.round(mapPxX / CELL_PX),
+    y: Math.round(mapPxY / CELL_PX),
+    width: Math.max(1, Math.round(mapPxW / CELL_PX)),
+    height: Math.max(1, Math.round(mapPxH / CELL_PX))
   };
 }
 
