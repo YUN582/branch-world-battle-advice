@@ -5673,4 +5673,73 @@
     }
   });
 
+  // ================================================================
+  //  배치 모드: 패널(아이템) 생성
+  //  Content Script에서 bwbr-create-panel 이벤트로 요청
+  // ================================================================
+  window.addEventListener('bwbr-create-panel', async () => {
+    const _raw = document.documentElement.getAttribute('data-bwbr-create-panel');
+    document.documentElement.removeAttribute('data-bwbr-create-panel');
+    const panelData = _raw ? JSON.parse(_raw) : {};
+    const respond = (detail) => {
+      document.documentElement.setAttribute('data-bwbr-create-panel-result', JSON.stringify(detail));
+      window.dispatchEvent(new CustomEvent('bwbr-create-panel-result', { detail }));
+    };
+
+    try {
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) throw new Error('Firestore SDK 없음');
+      if (!reduxStore) throw new Error('Redux Store 없음');
+
+      const roomId = getRoomId();
+      if (!roomId) throw new Error('방 ID를 찾을 수 없음');
+
+      const state = reduxStore.getState();
+      const uid = state.app?.state?.uid || '';
+
+      const itemsCol = sdk.collection(sdk.db, 'rooms', roomId, 'items');
+      const newId = _generateFirestoreId();
+      const newRef = sdk.doc(itemsCol, newId);
+
+      const now = Date.now();
+      const itemData = {
+        type: panelData.type || 'plane',
+        x: panelData.x ?? 0,
+        y: panelData.y ?? 0,
+        z: panelData.z ?? 150,
+        width: panelData.width ?? 4,
+        height: panelData.height ?? 4,
+        angle: panelData.angle ?? 0,
+        locked: panelData.locked ?? false,
+        freezed: panelData.freezed ?? false,
+        visible: true,
+        closed: false,
+        withoutOwner: false,
+        active: true,
+        owner: uid,
+        ownerName: '',
+        ownerColor: '',
+        memo: panelData.memo || '',
+        imageUrl: panelData.imageUrl || '',
+        coverImageUrl: '',
+        clickAction: '',
+        deckId: null,
+        order: -1,
+        createdAt: now,
+        updatedAt: now
+      };
+
+      await sdk.setDoc(newRef, itemData);
+
+      _dbg(`%c[CE]%c ✅ 패널 생성: ${newId} (${itemData.type}, ${itemData.width}×${itemData.height})`,
+        'color: #4caf50; font-weight: bold;', 'color: inherit;');
+
+      respond({ success: true, id: newId });
+
+    } catch (err) {
+      console.error('[CE] 패널 생성 실패:', err);
+      respond({ success: false, error: err.message });
+    }
+  });
+
 })();

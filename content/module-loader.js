@@ -29,7 +29,8 @@
   var BUILTIN_MODULES = [
     'modules/branch-world/manifest.json',
     'modules/triggers/manifest.json',
-    'modules/multi-select/manifest.json'
+    'modules/multi-select/manifest.json',
+    'modules/placement/manifest.json'
   ];
 
   var STORAGE_KEY = 'bwbr_modules';       // { moduleId: boolean } — chrome.storage.sync
@@ -337,11 +338,21 @@
       // 내장 모듈: 파일 경로에서 로드 (web_accessible_resources 필요)
       var basePath = mod._path ? mod._path.replace(/\/[^/]+$/, '/') : '';
       var scriptUrl = chrome.runtime.getURL(basePath + mod.script.file);
-      LOG('스크립트 모듈 파일 로드:', mod.id, scriptUrl);
-      var scriptEl = document.createElement('script');
-      scriptEl.src = scriptUrl;
-      scriptEl.dataset.bwbrModule = mod.id;
-      (document.head || document.documentElement).appendChild(scriptEl);
+      LOG('스크립트 모듈 파일 로드:', mod.id, scriptUrl, '(world:', world, ')');
+      if (world === 'isolated') {
+        // ISOLATED world: dynamic import (content script 컨텍스트)
+        import(scriptUrl).then(function () {
+          LOG('스크립트 모듈 실행 완료 (ISOLATED file):', mod.id);
+        }).catch(function (e) {
+          LOG('스크립트 모듈 실행 오류 (ISOLATED file):', mod.id, e.message);
+        });
+      } else {
+        // MAIN world: <script src> 로 삽입
+        var scriptEl = document.createElement('script');
+        scriptEl.src = scriptUrl;
+        scriptEl.dataset.bwbrModule = mod.id;
+        (document.head || document.documentElement).appendChild(scriptEl);
+      }
       return;
     } else {
       LOG('스크립트 모듈 코드 없음:', mod.id);

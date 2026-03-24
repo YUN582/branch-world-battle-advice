@@ -1,0 +1,14 @@
+{
+  "id": "placement",
+  "name": "배치 모드",
+  "version": "1.0.0",
+  "type": "script",
+  "description": "이미지, 텍스트, 도형, 그리기 도구로 스크린/마커 패널을 자유롭게 배치합니다.",
+  "author": "CE",
+  "tags": ["ui", "placement", "panel", "drawing"],
+  "minCoreVersion": "1.3.2",
+  "script": {
+    "file": "placement.js",
+    "world": "isolated"
+  }
+}
