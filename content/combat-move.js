@@ -927,7 +927,7 @@
     document.addEventListener('click', onCombatClick, true);
     document.addEventListener('pointerdown', onCombatPointerDown, true);
     document.addEventListener('contextmenu', onCombatContextMenu, true);
-    updateFabLabel();
+    updateFabButtonActive();
     showHelpPanel();
     showToast('전투 모드 활성화', 2000);
     LOG('전투 모드 ON');
@@ -941,7 +941,7 @@
     document.removeEventListener('click', onCombatClick, true);
     document.removeEventListener('pointerdown', onCombatPointerDown, true);
     document.removeEventListener('contextmenu', onCombatContextMenu, true);
-    updateFabLabel();
+    updateFabButtonActive();
     hideHelpPanel();
     showToast('전투 모드 비활성화', 2000);
     LOG('전투 모드 OFF');
@@ -953,174 +953,25 @@
   }
 
   // ------------------------------------------------
-  //  8. FAB menu injection (grid-overlay.js 패턴)
+  //  8. 외부 FAB 버튼 등록 (fab-buttons.js 인프라 사용)
   // ------------------------------------------------
-  var COMBAT_ATTR = 'data-bwbr-combat';
+  var COMBAT_ICON = '<path fill="currentColor" d="M6.2,2.44L18.1,14.34L20.22,12.22L21.63,13.63L19.16,16.1L22.34,19.28C22.73,19.67 22.73,20.3 22.34,20.69L21.63,21.4C21.24,21.79 20.61,21.79 20.22,21.4L17,18.23L14.56,20.7L13.15,19.29L15.27,17.17L3.37,5.27V2.44H6.2M15.89,10L20.63,5.26V2.44H17.8L13.06,7.18L15.89,10M10.94,15L8.11,12.13L5.9,14.34L3.78,12.22L2.37,13.63L4.84,16.1L1.66,19.29C1.27,19.68 1.27,20.31 1.66,20.7L2.37,21.41C2.76,21.8 3.39,21.8 3.78,21.41L7,18.23L9.44,20.7L10.85,19.29L8.73,17.17L10.94,15Z"/>';
 
-  function findFabMenuList() {
-    var popovers = document.querySelectorAll('.MuiPopover-root');
-    for (var i = 0; i < popovers.length; i++) {
-      var paper = popovers[i].querySelector('.MuiPaper-root');
-      if (!paper) continue;
-      var list = paper.querySelector('.MuiList-root');
-      if (!list) continue;
-      var items = list.querySelectorAll('.MuiListItemButton-root');
-      if (items.length < 4) continue;
-      // FAB 메뉴 식별: "스크린 패널" (KR) 또는 "スクリーンパネル" (JP)
-      // 이 텍스트는 FAB 메뉴의 "스크린 패널을 추가" 항목에만 존재
-      var text = list.textContent;
-      if (text.indexOf('스크린 패널') === -1 && text.indexOf('スクリーンパネル') === -1) continue;
-      return list;
+  function setupFabButton() {
+    if (window.BWBR_FabButtons) {
+      window.BWBR_FabButtons.register('combat-mode', {
+        icon: COMBAT_ICON,
+        tooltip: '전투 모드 (Alt+*)',
+        onClick: toggleCombatMode,
+        order: 10  // FAB에 가까운 위치
+      });
     }
-    return null;
   }
 
-  function setupFabInjection() {
-    function tryInject() {
-      // 이미 주입됨
-      var existing = document.querySelector('[' + COMBAT_ATTR + ']');
-      if (existing) { updateFabLabel(); return; }
-
-      var list = findFabMenuList();
-      if (!list) return;
-
-      var items = list.querySelectorAll('.MuiListItemButton-root');
-      if (items.length === 0) return;
-
-      // PRO 뱃지 없는 아이템을 복제 원본으로 선택
-      var source = items[0];
-      for (var i = 0; i < items.length; i++) {
-        if (!/PRO|Pro/i.test(items[i].textContent)) { source = items[i]; break; }
-      }
-
-      var clone = source.cloneNode(true);
-      clone.setAttribute(COMBAT_ATTR, '');
-      clone.removeAttribute('disabled');
-      clone.removeAttribute('aria-disabled');
-      clone.classList.remove('Mui-disabled');
-
-      // React 내부 속성 제거
-      (function strip(el) {
-        for (var k of Object.keys(el)) {
-          if (k.startsWith('__react')) try { delete el[k]; } catch (e) {}
-        }
-        for (var c of el.children) strip(c);
-      })(clone);
-
-      // PRO 뱃지 / Chip / Badge 제거
-      clone.querySelectorAll('.MuiChip-root, .MuiBadge-root, [class*="Badge"]')
-        .forEach(function (el) { el.remove(); });
-      clone.querySelectorAll('span, p').forEach(function (el) {
-        if (/^\s*PRO\s*$/i.test(el.textContent) && !el.querySelector('svg')) el.remove();
-      });
-
-      // 텍스트 교체
-      var lit = clone.querySelector('.MuiListItemText-root');
-      if (lit) {
-        var typos = lit.querySelectorAll('.MuiTypography-root');
-        if (typos.length > 0) {
-          typos[0].textContent = _combatMode ? '전투 모드 끄기' : '전투 모드';
-        }
-        if (typos.length > 1) {
-          typos[1].textContent = '이동 범위 표시 + 클릭 이동 (Alt+*)';
-          for (var j = 2; j < typos.length; j++) typos[j].remove();
-        } else {
-          var desc = document.createElement('span');
-          desc.className = typos[0] ? typos[0].className : '';
-          desc.style.cssText = 'display:block;font-size:0.75rem;opacity:0.7;';
-          desc.textContent = '이동 범위 표시 + 클릭 이동 (Alt+*)';
-          lit.appendChild(desc);
-        }
-      } else {
-        var walker = document.createTreeWalker(clone, NodeFilter.SHOW_TEXT);
-        var tNodes = [], tn;
-        while ((tn = walker.nextNode())) tNodes.push(tn);
-        if (tNodes.length > 0) tNodes[0].textContent = _combatMode ? '전투 모드 끄기' : '전투 모드';
-        for (var j = 1; j < tNodes.length; j++) {
-          if (!tNodes[j].parentElement.closest('svg')) tNodes[j].textContent = '';
-        }
-      }
-
-      // 아이콘 교체 (검 아이콘)
-      var svg = clone.querySelector('svg');
-      if (svg) {
-        svg.setAttribute('viewBox', '0 0 24 24');
-        svg.innerHTML =
-          '<path fill="currentColor" d="M6.92 5H5l9 9 1-.94-7.08-8.06M16 2l-4 4 7.08 7.08L23 9l-7-7M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z"/>';
-      }
-
-      // 클릭 핸들러
-      function onCombatItemClick(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        toggleCombatMode();
-        // FAB Popover 닫기
-        var popover = clone.closest('.MuiPopover-root');
-        if (popover) {
-          var backdrop = popover.querySelector('.MuiBackdrop-root');
-          if (backdrop) backdrop.click();
-        }
-      }
-      clone.addEventListener('click', onCombatItemClick, true);
-      clone.querySelectorAll('button, [role="button"]').forEach(function (btn) {
-        btn.addEventListener('click', onCombatItemClick, true);
-      });
-
-      // ── 메뉴 스크롤 가능하게 (확장 항목 추가로 넘칠 수 있음) ──
-      var paper = list.closest('.MuiPaper-root');
-      if (paper) {
-        var pRect = paper.getBoundingClientRect();
-        var maxAvail = window.innerHeight - pRect.top - 16;
-        if (maxAvail > 100) paper.style.maxHeight = maxAvail + 'px';
-      }
-
-      // 그리드 버튼 뒤에 삽입 (없으면 첫 번째 항목 뒤)
-      var gridItem = list.querySelector('[data-bwbr-grid]');
-      if (gridItem && gridItem.nextSibling) {
-        list.insertBefore(clone, gridItem.nextSibling);
-      } else if (list.children[0]) {
-        if (list.children[1]) {
-          list.insertBefore(clone, list.children[1]);
-        } else {
-          list.appendChild(clone);
-        }
-      } else {
-        list.appendChild(clone);
-      }
-
-      LOG('FAB 메뉴 전투 모드 항목 주입');
-    }
-
-    // grid-overlay 주입 완료 시그널 → 확실한 주입
-    window.addEventListener('bwbr-fab-injected', function () {
-      setTimeout(tryInject, 50);
-    });
-
-    // MutationObserver (자체 감지, non-canceling setTimeout 디바운스)
-    var pending = false;
-    var obs = new MutationObserver(function () {
-      if (pending) return;
-      pending = true;
-      setTimeout(function () { pending = false; tryInject(); }, 150);
-    });
-    obs.observe(document.body, { childList: true, subtree: true });
-  }
-
-  function updateFabLabel() {
-    var el = document.querySelector('[' + COMBAT_ATTR + ']');
-    if (!el) return;
-    var lit = el.querySelector('.MuiListItemText-root');
-    if (lit) {
-      var typos = lit.querySelectorAll('.MuiTypography-root');
-      if (typos.length > 0) {
-        typos[0].textContent = _combatMode ? '전투 모드 끄기' : '전투 모드';
-      }
-    } else {
-      var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-      var tn = walker.nextNode();
-      if (tn && !tn.parentElement.closest('svg')) {
-        tn.textContent = _combatMode ? '전투 모드 끄기' : '전투 모드';
-      }
+  // ── 전투 모드 상태가 바뀔 때 활성 표시 업데이트 ──
+  function updateFabButtonActive() {
+    if (window.BWBR_FabButtons) {
+      window.BWBR_FabButtons.setActive('combat-mode', _combatMode);
     }
   }
 
@@ -1263,7 +1114,7 @@
   // ------------------------------------------------
   //  11. Init
   // ------------------------------------------------
-  setupFabInjection();
+  setupFabButton();
 
   // gridSize 변경 감지 — 이동 한칸 크기 갱신
   window.addEventListener('bwbr-grid-size-changed', function(e) {
