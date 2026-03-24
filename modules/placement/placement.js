@@ -15,6 +15,7 @@ var TOOL_ICONS = {
 };
 
 var CELL_PX = 24;  // ccfolia 1타일 = 24px
+var COMPOSITE_PX_PER_TILE = 96;  // 합성 이미지 해상도 (1타일 = 96px)
 
 // ── CSS 주입 ────────────────────────────────────────────────────
 
@@ -394,6 +395,16 @@ var CELL_PX = 24;  // ccfolia 1타일 = 24px
   box-shadow: 0 1px 3px rgba(0,0,0,0.3);
 }
 
+.bwbr-staged-item--selected {
+  border-color: #ff9800;
+  border-width: 3px;
+  box-shadow: 0 0 12px rgba(255, 152, 0, 0.5);
+}
+
+.bwbr-staged-item--selected .bwbr-staged-badge {
+  background: #ff9800;
+}
+
 /* ── 확인 바 (하단 중앙) ───────────────────────── */
 
 .bwbr-place-confirm-bar {
@@ -481,7 +492,6 @@ var _state = {
   active: false,          // 배치 모드 활성
   currentTool: null,      // 'image' | 'text' | 'draw' | null
   placing: false,         // 현재 배치 중 (드래그)
-  angle: 0,               // 현재 회전 각도
 
   // 패널 설정 기본값
   panelSettings: {
@@ -504,7 +514,8 @@ var _state = {
   pendingImage: null,     // { dataUrl, file, width, height }
 
   // 스테이징 (일괄 배치)
-  stagedObjects: []       // [{ id, mapCoords, angle, imageDataUrl, settings }]
+  stagedObjects: [],      // [{ id, mapCoords, angle, imageDataUrl, settings }]
+  selectedStagedId: null  // 선택된 스테이징 오브젝트 ID
 };
 
 
@@ -895,15 +906,16 @@ function createOverlay() {
 function onOverlayMouseDown(e) {
   if (e.button !== 0) return;
 
-  // 이미지 도구에서 이미지 미선택 시 무시
-  if (_state.currentTool === 'image' && !_state.pendingImage) return;
-
-  _state.placing = true;
+  // 드래그 시작 좌표 기록 (클릭 감지용)
   _state.drag.startX = e.clientX;
   _state.drag.startY = e.clientY;
   _state.drag.currentX = e.clientX;
   _state.drag.currentY = e.clientY;
 
+  // 이미지 도구에서 이미지 미선택 시 클릭만 허용 (선택용)
+  if (_state.currentTool === 'image' && !_state.pendingImage) return;
+
+  _state.placing = true;
   updatePreview();
   _preview.classList.add('bwbr-placement-preview--visible');
 
@@ -920,6 +932,24 @@ function onOverlayMouseMove(e) {
 }
 
 function onOverlayMouseUp(e) {
+  var dx = Math.abs(e.clientX - _state.drag.startX);
+  var dy = Math.abs(e.clientY - _state.drag.startY);
+  var isClick = dx < 5 && dy < 5;
+
+  if (isClick) {
+    // 클릭 → 스테이징 오브젝트 선택/해제
+    _state.placing = false;
+    _preview.classList.remove('bwbr-placement-preview--visible');
+    _preview.innerHTML = '';
+    var hit = hitTestStaged(e.clientX, e.clientY);
+    if (hit) {
+      selectStagedItem(hit.id);
+    } else {
+      deselectStaged();
+    }
+    return;
+  }
+
   if (!_state.placing) return;
   _state.placing = false;
   _preview.classList.remove('bwbr-placement-preview--visible');
@@ -928,7 +958,7 @@ function onOverlayMouseUp(e) {
   var rect = getPreviewRect();
   if (rect.w < 5 && rect.h < 5) return;
 
-  // 스테이징 (Firestore에 바로 쓰지 않음)
+  deselectStaged();
   stageObject(rect);
 }
 
@@ -938,11 +968,7 @@ function updatePreview() {
   _preview.style.top = rect.y + 'px';
   _preview.style.width = rect.w + 'px';
   _preview.style.height = rect.h + 'px';
-  if (_state.angle !== 0) {
-    _preview.style.transform = 'rotate(' + _state.angle + 'deg)';
-  } else {
-    _preview.style.transform = '';
-  }
+  _preview.style.transform = '';
 }
 
 function getPreviewRect() {
@@ -965,7 +991,7 @@ function stageObject(screenRect) {
   var obj = {
     id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
     mapCoords: mapCoords,
-    angle: _state.angle,
+    angle: 0,
     imageDataUrl: _state.pendingImage ? _state.pendingImage.dataUrl : null,
     settings: {
       type: _state.panelSettings.type,
@@ -1019,6 +1045,7 @@ function renderStagedItem(obj) {
 
 function clearAllStaged() {
   _state.stagedObjects = [];
+  _state.selectedStagedId = null;
   document.querySelectorAll('.bwbr-staged-item').forEach(function (el) { el.remove(); });
   updateConfirmBar();
 }
@@ -1036,10 +1063,75 @@ function renumberStagedBadges() {
 function undoLastStaged() {
   if (_state.stagedObjects.length === 0) return;
   var last = _state.stagedObjects.pop();
+  if (_state.selectedStagedId === last.id) _state.selectedStagedId = null;
   var el = document.querySelector('[data-staged-id="' + last.id + '"]');
   if (el) el.remove();
   renumberStagedBadges();
   updateConfirmBar();
+}
+
+
+// ── 스테이징 선택/회전 ──────────────────────────────────────────
+
+function hitTestStaged(screenX, screenY) {
+  var origin = getMapOriginOnScreen();
+  if (!origin) return null;
+  var scale = getZoomScale();
+  var mapPxX = (screenX - origin.x) / scale;
+  var mapPxY = (screenY - origin.y) / scale;
+
+  for (var i = _state.stagedObjects.length - 1; i >= 0; i--) {
+    var obj = _state.stagedObjects[i];
+    var mc = obj.mapCoords;
+    var left = mc.x * CELL_PX;
+    var top = mc.y * CELL_PX;
+    var right = left + mc.width * CELL_PX;
+    var bottom = top + mc.height * CELL_PX;
+    if (mapPxX >= left && mapPxX <= right && mapPxY >= top && mapPxY <= bottom) {
+      return obj;
+    }
+  }
+  return null;
+}
+
+function selectStagedItem(id) {
+  deselectStaged();
+  _state.selectedStagedId = id;
+  var el = document.querySelector('[data-staged-id="' + id + '"]');
+  if (el) el.classList.add('bwbr-staged-item--selected');
+}
+
+function deselectStaged() {
+  if (_state.selectedStagedId) {
+    var el = document.querySelector('[data-staged-id="' + _state.selectedStagedId + '"]');
+    if (el) el.classList.remove('bwbr-staged-item--selected');
+  }
+  _state.selectedStagedId = null;
+}
+
+function removeSelectedStaged() {
+  if (!_state.selectedStagedId) return;
+  var idx = _state.stagedObjects.findIndex(function (o) { return o.id === _state.selectedStagedId; });
+  if (idx === -1) return;
+  var el = document.querySelector('[data-staged-id="' + _state.selectedStagedId + '"]');
+  if (el) el.remove();
+  _state.stagedObjects.splice(idx, 1);
+  _state.selectedStagedId = null;
+  renumberStagedBadges();
+  updateConfirmBar();
+}
+
+function rotateSelectedStaged(delta) {
+  if (!_state.selectedStagedId) return;
+  var obj = _state.stagedObjects.find(function (o) { return o.id === _state.selectedStagedId; });
+  if (!obj) return;
+  obj.angle = ((obj.angle || 0) + delta) % 360;
+  if (obj.angle < 0) obj.angle += 360;
+  var el = document.querySelector('[data-staged-id="' + obj.id + '"]');
+  if (el) {
+    el.style.transform = obj.angle ? 'rotate(' + obj.angle + 'deg)' : '';
+  }
+  showAngleIndicator(obj.angle);
 }
 
 
@@ -1061,7 +1153,7 @@ function createConfirmBar() {
   var confirmBtn = document.createElement('button');
   confirmBtn.className = 'bwbr-place-confirm-bar-btn bwbr-place-confirm-btn';
   confirmBtn.textContent = '✓ 확인';
-  confirmBtn.addEventListener('click', commitAllStaged);
+  confirmBtn.addEventListener('click', compositeAndCommit);
 
   _confirmBar.appendChild(cancelBtn);
   _confirmBar.appendChild(_stagedCountEl);
@@ -1081,36 +1173,102 @@ function updateConfirmBar() {
 }
 
 
-// ── 일괄 확정 (Firestore) ───────────────────────────────────────
+// ── 합성 확정 (하나의 이미지로 합성 → Firestore) ────────────────
 
-function commitAllStaged() {
+function compositeAndCommit() {
   if (_state.stagedObjects.length === 0) return;
 
-  var panels = _state.stagedObjects.map(function (obj) {
-    return {
-      type: obj.settings.type,
-      x: obj.mapCoords.x,
-      y: obj.mapCoords.y,
-      z: obj.settings.z,
-      width: obj.mapCoords.width,
-      height: obj.mapCoords.height,
-      angle: obj.angle,
-      memo: obj.settings.memo,
-      locked: obj.settings.locked,
-      freezed: obj.settings.freezed,
-      imageUrl: obj.imageDataUrl || ''
+  // 1. 바운딩 박스 계산 (타일 좌표)
+  var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  _state.stagedObjects.forEach(function (obj) {
+    var mc = obj.mapCoords;
+    minX = Math.min(minX, mc.x);
+    minY = Math.min(minY, mc.y);
+    maxX = Math.max(maxX, mc.x + mc.width);
+    maxY = Math.max(maxY, mc.y + mc.height);
+  });
+  var bboxW = maxX - minX;
+  var bboxH = maxY - minY;
+
+  // 2. 캔버스 생성
+  var canvas = document.createElement('canvas');
+  canvas.width = bboxW * COMPOSITE_PX_PER_TILE;
+  canvas.height = bboxH * COMPOSITE_PX_PER_TILE;
+  var ctx = canvas.getContext('2d');
+
+  // 3. 모든 이미지 로드 후 합성
+  var total = _state.stagedObjects.length;
+  var loaded = 0;
+  var images = new Array(total);
+
+  _state.stagedObjects.forEach(function (obj, i) {
+    if (!obj.imageDataUrl) {
+      images[i] = null;
+      loaded++;
+      if (loaded === total) finishComposite();
+      return;
+    }
+    var img = new Image();
+    img.onload = function () {
+      images[i] = img;
+      loaded++;
+      if (loaded === total) finishComposite();
     };
+    img.onerror = function () {
+      images[i] = null;
+      loaded++;
+      if (loaded === total) finishComposite();
+    };
+    img.src = obj.imageDataUrl;
   });
 
-  console.log('[CE 배치] 일괄 확정:', panels.length + '개');
+  function finishComposite() {
+    _state.stagedObjects.forEach(function (obj, i) {
+      if (!images[i]) return;
+      var mc = obj.mapCoords;
+      var dx = (mc.x - minX) * COMPOSITE_PX_PER_TILE;
+      var dy = (mc.y - minY) * COMPOSITE_PX_PER_TILE;
+      var dw = mc.width * COMPOSITE_PX_PER_TILE;
+      var dh = mc.height * COMPOSITE_PX_PER_TILE;
 
-  document.documentElement.setAttribute(
-    'data-bwbr-create-panels-batch',
-    JSON.stringify(panels)
-  );
-  window.dispatchEvent(new CustomEvent('bwbr-create-panels-batch'));
+      ctx.save();
+      if (obj.angle) {
+        ctx.translate(dx + dw / 2, dy + dh / 2);
+        ctx.rotate(obj.angle * Math.PI / 180);
+        ctx.drawImage(images[i], -dw / 2, -dh / 2, dw, dh);
+      } else {
+        ctx.drawImage(images[i], dx, dy, dw, dh);
+      }
+      ctx.restore();
+    });
 
-  clearAllStaged();
+    var dataUrl = canvas.toDataURL('image/png');
+    console.log('[CE 배치] 합성 완료:', bboxW + '×' + bboxH + '타일,', total + '개 이미지');
+
+    // 설정은 첫 번째 오브젝트의 settings 사용
+    var s = _state.stagedObjects[0].settings;
+    var panelData = {
+      type: s.type,
+      x: minX,
+      y: minY,
+      z: s.z,
+      width: bboxW,
+      height: bboxH,
+      angle: 0,
+      memo: s.memo,
+      locked: s.locked,
+      freezed: s.freezed,
+      imageUrl: dataUrl
+    };
+
+    document.documentElement.setAttribute(
+      'data-bwbr-create-panel',
+      JSON.stringify(panelData)
+    );
+    window.dispatchEvent(new CustomEvent('bwbr-create-panel'));
+
+    clearAllStaged();
+  }
 }
 
 
@@ -1167,22 +1325,20 @@ function setupKeyboard() {
   document.addEventListener('keydown', function (e) {
     if (!_state.active) return;
 
-    // R: 회전 (15도 단위)
+    // R: 선택된 스테이징 오브젝트 회전 (15도 단위)
     if (e.key === 'r' || e.key === 'R') {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (!_state.selectedStagedId) return;
       e.preventDefault();
-      _state.angle = (_state.angle + (e.shiftKey ? -15 : 15)) % 360;
-      if (_state.angle < 0) _state.angle += 360;
-      if (_state.placing) updatePreview();
-      showAngleIndicator();
+      rotateSelectedStaged(e.shiftKey ? -15 : 15);
     }
 
-    // Ctrl+Z: 마지막 스테이징 취소
-    if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+    // Delete / Backspace: 선택된 스테이징 오브젝트 삭제
+    if (e.key === 'Delete' || e.key === 'Backspace') {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-      if (_state.stagedObjects.length > 0) {
+      if (_state.selectedStagedId) {
         e.preventDefault();
-        undoLastStaged();
+        removeSelectedStaged();
       }
     }
 
@@ -1192,6 +1348,8 @@ function setupKeyboard() {
         _state.placing = false;
         _preview.classList.remove('bwbr-placement-preview--visible');
         _preview.innerHTML = '';
+      } else if (_state.selectedStagedId) {
+        deselectStaged();
       } else if (_state.stagedObjects.length > 0) {
         clearAllStaged();
       } else if (_state.currentTool) {
@@ -1205,8 +1363,8 @@ function setupKeyboard() {
 
 var _angleTimeout = null;
 
-function showAngleIndicator() {
-  _angleIndicator.textContent = _state.angle + '°';
+function showAngleIndicator(angle) {
+  _angleIndicator.textContent = angle + '°';
   _angleIndicator.style.left = '50%';
   _angleIndicator.style.top = '50%';
   _angleIndicator.style.transform = 'translate(-50%, -50%)';
