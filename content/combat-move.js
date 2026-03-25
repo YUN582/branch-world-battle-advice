@@ -923,13 +923,22 @@
   // ------------------------------------------------
   function enableCombatMode() {
     if (_combatMode) return;
+    // 배치 모드 활성화 중이면 차단
+    if (window.BWBR_PlacementActive) {
+      if (window.BWBR_FabButtons) {
+        window.BWBR_FabButtons.showToast('배치 모드가 활성화되어 있어 전투 모드를 사용할 수 없습니다', { bg: 'rgba(211,47,47,0.92)', color: '#fff', duration: 2500 });
+      }
+      return;
+    }
     _combatMode = true;
     document.addEventListener('click', onCombatClick, true);
     document.addEventListener('pointerdown', onCombatPointerDown, true);
     document.addEventListener('contextmenu', onCombatContextMenu, true);
     updateFabButtonActive();
     showHelpPanel();
-    showToast('전투 모드 활성화', 2000);
+    if (window.BWBR_FabButtons) {
+      window.BWBR_FabButtons.showToast('전투 모드 활성화', { duration: 2000 });
+    }
     LOG('전투 모드 ON');
   }
 
@@ -943,7 +952,9 @@
     document.removeEventListener('contextmenu', onCombatContextMenu, true);
     updateFabButtonActive();
     hideHelpPanel();
-    showToast('전투 모드 비활성화', 2000);
+    if (window.BWBR_FabButtons) {
+      window.BWBR_FabButtons.showToast('전투 모드 비활성화', { duration: 2000 });
+    }
     LOG('전투 모드 OFF');
   }
 

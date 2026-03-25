@@ -704,82 +704,6 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   gap: 8px;
   padding: 4px 0;
 }
-
-.bwbr-place-text-input {
-  width: 100%;
-  min-height: 56px;
-  resize: vertical;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  padding: 6px 8px;
-  font-size: 13px;
-  font-family: inherit;
-  box-sizing: border-box;
-}
-
-.bwbr-place-text-input:focus {
-  outline: none;
-  border-color: #42a5f5;
-}
-
-.bwbr-place-text-row {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.bwbr-place-text-row label {
-  font-size: 11px;
-  color: #666;
-  white-space: nowrap;
-}
-
-.bwbr-place-text-row select,
-.bwbr-place-text-row input[type="number"] {
-  height: 28px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  padding: 0 4px;
-  font-size: 12px;
-  background: #fff;
-}
-
-.bwbr-place-text-row select {
-  min-width: 80px;
-}
-
-.bwbr-place-text-row input[type="number"] {
-  width: 52px;
-}
-
-.bwbr-place-text-row input[type="color"] {
-  width: 28px;
-  height: 28px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  padding: 1px;
-  cursor: pointer;
-  background: #fff;
-}
-
-.bwbr-place-text-preview {
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  min-height: 36px;
-  max-height: 120px;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #fafafa;
-}
-
-.bwbr-place-text-preview img {
-  max-width: 100%;
-  max-height: 120px;
-  object-fit: contain;
-}
 `;
   document.head.appendChild(style);
 })();
@@ -830,17 +754,8 @@ var _state = {
   // 스탬프 모드: 이전 배치 크기 기억 (클릭만으로 연속 배치)
   lastStampSize: null,     // { w, h } (screen px) — 드래그 배치 후 저장됨
 
-  // 텍스트 도구
-  textSettings: {
-    text: '',
-    fontFamily: 'sans-serif',
-    fontSize: 32,
-    color: '#ffffff',
-    bgColor: '#000000',
-    bold: false,
-    bgEnabled: true
-  },
-  pendingTextDataUrl: null  // 텍스트→캔버스 렌더링된 data URL
+  // 텍스트 도구 (Phase 2 — area-first WYSIWYG 방식으로 재구현 예정)
+  pendingTextDataUrl: null
 };
 
 
@@ -885,7 +800,6 @@ var _subToolButtons = {};
 var _imageSourceMenu = null;
 var _imageGrid = null;
 var _textSettingsMenu = null;
-var _textPreviewEl = null;
 var _confirmBar = null;
 var _stagedCountEl = null;
 
@@ -934,16 +848,31 @@ function updatePlacementCursor() {
 }
 
 function togglePlacementMode() {
+  if (!_state.active) {
+    // 전투 모드 활성화 중이면 차단
+    if (window.__bwbrCombatMove && window.__bwbrCombatMove.combatMode) {
+      if (window.BWBR_FabButtons) {
+        window.BWBR_FabButtons.showToast('전투 모드가 활성화되어 있어 배치 모드를 사용할 수 없습니다', { bg: 'rgba(211,47,47,0.92)', color: '#fff', duration: 2500 });
+      }
+      return;
+    }
+  }
+
   _state.active = !_state.active;
   window.BWBR_PlacementActive = _state.active;
 
   if (window.BWBR_FabButtons) {
     window.BWBR_FabButtons.setActive('placement', _state.active);
+    window.BWBR_FabButtons.showToast(
+      _state.active ? '배치 모드 활성화' : '배치 모드 비활성화',
+      { bg: 'rgba(255,255,255,0.95)', color: '#333', duration: 2000 }
+    );
   }
 
   if (_state.active) {
     _toolbar.classList.add('bwbr-placement-toolbar--open');
     activateMode('select');
+    showPlacementHelp();
   } else {
     _toolbar.classList.remove('bwbr-placement-toolbar--open');
     deactivateMode();
@@ -951,7 +880,119 @@ function togglePlacementMode() {
     _state.undoStack = [];
     _state.clipboard = [];
     updatePlacementCursor();
+    hidePlacementHelp();
   }
+}
+
+
+// ── 배치 모드 안내 패널 (드로어 좌측 슬라이드인) ─────────────────
+
+var _placementHelp = null;
+
+function showPlacementHelp() {
+  if (_placementHelp) return;
+
+  var paper = document.querySelector('.MuiDrawer-paperAnchorDockedRight')
+    || document.querySelector('.MuiDrawer-paperAnchorRight')
+    || document.querySelector('.MuiDrawer-paper');
+  if (!paper) return;
+
+  var paperLeft = paper.getBoundingClientRect().left;
+
+  _placementHelp = document.createElement('div');
+  _placementHelp.id = 'bwbr-placement-help';
+  _placementHelp.style.cssText =
+    'position:fixed;top:140px;' +
+    'left:' + paperLeft + 'px;' +
+    'transform:translateX(0);' +
+    'z-index:10;width:220px;' +
+    'background:rgba(255,255,255,0.96);color:#333;' +
+    'border-radius:8px 0 0 8px;' +
+    'box-shadow:-2px 0 16px rgba(0,0,0,0.15);' +
+    'font-family:"Roboto","Helvetica","Arial",sans-serif;' +
+    'font-size:12px;line-height:1.7;' +
+    'pointer-events:auto;' +
+    'border:1px solid rgba(0,0,0,0.08);border-right:none;' +
+    'opacity:0;overflow:hidden;box-sizing:border-box;' +
+    'transition:transform 0.4s cubic-bezier(0.22,1,0.36,1), opacity 0.3s ease, width 0.35s cubic-bezier(0.2,0.8,0.3,1);';
+
+  _placementHelp.innerHTML =
+    '<div id="bwbr-place-help-content" style="padding:14px 18px;white-space:nowrap;transition:opacity 0.25s;">' +
+      '<div style="font-size:13px;font-weight:bold;margin-bottom:8px;color:#42a5f5;">' +
+      '\uD83D\uDDBC\uFE0F 배치 모드</div>' +
+      '<div style="margin-bottom:4px;"><b>V</b> — 선택 모드</div>' +
+      '<div style="margin-bottom:4px;"><b>A</b> — 편집 모드</div>' +
+      '<div style="margin-bottom:4px;"><b>I / T / D</b> — 이미지 / 텍스트 / 그리기</div>' +
+      '<div style="margin-bottom:4px;">\uD83D\uDDB1\uFE0F <b>드래그</b> — 영역 지정 배치</div>' +
+      '<div style="margin-bottom:4px;">\uD83D\uDDB1\uFE0F <b>클릭</b> — 스탬프 반복</div>' +
+      '<div style="margin-bottom:4px;"><b>R / Shift+R</b> — 선택 회전</div>' +
+      '<div style="margin-bottom:4px;"><b>Del</b> — 선택 삭제</div>' +
+      '<div style="margin-bottom:4px;"><b>Ctrl+Z/C/V</b> — 되돌리기/복사/붙여넣기</div>' +
+      '<div style="margin-bottom:4px;"><b>Alt+드래그</b> — 범위 선택 / 복사</div>' +
+      '<div style="margin-bottom:0;opacity:0.5;font-size:11px;margin-top:6px;">' +
+      'Esc로 단계별 취소 · 중클릭 패닝</div>' +
+    '</div>' +
+    '<div id="bwbr-place-help-tab" style="position:absolute;top:0;left:0;right:0;bottom:0;' +
+    'display:flex;align-items:center;justify-content:center;' +
+    'writing-mode:vertical-rl;font-size:11px;font-weight:bold;color:#42a5f5;' +
+    'letter-spacing:2px;cursor:pointer;' +
+    'opacity:0;pointer-events:none;transition:opacity 0.25s;">\uD83D\uDDBC\uFE0F 배치</div>';
+
+  paper.appendChild(_placementHelp);
+
+  // 클릭으로 접기/펼치기
+  _placementHelp.addEventListener('click', function () {
+    if (_placementHelp.style.width === '28px') {
+      expandPlacementHelp();
+    } else {
+      collapsePlacementHelp();
+    }
+  });
+
+  requestAnimationFrame(function () {
+    requestAnimationFrame(function () {
+      if (_placementHelp) {
+        _placementHelp.style.opacity = '1';
+        _placementHelp.style.transform = 'translateX(-100%)';
+      }
+    });
+  });
+
+  // 3초 후 자동 접기
+  setTimeout(function () { collapsePlacementHelp(); }, 3000);
+}
+
+function collapsePlacementHelp() {
+  if (!_placementHelp) return;
+  var content = _placementHelp.querySelector('#bwbr-place-help-content');
+  var tab = _placementHelp.querySelector('#bwbr-place-help-tab');
+  if (content) content.style.opacity = '0';
+  if (tab) { tab.style.opacity = '1'; tab.style.pointerEvents = 'auto'; }
+  _placementHelp.style.width = '28px';
+  _placementHelp.style.opacity = '0.7';
+  _placementHelp.style.cursor = 'pointer';
+}
+
+function expandPlacementHelp() {
+  if (!_placementHelp) return;
+  var content = _placementHelp.querySelector('#bwbr-place-help-content');
+  var tab = _placementHelp.querySelector('#bwbr-place-help-tab');
+  _placementHelp.style.width = '220px';
+  _placementHelp.style.opacity = '1';
+  _placementHelp.style.cursor = 'default';
+  if (tab) { tab.style.opacity = '0'; tab.style.pointerEvents = 'none'; }
+  if (content) {
+    setTimeout(function () { content.style.opacity = '1'; }, 150);
+  }
+}
+
+function hidePlacementHelp() {
+  if (!_placementHelp) return;
+  _placementHelp.style.opacity = '0';
+  _placementHelp.style.transform = 'translateX(0)';
+  var panel = _placementHelp;
+  _placementHelp = null;
+  setTimeout(function () { panel.remove(); }, 450);
 }
 
 
@@ -1373,198 +1414,21 @@ function openCcofoliaImagePicker() {
 
 
 // ── 텍스트 도구 패널 ────────────────────────────────────────────
+// Phase 2: area-first WYSIWYG 방식으로 재구현 예정 (PLACEMENT_PLAN.md 참고)
 
 function createTextSettingsMenu() {
   var menu = document.createElement('div');
   menu.className = 'bwbr-place-text-menu';
   menu.style.display = 'none';
 
-  // 텍스트 입력
-  var textarea = document.createElement('textarea');
-  textarea.className = 'bwbr-place-text-input';
-  textarea.placeholder = '배치할 텍스트 입력...';
-  textarea.addEventListener('input', function () {
-    _state.textSettings.text = textarea.value;
-    updateTextPreview();
-  });
-  // Enter 키로 영역 배치 안 되게 (텍스트 입력용)
-  textarea.addEventListener('keydown', function(e) { e.stopPropagation(); });
-  menu.appendChild(textarea);
-
-  // 설정 행 1: 폰트 + 크기
-  var row1 = document.createElement('div');
-  row1.className = 'bwbr-place-text-row';
-
-  var fontLabel = document.createElement('label');
-  fontLabel.textContent = '폰트';
-  row1.appendChild(fontLabel);
-
-  var fontSelect = document.createElement('select');
-  var fonts = [
-    { value: 'sans-serif', label: '고딕' },
-    { value: 'serif', label: '명조' },
-    { value: '"Noto Sans KR", sans-serif', label: 'Noto Sans' },
-    { value: 'monospace', label: '고정폭' },
-    { value: 'cursive', label: '필기체' }
-  ];
-  fonts.forEach(function(f) {
-    var opt = document.createElement('option');
-    opt.value = f.value;
-    opt.textContent = f.label;
-    fontSelect.appendChild(opt);
-  });
-  fontSelect.addEventListener('change', function () {
-    _state.textSettings.fontFamily = fontSelect.value;
-    updateTextPreview();
-  });
-  row1.appendChild(fontSelect);
-
-  var sizeLabel = document.createElement('label');
-  sizeLabel.textContent = '크기';
-  row1.appendChild(sizeLabel);
-
-  var sizeInput = document.createElement('input');
-  sizeInput.type = 'number';
-  sizeInput.value = '32';
-  sizeInput.min = '8';
-  sizeInput.max = '200';
-  sizeInput.addEventListener('input', function () {
-    _state.textSettings.fontSize = parseInt(sizeInput.value, 10) || 32;
-    updateTextPreview();
-  });
-  sizeInput.addEventListener('keydown', function(e) { e.stopPropagation(); });
-  row1.appendChild(sizeInput);
-
-  menu.appendChild(row1);
-
-  // 설정 행 2: 색상 + 배경색 + 굵기
-  var row2 = document.createElement('div');
-  row2.className = 'bwbr-place-text-row';
-
-  var colorLabel = document.createElement('label');
-  colorLabel.textContent = '글자';
-  row2.appendChild(colorLabel);
-
-  var colorInput = document.createElement('input');
-  colorInput.type = 'color';
-  colorInput.value = '#ffffff';
-  colorInput.addEventListener('input', function () {
-    _state.textSettings.color = colorInput.value;
-    updateTextPreview();
-  });
-  row2.appendChild(colorInput);
-
-  var bgLabel = document.createElement('label');
-  bgLabel.textContent = '배경';
-  row2.appendChild(bgLabel);
-
-  var bgColorInput = document.createElement('input');
-  bgColorInput.type = 'color';
-  bgColorInput.value = '#000000';
-  bgColorInput.addEventListener('input', function () {
-    _state.textSettings.bgColor = bgColorInput.value;
-    updateTextPreview();
-  });
-  row2.appendChild(bgColorInput);
-
-  var bgToggle = document.createElement('label');
-  bgToggle.style.display = 'flex';
-  bgToggle.style.alignItems = 'center';
-  bgToggle.style.gap = '2px';
-  var bgCheck = document.createElement('input');
-  bgCheck.type = 'checkbox';
-  bgCheck.checked = true;
-  bgCheck.addEventListener('change', function () {
-    _state.textSettings.bgEnabled = bgCheck.checked;
-    bgColorInput.disabled = !bgCheck.checked;
-    updateTextPreview();
-  });
-  bgToggle.appendChild(bgCheck);
-  var bgCheckLabel = document.createElement('span');
-  bgCheckLabel.textContent = '배경';
-  bgCheckLabel.style.fontSize = '11px';
-  bgToggle.appendChild(bgCheckLabel);
-  row2.appendChild(bgToggle);
-
-  var boldLabel = document.createElement('label');
-  boldLabel.style.display = 'flex';
-  boldLabel.style.alignItems = 'center';
-  boldLabel.style.gap = '2px';
-  var boldCheck = document.createElement('input');
-  boldCheck.type = 'checkbox';
-  boldCheck.addEventListener('change', function () {
-    _state.textSettings.bold = boldCheck.checked;
-    updateTextPreview();
-  });
-  boldLabel.appendChild(boldCheck);
-  var boldSpan = document.createElement('span');
-  boldSpan.textContent = '굵게';
-  boldSpan.style.fontSize = '11px';
-  boldLabel.appendChild(boldSpan);
-  row2.appendChild(boldLabel);
-
-  menu.appendChild(row2);
-
-  // 미리보기
-  _textPreviewEl = document.createElement('div');
-  _textPreviewEl.className = 'bwbr-place-text-preview';
-  menu.appendChild(_textPreviewEl);
+  var notice = document.createElement('div');
+  notice.style.cssText = 'text-align:center;padding:16px 12px;color:#999;font-size:13px;line-height:1.6;';
+  notice.innerHTML = '<div style="font-size:20px;margin-bottom:6px;">\uD83D\uDCDD</div>' +
+    '<b>텍스트 도구</b><br>' +
+    '<span style="font-size:11px;opacity:0.7;">영역 지정 → 텍스트 입력 방식으로<br>재구현 준비 중입니다</span>';
+  menu.appendChild(notice);
 
   return menu;
-}
-
-function updateTextPreview() {
-  if (!_textPreviewEl) return;
-  var ts = _state.textSettings;
-  if (!ts.text.trim()) {
-    _textPreviewEl.innerHTML = '<span style="color:#999;font-size:12px">텍스트를 입력하세요</span>';
-    _state.pendingTextDataUrl = null;
-    updatePlacementCursor();
-    return;
-  }
-  var dataUrl = renderTextToDataUrl(ts);
-  _state.pendingTextDataUrl = dataUrl;
-  _textPreviewEl.innerHTML = '<img src="' + dataUrl + '" alt="">';
-  updatePlacementCursor();
-}
-
-function renderTextToDataUrl(ts) {
-  var canvas = document.createElement('canvas');
-  var ctx = canvas.getContext('2d');
-
-  var padding = Math.round(ts.fontSize * 0.3);
-  var lineHeight = Math.round(ts.fontSize * 1.3);
-  var fontStr = (ts.bold ? 'bold ' : '') + ts.fontSize + 'px ' + ts.fontFamily;
-  ctx.font = fontStr;
-
-  // 멀티라인 처리
-  var lines = ts.text.split('\\n');
-  var maxWidth = 0;
-  lines.forEach(function(line) {
-    var w = ctx.measureText(line || ' ').width;
-    if (w > maxWidth) maxWidth = w;
-  });
-
-  canvas.width = Math.ceil(maxWidth + padding * 2);
-  canvas.height = Math.ceil(lines.length * lineHeight + padding * 2);
-
-  // 리사이즈 후 폰트 재설정 필요
-  ctx.font = fontStr;
-  ctx.textBaseline = 'top';
-
-  // 배경
-  if (ts.bgEnabled) {
-    ctx.fillStyle = ts.bgColor;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  }
-
-  // 텍스트
-  ctx.fillStyle = ts.color;
-  lines.forEach(function(line, i) {
-    ctx.fillText(line, padding, padding + i * lineHeight);
-  });
-
-  return canvas.toDataURL('image/png');
 }
 
 
@@ -2298,6 +2162,8 @@ function setupSelectModeHandlers() {
   // stopImmediatePropagation이 기존 버블 핸들러도 차단하므로 여기서 직접 처리
   document.addEventListener('mousedown', function(e) {
     if (e.button !== 0 || !_state.active) return;
+    // 미들클릭 패닝 중에는 합성 mousedown 통과 (midpan-main.js → 보드)
+    if (document.documentElement.hasAttribute('data-bwbr-midpan')) return;
     if (_state.mode !== 'select' && _state.mode !== 'edit') return;
     if (e.target.closest('.bwbr-placement-toolbar') ||
         e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar') ||
@@ -2843,6 +2709,11 @@ function setupKeyboard() {
     if (e.key === 'Escape') {
       if (_state.placing) {
         _state.placing = false;
+        _preview.classList.remove('bwbr-placement-preview--visible');
+        _preview.innerHTML = '';
+      } else if (_state.lastStampSize && _state.mode === 'edit') {
+        // 스탬프 모드 해제
+        _state.lastStampSize = null;
         _preview.classList.remove('bwbr-placement-preview--visible');
         _preview.innerHTML = '';
       } else if (_state.selectedStagedIds.length > 0) {

@@ -56,6 +56,18 @@
       _registered = _registered.filter(function (r) { return r.id !== id; });
       delete _activeStates[id];
       _rebuild();
+    },
+
+    /**
+     * FAB 영역 근처에 토스트 알림 표시
+     * @param {string} msg   - 표시할 텍스트
+     * @param {object} [opts]
+     *   @param {number}  [opts.duration=2000] - 표시 시간(ms)
+     *   @param {string}  [opts.bg]           - 배경색 (기본: 어두운 반투명)
+     *   @param {string}  [opts.color]        - 글자색 (기본: #fff)
+     */
+    showToast: function (msg, opts) {
+      _showToast(msg, opts);
     }
   };
 
@@ -147,6 +159,36 @@
     });
 
     return btn;
+  }
+
+  // ── 공용 토스트 알림 ──
+
+  var TOAST_CONTAINER_ID = 'bwbr-fab-toast-container';
+
+  function _showToast(msg, opts) {
+    opts = opts || {};
+    var dur = opts.duration || 2000;
+    var bg = opts.bg || 'rgba(50,50,50,0.92)';
+    var color = opts.color || '#fff';
+
+    var root = document.querySelector('#root > div') || document.body;
+    var box = document.getElementById(TOAST_CONTAINER_ID);
+    if (!box) {
+      box = document.createElement('div');
+      box.id = TOAST_CONTAINER_ID;
+      box.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:14000;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none';
+      root.appendChild(box);
+    }
+    var t = document.createElement('div');
+    t.className = 'bwbr-fab-toast';
+    t.style.cssText = 'background:' + bg + ';color:' + color + ';padding:6px 16px;border-radius:4px;font-size:0.875rem;box-shadow:0 3px 8px rgba(0,0,0,0.3);max-width:344px;opacity:0;transform:translateY(100%);transition:opacity 225ms,transform 225ms;pointer-events:auto;white-space:pre-line;font-family:"Roboto","Helvetica","Arial",sans-serif';
+    t.textContent = msg;
+    box.appendChild(t);
+    requestAnimationFrame(function () { t.style.opacity = '1'; t.style.transform = 'none'; });
+    setTimeout(function () {
+      t.style.opacity = '0'; t.style.transform = 'translateY(100%)';
+      setTimeout(function () { t.remove(); }, 225);
+    }, dur);
   }
 
   // ── FAB 출현 감시 ──
