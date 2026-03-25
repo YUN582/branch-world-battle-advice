@@ -15,7 +15,6 @@ var TOOL_ICONS = {
 };
 
 var MODE_ICONS = {
-  select: '<path fill="currentColor" d="M21 3L3 10.53V11.51L9.84 14.16L12.48 21H13.46L21 3Z"/>',
   edit: '<path fill="currentColor" d="M3 11h8V3H3v8zm2-6h4v4H5V5zm8-2v8h8V3h-8zm6 6h-4V5h4v4zM3 21h8v-8H3v8zm2-6h4v4H5v-4zm13 0h2v3h3v2h-3v3h-2v-3h-3v-2h3v-3z"/>'
 };
 
@@ -371,6 +370,66 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   color: #e53935;
 }
 
+/* ── 이미지 등록 목록 ──────────────────────────── */
+
+.bwbr-place-image-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.bwbr-place-image-thumb {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 6px;
+  border: 2px solid #ddd;
+  overflow: hidden;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.bwbr-place-image-thumb:hover {
+  border-color: #aaa;
+  box-shadow: 0 0 6px rgba(0,0,0,0.15);
+}
+
+.bwbr-place-image-thumb--active {
+  border-color: #42a5f5;
+  box-shadow: 0 0 8px rgba(66,165,245,0.5);
+}
+
+.bwbr-place-image-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.bwbr-place-image-thumb .bwbr-place-thumb-remove {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(211,47,47,0.9);
+  color: #fff;
+  font-size: 10px;
+  border: none;
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+}
+
+.bwbr-place-image-thumb:hover .bwbr-place-thumb-remove {
+  display: flex;
+}
+
 /* ── 배치 오버레이 ─────────────────────────────── */
 
 .bwbr-placement-overlay {
@@ -387,10 +446,6 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 
 .bwbr-placement-overlay--no-image {
   cursor: not-allowed;
-}
-
-.bwbr-placement-overlay--select {
-  cursor: default;
 }
 
 /* ── 배치 프리뷰 (드래그 중) ───────────────────── */
@@ -563,7 +618,7 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 
 var _state = {
   active: false,          // 배치 모드 활성
-  mode: null,             // 'select' | 'edit' | null
+  mode: null,             // 'edit' | null (기본 = 선택 모드)
   currentTool: null,      // 'image' | 'text' | 'draw' (편집 모드 하위 도구)
   placing: false,         // 현재 배치 중 (드래그)
 
@@ -585,7 +640,8 @@ var _state = {
   },
 
   // 이미지 배치용
-  pendingImage: null,     // { dataUrl, file, width, height }
+  pendingImage: null,     // { id, dataUrl, name, width, height }
+  registeredImages: [],   // [{ id, dataUrl, name, width, height }]
 
   // 스테이징 (일괄 배치)
   stagedObjects: [],      // [{ id, mapCoords, angle, imageDataUrl, settings }]
@@ -604,7 +660,7 @@ var _modeButtons = {};
 var _subToolRow = null;
 var _subToolButtons = {};
 var _imageSourceMenu = null;
-var _currentImagePreview = null;
+var _imageGrid = null;
 var _confirmBar = null;
 var _stagedCountEl = null;
 
@@ -659,46 +715,26 @@ function togglePlacementMode() {
 // ── 모드 전환 (선택 / 추가) ─────────────────────────────────────
 
 function activateMode(mode) {
-  // 같은 모드 → 해제
-  if (_state.mode === mode) {
-    deactivateMode();
-    return;
-  }
+  if (mode !== 'edit') return;
+  if (_state.mode === 'edit') { deactivateMode(); return; }
 
-  // 이전 모드 정리
-  if (_state.mode && _modeButtons[_state.mode]) {
-    _modeButtons[_state.mode].classList.remove('bwbr-place-tool-btn--active');
-  }
-  disableStagedInteraction();
-  _overlay.classList.remove('bwbr-placement-overlay--active');
-  _overlay.classList.remove('bwbr-placement-overlay--no-image');
+  _state.mode = 'edit';
+  if (_modeButtons.edit) _modeButtons.edit.classList.add('bwbr-place-tool-btn--active');
+  _settingsPanel.classList.add('bwbr-place-settings--open');
 
-  // 새 모드
-  _state.mode = mode;
-  if (_modeButtons[mode]) {
-    _modeButtons[mode].classList.add('bwbr-place-tool-btn--active');
-  }
-
-  if (mode === 'select') {
-    _settingsPanel.classList.remove('bwbr-place-settings--open');
-    enableStagedInteraction();
-  } else if (mode === 'edit') {
-    _settingsPanel.classList.add('bwbr-place-settings--open');
-    if (_state.currentTool) {
-      _overlay.classList.add('bwbr-placement-overlay--active');
-      updateOverlayCursor();
-    }
+  // 서브도구가 이미 선택된 경우 오버레이 복원
+  if (_state.currentTool === 'image' && _state.pendingImage) {
+    _overlay.classList.add('bwbr-placement-overlay--active');
+  } else if (_state.currentTool && _state.currentTool !== 'image') {
+    _overlay.classList.add('bwbr-placement-overlay--active');
   }
 }
 
 function deactivateMode() {
-  if (_state.mode && _modeButtons[_state.mode]) {
-    _modeButtons[_state.mode].classList.remove('bwbr-place-tool-btn--active');
-  }
+  if (_modeButtons.edit) _modeButtons.edit.classList.remove('bwbr-place-tool-btn--active');
   _state.mode = null;
   _state.currentTool = null;
   _state.placing = false;
-  disableStagedInteraction();
   Object.keys(_subToolButtons).forEach(function(k) {
     _subToolButtons[k].classList.remove('bwbr-place-subtool-btn--active');
   });
@@ -726,18 +762,14 @@ function setSubTool(toolId) {
   if (toolId === 'image') {
     if (_imageSourceMenu) _imageSourceMenu.style.display = '';
     _overlay.classList.add('bwbr-placement-overlay--active');
-    updateOverlayCursor();
+    if (_state.pendingImage) {
+      _overlay.classList.remove('bwbr-placement-overlay--no-image');
+    } else {
+      _overlay.classList.add('bwbr-placement-overlay--no-image');
+    }
   } else {
     if (_imageSourceMenu) _imageSourceMenu.style.display = 'none';
     _overlay.classList.add('bwbr-placement-overlay--active');
-    _overlay.classList.remove('bwbr-placement-overlay--no-image');
-  }
-}
-
-function updateOverlayCursor() {
-  if (_state.currentTool === 'image' && !_state.pendingImage) {
-    _overlay.classList.add('bwbr-placement-overlay--no-image');
-  } else {
     _overlay.classList.remove('bwbr-placement-overlay--no-image');
   }
 }
@@ -753,10 +785,9 @@ function createToolbar() {
   _settingsPanel = createSettingsPanel();
   _toolbar.appendChild(_settingsPanel);
 
-  // 모드 버튼: 선택, 추가
+  // 편집 모드 버튼 (기본 = 선택 모드)
   var modes = [
-    { id: 'select', label: '선택 (V)', icon: MODE_ICONS.select },
-    { id: 'edit',   label: '편집 (A)', icon: MODE_ICONS.edit }
+    { id: 'edit', label: '편집 (A)', icon: MODE_ICONS.edit }
   ];
 
   modes.forEach(function (mode) {
@@ -876,109 +907,132 @@ function createSettingsPanel() {
 function createImageSourceMenu() {
   var menu = document.createElement('div');
   menu.className = 'bwbr-place-source-menu';
-  menu.style.display = 'none'; // 이미지 도구 선택 시에만 보임
+  menu.style.display = 'none';
 
   var localBtn = document.createElement('button');
   localBtn.className = 'bwbr-place-source-btn';
-  localBtn.textContent = '📁 로컬 이미지';
+  localBtn.textContent = '📁 이미지 추가';
   localBtn.addEventListener('click', selectLocalImage);
   menu.appendChild(localBtn);
 
-  var ccoBtn = document.createElement('button');
-  ccoBtn.className = 'bwbr-place-source-btn';
-  ccoBtn.textContent = '🖼️ 코코포리아 이미지';
-  ccoBtn.addEventListener('click', selectCcofoliaImage);
-  menu.appendChild(ccoBtn);
-
-  // 현재 선택된 이미지 프리뷰
-  _currentImagePreview = document.createElement('div');
-  _currentImagePreview.className = 'bwbr-place-current-image';
-  _currentImagePreview.style.display = 'none';
-  menu.appendChild(_currentImagePreview);
+  // 등록된 이미지 그리드
+  _imageGrid = document.createElement('div');
+  _imageGrid.className = 'bwbr-place-image-grid';
+  menu.appendChild(_imageGrid);
 
   return menu;
 }
 
-function updateCurrentImagePreview() {
-  if (!_currentImagePreview) return;
 
-  if (_state.pendingImage) {
-    var fileName = _state.pendingImage.file
-      ? _state.pendingImage.file.name
-      : '이미지';
-    _currentImagePreview.innerHTML = '';
+// ── 이미지 등록 목록 ────────────────────────────────────────────
+
+function renderImageGrid() {
+  if (!_imageGrid) return;
+  _imageGrid.innerHTML = '';
+  _state.registeredImages.forEach(function(entry) {
+    var thumb = document.createElement('div');
+    thumb.className = 'bwbr-place-image-thumb';
+    thumb.dataset.imageId = entry.id;
+    if (_state.pendingImage && _state.pendingImage.id === entry.id) {
+      thumb.classList.add('bwbr-place-image-thumb--active');
+    }
 
     var img = document.createElement('img');
-    img.src = _state.pendingImage.dataUrl;
-    _currentImagePreview.appendChild(img);
+    img.src = entry.dataUrl;
+    img.alt = entry.name;
+    thumb.appendChild(img);
 
-    var name = document.createElement('span');
-    name.textContent = fileName;
-    _currentImagePreview.appendChild(name);
-
-    var clearBtn = document.createElement('button');
-    clearBtn.className = 'bwbr-place-clear-img';
-    clearBtn.textContent = '✕';
-    clearBtn.addEventListener('click', function () {
-      _state.pendingImage = null;
-      updateCurrentImagePreview();
-      updateOverlayCursor();
+    var removeBtn = document.createElement('button');
+    removeBtn.className = 'bwbr-place-thumb-remove';
+    removeBtn.textContent = '✕';
+    removeBtn.addEventListener('click', function(ev) {
+      ev.stopPropagation();
+      removeRegisteredImage(entry.id);
     });
-    _currentImagePreview.appendChild(clearBtn);
+    thumb.appendChild(removeBtn);
 
-    _currentImagePreview.style.display = '';
+    thumb.addEventListener('click', function() {
+      selectRegisteredImage(entry.id);
+    });
+
+    _imageGrid.appendChild(thumb);
+  });
+}
+
+function selectRegisteredImage(id) {
+  if (_state.pendingImage && _state.pendingImage.id === id) {
+    // 같은 이미지 클릭 → 선택 해제 → 오버레이 숨김
+    _state.pendingImage = null;
+    _overlay.classList.remove('bwbr-placement-overlay--active');
   } else {
-    _currentImagePreview.style.display = 'none';
+    var entry = _state.registeredImages.find(function(e) { return e.id === id; });
+    if (!entry) return;
+    _state.pendingImage = entry;
+    if (_state.currentTool === 'image') {
+      _overlay.classList.add('bwbr-placement-overlay--active');
+      _overlay.classList.remove('bwbr-placement-overlay--no-image');
+    }
   }
+  updateImageGridSelection();
+}
+
+function removeRegisteredImage(id) {
+  _state.registeredImages = _state.registeredImages.filter(function(e) { return e.id !== id; });
+  if (_state.pendingImage && _state.pendingImage.id === id) {
+    _state.pendingImage = null;
+    _overlay.classList.remove('bwbr-placement-overlay--active');
+  }
+  renderImageGrid();
+}
+
+function updateImageGridSelection() {
+  if (!_imageGrid) return;
+  _imageGrid.querySelectorAll('.bwbr-place-image-thumb').forEach(function(el) {
+    var isActive = _state.pendingImage && el.dataset.imageId === _state.pendingImage.id;
+    el.classList.toggle('bwbr-place-image-thumb--active', !!isActive);
+  });
 }
 
 
-// ── 로컬 이미지 선택 ────────────────────────────────────────────
+// ── 로컬 이미지 추가 ────────────────────────────────────────────
 
 function selectLocalImage() {
   var fileInput = document.createElement('input');
   fileInput.type = 'file';
   fileInput.accept = 'image/*';
+  fileInput.multiple = true;
   fileInput.style.display = 'none';
   document.body.appendChild(fileInput);
 
   fileInput.addEventListener('change', function () {
-    if (fileInput.files && fileInput.files[0]) {
-      var file = fileInput.files[0];
+    if (!fileInput.files) { fileInput.remove(); return; }
+    Array.from(fileInput.files).forEach(function(file) {
       var reader = new FileReader();
-      reader.onload = function (e) {
+      reader.onload = function (ev) {
         var img = new Image();
         img.onload = function () {
-          _state.pendingImage = {
-            dataUrl: e.target.result,
-            file: file,
+          var entry = {
+            id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+            dataUrl: ev.target.result,
+            name: file.name,
             width: img.naturalWidth,
             height: img.naturalHeight
           };
-          updateCurrentImagePreview();
-          updateOverlayCursor();
+          _state.registeredImages.push(entry);
+          renderImageGrid();
         };
-        img.src = e.target.result;
+        img.src = ev.target.result;
       };
       reader.readAsDataURL(file);
-    }
+    });
     fileInput.remove();
   });
 
   fileInput.addEventListener('cancel', function () {
     fileInput.remove();
-    // 취소해도 도구 해제하지 않음 — 연속 배치 지원
   });
 
   fileInput.click();
-}
-
-
-// ── 코코포리아 이미지 선택 (TODO) ───────────────────────────────
-
-function selectCcofoliaImage() {
-  // TODO: ccfolia 이미지 피커 브릿지 연동
-  console.log('[CE 배치] 코코포리아 이미지 선택 — 미구현');
 }
 
 
@@ -1062,16 +1116,10 @@ function onOverlayMouseDown(e) {
   }
   if (e.button !== 0) return;
 
-  // 드래그 시작 좌표 기록 (클릭 감지용)
-  _state.drag.startX = e.clientX;
-  _state.drag.startY = e.clientY;
-  _state.drag.currentX = e.clientX;
-  _state.drag.currentY = e.clientY;
+  // 선택 모드(기본): 드래그 배치 없음
+  if (!_state.mode) return;
 
-  // 선택 모드: 드래그 배치 없음 (클릭만)
-  if (_state.mode === 'select') return;
-
-  // 추가 모드: 이미지 미선택 시 배치 불가 (클릭만)
+  // 편집 모드: 이미지 미선택 시 배치 불가
   if (_state.currentTool === 'image' && !_state.pendingImage) return;
 
   _state.placing = true;
@@ -1091,21 +1139,6 @@ function onOverlayMouseMove(e) {
 }
 
 function onOverlayMouseUp(e) {
-  var dx = Math.abs(e.clientX - _state.drag.startX);
-  var dy = Math.abs(e.clientY - _state.drag.startY);
-  var isClick = dx < 5 && dy < 5;
-
-  if (isClick && _state.mode === 'select') {
-    // 선택 모드에서 클릭 → 스테이징 오브젝트 선택/해제
-    var hit = hitTestStaged(e.clientX, e.clientY);
-    if (hit) {
-      selectStagedItem(hit.id);
-    } else {
-      deselectStaged();
-    }
-    return;
-  }
-
   if (!_state.placing) return;
   _state.placing = false;
   _preview.classList.remove('bwbr-placement-preview--visible');
@@ -1173,8 +1206,7 @@ function renderStagedItem(obj) {
 
   var mc = obj.mapCoords;
   var el = document.createElement('div');
-  el.className = 'bwbr-staged-item';
-  if (_state.mode === 'select') el.classList.add('bwbr-staged-item--interactive');
+  el.className = 'bwbr-staged-item bwbr-staged-item--interactive';
   el.dataset.stagedId = obj.id;
   el.style.left = (mc.x * CELL_PX) + 'px';
   el.style.top = (mc.y * CELL_PX) + 'px';
@@ -1196,6 +1228,11 @@ function renderStagedItem(obj) {
   badge.className = 'bwbr-staged-badge';
   badge.textContent = _state.stagedObjects.length;
   el.appendChild(badge);
+
+  // 직접 mousedown 처리 (stopPropagation으로 ccfolia 팬 방지)
+  el.addEventListener('mousedown', function(ev) {
+    onStagedItemMouseDown(obj.id, ev);
+  });
 
   zoomEl.appendChild(el);
 }
@@ -1294,58 +1331,38 @@ function rotateSelectedStaged(delta) {
 
 // ── 선택 모드 상호작용 ──────────────────────────────────────────
 
-function enableStagedInteraction() {
-  document.querySelectorAll('.bwbr-staged-item').forEach(function(el) {
-    el.classList.add('bwbr-staged-item--interactive');
-  });
-}
+var _selectDrag = { start: null, dragging: false };
 
-function disableStagedInteraction() {
-  document.querySelectorAll('.bwbr-staged-item').forEach(function(el) {
-    el.classList.remove('bwbr-staged-item--interactive');
-    el.classList.remove('bwbr-staged-item--dragging');
-  });
+function onStagedItemMouseDown(stagedId, e) {
+  if (e.button !== 0 || !_state.active) return;
+  e.stopPropagation();
+  e.preventDefault();
+
+  selectStagedItem(stagedId);
+  var obj = _state.stagedObjects.find(function(o) { return o.id === stagedId; });
+  if (obj) {
+    _selectDrag.start = {
+      screenX: e.clientX, screenY: e.clientY,
+      origX: obj.mapCoords.x, origY: obj.mapCoords.y
+    };
+    _selectDrag.dragging = false;
+  }
 }
 
 function setupSelectModeHandlers() {
-  var _dragStart = null;
-  var _isDragging = false;
-
-  document.addEventListener('mousedown', function(e) {
-    if (_state.mode !== 'select' || e.button !== 0) return;
-    var stagedEl = e.target.closest('.bwbr-staged-item--interactive');
-    if (!stagedEl) {
-      if (!e.target.closest('.bwbr-placement-toolbar') &&
-          !e.target.closest('.bwbr-place-confirm-bar')) {
-        deselectStaged();
-      }
-      return;
-    }
-    var id = stagedEl.dataset.stagedId;
-    selectStagedItem(id);
-    e.preventDefault();
-    var obj = _state.stagedObjects.find(function(o) { return o.id === id; });
-    if (obj) {
-      _dragStart = {
-        screenX: e.clientX, screenY: e.clientY,
-        origX: obj.mapCoords.x, origY: obj.mapCoords.y
-      };
-    }
-  });
-
   document.addEventListener('mousemove', function(e) {
-    if (!_dragStart || !_state.selectedStagedId) return;
-    var dx = e.clientX - _dragStart.screenX;
-    var dy = e.clientY - _dragStart.screenY;
-    if (!_isDragging && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
-      _isDragging = true;
+    if (!_selectDrag.start || !_state.selectedStagedId) return;
+    var dx = e.clientX - _selectDrag.start.screenX;
+    var dy = e.clientY - _selectDrag.start.screenY;
+    if (!_selectDrag.dragging && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
+      _selectDrag.dragging = true;
       var el = document.querySelector('[data-staged-id="' + _state.selectedStagedId + '"]');
       if (el) el.classList.add('bwbr-staged-item--dragging');
     }
-    if (!_isDragging) return;
+    if (!_selectDrag.dragging) return;
     var scale = getZoomScale();
-    var newX = Math.round(_dragStart.origX + dx / (scale * CELL_PX));
-    var newY = Math.round(_dragStart.origY + dy / (scale * CELL_PX));
+    var newX = Math.round(_selectDrag.start.origX + dx / (scale * CELL_PX));
+    var newY = Math.round(_selectDrag.start.origY + dy / (scale * CELL_PX));
     var obj = _state.stagedObjects.find(function(o) { return o.id === _state.selectedStagedId; });
     if (!obj) return;
     obj.mapCoords.x = newX;
@@ -1359,12 +1376,22 @@ function setupSelectModeHandlers() {
 
   document.addEventListener('mouseup', function(e) {
     if (e.button !== 0) return;
-    if (_isDragging) {
+    if (_selectDrag.dragging) {
       var el = document.querySelector('[data-staged-id="' + _state.selectedStagedId + '"]');
       if (el) el.classList.remove('bwbr-staged-item--dragging');
     }
-    _dragStart = null;
-    _isDragging = false;
+    _selectDrag.start = null;
+    _selectDrag.dragging = false;
+  });
+
+  // 빈 공간 클릭 → 선택 해제
+  document.addEventListener('mousedown', function(e) {
+    if (!_state.active || e.button !== 0) return;
+    if (_overlay.classList.contains('bwbr-placement-overlay--active')) return;
+    if (e.target.closest('.bwbr-staged-item')) return;
+    if (e.target.closest('.bwbr-placement-toolbar')) return;
+    if (e.target.closest('.bwbr-place-confirm-bar')) return;
+    deselectStaged();
   });
 }
 
@@ -1594,14 +1621,14 @@ function setupKeyboard() {
     // 입력 필드에서는 나머지 단축키 무시
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
-    // V: 선택 모드
+    // V: 선택 모드 (편집 해제)
     if (e.key === 'v' || e.key === 'V') {
       e.preventDefault();
-      activateMode('select');
+      deactivateMode();
       return;
     }
 
-    // A: 편집 모드
+    // A: 편집 모드 토글
     if (e.key === 'a' || e.key === 'A') {
       e.preventDefault();
       activateMode('edit');
