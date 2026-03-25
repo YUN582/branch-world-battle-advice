@@ -431,23 +431,22 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   display: flex;
 }
 
-/* ── body 커서 (오버레이는 pointer-events:none) ── */
-
-body.bwbr-cursor-crosshair { cursor: crosshair !important; }
-body.bwbr-cursor-blocked   { cursor: not-allowed !important; }
-
-/* ── 배치 오버레이 (시각 전용, 이벤트 통과) ─────── */
+/* ── 배치 오버레이 ─────────────────────────────── */
 
 .bwbr-placement-overlay {
   position: fixed;
   inset: 0;
   z-index: 102;
-  pointer-events: none;
+  cursor: crosshair;
   display: none;
 }
 
 .bwbr-placement-overlay--active {
   display: block;
+}
+
+.bwbr-placement-overlay--blocked {
+  cursor: not-allowed;
 }
 
 /* ── 배치 프리뷰 (드래그 중) ───────────────────── */
@@ -699,12 +698,10 @@ function registerFabButton() {
 // ── 모드 토글 ───────────────────────────────────────────────────
 
 function updatePlacementCursor() {
-  document.body.classList.remove('bwbr-cursor-crosshair', 'bwbr-cursor-blocked');
-  if (!_state.active || !_state.mode) return;
+  if (!_overlay) return;
+  _overlay.classList.remove('bwbr-placement-overlay--blocked');
   if (_state.currentTool === 'image' && !_state.pendingImage) {
-    document.body.classList.add('bwbr-cursor-blocked');
-  } else if (_state.currentTool) {
-    document.body.classList.add('bwbr-cursor-crosshair');
+    _overlay.classList.add('bwbr-placement-overlay--blocked');
   }
 }
 
@@ -1147,30 +1144,16 @@ function createOverlay() {
   _angleIndicator.className = 'bwbr-placement-angle-indicator';
   document.body.appendChild(_angleIndicator);
 
-  // 오버레이는 시각적 표시만 (pointer-events: none)
-  // 모든 이벤트는 document 레벨에서 처리 → 중간 버튼/휠/우클릭 등은 자연스럽게 통과
-  document.addEventListener('mousedown', onDocMouseDown);
-  document.addEventListener('mousemove', onDocMouseMove);
-  document.addEventListener('mouseup', onDocMouseUp);
+  _overlay.addEventListener('mousedown', onOverlayMouseDown);
+  _overlay.addEventListener('mousemove', onOverlayMouseMove);
+  _overlay.addEventListener('mouseup', onOverlayMouseUp);
 }
 
 
-// ── document 레벨 마우스 이벤트 (overlay는 pointer-events:none) ──
+// ── 오버레이 마우스 이벤트 ──────────────────────────────────────
 
-function onDocMouseDown(e) {
-  if (!_state.active) return;
-  if (e.button !== 0) return;  // 좌클릭만 — 중간/우클릭은 자연 통과
-
-  // 확장 UI 요소 위 클릭은 무시
-  var t = e.target;
-  if (t.closest && (
-    t.closest('.bwbr-placement-toolbar') ||
-    t.closest('.bwbr-place-confirm-bar') ||
-    t.closest('.bwbr-staged-item') ||
-    t.closest('[role="dialog"]') ||
-    t.closest('.MuiDialog-root') ||
-    t.closest('.MuiPopover-root')
-  )) return;
+function onOverlayMouseDown(e) {
+  if (e.button !== 0) return;
 
   // 드래그 시작 좌표 기록
   _state.drag.startX = e.clientX;
@@ -1184,7 +1167,6 @@ function onDocMouseDown(e) {
   // 편집 모드: 이미지 미선택 시 배치 불가
   if (_state.currentTool === 'image' && !_state.pendingImage) return;
 
-  e.preventDefault();
   _state.placing = true;
   updatePreview();
   _preview.classList.add('bwbr-placement-preview--visible');
@@ -1194,14 +1176,14 @@ function onDocMouseDown(e) {
   }
 }
 
-function onDocMouseMove(e) {
+function onOverlayMouseMove(e) {
   if (!_state.placing) return;
   _state.drag.currentX = e.clientX;
   _state.drag.currentY = e.clientY;
   updatePreview();
 }
 
-function onDocMouseUp(e) {
+function onOverlayMouseUp(e) {
   if (!_state.placing) return;
   _state.placing = false;
   _preview.classList.remove('bwbr-placement-preview--visible');
