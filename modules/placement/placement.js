@@ -14,8 +14,13 @@ var TOOL_ICONS = {
   draw: '<path fill="currentColor" d="M20.71 7.04C21.1 6.65 21.1 6 20.71 5.63L18.37 3.29C18 2.9 17.35 2.9 16.96 3.29L15.12 5.12L18.87 8.87M3 17.25V21H6.75L17.81 9.93L14.06 6.18L3 17.25Z"/>'
 };
 
+var MODE_ICONS = {
+  select: '<path fill="currentColor" d="M21 3L3 10.53V11.51L9.84 14.16L12.48 21H13.46L21 3Z"/>',
+  add: '<path fill="currentColor" d="M19 13H13V19H11V13H5V11H11V5H13V11H19V13Z"/>'
+};
+
 var CELL_PX = 24;  // ccfolia 1타일 = 24px
-var COMPOSITE_PX_PER_TILE = 96;  // 합성 이미지 해상도 (1타일 = 96px)
+var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 
 // ── CSS 주입 ────────────────────────────────────────────────────
 
@@ -248,6 +253,49 @@ var COMPOSITE_PX_PER_TILE = 96;  // 합성 이미지 해상도 (1타일 = 96px)
   color: #fff;
 }
 
+/* ── 서브 도구 선택 행 ─────────────────────────── */
+
+.bwbr-place-subtool-row {
+  display: flex;
+  gap: 4px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eee;
+  margin-bottom: 4px;
+}
+
+.bwbr-place-subtool-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 4px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fafafa;
+  font-size: 11px;
+  color: #666;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.bwbr-place-subtool-btn:hover {
+  background: #f0f0f0;
+  border-color: #bbb;
+}
+
+.bwbr-place-subtool-btn--active {
+  background: #42a5f5;
+  color: #fff;
+  border-color: #42a5f5;
+}
+
+.bwbr-place-subtool-btn svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
 /* ── 이미지 소스 메뉴 ──────────────────────────── */
 
 .bwbr-place-source-menu {
@@ -337,6 +385,10 @@ var COMPOSITE_PX_PER_TILE = 96;  // 합성 이미지 해상도 (1타일 = 96px)
 
 .bwbr-placement-overlay--no-image {
   cursor: not-allowed;
+}
+
+.bwbr-placement-overlay--select {
+  cursor: default;
 }
 
 /* ── 배치 프리뷰 (드래그 중) ───────────────────── */
@@ -490,7 +542,8 @@ var COMPOSITE_PX_PER_TILE = 96;  // 합성 이미지 해상도 (1타일 = 96px)
 
 var _state = {
   active: false,          // 배치 모드 활성
-  currentTool: null,      // 'image' | 'text' | 'draw' | null
+  mode: null,             // 'select' | 'add' | null
+  currentTool: null,      // 'image' | 'text' | 'draw' (추가 모드 하위 도구)
   placing: false,         // 현재 배치 중 (드래그)
 
   // 패널 설정 기본값
@@ -526,7 +579,9 @@ var _settingsPanel = null;
 var _overlay = null;
 var _preview = null;
 var _angleIndicator = null;
-var _toolButtons = {};
+var _modeButtons = {};
+var _subToolRow = null;
+var _subToolButtons = {};
 var _imageSourceMenu = null;
 var _currentImagePreview = null;
 var _confirmBar = null;
@@ -573,37 +628,79 @@ function togglePlacementMode() {
     _toolbar.classList.add('bwbr-placement-toolbar--open');
   } else {
     _toolbar.classList.remove('bwbr-placement-toolbar--open');
-    deactivateTool();
+    deactivateMode();
     clearAllStaged();
   }
 }
 
 
-// ── 도구 전환 ───────────────────────────────────────────────────
+// ── 모드 전환 (선택 / 추가) ─────────────────────────────────────
 
-function activateTool(toolId) {
-  // 이전 도구 비활성화 (스타일만)
-  if (_state.currentTool && _toolButtons[_state.currentTool]) {
-    _toolButtons[_state.currentTool].classList.remove('bwbr-place-tool-btn--active');
+function activateMode(mode) {
+  if (_state.mode && _modeButtons[_state.mode]) {
+    _modeButtons[_state.mode].classList.remove('bwbr-place-tool-btn--active');
   }
 
+  if (_state.mode === mode) {
+    deactivateMode();
+    return;
+  }
+
+  _state.mode = mode;
+  if (_modeButtons[mode]) {
+    _modeButtons[mode].classList.add('bwbr-place-tool-btn--active');
+  }
+
+  if (mode === 'select') {
+    _overlay.classList.add('bwbr-placement-overlay--active');
+    _overlay.classList.add('bwbr-placement-overlay--select');
+    _overlay.classList.remove('bwbr-placement-overlay--no-image');
+    _settingsPanel.classList.remove('bwbr-place-settings--open');
+  } else if (mode === 'add') {
+    _overlay.classList.remove('bwbr-placement-overlay--select');
+    _settingsPanel.classList.add('bwbr-place-settings--open');
+    if (_subToolRow) _subToolRow.style.display = '';
+    if (_state.currentTool) {
+      _overlay.classList.add('bwbr-placement-overlay--active');
+      updateOverlayCursor();
+    }
+  }
+}
+
+function deactivateMode() {
+  if (_state.mode && _modeButtons[_state.mode]) {
+    _modeButtons[_state.mode].classList.remove('bwbr-place-tool-btn--active');
+  }
+  _state.mode = null;
+  _state.currentTool = null;
+  _state.placing = false;
+  Object.keys(_subToolButtons).forEach(function(k) {
+    _subToolButtons[k].classList.remove('bwbr-place-subtool-btn--active');
+  });
+  _overlay.classList.remove('bwbr-placement-overlay--active');
+  _overlay.classList.remove('bwbr-placement-overlay--no-image');
+  _overlay.classList.remove('bwbr-placement-overlay--select');
+  _preview.classList.remove('bwbr-placement-preview--visible');
+  _settingsPanel.classList.remove('bwbr-place-settings--open');
+}
+
+function setSubTool(toolId) {
+  Object.keys(_subToolButtons).forEach(function(k) {
+    _subToolButtons[k].classList.remove('bwbr-place-subtool-btn--active');
+  });
+
   if (_state.currentTool === toolId) {
-    deactivateTool();
+    _state.currentTool = null;
+    _overlay.classList.remove('bwbr-placement-overlay--active');
+    if (_imageSourceMenu) _imageSourceMenu.style.display = 'none';
     return;
   }
 
   _state.currentTool = toolId;
-  if (_toolButtons[toolId]) {
-    _toolButtons[toolId].classList.add('bwbr-place-tool-btn--active');
-  }
+  _subToolButtons[toolId].classList.add('bwbr-place-subtool-btn--active');
 
-  // 패널 설정 열기
-  _settingsPanel.classList.add('bwbr-place-settings--open');
-
-  // 이미지 소스 메뉴 표시/숨김
   if (toolId === 'image') {
     if (_imageSourceMenu) _imageSourceMenu.style.display = '';
-    // 오버레이 활성화 (이미지 미선택 시 커서 변경)
     _overlay.classList.add('bwbr-placement-overlay--active');
     updateOverlayCursor();
   } else {
@@ -611,18 +708,6 @@ function activateTool(toolId) {
     _overlay.classList.add('bwbr-placement-overlay--active');
     _overlay.classList.remove('bwbr-placement-overlay--no-image');
   }
-}
-
-function deactivateTool() {
-  if (_state.currentTool && _toolButtons[_state.currentTool]) {
-    _toolButtons[_state.currentTool].classList.remove('bwbr-place-tool-btn--active');
-  }
-  _state.currentTool = null;
-  _state.placing = false;
-  _overlay.classList.remove('bwbr-placement-overlay--active');
-  _overlay.classList.remove('bwbr-placement-overlay--no-image');
-  _preview.classList.remove('bwbr-placement-preview--visible');
-  _settingsPanel.classList.remove('bwbr-place-settings--open');
 }
 
 function updateOverlayCursor() {
@@ -644,22 +729,21 @@ function createToolbar() {
   _settingsPanel = createSettingsPanel();
   _toolbar.appendChild(_settingsPanel);
 
-  // 도구 버튼들
-  var tools = [
-    { id: 'image', label: '이미지 배치', icon: TOOL_ICONS.image },
-    { id: 'text',  label: '텍스트 · 도형', icon: TOOL_ICONS.text },
-    { id: 'draw',  label: '그리기', icon: TOOL_ICONS.draw }
+  // 모드 버튼: 선택, 추가
+  var modes = [
+    { id: 'select', label: '선택', icon: MODE_ICONS.select },
+    { id: 'add',    label: '추가', icon: MODE_ICONS.add }
   ];
 
-  tools.forEach(function (tool) {
+  modes.forEach(function (mode) {
     var btn = document.createElement('button');
     btn.className = 'bwbr-place-tool-btn';
     btn.innerHTML =
-      '<svg viewBox="0 0 24 24">' + tool.icon + '</svg>' +
-      '<span class="bwbr-place-tooltip">' + tool.label + '</span>';
-    btn.addEventListener('click', function () { activateTool(tool.id); });
+      '<svg viewBox="0 0 24 24">' + mode.icon + '</svg>' +
+      '<span class="bwbr-place-tooltip">' + mode.label + '</span>';
+    btn.addEventListener('click', function () { activateMode(mode.id); });
     _toolbar.appendChild(btn);
-    _toolButtons[tool.id] = btn;
+    _modeButtons[mode.id] = btn;
   });
 
   document.body.appendChild(_toolbar);
@@ -668,9 +752,35 @@ function createToolbar() {
 
 // ── 패널 설정 패널 ──────────────────────────────────────────────
 
+function createSubToolRow() {
+  var row = document.createElement('div');
+  row.className = 'bwbr-place-subtool-row';
+
+  var tools = [
+    { id: 'image', label: '이미지', icon: TOOL_ICONS.image },
+    { id: 'text',  label: '텍스트', icon: TOOL_ICONS.text },
+    { id: 'draw',  label: '그리기', icon: TOOL_ICONS.draw }
+  ];
+
+  tools.forEach(function (tool) {
+    var btn = document.createElement('button');
+    btn.className = 'bwbr-place-subtool-btn';
+    btn.innerHTML = '<svg viewBox="0 0 24 24">' + tool.icon + '</svg> ' + tool.label;
+    btn.addEventListener('click', function () { setSubTool(tool.id); });
+    row.appendChild(btn);
+    _subToolButtons[tool.id] = btn;
+  });
+
+  return row;
+}
+
 function createSettingsPanel() {
   var panel = document.createElement('div');
   panel.className = 'bwbr-place-settings';
+
+  // 서브 도구 선택 행
+  _subToolRow = createSubToolRow();
+  panel.appendChild(_subToolRow);
 
   // 이미지 소스 메뉴 (이미지 도구용)
   _imageSourceMenu = createImageSourceMenu();
@@ -912,7 +1022,10 @@ function onOverlayMouseDown(e) {
   _state.drag.currentX = e.clientX;
   _state.drag.currentY = e.clientY;
 
-  // 이미지 도구에서 이미지 미선택 시 클릭만 허용 (선택용)
+  // 선택 모드: 드래그 배치 없음 (클릭만)
+  if (_state.mode === 'select') return;
+
+  // 추가 모드: 이미지 미선택 시 배치 불가 (클릭만)
   if (_state.currentTool === 'image' && !_state.pendingImage) return;
 
   _state.placing = true;
@@ -936,11 +1049,8 @@ function onOverlayMouseUp(e) {
   var dy = Math.abs(e.clientY - _state.drag.startY);
   var isClick = dx < 5 && dy < 5;
 
-  if (isClick) {
-    // 클릭 → 스테이징 오브젝트 선택/해제
-    _state.placing = false;
-    _preview.classList.remove('bwbr-placement-preview--visible');
-    _preview.innerHTML = '';
+  if (isClick && _state.mode === 'select') {
+    // 선택 모드에서 클릭 → 스테이징 오브젝트 선택/해제
     var hit = hitTestStaged(e.clientX, e.clientY);
     if (hit) {
       selectStagedItem(hit.id);
@@ -1242,8 +1352,8 @@ function compositeAndCommit() {
       ctx.restore();
     });
 
-    var dataUrl = canvas.toDataURL('image/png');
-    console.log('[CE 배치] 합성 완료:', bboxW + '×' + bboxH + '타일,', total + '개 이미지');
+    var dataUrl = compressCanvasToDataUrl(canvas);
+    console.log('[CE 배치] 합성 완료:', bboxW + '×' + bboxH + '타일,', total + '개 이미지,', Math.round(dataUrl.length / 1024) + 'KB');
 
     // 설정은 첫 번째 오브젝트의 settings 사용
     var s = _state.stagedObjects[0].settings;
@@ -1269,6 +1379,20 @@ function compositeAndCommit() {
 
     clearAllStaged();
   }
+}
+
+function compressCanvasToDataUrl(canvas) {
+  var maxLen = 900000;
+  var qualities = [0.85, 0.7, 0.5, 0.3];
+  for (var i = 0; i < qualities.length; i++) {
+    var url = canvas.toDataURL('image/jpeg', qualities[i]);
+    if (url.length < maxLen) return url;
+  }
+  var half = document.createElement('canvas');
+  half.width = Math.floor(canvas.width / 2);
+  half.height = Math.floor(canvas.height / 2);
+  half.getContext('2d').drawImage(canvas, 0, 0, half.width, half.height);
+  return half.toDataURL('image/jpeg', 0.5);
 }
 
 
@@ -1352,8 +1476,8 @@ function setupKeyboard() {
         deselectStaged();
       } else if (_state.stagedObjects.length > 0) {
         clearAllStaged();
-      } else if (_state.currentTool) {
-        deactivateTool();
+      } else if (_state.mode) {
+        deactivateMode();
       } else {
         togglePlacementMode();
       }
