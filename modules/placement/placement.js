@@ -716,14 +716,14 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 
 .bwbr-text-editor {
   position: fixed;
-  background: #fff;
-  border: 2px solid #42a5f5;
+  background: transparent;
+  border: 2px dashed #42a5f5;
   border-radius: 2px;
   padding: 8px;
   font-size: 16px;
   font-family: sans-serif;
   line-height: 1.5;
-  color: #000;
+  color: #fff;
   word-break: break-all;
   overflow-wrap: break-word;
   outline: none;
@@ -732,7 +732,7 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   overflow-y: auto;
   min-height: 32px;
   cursor: text;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.7);
 }
 
 .bwbr-text-toolbar {
@@ -1555,11 +1555,16 @@ function createTextSettingsMenu() {
 var _textEditor = null;    // contentEditable div
 var _textToolbar = null;   // 서식 바
 var _textEditorRect = null; // { x, y, w, h } screen px
+var _textMapCoords = null; // 편집 시작 시점의 맵 좌표 (패닝/줌 드리프트 방지)
+var _textBgColor = '';     // 텍스트 박스 배경색 ('' = 투명)
 
 function startTextEditing(rect) {
   if (_textEditor) cleanupTextEditor();
 
   _textEditorRect = rect;
+  // 맵 좌표 즉시 저장 (패닝/줌 후에도 정확한 위치)
+  _textMapCoords = screenToMapCoords(rect);
+  _textBgColor = '';
   _state.textEditing = true;
 
   // contentEditable 생성
@@ -1672,6 +1677,31 @@ function createTextToolbar() {
 
   bar.appendChild(_makeToolbarSep());
 
+  // Text box background color
+  var boxBgWrap = document.createElement('div');
+  boxBgWrap.className = 'bwbr-text-toolbar-color';
+  boxBgWrap.title = '텍스트 박스 배경색 (우클릭: 투명)';
+  var boxBgInput = document.createElement('input');
+  boxBgInput.type = 'color';
+  boxBgInput.value = '#ffffff';
+  boxBgInput.addEventListener('input', function () {
+    _textBgColor = boxBgInput.value;
+    if (_textEditor) _textEditor.style.background = boxBgInput.value;
+  });
+  boxBgInput.addEventListener('contextmenu', function (ev) {
+    ev.preventDefault();
+    _textBgColor = '';
+    if (_textEditor) _textEditor.style.background = 'transparent';
+  });
+  var boxBgLabel = document.createElement('span');
+  boxBgLabel.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14z"/></svg>';
+  boxBgLabel.style.cssText = 'pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;';
+  boxBgWrap.appendChild(boxBgInput);
+  boxBgWrap.appendChild(boxBgLabel);
+  bar.appendChild(boxBgWrap);
+
+  bar.appendChild(_makeToolbarSep());
+
   // Confirm
   var btnOk = document.createElement('button');
   btnOk.className = 'bwbr-text-toolbar-btn bwbr-text-toolbar-confirm';
@@ -1763,15 +1793,30 @@ function _onTextClickOutside(e) {
 function finishTextEditing(confirm) {
   document.removeEventListener('mousedown', _onTextClickOutside, true);
 
-  if (confirm && _textEditor && _textEditor.textContent.trim()) {
-    renderTextEditorToCanvas().then(function (dataUrl) {
-      if (dataUrl && _textEditorRect) {
-        _state.pendingTextDataUrl = dataUrl;
-        stageObject(_textEditorRect);
-        _state.pendingTextDataUrl = null;
-      }
-      cleanupTextEditor();
-    });
+  if (confirm && _textEditor && _textEditor.textContent.trim() && _textMapCoords) {
+    var mapCoords = _textMapCoords;
+    var dataUrl = renderTextEditorToCanvas();
+    if (dataUrl) {
+      readSettingsFromDOM();
+      var obj = {
+        id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+        mapCoords: mapCoords,
+        angle: 0,
+        imageDataUrl: dataUrl,
+        settings: {
+          type: _state.panelSettings.type,
+          z: _state.panelSettings.z,
+          memo: _state.panelSettings.memo,
+          locked: _state.panelSettings.locked,
+          freezed: _state.panelSettings.freezed
+        }
+      };
+      _state.stagedObjects.push(obj);
+      renderStagedItem(obj);
+      pushUndo({ type: 'stage', ids: [obj.id] });
+      updateConfirmBar();
+    }
+    cleanupTextEditor();
   } else {
     cleanupTextEditor();
   }
@@ -1781,100 +1826,156 @@ function cleanupTextEditor() {
   if (_textEditor) { _textEditor.remove(); _textEditor = null; }
   if (_textToolbar) { _textToolbar.remove(); _textToolbar = null; }
   _textEditorRect = null;
+  _textMapCoords = null;
+  _textBgColor = '';
   _state.textEditing = false;
   // 오버레이 복원
   if (_overlay) _overlay.style.pointerEvents = '';
 }
 
 function renderTextEditorToCanvas() {
-  return new Promise(function (resolve) {
-    if (!_textEditor || !_textEditorRect) { resolve(null); return; }
+  if (!_textEditor || !_textEditorRect) return null;
 
-    var w = Math.round(_textEditorRect.w);
-    var h = Math.round(_textEditor.offsetHeight);
-    if (w < 1 || h < 1) { resolve(null); return; }
+  var PAD = 8;
+  var w = Math.round(_textEditorRect.w);
+  var h = Math.round(_textEditor.offsetHeight);
+  if (w < 1 || h < 1) return null;
 
-    var scale = 2; // 고해상도
-    var cw = w * scale;
-    var ch = h * scale;
-
-    // contentEditable 복제 + 렌더용 스타일
-    var clone = _textEditor.cloneNode(true);
-    clone.removeAttribute('contenteditable');
-    clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
-    clone.style.cssText = 'margin:0;padding:8px;font-family:sans-serif;font-size:16px;line-height:1.5;color:#000;word-break:break-all;overflow-wrap:break-word;width:' + w + 'px;box-sizing:border-box;';
-
-    var html = new XMLSerializer().serializeToString(clone);
-
-    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + cw + '" height="' + ch + '">' +
-      '<foreignObject width="100%" height="100%" transform="scale(' + scale + ')">' +
-      html +
-      '</foreignObject></svg>';
-
-    var blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
-    var url = URL.createObjectURL(blob);
-
-    var img = new Image();
-    img.onload = function () {
-      var canvas = document.createElement('canvas');
-      canvas.width = cw;
-      canvas.height = ch;
-      var ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, cw, ch);
-      URL.revokeObjectURL(url);
-      try {
-        resolve(canvas.toDataURL('image/webp', 0.9));
-      } catch (ex) {
-        resolve(canvas.toDataURL('image/png'));
-      }
-    };
-    img.onerror = function () {
-      URL.revokeObjectURL(url);
-      resolve(_renderTextFallback(w, h, scale));
-    };
-    img.src = url;
-  });
-}
-
-function _renderTextFallback(w, h, scale) {
+  var scale = 2;
   var canvas = document.createElement('canvas');
   canvas.width = w * scale;
   canvas.height = h * scale;
   var ctx = canvas.getContext('2d');
   ctx.scale(scale, scale);
-  ctx.fillStyle = '#000';
-  ctx.font = '16px sans-serif';
-  ctx.textBaseline = 'top';
 
-  var text = _textEditor ? _textEditor.textContent : '';
-  var chars = text.split('');
-  var line = '';
-  var y = 8;
-  var maxW = w - 16;
+  // 텍스트 박스 배경색
+  if (_textBgColor) {
+    ctx.fillStyle = _textBgColor;
+    ctx.fillRect(0, 0, w, h);
+  }
 
-  for (var i = 0; i < chars.length; i++) {
-    var ch = chars[i];
-    if (ch === '\n') {
-      ctx.fillText(line, 8, y);
-      line = '';
-      y += 24;
+  // DOM 트리 탐색 → 런 추출 → Canvas 렌더
+  var runs = [];
+  _extractRuns(_textEditor, {
+    fontSize: 16, fontWeight: 'normal', fontStyle: 'normal',
+    color: '#fff', bgColor: '', underline: false, strikethrough: false
+  }, runs);
+
+  var maxW = w - PAD * 2;
+  var x = PAD, y = PAD;
+  var baseLH = 1.5;
+
+  for (var ri = 0; ri < runs.length; ri++) {
+    var run = runs[ri];
+
+    if (run.newline) {
+      x = PAD;
+      y += (run.fontSize || 16) * baseLH;
       continue;
     }
-    var test = line + ch;
-    if (ctx.measureText(test).width > maxW && line) {
-      ctx.fillText(line, 8, y);
-      line = ch;
-      y += 24;
-    } else {
-      line = test;
+
+    var fs = run.fontSize || 16;
+    var lh = fs * baseLH;
+    var fontStr = (run.fontStyle === 'italic' ? 'italic ' : '') +
+                  (run.fontWeight === 'bold' ? 'bold ' : '') +
+                  fs + 'px sans-serif';
+    ctx.font = fontStr;
+
+    var words = run.text;
+    for (var ci = 0; ci < words.length; ci++) {
+      var ch = words[ci];
+      var cw = ctx.measureText(ch).width;
+
+      // 줄바꿈
+      if (x + cw > PAD + maxW && x > PAD) {
+        x = PAD;
+        y += lh;
+      }
+
+      // 배경색
+      if (run.bgColor) {
+        ctx.fillStyle = run.bgColor;
+        ctx.fillRect(x, y, cw, lh);
+      }
+
+      // 글자
+      ctx.fillStyle = run.color || '#fff';
+      ctx.font = fontStr;
+      ctx.textBaseline = 'top';
+      ctx.fillText(ch, x, y + (lh - fs) / 2);
+
+      // 밑줄
+      if (run.underline) {
+        ctx.strokeStyle = run.color || '#fff';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x, y + lh - 2);
+        ctx.lineTo(x + cw, y + lh - 2);
+        ctx.stroke();
+      }
+
+      // 취소선
+      if (run.strikethrough) {
+        ctx.strokeStyle = run.color || '#fff';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x, y + lh / 2);
+        ctx.lineTo(x + cw, y + lh / 2);
+        ctx.stroke();
+      }
+
+      x += cw;
     }
   }
-  if (line) ctx.fillText(line, 8, y);
 
   try {
     return canvas.toDataURL('image/webp', 0.9);
   } catch (ex) {
     return canvas.toDataURL('image/png');
+  }
+}
+
+function _extractRuns(node, style, runs) {
+  if (node.nodeType === 3) {
+    var txt = node.textContent;
+    if (txt) runs.push({ text: txt, fontSize: style.fontSize, fontWeight: style.fontWeight, fontStyle: style.fontStyle, color: style.color, bgColor: style.bgColor, underline: style.underline, strikethrough: style.strikethrough });
+    return;
+  }
+  if (node.nodeType !== 1) return;
+
+  var tag = node.tagName.toLowerCase();
+
+  // 블록 요소 = 줄바꿈
+  if ((tag === 'div' || tag === 'p') && runs.length > 0 && !runs[runs.length - 1].newline) {
+    runs.push({ newline: true, fontSize: style.fontSize });
+  }
+  if (tag === 'br') {
+    runs.push({ newline: true, fontSize: style.fontSize });
+    return;
+  }
+
+  var s = Object.assign({}, style);
+  if (tag === 'b' || tag === 'strong') s.fontWeight = 'bold';
+  if (tag === 'i' || tag === 'em') s.fontStyle = 'italic';
+  if (tag === 'u') s.underline = true;
+  if (tag === 's' || tag === 'strike' || tag === 'del') s.strikethrough = true;
+
+  var ns = node.style;
+  if (ns) {
+    if (ns.color) s.color = ns.color;
+    if (ns.backgroundColor) s.bgColor = ns.backgroundColor;
+    if (ns.fontSize) s.fontSize = parseInt(ns.fontSize) || s.fontSize;
+    if (ns.fontWeight === 'bold' || parseInt(ns.fontWeight) >= 700) s.fontWeight = 'bold';
+    if (ns.fontStyle === 'italic') s.fontStyle = 'italic';
+    if (ns.textDecoration && ns.textDecoration.indexOf('underline') >= 0) s.underline = true;
+    if (ns.textDecoration && ns.textDecoration.indexOf('line-through') >= 0) s.strikethrough = true;
+  }
+
+  // <font color="..."> (execCommand foreColor 결과)
+  if (tag === 'font' && node.getAttribute('color')) s.color = node.getAttribute('color');
+
+  for (var i = 0; i < node.childNodes.length; i++) {
+    _extractRuns(node.childNodes[i], s, runs);
   }
 }
 
