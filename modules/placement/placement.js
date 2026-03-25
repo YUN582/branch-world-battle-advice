@@ -476,7 +476,7 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 
 .bwbr-staged-item {
   position: absolute;
-  border: 2px solid #42a5f5;
+  border: 2px dashed rgba(66, 165, 245, 0.6);
   background: rgba(66, 165, 245, 0.08);
   box-sizing: border-box;
   pointer-events: none;
@@ -508,8 +508,7 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 }
 
 .bwbr-staged-item--selected {
-  outline: 2px dashed rgba(255,152,0,0.85);
-  outline-offset: 2px;
+  outline: none;
   border-color: rgba(255,152,0,0.85);
 }
 
@@ -534,6 +533,43 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 .bwbr-staged-item--dragging {
   opacity: 0.7;
   box-shadow: 0 0 16px rgba(255, 152, 0, 0.7) !important;
+}
+
+/* 리사이즈 핸들 */
+.bwbr-resize-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #fff;
+  border: 2px solid #ff9800;
+  border-radius: 2px;
+  z-index: 100000;
+  pointer-events: auto;
+  box-sizing: border-box;
+}
+.bwbr-resize-handle--nw { top:-5px; left:-5px; cursor:nw-resize; }
+.bwbr-resize-handle--n  { top:-5px; left:50%; margin-left:-5px; cursor:n-resize; }
+.bwbr-resize-handle--ne { top:-5px; right:-5px; cursor:ne-resize; }
+.bwbr-resize-handle--e  { top:50%; margin-top:-5px; right:-5px; cursor:e-resize; }
+.bwbr-resize-handle--se { bottom:-5px; right:-5px; cursor:se-resize; }
+.bwbr-resize-handle--s  { bottom:-5px; left:50%; margin-left:-5px; cursor:s-resize; }
+.bwbr-resize-handle--sw { bottom:-5px; left:-5px; cursor:sw-resize; }
+.bwbr-resize-handle--w  { top:50%; margin-top:-5px; left:-5px; cursor:w-resize; }
+
+/* 커스텀 툴팁 */
+.bwbr-tooltip {
+  position: fixed;
+  background: rgba(40,40,40,0.95);
+  color: #fff;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 200000;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  opacity: 0;
+  transition: opacity 0.15s;
 }
 
 /* ── Alt+드래그 선택 사각형 ───────────────── */
@@ -718,8 +754,7 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   position: absolute;
   display: flex;
   flex-direction: column;
-  border: 2px dashed #42a5f5;
-  border-radius: 2px;
+  outline: 2px dashed #42a5f5;
   z-index: 107;
   box-sizing: border-box;
   overflow-y: auto;
@@ -777,12 +812,6 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 .bwbr-text-toolbar-btn.bwbr-tb-active {
   background: #e0e7ff;
   color: #1a56db;
-}
-
-.bwbr-text-toolbar [title]::before,
-.bwbr-text-toolbar [title]::after {
-  display: none !important;
-  content: none !important;
 }
 
 .bwbr-text-toolbar-sep {
@@ -844,6 +873,42 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 `;
   document.head.appendChild(style);
 })();
+
+
+// ── 커스텀 툴팁 ────────────────────────────────────────────────
+
+var _tooltipEl = null;
+var _tooltipTimer = null;
+
+function _showTooltip(text, anchorEl) {
+  if (!text) return;
+  if (!_tooltipEl) {
+    _tooltipEl = document.createElement('div');
+    _tooltipEl.className = 'bwbr-tooltip';
+    document.body.appendChild(_tooltipEl);
+  }
+  _tooltipEl.textContent = text;
+  _tooltipEl.style.opacity = '0';
+  clearTimeout(_tooltipTimer);
+  _tooltipTimer = setTimeout(function() {
+    if (!_tooltipEl) return;
+    var r = anchorEl.getBoundingClientRect();
+    _tooltipEl.style.left = (r.left + r.width / 2 - _tooltipEl.offsetWidth / 2) + 'px';
+    _tooltipEl.style.top = (r.bottom + 6) + 'px';
+    _tooltipEl.style.opacity = '1';
+  }, 400);
+}
+
+function _hideTooltip() {
+  clearTimeout(_tooltipTimer);
+  if (_tooltipEl) _tooltipEl.style.opacity = '0';
+}
+
+function _setTooltip(el, text) {
+  el.removeAttribute('title');
+  el.addEventListener('mouseenter', function() { _showTooltip(text, el); });
+  el.addEventListener('mouseleave', _hideTooltip);
+}
 
 
 // ── 상태 ────────────────────────────────────────────────────────
@@ -1704,7 +1769,7 @@ function createTextToolbar() {
   // Font color
   var fgWrap = document.createElement('div');
   fgWrap.className = 'bwbr-text-toolbar-color';
-  fgWrap.title = '글자 색상';
+  _setTooltip(fgWrap, '글자 색상');
   var fgInput = document.createElement('input');
   fgInput.type = 'color';
   fgInput.value = '#000000';
@@ -1722,7 +1787,7 @@ function createTextToolbar() {
   // Background color
   var bgWrap = document.createElement('div');
   bgWrap.className = 'bwbr-text-toolbar-color';
-  bgWrap.title = '배경 색상';
+  _setTooltip(bgWrap, '배경 색상');
   var bgInput = document.createElement('input');
   bgInput.type = 'color';
   bgInput.value = '#ffff00';
@@ -1742,7 +1807,7 @@ function createTextToolbar() {
   // Font size
   var sizeSelect = document.createElement('select');
   sizeSelect.className = 'bwbr-text-toolbar-select';
-  sizeSelect.title = '글꼴 크기';
+  _setTooltip(sizeSelect, '글꼴 크기');
   [12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64].forEach(function (s) {
     var opt = document.createElement('option');
     opt.value = s;
@@ -1773,7 +1838,7 @@ function createTextToolbar() {
        ab.val === 'center' ? '<path d="M3 3h18v2H3zm3 4h12v2H6zm-3 4h18v2H3zm3 4h12v2H6zm-3 4h18v2H3z"/>' :
        '<path d="M3 3h18v2H3zm6 4h12v2H9zm-6 4h18v2H3zm6 4h12v2H9zm-6 4h18v2H3z"/>') +
       '</svg>';
-    btn.title = ab.tip;
+    _setTooltip(btn, ab.tip);
     btn.addEventListener('mousedown', function(e) { e.preventDefault(); });
     btn.addEventListener('click', function() {
       _textAlign = ab.val;
@@ -1797,7 +1862,7 @@ function createTextToolbar() {
     btn.className = 'bwbr-text-toolbar-btn' + (_textVAlign === vb.val ? ' bwbr-tb-active' : '');
     btn.dataset.alignV = vb.val;
     btn.textContent = vb.icon;
-    btn.title = vb.tip;
+    _setTooltip(btn, vb.tip);
     btn.style.fontSize = '11px';
     btn.addEventListener('mousedown', function(e) { e.preventDefault(); });
     btn.addEventListener('click', function() {
@@ -1816,7 +1881,7 @@ function createTextToolbar() {
   // Text box background color
   var boxBgWrap = document.createElement('div');
   boxBgWrap.className = 'bwbr-text-toolbar-color';
-  boxBgWrap.title = '텍스트 박스 배경색 (우클릭: 투명)';
+  _setTooltip(boxBgWrap, '텍스트 박스 배경색 (우클릭: 투명)');
   var boxBgInput = document.createElement('input');
   boxBgInput.type = 'color';
   boxBgInput.value = '#ffffff';
@@ -1842,7 +1907,7 @@ function createTextToolbar() {
   var btnOk = document.createElement('button');
   btnOk.className = 'bwbr-text-toolbar-btn bwbr-text-toolbar-confirm';
   btnOk.textContent = '\u2713';
-  btnOk.title = '확인';
+  _setTooltip(btnOk, '확인');
   btnOk.addEventListener('mousedown', function (e) { e.preventDefault(); });
   btnOk.addEventListener('click', function () { finishTextEditing(true); });
   bar.appendChild(btnOk);
@@ -1851,7 +1916,7 @@ function createTextToolbar() {
   var btnX = document.createElement('button');
   btnX.className = 'bwbr-text-toolbar-btn bwbr-text-toolbar-cancel';
   btnX.textContent = '\u2715';
-  btnX.title = '취소 (Esc)';
+  _setTooltip(btnX, '취소 (Esc)');
   btnX.addEventListener('mousedown', function (e) { e.preventDefault(); });
   btnX.addEventListener('click', function () { finishTextEditing(false); });
   bar.appendChild(btnX);
@@ -1859,11 +1924,11 @@ function createTextToolbar() {
   return bar;
 }
 
-function _makeToolbarBtn(label, cmd, title) {
+function _makeToolbarBtn(label, cmd, tipText) {
   var btn = document.createElement('button');
   btn.className = 'bwbr-text-toolbar-btn';
   btn.textContent = label;
-  btn.title = title || '';
+  if (tipText) _setTooltip(btn, tipText);
   btn.addEventListener('mousedown', function (e) { e.preventDefault(); });
   btn.addEventListener('click', function () {
     document.execCommand(cmd);
@@ -1931,7 +1996,7 @@ function finishTextEditing(confirm) {
     // 에디터 높이가 입력으로 변경됐을 수 있으므로 현재 높이로 mapCoords 갱신
     // 에디터는 zoom container 내부 → scrollHeight가 이미 언스케일드 px
     var actualH = _textEditor.scrollHeight;
-    mapCoords.height = Math.max(1, Math.round(actualH / CELL_PX));
+    mapCoords.height = Math.max(1, Math.ceil(actualH / CELL_PX));
 
     var dataUrl = renderTextEditorToCanvas();
     if (dataUrl) {
@@ -1990,8 +2055,9 @@ function renderTextEditorToCanvas() {
   if (!_textEditor || !_textMapCoords) return null;
 
   var PAD = 8;
-  var w = _textEditor.clientWidth;
-  var h = _textEditor.scrollHeight;
+  // 타일 단위 치수와 정확히 일치하는 캔버스 크기 사용 (패널과 1:1 매칭)
+  var w = _textMapCoords.width * CELL_PX;
+  var h = _textMapCoords.height * CELL_PX;
   if (w < 1 || h < 1) return null;
 
   var scaleF = 2;
@@ -2703,6 +2769,22 @@ function undo() {
         el.style.top = (obj.mapCoords.y * CELL_PX) + 'px';
       }
     });
+  } else if (action.type === 'resize') {
+    var obj = _state.stagedObjects.find(function(o) { return o.id === action.id; });
+    if (obj) {
+      obj.mapCoords.x = action.prev.x;
+      obj.mapCoords.y = action.prev.y;
+      obj.mapCoords.width = action.prev.width;
+      obj.mapCoords.height = action.prev.height;
+      var el = document.querySelector('[data-staged-id="' + obj.id + '"]');
+      if (el) {
+        el.style.left = (obj.mapCoords.x * CELL_PX) + 'px';
+        el.style.top = (obj.mapCoords.y * CELL_PX) + 'px';
+        el.style.width = (obj.mapCoords.width * CELL_PX) + 'px';
+        el.style.height = (obj.mapCoords.height * CELL_PX) + 'px';
+      }
+    }
+    _updateResizeHandles();
   }
 
   renumberStagedBadges();
@@ -2738,10 +2820,10 @@ function selectStagedItem(id, additive) {
   if (additive) {
     var idx = _state.selectedStagedIds.indexOf(id);
     if (idx !== -1) {
-      // 이미 선택됨 → 해제
       _state.selectedStagedIds.splice(idx, 1);
       var el = document.querySelector('[data-staged-id="' + id + '"]');
       if (el) el.classList.remove('bwbr-staged-item--selected');
+      _updateResizeHandles();
       return;
     }
     _state.selectedStagedIds.push(id);
@@ -2753,6 +2835,7 @@ function selectStagedItem(id, additive) {
     var el3 = document.querySelector('[data-staged-id="' + id + '"]');
     if (el3) el3.classList.add('bwbr-staged-item--selected');
   }
+  _updateResizeHandles();
 }
 
 function deselectStaged() {
@@ -2761,6 +2844,101 @@ function deselectStaged() {
     if (el) el.classList.remove('bwbr-staged-item--selected');
   });
   _state.selectedStagedIds = [];
+  _removeResizeHandles();
+}
+
+// ── 리사이즈 핸들 ───────────────────────────────────────────────
+
+var _resizeHandles = [];
+var _resizeDrag = null;
+
+var HANDLE_DIRS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+
+function _removeResizeHandles() {
+  _resizeHandles.forEach(function(h) { h.remove(); });
+  _resizeHandles = [];
+}
+
+function _updateResizeHandles() {
+  _removeResizeHandles();
+  // 단일 선택인 경우에만 핸들 표시
+  if (_state.selectedStagedIds.length !== 1) return;
+  var id = _state.selectedStagedIds[0];
+  var el = document.querySelector('[data-staged-id="' + id + '"]');
+  if (!el) return;
+
+  HANDLE_DIRS.forEach(function(dir) {
+    var h = document.createElement('div');
+    h.className = 'bwbr-resize-handle bwbr-resize-handle--' + dir;
+    h.addEventListener('mousedown', function(ev) {
+      ev.stopPropagation();
+      ev.preventDefault();
+      _startResize(id, dir, ev);
+    });
+    el.appendChild(h);
+    _resizeHandles.push(h);
+  });
+}
+
+function _startResize(objId, dir, e) {
+  var obj = _state.stagedObjects.find(function(o) { return o.id === objId; });
+  if (!obj) return;
+  _resizeDrag = {
+    objId: objId,
+    dir: dir,
+    startX: e.clientX,
+    startY: e.clientY,
+    origX: obj.mapCoords.x,
+    origY: obj.mapCoords.y,
+    origW: obj.mapCoords.width,
+    origH: obj.mapCoords.height
+  };
+
+  function onMove(ev) {
+    if (!_resizeDrag) return;
+    var scale = getZoomScale();
+    var dx = Math.round((ev.clientX - _resizeDrag.startX) / (scale * CELL_PX));
+    var dy = Math.round((ev.clientY - _resizeDrag.startY) / (scale * CELL_PX));
+    var d = _resizeDrag.dir;
+    var nx = _resizeDrag.origX, ny = _resizeDrag.origY;
+    var nw = _resizeDrag.origW, nh = _resizeDrag.origH;
+
+    if (d.indexOf('w') >= 0) { nx += dx; nw -= dx; }
+    if (d.indexOf('e') >= 0) { nw += dx; }
+    if (d.indexOf('n') >= 0) { ny += dy; nh -= dy; }
+    if (d.indexOf('s') >= 0) { nh += dy; }
+
+    if (nw < 1) { nw = 1; nx = _resizeDrag.origX + _resizeDrag.origW - 1; }
+    if (nh < 1) { nh = 1; ny = _resizeDrag.origY + _resizeDrag.origH - 1; }
+
+    obj.mapCoords.x = nx; obj.mapCoords.y = ny;
+    obj.mapCoords.width = nw; obj.mapCoords.height = nh;
+
+    var el = document.querySelector('[data-staged-id="' + objId + '"]');
+    if (el) {
+      el.style.left = (nx * CELL_PX) + 'px';
+      el.style.top = (ny * CELL_PX) + 'px';
+      el.style.width = (nw * CELL_PX) + 'px';
+      el.style.height = (nh * CELL_PX) + 'px';
+    }
+  }
+
+  function onUp() {
+    if (_resizeDrag) {
+      // undo 기록
+      pushUndo({
+        type: 'resize',
+        id: objId,
+        prev: { x: _resizeDrag.origX, y: _resizeDrag.origY, width: _resizeDrag.origW, height: _resizeDrag.origH }
+      });
+    }
+    _resizeDrag = null;
+    document.removeEventListener('mousemove', onMove, true);
+    document.removeEventListener('mouseup', onUp, true);
+  }
+
+  document.addEventListener('mousemove', onMove, true);
+  document.addEventListener('mouseup', onUp, true);
 }
 
 function finishAltBoxSelect() {
@@ -2804,6 +2982,7 @@ function finishAltBoxSelect() {
   });
   if (found) console.log('[CE 배치] 선택:', _state.selectedStagedIds.length + '개');
   updateAlignBar();
+  _updateResizeHandles();
 }
 
 function removeSelectedStaged() {
