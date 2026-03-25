@@ -78,6 +78,8 @@
   /* ── 코코포리아 채팅 입력란 감지 (textarea + contenteditable) */
   function isChatInput(el) {
     if (!el) return false;
+    // CE 텍스트 도구 편집기 제외
+    if (el.classList && el.classList.contains('bwbr-text-editor')) return false;
     // contenteditable 지원
     if (el.contentEditable === 'true') return true;
     const tag = el.tagName;
@@ -280,7 +282,7 @@
 
     /* ── : 스테이터스 명령어 처리 (Enter) ──────────────── */
     if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey) {
-      const val = el.value.trim();
+      const val = (el.value || el.textContent || '').trim();
 
       // /ㅇ 시스템 메시지 명령
       const sysMatch = val.match(/^\/ㅇ\s+(.+)$/);

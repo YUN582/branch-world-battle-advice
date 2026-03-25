@@ -886,6 +886,7 @@ var _settingsPanel = null;
 var _overlay = null;
 var _preview = null;
 var _angleIndicator = null;
+var _cachedZoomEl = null; // 줌 컨테이너 참조 캐시 (React 교체 감지용)
 
 // 설정 DOM 요소 참조 (이벤트 의존 없이 직접 읽기 위함)
 var _settingsEls = {
@@ -1795,6 +1796,12 @@ function finishTextEditing(confirm) {
 
   if (confirm && _textEditor && _textEditor.textContent.trim() && _textMapCoords) {
     var mapCoords = _textMapCoords;
+
+    // 에디터 높이가 입력으로 변경됐을 수 있으므로 현재 높이로 mapCoords 갱신
+    var actualH = _textEditor.scrollHeight;
+    var scale = getZoomScale();
+    mapCoords.height = Math.max(1, Math.round(actualH / (scale * CELL_PX)));
+
     var dataUrl = renderTextEditorToCanvas();
     if (dataUrl) {
       readSettingsFromDOM();
@@ -1837,8 +1844,9 @@ function renderTextEditorToCanvas() {
   if (!_textEditor || !_textEditorRect) return null;
 
   var PAD = 8;
-  var w = Math.round(_textEditorRect.w);
-  var h = Math.round(_textEditor.offsetHeight);
+  // clientWidth/scrollHeight = 테두리 제외, 패딩 포함 → 실제 텍스트 렌더 영역과 동일
+  var w = _textEditor.clientWidth;
+  var h = _textEditor.scrollHeight;
   if (w < 1 || h < 1) return null;
 
   var scale = 2;
@@ -1854,11 +1862,17 @@ function renderTextEditorToCanvas() {
     ctx.fillRect(0, 0, w, h);
   }
 
+  // 에디터 computedStyle에서 기본값 추출
+  var edCS = getComputedStyle(_textEditor);
+  var defaultFS = parseInt(edCS.fontSize) || 16;
+  var defaultColor = edCS.color || '#fff';
+  var defaultFamily = edCS.fontFamily || 'sans-serif';
+
   // DOM 트리 탐색 → 런 추출 → Canvas 렌더
   var runs = [];
   _extractRuns(_textEditor, {
-    fontSize: 16, fontWeight: 'normal', fontStyle: 'normal',
-    color: '#fff', bgColor: '', underline: false, strikethrough: false
+    fontSize: defaultFS, fontWeight: 'normal', fontStyle: 'normal',
+    color: defaultColor, bgColor: '', underline: false, strikethrough: false
   }, runs);
 
   var maxW = w - PAD * 2;
@@ -1870,15 +1884,15 @@ function renderTextEditorToCanvas() {
 
     if (run.newline) {
       x = PAD;
-      y += (run.fontSize || 16) * baseLH;
+      y += (run.fontSize || defaultFS) * baseLH;
       continue;
     }
 
-    var fs = run.fontSize || 16;
+    var fs = run.fontSize || defaultFS;
     var lh = fs * baseLH;
     var fontStr = (run.fontStyle === 'italic' ? 'italic ' : '') +
                   (run.fontWeight === 'bold' ? 'bold ' : '') +
-                  fs + 'px sans-serif';
+                  fs + 'px ' + defaultFamily;
     ctx.font = fontStr;
 
     var words = run.text;
@@ -1899,14 +1913,14 @@ function renderTextEditorToCanvas() {
       }
 
       // 글자
-      ctx.fillStyle = run.color || '#fff';
+      ctx.fillStyle = run.color || defaultColor;
       ctx.font = fontStr;
       ctx.textBaseline = 'top';
       ctx.fillText(ch, x, y + (lh - fs) / 2);
 
       // 밑줄
       if (run.underline) {
-        ctx.strokeStyle = run.color || '#fff';
+        ctx.strokeStyle = run.color || defaultColor;
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(x, y + lh - 2);
@@ -1916,7 +1930,7 @@ function renderTextEditorToCanvas() {
 
       // 취소선
       if (run.strikethrough) {
-        ctx.strokeStyle = run.color || '#fff';
+        ctx.strokeStyle = run.color || defaultColor;
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(x, y + lh / 2);
@@ -2209,6 +2223,13 @@ function stageObject(screenRect) {
   var mapCoords = screenToMapCoords(screenRect);
   if (!mapCoords) return;
 
+  // zoom 컨테이너 교체 감지
+  var zoomEl = getZoomContainer();
+  if (zoomEl && _cachedZoomEl && _cachedZoomEl !== zoomEl) {
+    _migrateStaged(zoomEl);
+  }
+  if (zoomEl) _cachedZoomEl = zoomEl;
+
   // DOM에서 직접 설정값 읽기 (이벤트 리스너 불발 대비)
   readSettingsFromDOM();
 
@@ -2240,9 +2261,32 @@ function stageObject(screenRect) {
 
 // ── 스테이징 렌더링 (맵 위 프리뷰) ─────────────────────────────
 
+// zoom 컨테이너 교체 시 기존 스테이징 아이템 → 새 컨테이너로 이동
+function _migrateStaged(newZoomEl) {
+  console.log('[CE 배치] zoom 컨테이너 교체 감지, 스테이징 아이템 재부착');
+  document.querySelectorAll('.bwbr-staged-item').forEach(function (el) {
+    newZoomEl.appendChild(el);
+  });
+  // 새 컨테이너도 containing block 보장
+  if (getComputedStyle(newZoomEl).position === 'static') {
+    newZoomEl.style.position = 'relative';
+  }
+}
+
 function renderStagedItem(obj) {
   var zoomEl = getZoomContainer();
   if (!zoomEl) return;
+
+  // zoom 컨테이너 교체 감지: React가 DOM 노드를 교체하면 기존 스테이징 아이템 재부착
+  if (_cachedZoomEl && _cachedZoomEl !== zoomEl) {
+    _migrateStaged(zoomEl);
+  }
+  _cachedZoomEl = zoomEl;
+
+  // position:static이면 transform 제거 시 containing block이 사라짐 → 드리프트 방지
+  if (getComputedStyle(zoomEl).position === 'static') {
+    zoomEl.style.position = 'relative';
+  }
 
   var mc = obj.mapCoords;
   var el = document.createElement('div');
