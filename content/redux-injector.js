@@ -4426,7 +4426,7 @@
   // ================================================================
   //  [CORE] 네이티브 이미지 피커 (bwbr-open-native-image-picker)
   // ================================================================
-  window.addEventListener('bwbr-open-native-image-picker', () => {
+  document.addEventListener('bwbr-open-native-image-picker', () => {
     if (!reduxStore || _bwbrPickerActive) return;
     _bwbrPickerActive = true;
     let _pickerGotResult = false;
@@ -4497,7 +4497,7 @@
         'data-bwbr-native-picker-result',
         JSON.stringify({ url: url })
       );
-      window.dispatchEvent(new CustomEvent('bwbr-native-picker-result'));
+      document.dispatchEvent(new CustomEvent('bwbr-native-picker-result'));
     }
   });
 
@@ -5677,13 +5677,13 @@
   //  배치 모드: 패널(아이템) 생성
   //  Content Script에서 bwbr-create-panel 이벤트로 요청
   // ================================================================
-  window.addEventListener('bwbr-create-panel', async () => {
+  document.addEventListener('bwbr-create-panel', async () => {
     const _raw = document.documentElement.getAttribute('data-bwbr-create-panel');
     document.documentElement.removeAttribute('data-bwbr-create-panel');
     const panelData = _raw ? JSON.parse(_raw) : {};
     const respond = (detail) => {
       document.documentElement.setAttribute('data-bwbr-create-panel-result', JSON.stringify(detail));
-      window.dispatchEvent(new CustomEvent('bwbr-create-panel-result', { detail }));
+      document.dispatchEvent(new CustomEvent('bwbr-create-panel-result', { detail }));
     };
 
     try {
@@ -5746,13 +5746,13 @@
   //  배치 모드: 패널 일괄 생성 (스테이징 → 확정)
   //  Content Script에서 bwbr-create-panels-batch 이벤트로 요청
   // ================================================================
-  window.addEventListener('bwbr-create-panels-batch', async () => {
+  document.addEventListener('bwbr-create-panels-batch', async () => {
     const _raw = document.documentElement.getAttribute('data-bwbr-create-panels-batch');
     document.documentElement.removeAttribute('data-bwbr-create-panels-batch');
     const panels = _raw ? JSON.parse(_raw) : [];
     const respond = (detail) => {
       document.documentElement.setAttribute('data-bwbr-create-panels-batch-result', JSON.stringify(detail));
-      window.dispatchEvent(new CustomEvent('bwbr-create-panels-batch-result', { detail }));
+      document.dispatchEvent(new CustomEvent('bwbr-create-panels-batch-result', { detail }));
     };
 
     try {

@@ -479,6 +479,7 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   background: rgba(66, 165, 245, 0.08);
   box-sizing: border-box;
   pointer-events: none;
+  z-index: 99999;
 }
 
 .bwbr-staged-item img {
@@ -916,11 +917,11 @@ function createImageSourceMenu() {
   localBtn.addEventListener('click', selectLocalImage);
   menu.appendChild(localBtn);
 
-  var urlBtn = document.createElement('button');
-  urlBtn.className = 'bwbr-place-source-btn';
-  urlBtn.textContent = '🔗 URL 이미지';
-  urlBtn.addEventListener('click', addImageByUrl);
-  menu.appendChild(urlBtn);
+  var ccoBtn = document.createElement('button');
+  ccoBtn.className = 'bwbr-place-source-btn';
+  ccoBtn.textContent = '🎲 코코포리아 이미지';
+  ccoBtn.addEventListener('click', openCcofoliaImagePicker);
+  menu.appendChild(ccoBtn);
 
   // 등록된 이미지 그리드
   _imageGrid = document.createElement('div');
@@ -1042,37 +1043,48 @@ function selectLocalImage() {
   fileInput.click();
 }
 
-function addImageByUrl() {
-  var url = prompt('이미지 URL을 입력하세요:');
-  if (!url || !url.trim()) return;
-  url = url.trim();
+function openCcofoliaImagePicker() {
+  // 결과 리스너 등록
+  function onPickerResult() {
+    var raw = document.documentElement.getAttribute('data-bwbr-native-picker-result');
+    document.documentElement.removeAttribute('data-bwbr-native-picker-result');
+    document.removeEventListener('bwbr-native-picker-result', onPickerResult);
 
-  var img = new Image();
-  img.crossOrigin = 'anonymous';
-  img.onload = function () {
-    var entry = {
-      id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
-      dataUrl: url,
-      name: url.split('/').pop().split('?')[0] || 'URL 이미지',
-      width: img.naturalWidth,
-      height: img.naturalHeight
+    if (!raw) return;
+    var result = JSON.parse(raw);
+    if (!result.url) return;
+
+    var img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = function () {
+      var entry = {
+        id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+        dataUrl: result.url,
+        name: result.url.split('/').pop().split('?')[0] || '코코포리아 이미지',
+        width: img.naturalWidth,
+        height: img.naturalHeight
+      };
+      _state.registeredImages.push(entry);
+      renderImageGrid();
     };
-    _state.registeredImages.push(entry);
-    renderImageGrid();
-  };
-  img.onerror = function () {
-    // CORS 실패 시에도 등록 (배치 시 이미지 표시만 안될 수 있음)
-    var entry = {
-      id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
-      dataUrl: url,
-      name: url.split('/').pop().split('?')[0] || 'URL 이미지',
-      width: 1,
-      height: 1
+    img.onerror = function () {
+      var entry = {
+        id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+        dataUrl: result.url,
+        name: '코코포리아 이미지',
+        width: 1,
+        height: 1
+      };
+      _state.registeredImages.push(entry);
+      renderImageGrid();
     };
-    _state.registeredImages.push(entry);
-    renderImageGrid();
-  };
-  img.src = url;
+    img.src = result.url;
+  }
+
+  document.addEventListener('bwbr-native-picker-result', onPickerResult);
+
+  // 네이티브 이미지 피커 열기 (MAIN world)
+  document.dispatchEvent(new CustomEvent('bwbr-open-native-image-picker'));
 }
 
 
@@ -1123,6 +1135,19 @@ function createOverlay() {
   _angleIndicator.className = 'bwbr-placement-angle-indicator';
   document.body.appendChild(_angleIndicator);
 
+  // 중간 버튼(wheel click) 패스스루: pointerdown 단계에서 오버레이 비활성화
+  _overlay.addEventListener('pointerdown', function(e) {
+    if (e.button === 1) {
+      _overlay.style.pointerEvents = 'none';
+      document.addEventListener('pointerup', function restorePE(ev) {
+        if (ev.button === 1) {
+          _overlay.style.pointerEvents = '';
+          document.removeEventListener('pointerup', restorePE);
+        }
+      });
+    }
+  });
+
   _overlay.addEventListener('mousedown', onOverlayMouseDown);
   _overlay.addEventListener('mousemove', onOverlayMouseMove);
   _overlay.addEventListener('mouseup', onOverlayMouseUp);
@@ -1145,23 +1170,7 @@ function createOverlay() {
 function onOverlayMouseDown(e) {
   // 중간 버튼 → 패스스루 (화면 이동)
   if (e.button === 1) {
-    e.preventDefault();
-    _overlay.style.pointerEvents = 'none';
-    var below = document.elementFromPoint(e.clientX, e.clientY);
-    if (below && below !== _overlay) {
-      below.dispatchEvent(new MouseEvent('mousedown', {
-        bubbles: true, cancelable: true,
-        clientX: e.clientX, clientY: e.clientY,
-        button: 1, buttons: 4
-      }));
-    }
-    document.addEventListener('mouseup', function restorePE(ev) {
-      if (ev.button === 1) {
-        _overlay.style.pointerEvents = '';
-        document.removeEventListener('mouseup', restorePE);
-      }
-    });
-    return;
+    return; // pointerdown 핸들러에서 처리
   }
   if (e.button !== 0) return;
 
@@ -1581,7 +1590,7 @@ function compositeAndCommit() {
       'data-bwbr-create-panel',
       JSON.stringify(panelData)
     );
-    window.dispatchEvent(new CustomEvent('bwbr-create-panel'));
+    document.dispatchEvent(new CustomEvent('bwbr-create-panel'));
 
     clearAllStaged();
   }
