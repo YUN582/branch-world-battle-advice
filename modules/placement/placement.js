@@ -887,6 +887,7 @@ var _overlay = null;
 var _preview = null;
 var _angleIndicator = null;
 var _cachedZoomEl = null; // 줌 컨테이너 참조 캐시 (React 교체 감지용)
+var _stagingGuardId = null; // 스테이징 아이템 보호 rAF ID
 
 // 설정 DOM 요소 참조 (이벤트 의존 없이 직접 읽기 위함)
 var _settingsEls = {
@@ -992,6 +993,7 @@ function togglePlacementMode() {
     _toolbar.classList.add('bwbr-placement-toolbar--open');
     activateMode('select');
     showPlacementHelp();
+    _startStagingGuard();
   } else {
     _toolbar.classList.remove('bwbr-placement-toolbar--open');
     deactivateMode();
@@ -1000,6 +1002,7 @@ function togglePlacementMode() {
     _state.clipboard = [];
     updatePlacementCursor();
     hidePlacementHelp();
+    _stopStagingGuard();
   }
 }
 
@@ -1445,6 +1448,19 @@ function updateImageGridSelection() {
   });
 }
 
+// 이미지 등록 후 자동 선택 + 이미지 배치 모드 전환
+function _autoSelectImage(id) {
+  var entry = _state.registeredImages.find(function(e) { return e.id === id; });
+  if (!entry) return;
+  _state.pendingImage = entry;
+  updateImageGridSelection();
+  // 편집 모드 + 이미지 도구로 전환
+  if (_state.mode !== 'edit') activateMode('edit');
+  if (_state.currentTool !== 'image') setSubTool('image');
+  _overlay.classList.add('bwbr-placement-overlay--active');
+  updatePlacementCursor();
+}
+
 
 // ── 로컬 이미지 추가 ────────────────────────────────────────────
 
@@ -1472,6 +1488,8 @@ function selectLocalImage() {
           };
           _state.registeredImages.push(entry);
           renderImageGrid();
+          // 마지막 이미지 자동 선택 + 이미지 배치 모드 전환
+          _autoSelectImage(entry.id);
         };
         img.src = ev.target.result;
       };
@@ -1510,6 +1528,7 @@ function openCcofoliaImagePicker() {
       };
       _state.registeredImages.push(entry);
       renderImageGrid();
+      _autoSelectImage(entry.id);
     };
     img.onerror = function () {
       var entry = {
@@ -1521,6 +1540,7 @@ function openCcofoliaImagePicker() {
       };
       _state.registeredImages.push(entry);
       renderImageGrid();
+      _autoSelectImage(entry.id);
     };
     img.src = result.url;
   }
@@ -1788,6 +1808,8 @@ function _onTextClickOutside(e) {
   if (!_textEditor) return;
   if (_textEditor.contains(e.target)) return;
   if (_textToolbar && _textToolbar.contains(e.target)) return;
+  // 중클릭 패닝 중에는 편집기 닫지 않음
+  if (document.documentElement.getAttribute('data-bwbr-midpan') === '1') return;
   finishTextEditing(true);
 }
 
@@ -2271,6 +2293,36 @@ function _migrateStaged(newZoomEl) {
   if (getComputedStyle(newZoomEl).position === 'static') {
     newZoomEl.style.position = 'relative';
   }
+}
+
+// 스테이징 아이템 보호: React가 zoom 컨테이너를 교체할 때 아이템 유실 방지
+// 배치 모드 활성 + 스테이징 아이템이 있을 때 주기적으로 체크
+function _startStagingGuard() {
+  if (_stagingGuardId) return;
+  function guard() {
+    _stagingGuardId = requestAnimationFrame(guard);
+    if (_state.stagedObjects.length === 0) return;
+    var zoomEl = getZoomContainer();
+    if (!zoomEl) return;
+    // zoom 컨테이너 교체 감지
+    if (_cachedZoomEl && _cachedZoomEl !== zoomEl) {
+      _migrateStaged(zoomEl);
+      _cachedZoomEl = zoomEl;
+    }
+    // 아이템이 DOM에서 제거됐는지 확인 (React reconciliation 등)
+    var first = document.querySelector('.bwbr-staged-item');
+    if (!first && _state.stagedObjects.length > 0) {
+      // 아이템이 모두 사라짐 → 재렌더링
+      console.warn('[CE 배치] 스테이징 아이템 유실 감지, 복원 중...');
+      _state.stagedObjects.forEach(function(obj) { renderStagedItem(obj); });
+      renumberStagedBadges();
+    }
+  }
+  _stagingGuardId = requestAnimationFrame(guard);
+}
+
+function _stopStagingGuard() {
+  if (_stagingGuardId) { cancelAnimationFrame(_stagingGuardId); _stagingGuardId = null; }
 }
 
 function renderStagedItem(obj) {
