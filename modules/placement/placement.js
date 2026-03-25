@@ -627,7 +627,7 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 
 .bwbr-place-align-bar {
   position: fixed;
-  top: 52px;
+  top: 56px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 106;
@@ -1761,7 +1761,12 @@ function onStagedItemMouseDown(stagedId, e) {
 
   // Alt+클릭 = 추가/토글 선택, Alt+드래그 = 복사 (deferred)
   if (e.altKey) {
-    selectStagedItem(stagedId, true);
+    // 이미 선택된 아이템을 Alt+클릭으로 복사 드래그 시작하려는 경우: 토글하지 않고 선택 유지
+    if (_state.selectedStagedIds.indexOf(stagedId) === -1) {
+      // 선택 안 된 아이템 → 추가 선택
+      selectStagedItem(stagedId, true);
+    }
+    // 이미 선택된 아이템 → 그냥 유지 (토글 안 함)
     updateAlignBar();
     if (_state.selectedStagedIds.length === 0) return;
     // Alt+드래그 복사를 위해 deferred 플래그 설정
@@ -1779,7 +1784,10 @@ function onStagedItemMouseDown(stagedId, e) {
     return;
   }
 
-  selectStagedItem(stagedId, false);
+  // 이미 선택된 아이템 → 기존 다중 선택 유지, 미선택 → 단일 선택
+  if (_state.selectedStagedIds.indexOf(stagedId) === -1) {
+    selectStagedItem(stagedId, false);
+  }
   updateAlignBar();
 
   // 드래그 시작: 선택된 모든 아이템의 원본 좌표 저장
@@ -1912,26 +1920,75 @@ function setupSelectModeHandlers() {
 
   // 배치 모드 중 ccfolia 패닝 방지 (capture phase에서 pointer 이벤트 차단)
   document.addEventListener('pointerdown', function(e) {
-    if (!e.isTrusted) return; // 합성 이벤트(미들클릭 패닝)는 통과
+    if (e._bwbr_midpan) return; // 미들클릭→좌클릭 위장 이벤트: ccfolia에 전달
+    if (!e.isTrusted) return;
     if (!_state.active || e.button !== 0) return;
     if (e.target.closest('.bwbr-placement-toolbar') ||
         e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar')) return;
 
-    // 편집 모드: 항상 좌클릭 패닝 차단 (중클릭만 허용)
+    // 편집 모드: 항상 좌클릭 패닝 차단
     if (_state.mode === 'edit') { e.stopImmediatePropagation(); return; }
 
-    // 선택 모드: 스테이징 아이템 위 또는 범위 선택 시 패닝 차단
-    if (e.target.closest('.bwbr-staged-item')) { e.stopImmediatePropagation(); return; }
-    var shouldBox = _state.stagedObjects.length > 0;
-    if (shouldBox) { e.stopImmediatePropagation(); }
+    // 선택 모드: 항상 좌클릭 패닝 차단
+    if (_state.mode === 'select') { e.stopImmediatePropagation(); return; }
+  }, true);
+
+  // mousedown도 캡처 단계에서 차단 (ccfolia가 mousedown으로 패닝할 수 있음)
+  // stopImmediatePropagation이 기존 버블 핸들러도 차단하므로 여기서 직접 처리
+  document.addEventListener('mousedown', function(e) {
+    if (e._bwbr_midpan) return; // 미들클릭→좌클릭 위장 이벤트: ccfolia에 전달
+    if (e.button !== 0 || !_state.active) return;
+    if (_state.mode !== 'select' && _state.mode !== 'edit') return;
+    if (e.target.closest('.bwbr-placement-toolbar') ||
+        e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar') ||
+        e.target.closest('.bwbr-placement-overlay')) return; // 오버레이 클릭은 통과 (배치 동작)
+
+    // 스테이징 아이템 클릭: 기존 핸들러 대신 여기서 직접 호출
+    var stagedEl = e.target.closest('.bwbr-staged-item');
+    if (stagedEl) {
+      var stagedId = stagedEl.getAttribute('data-staged-id');
+      if (stagedId) onStagedItemMouseDown(stagedId, e);
+      e.stopImmediatePropagation();
+      return;
+    }
+
+    // 편집 모드: Alt+드래그 → 선택 모드 전환
+    if (_state.mode === 'edit' && e.altKey && _state.stagedObjects.length > 0) {
+      activateMode('select');
+    }
+
+    // 빈 공간 클릭: 범위 선택 또는 선택 해제
+    if (_state.mode === 'select' && _state.stagedObjects.length > 0) {
+      _altBoxSelect.active = true;
+      _altBoxSelect.startX = e.clientX;
+      _altBoxSelect.startY = e.clientY;
+      _altBoxSelect.additive = e.altKey;
+      var rect = document.createElement('div');
+      rect.className = 'bwbr-place-select-rect';
+      rect.style.left = e.clientX + 'px';
+      rect.style.top = e.clientY + 'px';
+      rect.style.width = '0';
+      rect.style.height = '0';
+      document.body.appendChild(rect);
+      _altBoxSelect.rectEl = rect;
+      if (!e.altKey) deselectStaged();
+      e.preventDefault();
+    } else {
+      deselectStaged();
+      updateAlignBar();
+    }
+
+    e.stopImmediatePropagation();
   }, true);
   document.addEventListener('pointermove', function(e) {
+    if (e._bwbr_midpan) return;
     if (!e.isTrusted) return;
     if (_altBoxSelect.active || _selectDrag.dragging) { e.stopImmediatePropagation(); }
     // 편집 모드: 오버레이 드래그 중 패닝 차단
     if (_state.mode === 'edit' && _state.placing) { e.stopImmediatePropagation(); }
   }, true);
   document.addEventListener('pointerup', function(e) {
+    if (e._bwbr_midpan) return;
     if (!e.isTrusted) return;
     if (_altBoxSelect.active || _selectDrag.dragging) { e.stopImmediatePropagation(); }
   }, true);
@@ -2009,24 +2066,22 @@ function updateAlignBar() {
   if (!_alignBar) return;
   if (_state.selectedStagedIds.length >= 2) {
     _alignBar.classList.add('bwbr-place-align-bar--visible');
-    // 동적 중앙 정렬: 채팅패널 영역 제외한 보드 영역 기준
-    var rightInset = 0;
-    var chatPanel = document.querySelector('div[class*="MuiDrawer"] > div');
-    if (!chatPanel) {
-      // fallback: 우측 끝에 고정된 패널 찾기
-      var panels = document.querySelectorAll('aside, div[style*="position: fixed"][style*="right"]');
-      panels.forEach(function(p) {
-        var pr = p.getBoundingClientRect();
-        if (pr.right >= window.innerWidth - 5 && pr.width > 50 && pr.width < window.innerWidth * 0.6) {
-          rightInset = Math.max(rightInset, pr.width);
-        }
-      });
-    } else {
-      var cr = chatPanel.getBoundingClientRect();
-      if (cr.width > 50 && cr.right >= window.innerWidth - 5) rightInset = cr.width;
+    // 상단 위치: MuiAppBar-positionFixed (메인 상단 바) 아래
+    var topBar = document.querySelector('.MuiAppBar-positionFixed');
+    if (topBar) {
+      _alignBar.style.top = (topBar.getBoundingClientRect().bottom + 8) + 'px';
     }
-    var centerX = (window.innerWidth - rightInset) / 2;
-    _alignBar.style.left = centerX + 'px';
+    // 수평 중앙: 화면 왼쪽 ~ 우측 채팅 드로어 사이의 보드 영역 기준
+    var boardRight = window.innerWidth;
+    var drawers = document.querySelectorAll('[class*="MuiDrawer"]');
+    drawers.forEach(function(d) {
+      var r = d.getBoundingClientRect();
+      // 화면 안에 보이는 우측 드로어 (left < viewport, right > 0, width > 50)
+      if (r.left > 0 && r.left < window.innerWidth && r.width > 50 && r.right <= window.innerWidth + 5) {
+        boardRight = Math.min(boardRight, r.left);
+      }
+    });
+    _alignBar.style.left = (boardRight / 2) + 'px';
   } else {
     _alignBar.classList.remove('bwbr-place-align-bar--visible');
   }
@@ -2512,72 +2567,63 @@ function showAngleIndicator(angle) {
 // ── 미들클릭 패닝 (코어 기능 — 배치 모드 여부 무관) ─────────────
 
 function setupMiddleClickPanning() {
-  var _pan = { active: false, target: null };
+  var _midPanning = false;
 
-  // 미들클릭 → 합성 좌클릭으로 변환하여 ccfolia 네이티브 팬 활용
+  // 미들클릭 → 속성 덮어씌워서 좌클릭으로 위장 (isTrusted=true, pointerId 유효 → 네이티브 패닝)
   document.addEventListener('pointerdown', function(e) {
-    if (e.button !== 1) return;
-    if (!e.isTrusted) return;
-    e.preventDefault();
-    e.stopImmediatePropagation();
-
-    // 오버레이/UI 아래의 실제 요소를 찾기
-    var elems = [_overlay, _alignBar, _confirmBar].filter(Boolean);
-    elems.forEach(function(el) { el.style.pointerEvents = 'none'; });
-    var realTarget = document.elementFromPoint(e.clientX, e.clientY);
-    elems.forEach(function(el) { el.style.pointerEvents = ''; });
-
-    if (!realTarget) return;
-    _pan.active = true;
-    _pan.target = realTarget;
-
-    // 합성 좌클릭 pointerdown 전달
-    realTarget.dispatchEvent(new PointerEvent('pointerdown', {
-      button: 0, buttons: 1,
-      clientX: e.clientX, clientY: e.clientY,
-      screenX: e.screenX, screenY: e.screenY,
-      pointerId: e.pointerId || 1,
-      pointerType: e.pointerType || 'mouse',
-      bubbles: true, cancelable: true, composed: true
-    }));
-    document.body.style.cursor = 'grabbing';
+    if (e.button !== 1 || !e.isTrusted) return;
+    // preventDefault 호출 안 함! pointerdown.preventDefault()는 mousedown 발생을 막음
+    // ccfolia는 onMouseDown으로 패닝하므로 mousedown이 반드시 발생해야 함
+    _midPanning = true;
+    e._bwbr_midpan = true;
+    // ccfolia 핸들러가 좌클릭으로 인식하도록 속성 덮어씌우기
+    Object.defineProperty(e, 'button', { value: 0 });
+    Object.defineProperty(e, 'buttons', { value: 1 });
+    // stopPropagation 안 함 → ccfolia 네이티브 팬 핸들러에 도달
   }, true);
 
   document.addEventListener('pointermove', function(e) {
-    if (!_pan.active || !_pan.target) return;
-    if (!e.isTrusted) return;
-    e.stopImmediatePropagation(); // 다른 핸들러가 buttons=4를 보지 못하게
-    _pan.target.dispatchEvent(new PointerEvent('pointermove', {
-      button: 0, buttons: 1,
-      clientX: e.clientX, clientY: e.clientY,
-      screenX: e.screenX, screenY: e.screenY,
-      pointerId: e.pointerId || 1,
-      pointerType: e.pointerType || 'mouse',
-      bubbles: true, cancelable: true, composed: true
-    }));
+    if (!_midPanning || !e.isTrusted) return;
+    e._bwbr_midpan = true;
+    Object.defineProperty(e, 'buttons', { value: 1 });
   }, true);
 
   document.addEventListener('pointerup', function(e) {
-    if (!_pan.active) return;
-    if (!e.isTrusted) return;
-    e.stopImmediatePropagation();
-    _pan.target.dispatchEvent(new PointerEvent('pointerup', {
-      button: 0, buttons: 0,
-      clientX: e.clientX, clientY: e.clientY,
-      screenX: e.screenX, screenY: e.screenY,
-      pointerId: e.pointerId || 1,
-      pointerType: e.pointerType || 'mouse',
-      bubbles: true, cancelable: true, composed: true
-    }));
-    _pan.active = false;
-    _pan.target = null;
-    document.body.style.cursor = '';
+    if (!_midPanning || !e.isTrusted) return;
+    if (e.button === 1 || e.button === 0) {
+      _midPanning = false;
+      e._bwbr_midpan = true;
+      Object.defineProperty(e, 'button', { value: 0 });
+      Object.defineProperty(e, 'buttons', { value: 0 });
+    }
   }, true);
 
-  // 미들클릭 기본 동작(자동 스크롤) 방지
+  // mousedown/mousemove/mouseup도 위장
   document.addEventListener('mousedown', function(e) {
-    if (e.button === 1) e.preventDefault();
-  });
+    if (e.button === 1) {
+      e.preventDefault(); // 자동 스크롤 방지
+      if (_midPanning) {
+        e._bwbr_midpan = true;
+        Object.defineProperty(e, 'button', { value: 0 });
+        Object.defineProperty(e, 'buttons', { value: 1 });
+      }
+    }
+  }, true);
+
+  document.addEventListener('mousemove', function(e) {
+    if (!_midPanning || !e.isTrusted) return;
+    e._bwbr_midpan = true;
+    Object.defineProperty(e, 'buttons', { value: 1 });
+  }, true);
+
+  document.addEventListener('mouseup', function(e) {
+    if (!_midPanning || !e.isTrusted) return;
+    if (e.button === 1) {
+      e._bwbr_midpan = true;
+      Object.defineProperty(e, 'button', { value: 0 });
+      Object.defineProperty(e, 'buttons', { value: 0 });
+    }
+  }, true);
 }
 
 
