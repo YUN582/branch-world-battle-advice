@@ -181,7 +181,7 @@
     }
     var t = document.createElement('div');
     t.className = 'bwbr-fab-toast';
-    t.style.cssText = 'background:' + bg + ';color:' + color + ';padding:6px 16px;border-radius:4px;font-size:0.875rem;box-shadow:0 3px 8px rgba(0,0,0,0.3);max-width:344px;opacity:0;transform:translateY(100%);transition:opacity 225ms,transform 225ms;pointer-events:auto;white-space:pre-line;font-family:"Roboto","Helvetica","Arial",sans-serif';
+    t.style.cssText = 'background:' + bg + ';color:' + color + ';padding:6px 16px;border-radius:4px;font-size:0.875rem;box-shadow:0 3px 8px rgba(0,0,0,0.3);max-width:520px;opacity:0;transform:translateY(100%);transition:opacity 225ms,transform 225ms;pointer-events:auto;white-space:nowrap;font-family:"Roboto","Helvetica","Arial",sans-serif';
     t.textContent = msg;
     box.appendChild(t);
     requestAnimationFrame(function () { t.style.opacity = '1'; t.style.transform = 'none'; });

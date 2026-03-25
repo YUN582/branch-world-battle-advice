@@ -704,6 +704,125 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   gap: 8px;
   padding: 4px 0;
 }
+
+/* ── 텍스트 영역 드래그 미리보기 ─────────────────── */
+
+.bwbr-placement-preview--text {
+  border: 2px dashed #42a5f5 !important;
+  background: rgba(66,165,245,0.08) !important;
+}
+
+/* ── 텍스트 WYSIWYG 편집기 ───────────────────────── */
+
+.bwbr-text-editor {
+  position: fixed;
+  background: #fff;
+  border: 2px solid #42a5f5;
+  border-radius: 2px;
+  padding: 8px;
+  font-size: 16px;
+  font-family: sans-serif;
+  line-height: 1.5;
+  color: #000;
+  word-break: break-all;
+  overflow-wrap: break-word;
+  outline: none;
+  z-index: 107;
+  box-sizing: border-box;
+  overflow-y: auto;
+  min-height: 32px;
+  cursor: text;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+}
+
+.bwbr-text-toolbar {
+  position: fixed;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: #fff;
+  border-radius: 8px;
+  padding: 4px 6px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.18);
+  z-index: 108;
+  user-select: none;
+}
+
+.bwbr-text-toolbar-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #333;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  transition: background 0.12s;
+}
+
+.bwbr-text-toolbar-btn:hover {
+  background: #f0f0f0;
+}
+
+.bwbr-text-toolbar-sep {
+  width: 1px;
+  height: 20px;
+  background: #ddd;
+  margin: 0 3px;
+}
+
+.bwbr-text-toolbar-color {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.bwbr-text-toolbar-color:hover {
+  background: #f0f0f0;
+}
+
+.bwbr-text-toolbar-color input[type=color] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+}
+
+.bwbr-text-toolbar-select {
+  height: 28px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 12px;
+  padding: 0 4px;
+  outline: none;
+  cursor: pointer;
+  background: #fff;
+}
+
+.bwbr-text-toolbar-confirm {
+  color: #4caf50 !important;
+  font-weight: bold;
+  font-size: 16px !important;
+}
+
+.bwbr-text-toolbar-cancel {
+  color: #e53935 !important;
+  font-weight: bold;
+  font-size: 14px !important;
+}
 `;
   document.head.appendChild(style);
 })();
@@ -754,8 +873,9 @@ var _state = {
   // 스탬프 모드: 이전 배치 크기 기억 (클릭만으로 연속 배치)
   lastStampSize: null,     // { w, h } (screen px) — 드래그 배치 후 저장됨
 
-  // 텍스트 도구 (Phase 2 — area-first WYSIWYG 방식으로 재구현 예정)
-  pendingTextDataUrl: null
+  // 텍스트 도구 (Phase 2 — area-first WYSIWYG)
+  pendingTextDataUrl: null,
+  textEditing: false           // contentEditable 편집 중 여부
 };
 
 
@@ -842,9 +962,7 @@ function updatePlacementCursor() {
   if (_state.currentTool === 'image' && !_state.pendingImage) {
     _overlay.classList.add('bwbr-placement-overlay--blocked');
   }
-  if (_state.currentTool === 'text' && !_state.pendingTextDataUrl) {
-    _overlay.classList.add('bwbr-placement-overlay--blocked');
-  }
+  // 텍스트 도구: 항상 crosshair (영역 드래그 가능)
 }
 
 function togglePlacementMode() {
@@ -1422,13 +1540,342 @@ function createTextSettingsMenu() {
   menu.style.display = 'none';
 
   var notice = document.createElement('div');
-  notice.style.cssText = 'text-align:center;padding:16px 12px;color:#999;font-size:13px;line-height:1.6;';
+  notice.style.cssText = 'text-align:center;padding:16px 12px;color:#888;font-size:13px;line-height:1.6;';
   notice.innerHTML = '<div style="font-size:20px;margin-bottom:6px;">\uD83D\uDCDD</div>' +
     '<b>텍스트 도구</b><br>' +
-    '<span style="font-size:11px;opacity:0.7;">영역 지정 → 텍스트 입력 방식으로<br>재구현 준비 중입니다</span>';
+    '<span style="font-size:11px;opacity:0.7;">오버레이에서 드래그하여<br>텍스트 영역을 지정하세요</span>';
   menu.appendChild(notice);
 
   return menu;
+}
+
+
+// ── 텍스트 편집기 (Phase 2: area-first WYSIWYG) ────────────────
+
+var _textEditor = null;    // contentEditable div
+var _textToolbar = null;   // 서식 바
+var _textEditorRect = null; // { x, y, w, h } screen px
+
+function startTextEditing(rect) {
+  if (_textEditor) cleanupTextEditor();
+
+  _textEditorRect = rect;
+  _state.textEditing = true;
+
+  // contentEditable 생성
+  _textEditor = document.createElement('div');
+  _textEditor.className = 'bwbr-text-editor';
+  _textEditor.contentEditable = 'true';
+  _textEditor.style.left = rect.x + 'px';
+  _textEditor.style.top = rect.y + 'px';
+  _textEditor.style.width = rect.w + 'px';
+  _textEditor.style.minHeight = rect.h + 'px';
+  document.body.appendChild(_textEditor);
+
+  // 서식 바 생성
+  _textToolbar = createTextToolbar();
+  document.body.appendChild(_textToolbar);
+  positionTextToolbar();
+
+  // 포커스
+  _textEditor.focus();
+
+  // 오버레이 숨김 (편집 중 클릭/입력 방해 방지)
+  if (_overlay) _overlay.style.pointerEvents = 'none';
+
+  // 외부 클릭 감지 (약간 지연)
+  setTimeout(function () {
+    document.addEventListener('mousedown', _onTextClickOutside, true);
+  }, 50);
+}
+
+function createTextToolbar() {
+  var bar = document.createElement('div');
+  bar.className = 'bwbr-text-toolbar';
+
+  // Bold
+  var btnB = _makeToolbarBtn('B', 'bold', '볼드 (Ctrl+B)');
+  btnB.style.fontWeight = 'bold';
+  bar.appendChild(btnB);
+
+  // Italic
+  var btnI = _makeToolbarBtn('I', 'italic', '이탤릭 (Ctrl+I)');
+  btnI.style.fontStyle = 'italic';
+  bar.appendChild(btnI);
+
+  // Underline
+  var btnU = _makeToolbarBtn('U', 'underline', '밑줄 (Ctrl+U)');
+  btnU.style.textDecoration = 'underline';
+  bar.appendChild(btnU);
+
+  // Strikethrough
+  var btnS = _makeToolbarBtn('S', 'strikethrough', '취소선');
+  btnS.style.textDecoration = 'line-through';
+  bar.appendChild(btnS);
+
+  bar.appendChild(_makeToolbarSep());
+
+  // Font color
+  var fgWrap = document.createElement('div');
+  fgWrap.className = 'bwbr-text-toolbar-color';
+  fgWrap.title = '글자 색상';
+  var fgInput = document.createElement('input');
+  fgInput.type = 'color';
+  fgInput.value = '#000000';
+  fgInput.addEventListener('input', function () {
+    document.execCommand('foreColor', false, fgInput.value);
+    _textEditor.focus();
+  });
+  var fgLabel = document.createElement('span');
+  fgLabel.textContent = 'A';
+  fgLabel.style.cssText = 'font-weight:bold;pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:14px;';
+  fgWrap.appendChild(fgInput);
+  fgWrap.appendChild(fgLabel);
+  bar.appendChild(fgWrap);
+
+  // Background color
+  var bgWrap = document.createElement('div');
+  bgWrap.className = 'bwbr-text-toolbar-color';
+  bgWrap.title = '배경 색상';
+  var bgInput = document.createElement('input');
+  bgInput.type = 'color';
+  bgInput.value = '#ffff00';
+  bgInput.addEventListener('input', function () {
+    document.execCommand('hiliteColor', false, bgInput.value);
+    _textEditor.focus();
+  });
+  var bgLabel = document.createElement('span');
+  bgLabel.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16.56 8.94L7.62 0 6.21 1.41l2.38 2.38-5.15 5.15c-.59.59-.59 1.54 0 2.12l5.5 5.5c.29.29.68.44 1.06.44s.77-.15 1.06-.44l5.5-5.5c.59-.58.59-1.53 0-2.12zM5.21 10L10 5.21 14.79 10H5.21zM19 11.5s-2 2.17-2 3.5c0 1.1.9 2 2 2s2-.9 2-2c0-1.33-2-3.5-2-3.5z"/></svg>';
+  bgLabel.style.cssText = 'pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;';
+  bgWrap.appendChild(bgInput);
+  bgWrap.appendChild(bgLabel);
+  bar.appendChild(bgWrap);
+
+  bar.appendChild(_makeToolbarSep());
+
+  // Font size
+  var sizeSelect = document.createElement('select');
+  sizeSelect.className = 'bwbr-text-toolbar-select';
+  sizeSelect.title = '글꼴 크기';
+  [12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64].forEach(function (s) {
+    var opt = document.createElement('option');
+    opt.value = s;
+    opt.textContent = s + 'px';
+    if (s === 16) opt.selected = true;
+    sizeSelect.appendChild(opt);
+  });
+  sizeSelect.addEventListener('change', function () {
+    _applyFontSize(sizeSelect.value);
+    _textEditor.focus();
+  });
+  bar.appendChild(sizeSelect);
+
+  bar.appendChild(_makeToolbarSep());
+
+  // Confirm
+  var btnOk = document.createElement('button');
+  btnOk.className = 'bwbr-text-toolbar-btn bwbr-text-toolbar-confirm';
+  btnOk.textContent = '\u2713';
+  btnOk.title = '확인';
+  btnOk.addEventListener('mousedown', function (e) { e.preventDefault(); });
+  btnOk.addEventListener('click', function () { finishTextEditing(true); });
+  bar.appendChild(btnOk);
+
+  // Cancel
+  var btnX = document.createElement('button');
+  btnX.className = 'bwbr-text-toolbar-btn bwbr-text-toolbar-cancel';
+  btnX.textContent = '\u2715';
+  btnX.title = '취소 (Esc)';
+  btnX.addEventListener('mousedown', function (e) { e.preventDefault(); });
+  btnX.addEventListener('click', function () { finishTextEditing(false); });
+  bar.appendChild(btnX);
+
+  return bar;
+}
+
+function _makeToolbarBtn(label, cmd, title) {
+  var btn = document.createElement('button');
+  btn.className = 'bwbr-text-toolbar-btn';
+  btn.textContent = label;
+  btn.title = title || '';
+  btn.addEventListener('mousedown', function (e) { e.preventDefault(); });
+  btn.addEventListener('click', function () {
+    document.execCommand(cmd);
+    _textEditor.focus();
+  });
+  return btn;
+}
+
+function _makeToolbarSep() {
+  var s = document.createElement('div');
+  s.className = 'bwbr-text-toolbar-sep';
+  return s;
+}
+
+function _applyFontSize(px) {
+  var sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+  var range = sel.getRangeAt(0);
+  if (range.collapsed) {
+    // 커서만 있을 때 → 이후 입력에 적용되도록 빈 span 삽입
+    var span = document.createElement('span');
+    span.style.fontSize = px + 'px';
+    span.appendChild(document.createTextNode('\u200B')); // zero-width space
+    range.insertNode(span);
+    range.setStartAfter(span);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    return;
+  }
+  var span2 = document.createElement('span');
+  span2.style.fontSize = px + 'px';
+  try {
+    range.surroundContents(span2);
+  } catch (ex) {
+    // 복합 노드 선택 시 fallback
+    var frag = range.extractContents();
+    span2.appendChild(frag);
+    range.insertNode(span2);
+  }
+  sel.removeAllRanges();
+  var nr = document.createRange();
+  nr.selectNodeContents(span2);
+  sel.addRange(nr);
+}
+
+function positionTextToolbar() {
+  if (!_textToolbar || !_textEditorRect) return;
+  var barH = 40;
+  var y = _textEditorRect.y - barH - 4;
+  if (y < 4) y = _textEditorRect.y + _textEditorRect.h + 4;
+  _textToolbar.style.left = _textEditorRect.x + 'px';
+  _textToolbar.style.top = y + 'px';
+}
+
+function _onTextClickOutside(e) {
+  if (!_textEditor) return;
+  if (_textEditor.contains(e.target)) return;
+  if (_textToolbar && _textToolbar.contains(e.target)) return;
+  finishTextEditing(true);
+}
+
+function finishTextEditing(confirm) {
+  document.removeEventListener('mousedown', _onTextClickOutside, true);
+
+  if (confirm && _textEditor && _textEditor.textContent.trim()) {
+    renderTextEditorToCanvas().then(function (dataUrl) {
+      if (dataUrl && _textEditorRect) {
+        _state.pendingTextDataUrl = dataUrl;
+        stageObject(_textEditorRect);
+        _state.pendingTextDataUrl = null;
+      }
+      cleanupTextEditor();
+    });
+  } else {
+    cleanupTextEditor();
+  }
+}
+
+function cleanupTextEditor() {
+  if (_textEditor) { _textEditor.remove(); _textEditor = null; }
+  if (_textToolbar) { _textToolbar.remove(); _textToolbar = null; }
+  _textEditorRect = null;
+  _state.textEditing = false;
+  // 오버레이 복원
+  if (_overlay) _overlay.style.pointerEvents = '';
+}
+
+function renderTextEditorToCanvas() {
+  return new Promise(function (resolve) {
+    if (!_textEditor || !_textEditorRect) { resolve(null); return; }
+
+    var w = Math.round(_textEditorRect.w);
+    var h = Math.round(_textEditor.offsetHeight);
+    if (w < 1 || h < 1) { resolve(null); return; }
+
+    var scale = 2; // 고해상도
+    var cw = w * scale;
+    var ch = h * scale;
+
+    // contentEditable 복제 + 렌더용 스타일
+    var clone = _textEditor.cloneNode(true);
+    clone.removeAttribute('contenteditable');
+    clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+    clone.style.cssText = 'margin:0;padding:8px;font-family:sans-serif;font-size:16px;line-height:1.5;color:#000;word-break:break-all;overflow-wrap:break-word;width:' + w + 'px;box-sizing:border-box;';
+
+    var html = new XMLSerializer().serializeToString(clone);
+
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + cw + '" height="' + ch + '">' +
+      '<foreignObject width="100%" height="100%" transform="scale(' + scale + ')">' +
+      html +
+      '</foreignObject></svg>';
+
+    var blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+
+    var img = new Image();
+    img.onload = function () {
+      var canvas = document.createElement('canvas');
+      canvas.width = cw;
+      canvas.height = ch;
+      var ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, cw, ch);
+      URL.revokeObjectURL(url);
+      try {
+        resolve(canvas.toDataURL('image/webp', 0.9));
+      } catch (ex) {
+        resolve(canvas.toDataURL('image/png'));
+      }
+    };
+    img.onerror = function () {
+      URL.revokeObjectURL(url);
+      resolve(_renderTextFallback(w, h, scale));
+    };
+    img.src = url;
+  });
+}
+
+function _renderTextFallback(w, h, scale) {
+  var canvas = document.createElement('canvas');
+  canvas.width = w * scale;
+  canvas.height = h * scale;
+  var ctx = canvas.getContext('2d');
+  ctx.scale(scale, scale);
+  ctx.fillStyle = '#000';
+  ctx.font = '16px sans-serif';
+  ctx.textBaseline = 'top';
+
+  var text = _textEditor ? _textEditor.textContent : '';
+  var chars = text.split('');
+  var line = '';
+  var y = 8;
+  var maxW = w - 16;
+
+  for (var i = 0; i < chars.length; i++) {
+    var ch = chars[i];
+    if (ch === '\n') {
+      ctx.fillText(line, 8, y);
+      line = '';
+      y += 24;
+      continue;
+    }
+    var test = line + ch;
+    if (ctx.measureText(test).width > maxW && line) {
+      ctx.fillText(line, 8, y);
+      line = ch;
+      y += 24;
+    } else {
+      line = test;
+    }
+  }
+  if (line) ctx.fillText(line, 8, y);
+
+  try {
+    return canvas.toDataURL('image/webp', 0.9);
+  } catch (ex) {
+    return canvas.toDataURL('image/png');
+  }
 }
 
 
@@ -1500,6 +1947,12 @@ function createOverlay() {
 function onOverlayMouseDown(e) {
   if (e.button !== 0) return;
 
+  // 텍스트 편집 중이면 오버레이 클릭 = 편집 완료
+  if (_state.textEditing) {
+    finishTextEditing(true);
+    return;
+  }
+
   // Alt+드래그 → 스테이징 아이템 범위 선택 (오버레이 위에서도 동작)
   if (e.altKey) {
     _altBoxSelect.active = true;
@@ -1528,8 +1981,15 @@ function onOverlayMouseDown(e) {
 
   // 편집 모드: 이미지 미선택 시 배치 불가
   if (_state.currentTool === 'image' && !_state.pendingImage) return;
-  // 편집 모드: 텍스트 미입력 시 배치 불가
-  if (_state.currentTool === 'text' && !_state.pendingTextDataUrl) return;
+
+  // 텍스트 도구: 항상 드래그 가능 (영역 지정)
+  if (_state.currentTool === 'text') {
+    _state.placing = true;
+    updatePreview();
+    _preview.classList.add('bwbr-placement-preview--visible', 'bwbr-placement-preview--text');
+    _preview.innerHTML = '';
+    return;
+  }
 
   _state.placing = true;
   updatePreview();
@@ -1537,8 +1997,6 @@ function onOverlayMouseDown(e) {
 
   if (_state.currentTool === 'image' && _state.pendingImage) {
     _preview.innerHTML = '<img src="' + _state.pendingImage.dataUrl + '" alt="">';
-  } else if (_state.currentTool === 'text' && _state.pendingTextDataUrl) {
-    _preview.innerHTML = '<img src="' + _state.pendingTextDataUrl + '" alt="">';
   }
 }
 
@@ -1559,11 +2017,9 @@ function onOverlayMouseMove(e) {
     updatePreview();
     return;
   }
-  // 스탬프 미리보기: 드래그 중이 아닐 때 이전 크기로 커서 위치에 표시
-  if (_state.lastStampSize && _state.mode === 'edit') {
-    var hasContent = (_state.currentTool === 'image' && _state.pendingImage) ||
-                     (_state.currentTool === 'text' && _state.pendingTextDataUrl);
-    if (hasContent) {
+  // 스탬프 미리보기: 드래그 중이 아닐 때 이전 크기로 커서 위치에 표시 (이미지 전용)
+  if (_state.lastStampSize && _state.mode === 'edit' && _state.currentTool === 'image') {
+    if (_state.pendingImage) {
       var sw = _state.lastStampSize.w;
       var sh = _state.lastStampSize.h;
       _preview.style.left = (e.clientX - sw / 2) + 'px';
@@ -1572,9 +2028,8 @@ function onOverlayMouseMove(e) {
       _preview.style.height = sh + 'px';
       _preview.style.transform = '';
       if (!_preview.classList.contains('bwbr-placement-preview--visible')) {
-        var previewSrc = _state.currentTool === 'image' ? _state.pendingImage.dataUrl : _state.pendingTextDataUrl;
         _preview.classList.add('bwbr-placement-preview--visible');
-        _preview.innerHTML = '<img src="' + previewSrc + '" alt="">';
+        _preview.innerHTML = '<img src="' + _state.pendingImage.dataUrl + '" alt="">';
       }
     }
   }
@@ -1588,15 +2043,21 @@ function onOverlayMouseUp(e) {
   }
   if (!_state.placing) return;
   _state.placing = false;
-  _preview.classList.remove('bwbr-placement-preview--visible');
+  _preview.classList.remove('bwbr-placement-preview--visible', 'bwbr-placement-preview--text');
   _preview.innerHTML = '';
 
   var rect = getPreviewRect();
+
+  // 텍스트 도구: 드래그 완료 → contentEditable 편집기 생성
+  if (_state.currentTool === 'text') {
+    if (rect.w < 30 || rect.h < 20) return; // 너무 작음
+    startTextEditing(rect);
+    return;
+  }
+
   if (rect.w < 5 && rect.h < 5) {
     // 클릭(드래그 없음) → 스탬프 모드: 이전 크기로 배치
-    var hasStampContent = (_state.currentTool === 'image' && _state.pendingImage) ||
-                          (_state.currentTool === 'text' && _state.pendingTextDataUrl);
-    if (_state.lastStampSize && hasStampContent) {
+    if (_state.lastStampSize && _state.currentTool === 'image' && _state.pendingImage) {
       var sw = _state.lastStampSize.w;
       var sh = _state.lastStampSize.h;
       var stampRect = {
@@ -1608,10 +2069,9 @@ function onOverlayMouseUp(e) {
       deselectStaged();
       stageObject(stampRect);
       // 스탬프 미리보기 유지 (다음 클릭을 위해)
-      var previewSrc = _state.currentTool === 'image' ? _state.pendingImage.dataUrl : _state.pendingTextDataUrl;
       _preview.classList.add('bwbr-placement-preview--visible');
       if (!_preview.querySelector('img')) {
-        _preview.innerHTML = '<img src="' + previewSrc + '" alt="">';
+        _preview.innerHTML = '<img src="' + _state.pendingImage.dataUrl + '" alt="">';
       }
     }
     return;
@@ -2689,6 +3149,16 @@ function setupKeyboard() {
   document.addEventListener('keydown', function (e) {
     if (!_state.active) return;
 
+    // ── 텍스트 편집 중: ESC만 처리, 나머지는 브라우저에 위임 ──
+    if (_state.textEditing) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        finishTextEditing(false);
+      }
+      // Ctrl+B/I/U 등은 contentEditable 네이티브 처리에 위임
+      return;
+    }
+
     // Ctrl+Z/C/V: capture 단계에서 네이티브 차단
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
       if (e.key === 'z' || e.key === 'Z') {
@@ -2709,7 +3179,7 @@ function setupKeyboard() {
     if (e.key === 'Escape') {
       if (_state.placing) {
         _state.placing = false;
-        _preview.classList.remove('bwbr-placement-preview--visible');
+        _preview.classList.remove('bwbr-placement-preview--visible', 'bwbr-placement-preview--text');
         _preview.innerHTML = '';
       } else if (_state.lastStampSize && _state.mode === 'edit') {
         // 스탬프 모드 해제
@@ -2731,7 +3201,7 @@ function setupKeyboard() {
     }
 
     // 입력 필드에서는 나머지 단축키 무시
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
 
     // V: 선택 모드
     if (e.key === 'v' || e.key === 'V') {
