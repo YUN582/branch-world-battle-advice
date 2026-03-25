@@ -118,7 +118,7 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   border-radius: 12px;
   box-shadow: 0 2px 12px rgba(0,0,0,0.18);
   padding: 12px;
-  width: 240px;
+  width: 320px;
   max-height: 80vh;
   overflow-y: auto;
   display: flex;
@@ -270,11 +270,12 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding: 6px 4px;
+  padding: 6px 8px;
   border: 1px solid #ddd;
   border-radius: 8px;
   background: #fafafa;
-  font-size: 11px;
+  font-size: 12px;
+  white-space: nowrap;
   color: #666;
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
@@ -911,9 +912,15 @@ function createImageSourceMenu() {
 
   var localBtn = document.createElement('button');
   localBtn.className = 'bwbr-place-source-btn';
-  localBtn.textContent = '📁 이미지 추가';
+  localBtn.textContent = '📁 로컬 이미지';
   localBtn.addEventListener('click', selectLocalImage);
   menu.appendChild(localBtn);
+
+  var urlBtn = document.createElement('button');
+  urlBtn.className = 'bwbr-place-source-btn';
+  urlBtn.textContent = '🔗 URL 이미지';
+  urlBtn.addEventListener('click', addImageByUrl);
+  menu.appendChild(urlBtn);
 
   // 등록된 이미지 그리드
   _imageGrid = document.createElement('div');
@@ -1035,6 +1042,39 @@ function selectLocalImage() {
   fileInput.click();
 }
 
+function addImageByUrl() {
+  var url = prompt('이미지 URL을 입력하세요:');
+  if (!url || !url.trim()) return;
+  url = url.trim();
+
+  var img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = function () {
+    var entry = {
+      id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+      dataUrl: url,
+      name: url.split('/').pop().split('?')[0] || 'URL 이미지',
+      width: img.naturalWidth,
+      height: img.naturalHeight
+    };
+    _state.registeredImages.push(entry);
+    renderImageGrid();
+  };
+  img.onerror = function () {
+    // CORS 실패 시에도 등록 (배치 시 이미지 표시만 안될 수 있음)
+    var entry = {
+      id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+      dataUrl: url,
+      name: url.split('/').pop().split('?')[0] || 'URL 이미지',
+      width: 1,
+      height: 1
+    };
+    _state.registeredImages.push(entry);
+    renderImageGrid();
+  };
+  img.src = url;
+}
+
 
 // ── 유틸: 필드/토글 생성 ────────────────────────────────────────
 
@@ -1105,7 +1145,16 @@ function createOverlay() {
 function onOverlayMouseDown(e) {
   // 중간 버튼 → 패스스루 (화면 이동)
   if (e.button === 1) {
+    e.preventDefault();
     _overlay.style.pointerEvents = 'none';
+    var below = document.elementFromPoint(e.clientX, e.clientY);
+    if (below && below !== _overlay) {
+      below.dispatchEvent(new MouseEvent('mousedown', {
+        bubbles: true, cancelable: true,
+        clientX: e.clientX, clientY: e.clientY,
+        button: 1, buttons: 4
+      }));
+    }
     document.addEventListener('mouseup', function restorePE(ev) {
       if (ev.button === 1) {
         _overlay.style.pointerEvents = '';
@@ -1115,6 +1164,12 @@ function onOverlayMouseDown(e) {
     return;
   }
   if (e.button !== 0) return;
+
+  // 드래그 시작 좌표 기록
+  _state.drag.startX = e.clientX;
+  _state.drag.startY = e.clientY;
+  _state.drag.currentX = e.clientX;
+  _state.drag.currentY = e.clientY;
 
   // 선택 모드(기본): 드래그 배치 없음
   if (!_state.mode) return;
