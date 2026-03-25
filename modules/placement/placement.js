@@ -431,22 +431,23 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   display: flex;
 }
 
-/* ── 배치 오버레이 ─────────────────────────────── */
+/* ── body 커서 (오버레이는 pointer-events:none) ── */
+
+body.bwbr-cursor-crosshair { cursor: crosshair !important; }
+body.bwbr-cursor-blocked   { cursor: not-allowed !important; }
+
+/* ── 배치 오버레이 (시각 전용, 이벤트 통과) ─────── */
 
 .bwbr-placement-overlay {
   position: fixed;
   inset: 0;
   z-index: 102;
-  cursor: crosshair;
+  pointer-events: none;
   display: none;
 }
 
 .bwbr-placement-overlay--active {
   display: block;
-}
-
-.bwbr-placement-overlay--no-image {
-  cursor: not-allowed;
 }
 
 /* ── 배치 프리뷰 (드래그 중) ───────────────────── */
@@ -697,6 +698,16 @@ function registerFabButton() {
 
 // ── 모드 토글 ───────────────────────────────────────────────────
 
+function updatePlacementCursor() {
+  document.body.classList.remove('bwbr-cursor-crosshair', 'bwbr-cursor-blocked');
+  if (!_state.active || !_state.mode) return;
+  if (_state.currentTool === 'image' && !_state.pendingImage) {
+    document.body.classList.add('bwbr-cursor-blocked');
+  } else if (_state.currentTool) {
+    document.body.classList.add('bwbr-cursor-crosshair');
+  }
+}
+
 function togglePlacementMode() {
   _state.active = !_state.active;
 
@@ -710,6 +721,7 @@ function togglePlacementMode() {
     _toolbar.classList.remove('bwbr-placement-toolbar--open');
     deactivateMode();
     clearAllStaged();
+    updatePlacementCursor();
   }
 }
 
@@ -741,9 +753,9 @@ function deactivateMode() {
     _subToolButtons[k].classList.remove('bwbr-place-subtool-btn--active');
   });
   _overlay.classList.remove('bwbr-placement-overlay--active');
-  _overlay.classList.remove('bwbr-placement-overlay--no-image');
   _preview.classList.remove('bwbr-placement-preview--visible');
   _settingsPanel.classList.remove('bwbr-place-settings--open');
+  updatePlacementCursor();
 }
 
 function setSubTool(toolId) {
@@ -755,6 +767,7 @@ function setSubTool(toolId) {
     _state.currentTool = null;
     _overlay.classList.remove('bwbr-placement-overlay--active');
     if (_imageSourceMenu) _imageSourceMenu.style.display = 'none';
+    updatePlacementCursor();
     return;
   }
 
@@ -765,15 +778,13 @@ function setSubTool(toolId) {
     if (_imageSourceMenu) _imageSourceMenu.style.display = '';
     _overlay.classList.add('bwbr-placement-overlay--active');
     if (_state.pendingImage) {
-      _overlay.classList.remove('bwbr-placement-overlay--no-image');
-    } else {
-      _overlay.classList.add('bwbr-placement-overlay--no-image');
+      // has image
     }
   } else {
     if (_imageSourceMenu) _imageSourceMenu.style.display = 'none';
     _overlay.classList.add('bwbr-placement-overlay--active');
-    _overlay.classList.remove('bwbr-placement-overlay--no-image');
   }
+  updatePlacementCursor();
 }
 
 
@@ -978,9 +989,9 @@ function selectRegisteredImage(id) {
     _state.pendingImage = entry;
     if (_state.currentTool === 'image') {
       _overlay.classList.add('bwbr-placement-overlay--active');
-      _overlay.classList.remove('bwbr-placement-overlay--no-image');
     }
   }
+  updatePlacementCursor();
   updateImageGridSelection();
 }
 
@@ -991,6 +1002,7 @@ function removeRegisteredImage(id) {
     _overlay.classList.remove('bwbr-placement-overlay--active');
   }
   renderImageGrid();
+  updatePlacementCursor();
 }
 
 function updateImageGridSelection() {
@@ -1135,44 +1147,30 @@ function createOverlay() {
   _angleIndicator.className = 'bwbr-placement-angle-indicator';
   document.body.appendChild(_angleIndicator);
 
-  // 중간 버튼(wheel click) 패스스루: pointerdown 단계에서 오버레이 비활성화
-  _overlay.addEventListener('pointerdown', function(e) {
-    if (e.button === 1) {
-      _overlay.style.pointerEvents = 'none';
-      document.addEventListener('pointerup', function restorePE(ev) {
-        if (ev.button === 1) {
-          _overlay.style.pointerEvents = '';
-          document.removeEventListener('pointerup', restorePE);
-        }
-      });
-    }
-  });
-
-  _overlay.addEventListener('mousedown', onOverlayMouseDown);
-  _overlay.addEventListener('mousemove', onOverlayMouseMove);
-  _overlay.addEventListener('mouseup', onOverlayMouseUp);
-
-  // 마우스 휠 패스스루 (줌 동작 유지)
-  _overlay.addEventListener('wheel', function(e) {
-    e.preventDefault();
-    _overlay.style.pointerEvents = 'none';
-    var below = document.elementFromPoint(e.clientX, e.clientY);
-    _overlay.style.pointerEvents = '';
-    if (below && below !== _overlay) {
-      below.dispatchEvent(new WheelEvent(e.type, e));
-    }
-  });
+  // 오버레이는 시각적 표시만 (pointer-events: none)
+  // 모든 이벤트는 document 레벨에서 처리 → 중간 버튼/휠/우클릭 등은 자연스럽게 통과
+  document.addEventListener('mousedown', onDocMouseDown);
+  document.addEventListener('mousemove', onDocMouseMove);
+  document.addEventListener('mouseup', onDocMouseUp);
 }
 
 
-// ── 오버레이 마우스 이벤트 ──────────────────────────────────────
+// ── document 레벨 마우스 이벤트 (overlay는 pointer-events:none) ──
 
-function onOverlayMouseDown(e) {
-  // 중간 버튼 → 패스스루 (화면 이동)
-  if (e.button === 1) {
-    return; // pointerdown 핸들러에서 처리
-  }
-  if (e.button !== 0) return;
+function onDocMouseDown(e) {
+  if (!_state.active) return;
+  if (e.button !== 0) return;  // 좌클릭만 — 중간/우클릭은 자연 통과
+
+  // 확장 UI 요소 위 클릭은 무시
+  var t = e.target;
+  if (t.closest && (
+    t.closest('.bwbr-placement-toolbar') ||
+    t.closest('.bwbr-place-confirm-bar') ||
+    t.closest('.bwbr-staged-item') ||
+    t.closest('[role="dialog"]') ||
+    t.closest('.MuiDialog-root') ||
+    t.closest('.MuiPopover-root')
+  )) return;
 
   // 드래그 시작 좌표 기록
   _state.drag.startX = e.clientX;
@@ -1186,6 +1184,7 @@ function onOverlayMouseDown(e) {
   // 편집 모드: 이미지 미선택 시 배치 불가
   if (_state.currentTool === 'image' && !_state.pendingImage) return;
 
+  e.preventDefault();
   _state.placing = true;
   updatePreview();
   _preview.classList.add('bwbr-placement-preview--visible');
@@ -1195,14 +1194,14 @@ function onOverlayMouseDown(e) {
   }
 }
 
-function onOverlayMouseMove(e) {
+function onDocMouseMove(e) {
   if (!_state.placing) return;
   _state.drag.currentX = e.clientX;
   _state.drag.currentY = e.clientY;
   updatePreview();
 }
 
-function onOverlayMouseUp(e) {
+function onDocMouseUp(e) {
   if (!_state.placing) return;
   _state.placing = false;
   _preview.classList.remove('bwbr-placement-preview--visible');
@@ -1514,6 +1513,23 @@ function compositeAndCommit() {
   });
   var bboxW = maxX - minX;
   var bboxH = maxY - minY;
+  var s = _state.stagedObjects[0].settings;
+
+  // 단일 오브젝트 + URL 이미지 → 합성 없이 직접 생성
+  if (_state.stagedObjects.length === 1 && _state.stagedObjects[0].imageDataUrl &&
+      !_state.stagedObjects[0].imageDataUrl.startsWith('data:')) {
+    var obj0 = _state.stagedObjects[0];
+    var panelData = {
+      type: s.type, x: obj0.mapCoords.x, y: obj0.mapCoords.y, z: s.z,
+      width: obj0.mapCoords.width, height: obj0.mapCoords.height,
+      angle: obj0.angle || 0, memo: s.memo, locked: s.locked, freezed: s.freezed,
+      imageUrl: obj0.imageDataUrl
+    };
+    document.documentElement.setAttribute('data-bwbr-create-panel', JSON.stringify(panelData));
+    document.dispatchEvent(new CustomEvent('bwbr-create-panel'));
+    clearAllStaged();
+    return;
+  }
 
   // 2. 캔버스 생성
   var canvas = document.createElement('canvas');
@@ -1534,6 +1550,7 @@ function compositeAndCommit() {
       return;
     }
     var img = new Image();
+    img.crossOrigin = 'anonymous';
     img.onload = function () {
       images[i] = img;
       loaded++;
@@ -1567,31 +1584,42 @@ function compositeAndCommit() {
       ctx.restore();
     });
 
-    var dataUrl = compressCanvasToDataUrl(canvas);
+    var dataUrl;
+    try {
+      dataUrl = compressCanvasToDataUrl(canvas);
+    } catch (err) {
+      console.warn('[CE 배치] 캔버스 합성 실패 (CORS), 개별 패널 생성으로 대체:', err.message);
+      commitIndividualPanels();
+      return;
+    }
+
     console.log('[CE 배치] 합성 완료:', bboxW + '×' + bboxH + '타일,', total + '개 이미지,', Math.round(dataUrl.length / 1024) + 'KB');
 
-    // 설정은 첫 번째 오브젝트의 settings 사용
-    var s = _state.stagedObjects[0].settings;
     var panelData = {
-      type: s.type,
-      x: minX,
-      y: minY,
-      z: s.z,
-      width: bboxW,
-      height: bboxH,
-      angle: 0,
-      memo: s.memo,
-      locked: s.locked,
-      freezed: s.freezed,
+      type: s.type, x: minX, y: minY, z: s.z,
+      width: bboxW, height: bboxH, angle: 0,
+      memo: s.memo, locked: s.locked, freezed: s.freezed,
       imageUrl: dataUrl
     };
 
-    document.documentElement.setAttribute(
-      'data-bwbr-create-panel',
-      JSON.stringify(panelData)
-    );
+    document.documentElement.setAttribute('data-bwbr-create-panel', JSON.stringify(panelData));
     document.dispatchEvent(new CustomEvent('bwbr-create-panel'));
+    clearAllStaged();
+  }
 
+  // CORS 실패 시 개별 패널 생성 펴백
+  function commitIndividualPanels() {
+    _state.stagedObjects.forEach(function(obj) {
+      var mc = obj.mapCoords;
+      var panelData = {
+        type: s.type, x: mc.x, y: mc.y, z: s.z,
+        width: mc.width, height: mc.height, angle: obj.angle || 0,
+        memo: s.memo, locked: s.locked, freezed: s.freezed,
+        imageUrl: obj.imageDataUrl || ''
+      };
+      document.documentElement.setAttribute('data-bwbr-create-panel', JSON.stringify(panelData));
+      document.dispatchEvent(new CustomEvent('bwbr-create-panel'));
+    });
     clearAllStaged();
   }
 }
