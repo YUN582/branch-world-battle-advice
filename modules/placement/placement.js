@@ -623,11 +623,11 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   display: block;
 }
 
-/* ── 정렬 바 (하단 중앙) ───────────────────────── */
+/* ── 정렬 바 (상단 메뉴 아래 중앙) ────────────────── */
 
 .bwbr-place-align-bar {
   position: fixed;
-  bottom: 80px;
+  top: 52px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 106;
@@ -717,6 +717,9 @@ var _state = {
     freezed: false
   },
 
+  // 이전 편집 도구 기억
+  lastTool: null,       // 선택 모드 전환 시 마지막 서브도구 저장
+
   // 드래그 상태
   drag: {
     startX: 0,
@@ -793,9 +796,9 @@ function init() {
   createConfirmBar();
   createAlignBar();
   registerFabButton();
+  setupMiddleClickPanning();  // 미들클릭 핸들러 먼저 (capture phase 우선순위)
   setupKeyboard();
   setupSelectModeHandlers();
-  setupMiddleClickPanning();
 }
 
 
@@ -859,9 +862,6 @@ function activateMode(mode) {
   Object.keys(_modeButtons).forEach(function(k) {
     if (_modeButtons[k]) _modeButtons[k].classList.remove('bwbr-place-tool-btn--active');
   });
-  Object.keys(_subToolButtons).forEach(function(k) {
-    _subToolButtons[k].classList.remove('bwbr-place-subtool-btn--active');
-  });
   _overlay.classList.remove('bwbr-placement-overlay--active');
   _preview.classList.remove('bwbr-placement-preview--visible');
   _state.placing = false;
@@ -870,16 +870,21 @@ function activateMode(mode) {
   if (_modeButtons[mode]) _modeButtons[mode].classList.add('bwbr-place-tool-btn--active');
 
   if (mode === 'select') {
+    // 현재 편집 도구 기억
+    if (_state.currentTool) _state.lastTool = _state.currentTool;
     _state.currentTool = null;
-    _settingsPanel.classList.add('bwbr-place-settings--open');
-    // 선택 모드: 오버레이 비활성, 스테이징 아이템 직접 상호작용
+    Object.keys(_subToolButtons).forEach(function(k) {
+      _subToolButtons[k].classList.remove('bwbr-place-subtool-btn--active');
+    });
+    // 선택 모드: 설정 패널 닫기
+    _settingsPanel.classList.remove('bwbr-place-settings--open');
+    if (_imageSourceMenu) _imageSourceMenu.style.display = 'none';
   } else if (mode === 'edit') {
+    // 편집 모드: 설정 패널 열기
     _settingsPanel.classList.add('bwbr-place-settings--open');
-    // 서브도구가 이미 선택된 경우 오버레이 복원
-    if (_state.currentTool === 'image' && _state.pendingImage) {
-      _overlay.classList.add('bwbr-placement-overlay--active');
-    } else if (_state.currentTool && _state.currentTool !== 'image') {
-      _overlay.classList.add('bwbr-placement-overlay--active');
+    // 이전 도구 복원
+    if (_state.lastTool) {
+      setSubTool(_state.lastTool);
     }
   }
   updateAlignBar();
@@ -1749,6 +1754,11 @@ function onStagedItemMouseDown(stagedId, e) {
   e.stopPropagation();
   e.preventDefault();
 
+  // 편집 모드에서 스테이징 아이템 클릭 → 선택 모드로 전환
+  if (_state.mode === 'edit') {
+    activateMode('select');
+  }
+
   // Alt+클릭 = 추가/토글 선택, Alt+드래그 = 복사 (deferred)
   if (e.altKey) {
     selectStagedItem(stagedId, true);
@@ -1871,9 +1881,12 @@ function setupSelectModeHandlers() {
     if (e.target.closest('.bwbr-place-confirm-bar')) return;
     if (e.target.closest('.bwbr-place-align-bar')) return;
 
-    // 선택 모드: 드래그 = 범위 선택 (Alt 불필요)
-    // 편집 모드: Alt+드래그 = 범위 선택
-    var shouldBoxSelect = (_state.mode === 'select' || e.altKey) && _state.stagedObjects.length > 0;
+    // 선택 모드: 드래그 = 범위 선택
+    // 편집 모드: Alt+드래그 → 자동으로 선택 모드 전환 후 범위 선택
+    if (_state.mode === 'edit' && e.altKey && _state.stagedObjects.length > 0) {
+      activateMode('select');
+    }
+    var shouldBoxSelect = _state.mode === 'select' && _state.stagedObjects.length > 0;
 
     if (shouldBoxSelect) {
       _altBoxSelect.active = true;
@@ -1903,14 +1916,20 @@ function setupSelectModeHandlers() {
     if (!_state.active || e.button !== 0) return;
     if (e.target.closest('.bwbr-placement-toolbar') ||
         e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar')) return;
-    // 스테이징 아이템 클릭/드래그 시에도 ccfolia 패닝 차단
+
+    // 편집 모드: 항상 좌클릭 패닝 차단 (중클릭만 허용)
+    if (_state.mode === 'edit') { e.stopImmediatePropagation(); return; }
+
+    // 선택 모드: 스테이징 아이템 위 또는 범위 선택 시 패닝 차단
     if (e.target.closest('.bwbr-staged-item')) { e.stopImmediatePropagation(); return; }
-    var shouldBox = (_state.mode === 'select' || e.altKey) && _state.stagedObjects.length > 0;
+    var shouldBox = _state.stagedObjects.length > 0;
     if (shouldBox) { e.stopImmediatePropagation(); }
   }, true);
   document.addEventListener('pointermove', function(e) {
     if (!e.isTrusted) return;
     if (_altBoxSelect.active || _selectDrag.dragging) { e.stopImmediatePropagation(); }
+    // 편집 모드: 오버레이 드래그 중 패닝 차단
+    if (_state.mode === 'edit' && _state.placing) { e.stopImmediatePropagation(); }
   }, true);
   document.addEventListener('pointerup', function(e) {
     if (!e.isTrusted) return;
@@ -2444,11 +2463,21 @@ function setupKeyboard() {
       return;
     }
 
-    // I / T / D: 편집 모드 서브 도구
-    if (_state.mode === 'edit') {
-      if (e.key === 'i' || e.key === 'I') { e.preventDefault(); setSubTool('image'); return; }
-      if (e.key === 't' || e.key === 'T') { e.preventDefault(); setSubTool('text'); return; }
-      if (e.key === 'd' || e.key === 'D') { e.preventDefault(); setSubTool('draw'); return; }
+    // I / T / D: 편집 모드 서브 도구 (어떤 모드에서든 편집 모드로 전환)
+    if (e.key === 'i' || e.key === 'I') {
+      e.preventDefault();
+      if (_state.mode !== 'edit') activateMode('edit');
+      setSubTool('image'); return;
+    }
+    if (e.key === 't' || e.key === 'T') {
+      e.preventDefault();
+      if (_state.mode !== 'edit') activateMode('edit');
+      setSubTool('text'); return;
+    }
+    if (e.key === 'd' || e.key === 'D') {
+      e.preventDefault();
+      if (_state.mode !== 'edit') activateMode('edit');
+      setSubTool('draw'); return;
     }
 
     // R: 선택된 스테이징 오브젝트 회전 (15도 단위)
@@ -2488,8 +2517,9 @@ function setupMiddleClickPanning() {
   // 미들클릭 → 합성 좌클릭으로 변환하여 ccfolia 네이티브 팬 활용
   document.addEventListener('pointerdown', function(e) {
     if (e.button !== 1) return;
+    if (!e.isTrusted) return;
     e.preventDefault();
-    e.stopPropagation();
+    e.stopImmediatePropagation();
 
     // 오버레이/UI 아래의 실제 요소를 찾기
     var elems = [_overlay, _alignBar, _confirmBar].filter(Boolean);
@@ -2514,7 +2544,9 @@ function setupMiddleClickPanning() {
   }, true);
 
   document.addEventListener('pointermove', function(e) {
-    if (!_pan.active || !_pan.target || !e.isTrusted) return;
+    if (!_pan.active || !_pan.target) return;
+    if (!e.isTrusted) return;
+    e.stopImmediatePropagation(); // 다른 핸들러가 buttons=4를 보지 못하게
     _pan.target.dispatchEvent(new PointerEvent('pointermove', {
       button: 0, buttons: 1,
       clientX: e.clientX, clientY: e.clientY,
@@ -2523,10 +2555,12 @@ function setupMiddleClickPanning() {
       pointerType: e.pointerType || 'mouse',
       bubbles: true, cancelable: true, composed: true
     }));
-  });
+  }, true);
 
   document.addEventListener('pointerup', function(e) {
-    if (e.button !== 1 || !_pan.active || !e.isTrusted) return;
+    if (!_pan.active) return;
+    if (!e.isTrusted) return;
+    e.stopImmediatePropagation();
     _pan.target.dispatchEvent(new PointerEvent('pointerup', {
       button: 0, buttons: 0,
       clientX: e.clientX, clientY: e.clientY,
@@ -2538,7 +2572,7 @@ function setupMiddleClickPanning() {
     _pan.active = false;
     _pan.target = null;
     document.body.style.cursor = '';
-  });
+  }, true);
 
   // 미들클릭 기본 동작(자동 스크롤) 방지
   document.addEventListener('mousedown', function(e) {
