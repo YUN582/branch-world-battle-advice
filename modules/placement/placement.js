@@ -1920,7 +1920,6 @@ function setupSelectModeHandlers() {
 
   // 배치 모드 중 ccfolia 패닝 방지 (capture phase에서 pointer 이벤트 차단)
   document.addEventListener('pointerdown', function(e) {
-    if (e._bwbr_midpan) return; // 미들클릭→좌클릭 위장 이벤트: ccfolia에 전달
     if (!e.isTrusted) return;
     if (!_state.active || e.button !== 0) return;
     if (e.target.closest('.bwbr-placement-toolbar') ||
@@ -1936,7 +1935,6 @@ function setupSelectModeHandlers() {
   // mousedown도 캡처 단계에서 차단 (ccfolia가 mousedown으로 패닝할 수 있음)
   // stopImmediatePropagation이 기존 버블 핸들러도 차단하므로 여기서 직접 처리
   document.addEventListener('mousedown', function(e) {
-    if (e._bwbr_midpan) return; // 미들클릭→좌클릭 위장 이벤트: ccfolia에 전달
     if (e.button !== 0 || !_state.active) return;
     if (_state.mode !== 'select' && _state.mode !== 'edit') return;
     if (e.target.closest('.bwbr-placement-toolbar') ||
@@ -1981,14 +1979,12 @@ function setupSelectModeHandlers() {
     e.stopImmediatePropagation();
   }, true);
   document.addEventListener('pointermove', function(e) {
-    if (e._bwbr_midpan) return;
     if (!e.isTrusted) return;
     if (_altBoxSelect.active || _selectDrag.dragging) { e.stopImmediatePropagation(); }
     // 편집 모드: 오버레이 드래그 중 패닝 차단
     if (_state.mode === 'edit' && _state.placing) { e.stopImmediatePropagation(); }
   }, true);
   document.addEventListener('pointerup', function(e) {
-    if (e._bwbr_midpan) return;
     if (!e.isTrusted) return;
     if (_altBoxSelect.active || _selectDrag.dragging) { e.stopImmediatePropagation(); }
   }, true);
@@ -2567,63 +2563,13 @@ function showAngleIndicator(angle) {
 // ── 미들클릭 패닝 (코어 기능 — 배치 모드 여부 무관) ─────────────
 
 function setupMiddleClickPanning() {
-  var _midPanning = false;
-
-  // 미들클릭 → 속성 덮어씌워서 좌클릭으로 위장 (isTrusted=true, pointerId 유효 → 네이티브 패닝)
-  document.addEventListener('pointerdown', function(e) {
-    if (e.button !== 1 || !e.isTrusted) return;
-    // preventDefault 호출 안 함! pointerdown.preventDefault()는 mousedown 발생을 막음
-    // ccfolia는 onMouseDown으로 패닝하므로 mousedown이 반드시 발생해야 함
-    _midPanning = true;
-    e._bwbr_midpan = true;
-    // ccfolia 핸들러가 좌클릭으로 인식하도록 속성 덮어씌우기
-    Object.defineProperty(e, 'button', { value: 0 });
-    Object.defineProperty(e, 'buttons', { value: 1 });
-    // stopPropagation 안 함 → ccfolia 네이티브 팬 핸들러에 도달
-  }, true);
-
-  document.addEventListener('pointermove', function(e) {
-    if (!_midPanning || !e.isTrusted) return;
-    e._bwbr_midpan = true;
-    Object.defineProperty(e, 'buttons', { value: 1 });
-  }, true);
-
-  document.addEventListener('pointerup', function(e) {
-    if (!_midPanning || !e.isTrusted) return;
-    if (e.button === 1 || e.button === 0) {
-      _midPanning = false;
-      e._bwbr_midpan = true;
-      Object.defineProperty(e, 'button', { value: 0 });
-      Object.defineProperty(e, 'buttons', { value: 0 });
-    }
-  }, true);
-
-  // mousedown/mousemove/mouseup도 위장
-  document.addEventListener('mousedown', function(e) {
-    if (e.button === 1) {
-      e.preventDefault(); // 자동 스크롤 방지
-      if (_midPanning) {
-        e._bwbr_midpan = true;
-        Object.defineProperty(e, 'button', { value: 0 });
-        Object.defineProperty(e, 'buttons', { value: 1 });
-      }
-    }
-  }, true);
-
-  document.addEventListener('mousemove', function(e) {
-    if (!_midPanning || !e.isTrusted) return;
-    e._bwbr_midpan = true;
-    Object.defineProperty(e, 'buttons', { value: 1 });
-  }, true);
-
-  document.addEventListener('mouseup', function(e) {
-    if (!_midPanning || !e.isTrusted) return;
-    if (e.button === 1) {
-      e._bwbr_midpan = true;
-      Object.defineProperty(e, 'button', { value: 0 });
-      Object.defineProperty(e, 'buttons', { value: 0 });
-    }
-  }, true);
+  // MAIN world 스크립트 주입 — Object.defineProperty는 같은 JS world에서만 적용됨
+  // ccfolia React(MAIN world)의 n.nativeEvent.button을 0으로 위장하려면 MAIN world 실행 필요
+  // ISOLATED world에서는 e.button이 원래 값(1)을 유지하므로 select/edit 핸들러가 자연스럽게 무시
+  var script = document.createElement('script');
+  script.src = chrome.runtime.getURL('content/midpan-main.js');
+  (document.head || document.documentElement).appendChild(script);
+  script.remove();
 }
 
 
