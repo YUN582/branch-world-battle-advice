@@ -647,7 +647,7 @@ var _state = {
 
   // 스테이징 (일괄 배치)
   stagedObjects: [],      // [{ id, mapCoords, angle, imageDataUrl, settings }]
-  selectedStagedId: null  // 선택된 스테이징 오브젝트 ID
+  selectedStagedIds: []   // 선택된 스테이징 오브젝트 ID 목록 (다중 선택)
 };
 
 
@@ -1147,6 +1147,16 @@ function createOverlay() {
   _overlay.addEventListener('mousedown', onOverlayMouseDown);
   _overlay.addEventListener('mousemove', onOverlayMouseMove);
   _overlay.addEventListener('mouseup', onOverlayMouseUp);
+
+  // 휠 줌 패스스루: 오버레이 아래 요소에 전달
+  _overlay.addEventListener('wheel', function(e) {
+    _overlay.style.pointerEvents = 'none';
+    var below = document.elementFromPoint(e.clientX, e.clientY);
+    _overlay.style.pointerEvents = '';
+    if (below) {
+      below.dispatchEvent(new WheelEvent(e.type, e));
+    }
+  }, { passive: true });
 }
 
 
@@ -1221,6 +1231,7 @@ function stageObject(screenRect) {
   if (!mapCoords) return;
 
   console.log('[CE 배치] 스테이징:', screenRect, '→ 타일:', mapCoords);
+  console.log('[CE 배치] panelSettings:', JSON.stringify(_state.panelSettings));
 
   var obj = {
     id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
@@ -1284,7 +1295,7 @@ function renderStagedItem(obj) {
 
 function clearAllStaged() {
   _state.stagedObjects = [];
-  _state.selectedStagedId = null;
+  _state.selectedStagedIds = [];
   document.querySelectorAll('.bwbr-staged-item').forEach(function (el) { el.remove(); });
   updateConfirmBar();
 }
@@ -1302,7 +1313,8 @@ function renumberStagedBadges() {
 function undoLastStaged() {
   if (_state.stagedObjects.length === 0) return;
   var last = _state.stagedObjects.pop();
-  if (_state.selectedStagedId === last.id) _state.selectedStagedId = null;
+  var selIdx = _state.selectedStagedIds.indexOf(last.id);
+  if (selIdx !== -1) _state.selectedStagedIds.splice(selIdx, 1);
   var el = document.querySelector('[data-staged-id="' + last.id + '"]');
   if (el) el.remove();
   renumberStagedBadges();
@@ -1333,44 +1345,63 @@ function hitTestStaged(screenX, screenY) {
   return null;
 }
 
-function selectStagedItem(id) {
-  deselectStaged();
-  _state.selectedStagedId = id;
-  var el = document.querySelector('[data-staged-id="' + id + '"]');
-  if (el) el.classList.add('bwbr-staged-item--selected');
+function selectStagedItem(id, additive) {
+  if (additive) {
+    var idx = _state.selectedStagedIds.indexOf(id);
+    if (idx !== -1) {
+      // 이미 선택됨 → 해제
+      _state.selectedStagedIds.splice(idx, 1);
+      var el = document.querySelector('[data-staged-id="' + id + '"]');
+      if (el) el.classList.remove('bwbr-staged-item--selected');
+      return;
+    }
+    _state.selectedStagedIds.push(id);
+    var el2 = document.querySelector('[data-staged-id="' + id + '"]');
+    if (el2) el2.classList.add('bwbr-staged-item--selected');
+  } else {
+    deselectStaged();
+    _state.selectedStagedIds.push(id);
+    var el3 = document.querySelector('[data-staged-id="' + id + '"]');
+    if (el3) el3.classList.add('bwbr-staged-item--selected');
+  }
 }
 
 function deselectStaged() {
-  if (_state.selectedStagedId) {
-    var el = document.querySelector('[data-staged-id="' + _state.selectedStagedId + '"]');
+  _state.selectedStagedIds.forEach(function(id) {
+    var el = document.querySelector('[data-staged-id="' + id + '"]');
     if (el) el.classList.remove('bwbr-staged-item--selected');
-  }
-  _state.selectedStagedId = null;
+  });
+  _state.selectedStagedIds = [];
 }
 
 function removeSelectedStaged() {
-  if (!_state.selectedStagedId) return;
-  var idx = _state.stagedObjects.findIndex(function (o) { return o.id === _state.selectedStagedId; });
-  if (idx === -1) return;
-  var el = document.querySelector('[data-staged-id="' + _state.selectedStagedId + '"]');
-  if (el) el.remove();
-  _state.stagedObjects.splice(idx, 1);
-  _state.selectedStagedId = null;
+  if (_state.selectedStagedIds.length === 0) return;
+  _state.selectedStagedIds.forEach(function(id) {
+    var el = document.querySelector('[data-staged-id="' + id + '"]');
+    if (el) el.remove();
+    var idx = _state.stagedObjects.findIndex(function(o) { return o.id === id; });
+    if (idx !== -1) _state.stagedObjects.splice(idx, 1);
+  });
+  _state.selectedStagedIds = [];
   renumberStagedBadges();
   updateConfirmBar();
 }
 
 function rotateSelectedStaged(delta) {
-  if (!_state.selectedStagedId) return;
-  var obj = _state.stagedObjects.find(function (o) { return o.id === _state.selectedStagedId; });
-  if (!obj) return;
-  obj.angle = ((obj.angle || 0) + delta) % 360;
-  if (obj.angle < 0) obj.angle += 360;
-  var el = document.querySelector('[data-staged-id="' + obj.id + '"]');
-  if (el) {
-    el.style.transform = obj.angle ? 'rotate(' + obj.angle + 'deg)' : '';
-  }
-  showAngleIndicator(obj.angle);
+  if (_state.selectedStagedIds.length === 0) return;
+  var lastAngle = 0;
+  _state.selectedStagedIds.forEach(function(id) {
+    var obj = _state.stagedObjects.find(function(o) { return o.id === id; });
+    if (!obj) return;
+    obj.angle = ((obj.angle || 0) + delta) % 360;
+    if (obj.angle < 0) obj.angle += 360;
+    lastAngle = obj.angle;
+    var el = document.querySelector('[data-staged-id="' + obj.id + '"]');
+    if (el) {
+      el.style.transform = obj.angle ? 'rotate(' + obj.angle + 'deg)' : '';
+    }
+  });
+  showAngleIndicator(lastAngle);
 }
 
 
@@ -1383,47 +1414,59 @@ function onStagedItemMouseDown(stagedId, e) {
   e.stopPropagation();
   e.preventDefault();
 
-  selectStagedItem(stagedId);
-  var obj = _state.stagedObjects.find(function(o) { return o.id === stagedId; });
-  if (obj) {
-    _selectDrag.start = {
-      screenX: e.clientX, screenY: e.clientY,
-      origX: obj.mapCoords.x, origY: obj.mapCoords.y
-    };
-    _selectDrag.dragging = false;
-  }
+  var additive = e.altKey;
+  selectStagedItem(stagedId, additive);
+
+  // 드래그 시작: 선택된 모든 아이템의 원본 좌표 저장
+  var origins = {};
+  _state.selectedStagedIds.forEach(function(id) {
+    var o = _state.stagedObjects.find(function(so) { return so.id === id; });
+    if (o) origins[id] = { x: o.mapCoords.x, y: o.mapCoords.y };
+  });
+  _selectDrag.start = {
+    screenX: e.clientX, screenY: e.clientY,
+    origins: origins
+  };
+  _selectDrag.dragging = false;
 }
 
 function setupSelectModeHandlers() {
   document.addEventListener('mousemove', function(e) {
-    if (!_selectDrag.start || !_state.selectedStagedId) return;
+    if (!_selectDrag.start || _state.selectedStagedIds.length === 0) return;
     var dx = e.clientX - _selectDrag.start.screenX;
     var dy = e.clientY - _selectDrag.start.screenY;
     if (!_selectDrag.dragging && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
       _selectDrag.dragging = true;
-      var el = document.querySelector('[data-staged-id="' + _state.selectedStagedId + '"]');
-      if (el) el.classList.add('bwbr-staged-item--dragging');
+      _state.selectedStagedIds.forEach(function(id) {
+        var el = document.querySelector('[data-staged-id="' + id + '"]');
+        if (el) el.classList.add('bwbr-staged-item--dragging');
+      });
     }
     if (!_selectDrag.dragging) return;
     var scale = getZoomScale();
-    var newX = Math.round(_selectDrag.start.origX + dx / (scale * CELL_PX));
-    var newY = Math.round(_selectDrag.start.origY + dy / (scale * CELL_PX));
-    var obj = _state.stagedObjects.find(function(o) { return o.id === _state.selectedStagedId; });
-    if (!obj) return;
-    obj.mapCoords.x = newX;
-    obj.mapCoords.y = newY;
-    var el = document.querySelector('[data-staged-id="' + obj.id + '"]');
-    if (el) {
-      el.style.left = (newX * CELL_PX) + 'px';
-      el.style.top = (newY * CELL_PX) + 'px';
-    }
+    var tileDx = Math.round(dx / (scale * CELL_PX));
+    var tileDy = Math.round(dy / (scale * CELL_PX));
+    _state.selectedStagedIds.forEach(function(id) {
+      var obj = _state.stagedObjects.find(function(o) { return o.id === id; });
+      var orig = _selectDrag.start.origins && _selectDrag.start.origins[id];
+      if (!obj || !orig) return;
+      obj.mapCoords.x = orig.x + tileDx;
+      obj.mapCoords.y = orig.y + tileDy;
+      var el = document.querySelector('[data-staged-id="' + obj.id + '"]');
+      if (el) {
+        el.style.left = (obj.mapCoords.x * CELL_PX) + 'px';
+        el.style.top = (obj.mapCoords.y * CELL_PX) + 'px';
+      }
+    });
   });
 
   document.addEventListener('mouseup', function(e) {
     if (e.button !== 0) return;
     if (_selectDrag.dragging) {
-      var el = document.querySelector('[data-staged-id="' + _state.selectedStagedId + '"]');
-      if (el) el.classList.remove('bwbr-staged-item--dragging');
+      _state.selectedStagedIds.forEach(function(id) {
+        var el = document.querySelector('[data-staged-id="' + id + '"]');
+        if (el) el.classList.remove('bwbr-staged-item--dragging');
+      });
     }
     _selectDrag.start = null;
     _selectDrag.dragging = false;
@@ -1496,6 +1539,8 @@ function compositeAndCommit() {
   var bboxW = maxX - minX;
   var bboxH = maxY - minY;
   var s = _state.stagedObjects[0].settings;
+
+  console.log('[CE 배치] 확인 → settings:', JSON.stringify(s), '/ bbox:', bboxW + '×' + bboxH);
 
   // 단일 오브젝트 + URL 이미지 → 합성 없이 직접 생성
   if (_state.stagedObjects.length === 1 && _state.stagedObjects[0].imageDataUrl &&
@@ -1680,7 +1725,7 @@ function setupKeyboard() {
         _state.placing = false;
         _preview.classList.remove('bwbr-placement-preview--visible');
         _preview.innerHTML = '';
-      } else if (_state.selectedStagedId) {
+      } else if (_state.selectedStagedIds.length > 0) {
         deselectStaged();
       } else if (_state.stagedObjects.length > 0) {
         clearAllStaged();
@@ -1717,13 +1762,13 @@ function setupKeyboard() {
     }
 
     // R: 선택된 스테이징 오브젝트 회전 (15도 단위)
-    if ((e.key === 'r' || e.key === 'R') && _state.selectedStagedId) {
+    if ((e.key === 'r' || e.key === 'R') && _state.selectedStagedIds.length > 0) {
       e.preventDefault();
       rotateSelectedStaged(e.shiftKey ? -15 : 15);
     }
 
     // Delete / Backspace: 선택된 스테이징 오브젝트 삭제
-    if ((e.key === 'Delete' || e.key === 'Backspace') && _state.selectedStagedId) {
+    if ((e.key === 'Delete' || e.key === 'Backspace') && _state.selectedStagedIds.length > 0) {
       e.preventDefault();
       removeSelectedStaged();
     }
