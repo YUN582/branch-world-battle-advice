@@ -695,6 +695,91 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 .bwbr-place-align-btn:hover .bwbr-place-tooltip {
   opacity: 1;
 }
+
+/* ── 텍스트 도구 패널 ──────────────────────────── */
+
+.bwbr-place-text-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.bwbr-place-text-input {
+  width: 100%;
+  min-height: 56px;
+  resize: vertical;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.bwbr-place-text-input:focus {
+  outline: none;
+  border-color: #42a5f5;
+}
+
+.bwbr-place-text-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.bwbr-place-text-row label {
+  font-size: 11px;
+  color: #666;
+  white-space: nowrap;
+}
+
+.bwbr-place-text-row select,
+.bwbr-place-text-row input[type="number"] {
+  height: 28px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 12px;
+  background: #fff;
+}
+
+.bwbr-place-text-row select {
+  min-width: 80px;
+}
+
+.bwbr-place-text-row input[type="number"] {
+  width: 52px;
+}
+
+.bwbr-place-text-row input[type="color"] {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 1px;
+  cursor: pointer;
+  background: #fff;
+}
+
+.bwbr-place-text-preview {
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  min-height: 36px;
+  max-height: 120px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fafafa;
+}
+
+.bwbr-place-text-preview img {
+  max-width: 100%;
+  max-height: 120px;
+  object-fit: contain;
+}
 `;
   document.head.appendChild(style);
 })();
@@ -743,7 +828,19 @@ var _state = {
   clipboard: [],           // [{ mapCoords, angle, imageDataUrl, settings }]
 
   // 스탬프 모드: 이전 배치 크기 기억 (클릭만으로 연속 배치)
-  lastStampSize: null      // { w, h } (screen px) — 드래그 배치 후 저장됨
+  lastStampSize: null,     // { w, h } (screen px) — 드래그 배치 후 저장됨
+
+  // 텍스트 도구
+  textSettings: {
+    text: '',
+    fontFamily: 'sans-serif',
+    fontSize: 32,
+    color: '#ffffff',
+    bgColor: '#000000',
+    bold: false,
+    bgEnabled: true
+  },
+  pendingTextDataUrl: null  // 텍스트→캔버스 렌더링된 data URL
 };
 
 
@@ -787,6 +884,8 @@ var _subToolRow = null;
 var _subToolButtons = {};
 var _imageSourceMenu = null;
 var _imageGrid = null;
+var _textSettingsMenu = null;
+var _textPreviewEl = null;
 var _confirmBar = null;
 var _stagedCountEl = null;
 
@@ -827,6 +926,9 @@ function updatePlacementCursor() {
   if (!_overlay) return;
   _overlay.classList.remove('bwbr-placement-overlay--blocked');
   if (_state.currentTool === 'image' && !_state.pendingImage) {
+    _overlay.classList.add('bwbr-placement-overlay--blocked');
+  }
+  if (_state.currentTool === 'text' && !_state.pendingTextDataUrl) {
     _overlay.classList.add('bwbr-placement-overlay--blocked');
   }
 }
@@ -882,6 +984,7 @@ function activateMode(mode) {
     // 선택 모드: 설정 패널 닫기
     _settingsPanel.classList.remove('bwbr-place-settings--open');
     if (_imageSourceMenu) _imageSourceMenu.style.display = 'none';
+    if (_textSettingsMenu) _textSettingsMenu.style.display = 'none';
   } else if (mode === 'edit') {
     // 편집 모드: 설정 패널 열기
     _settingsPanel.classList.add('bwbr-place-settings--open');
@@ -919,6 +1022,7 @@ function setSubTool(toolId) {
     _state.currentTool = null;
     _overlay.classList.remove('bwbr-placement-overlay--active');
     if (_imageSourceMenu) _imageSourceMenu.style.display = 'none';
+    if (_textSettingsMenu) _textSettingsMenu.style.display = 'none';
     updatePlacementCursor();
     return;
   }
@@ -928,12 +1032,15 @@ function setSubTool(toolId) {
 
   if (toolId === 'image') {
     if (_imageSourceMenu) _imageSourceMenu.style.display = '';
+    if (_textSettingsMenu) _textSettingsMenu.style.display = 'none';
     _overlay.classList.add('bwbr-placement-overlay--active');
-    if (_state.pendingImage) {
-      // has image
-    }
+  } else if (toolId === 'text') {
+    if (_imageSourceMenu) _imageSourceMenu.style.display = 'none';
+    if (_textSettingsMenu) _textSettingsMenu.style.display = '';
+    _overlay.classList.add('bwbr-placement-overlay--active');
   } else {
     if (_imageSourceMenu) _imageSourceMenu.style.display = 'none';
+    if (_textSettingsMenu) _textSettingsMenu.style.display = 'none';
     _overlay.classList.add('bwbr-placement-overlay--active');
   }
   updatePlacementCursor();
@@ -1006,6 +1113,10 @@ function createSettingsPanel() {
   // 이미지 소스 메뉴 (이미지 도구용)
   _imageSourceMenu = createImageSourceMenu();
   panel.appendChild(_imageSourceMenu);
+
+  // 텍스트 설정 메뉴 (텍스트 도구용)
+  _textSettingsMenu = createTextSettingsMenu();
+  panel.appendChild(_textSettingsMenu);
 
   // 타입 토글
   var typeField = createField('타입');
@@ -1261,6 +1372,202 @@ function openCcofoliaImagePicker() {
 }
 
 
+// ── 텍스트 도구 패널 ────────────────────────────────────────────
+
+function createTextSettingsMenu() {
+  var menu = document.createElement('div');
+  menu.className = 'bwbr-place-text-menu';
+  menu.style.display = 'none';
+
+  // 텍스트 입력
+  var textarea = document.createElement('textarea');
+  textarea.className = 'bwbr-place-text-input';
+  textarea.placeholder = '배치할 텍스트 입력...';
+  textarea.addEventListener('input', function () {
+    _state.textSettings.text = textarea.value;
+    updateTextPreview();
+  });
+  // Enter 키로 영역 배치 안 되게 (텍스트 입력용)
+  textarea.addEventListener('keydown', function(e) { e.stopPropagation(); });
+  menu.appendChild(textarea);
+
+  // 설정 행 1: 폰트 + 크기
+  var row1 = document.createElement('div');
+  row1.className = 'bwbr-place-text-row';
+
+  var fontLabel = document.createElement('label');
+  fontLabel.textContent = '폰트';
+  row1.appendChild(fontLabel);
+
+  var fontSelect = document.createElement('select');
+  var fonts = [
+    { value: 'sans-serif', label: '고딕' },
+    { value: 'serif', label: '명조' },
+    { value: '"Noto Sans KR", sans-serif', label: 'Noto Sans' },
+    { value: 'monospace', label: '고정폭' },
+    { value: 'cursive', label: '필기체' }
+  ];
+  fonts.forEach(function(f) {
+    var opt = document.createElement('option');
+    opt.value = f.value;
+    opt.textContent = f.label;
+    fontSelect.appendChild(opt);
+  });
+  fontSelect.addEventListener('change', function () {
+    _state.textSettings.fontFamily = fontSelect.value;
+    updateTextPreview();
+  });
+  row1.appendChild(fontSelect);
+
+  var sizeLabel = document.createElement('label');
+  sizeLabel.textContent = '크기';
+  row1.appendChild(sizeLabel);
+
+  var sizeInput = document.createElement('input');
+  sizeInput.type = 'number';
+  sizeInput.value = '32';
+  sizeInput.min = '8';
+  sizeInput.max = '200';
+  sizeInput.addEventListener('input', function () {
+    _state.textSettings.fontSize = parseInt(sizeInput.value, 10) || 32;
+    updateTextPreview();
+  });
+  sizeInput.addEventListener('keydown', function(e) { e.stopPropagation(); });
+  row1.appendChild(sizeInput);
+
+  menu.appendChild(row1);
+
+  // 설정 행 2: 색상 + 배경색 + 굵기
+  var row2 = document.createElement('div');
+  row2.className = 'bwbr-place-text-row';
+
+  var colorLabel = document.createElement('label');
+  colorLabel.textContent = '글자';
+  row2.appendChild(colorLabel);
+
+  var colorInput = document.createElement('input');
+  colorInput.type = 'color';
+  colorInput.value = '#ffffff';
+  colorInput.addEventListener('input', function () {
+    _state.textSettings.color = colorInput.value;
+    updateTextPreview();
+  });
+  row2.appendChild(colorInput);
+
+  var bgLabel = document.createElement('label');
+  bgLabel.textContent = '배경';
+  row2.appendChild(bgLabel);
+
+  var bgColorInput = document.createElement('input');
+  bgColorInput.type = 'color';
+  bgColorInput.value = '#000000';
+  bgColorInput.addEventListener('input', function () {
+    _state.textSettings.bgColor = bgColorInput.value;
+    updateTextPreview();
+  });
+  row2.appendChild(bgColorInput);
+
+  var bgToggle = document.createElement('label');
+  bgToggle.style.display = 'flex';
+  bgToggle.style.alignItems = 'center';
+  bgToggle.style.gap = '2px';
+  var bgCheck = document.createElement('input');
+  bgCheck.type = 'checkbox';
+  bgCheck.checked = true;
+  bgCheck.addEventListener('change', function () {
+    _state.textSettings.bgEnabled = bgCheck.checked;
+    bgColorInput.disabled = !bgCheck.checked;
+    updateTextPreview();
+  });
+  bgToggle.appendChild(bgCheck);
+  var bgCheckLabel = document.createElement('span');
+  bgCheckLabel.textContent = '배경';
+  bgCheckLabel.style.fontSize = '11px';
+  bgToggle.appendChild(bgCheckLabel);
+  row2.appendChild(bgToggle);
+
+  var boldLabel = document.createElement('label');
+  boldLabel.style.display = 'flex';
+  boldLabel.style.alignItems = 'center';
+  boldLabel.style.gap = '2px';
+  var boldCheck = document.createElement('input');
+  boldCheck.type = 'checkbox';
+  boldCheck.addEventListener('change', function () {
+    _state.textSettings.bold = boldCheck.checked;
+    updateTextPreview();
+  });
+  boldLabel.appendChild(boldCheck);
+  var boldSpan = document.createElement('span');
+  boldSpan.textContent = '굵게';
+  boldSpan.style.fontSize = '11px';
+  boldLabel.appendChild(boldSpan);
+  row2.appendChild(boldLabel);
+
+  menu.appendChild(row2);
+
+  // 미리보기
+  _textPreviewEl = document.createElement('div');
+  _textPreviewEl.className = 'bwbr-place-text-preview';
+  menu.appendChild(_textPreviewEl);
+
+  return menu;
+}
+
+function updateTextPreview() {
+  if (!_textPreviewEl) return;
+  var ts = _state.textSettings;
+  if (!ts.text.trim()) {
+    _textPreviewEl.innerHTML = '<span style="color:#999;font-size:12px">텍스트를 입력하세요</span>';
+    _state.pendingTextDataUrl = null;
+    updatePlacementCursor();
+    return;
+  }
+  var dataUrl = renderTextToDataUrl(ts);
+  _state.pendingTextDataUrl = dataUrl;
+  _textPreviewEl.innerHTML = '<img src="' + dataUrl + '" alt="">';
+  updatePlacementCursor();
+}
+
+function renderTextToDataUrl(ts) {
+  var canvas = document.createElement('canvas');
+  var ctx = canvas.getContext('2d');
+
+  var padding = Math.round(ts.fontSize * 0.3);
+  var lineHeight = Math.round(ts.fontSize * 1.3);
+  var fontStr = (ts.bold ? 'bold ' : '') + ts.fontSize + 'px ' + ts.fontFamily;
+  ctx.font = fontStr;
+
+  // 멀티라인 처리
+  var lines = ts.text.split('\\n');
+  var maxWidth = 0;
+  lines.forEach(function(line) {
+    var w = ctx.measureText(line || ' ').width;
+    if (w > maxWidth) maxWidth = w;
+  });
+
+  canvas.width = Math.ceil(maxWidth + padding * 2);
+  canvas.height = Math.ceil(lines.length * lineHeight + padding * 2);
+
+  // 리사이즈 후 폰트 재설정 필요
+  ctx.font = fontStr;
+  ctx.textBaseline = 'top';
+
+  // 배경
+  if (ts.bgEnabled) {
+    ctx.fillStyle = ts.bgColor;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  // 텍스트
+  ctx.fillStyle = ts.color;
+  lines.forEach(function(line, i) {
+    ctx.fillText(line, padding, padding + i * lineHeight);
+  });
+
+  return canvas.toDataURL('image/png');
+}
+
+
 // ── 유틸: 필드/토글 생성 ────────────────────────────────────────
 
 function createField(label) {
@@ -1357,6 +1664,8 @@ function onOverlayMouseDown(e) {
 
   // 편집 모드: 이미지 미선택 시 배치 불가
   if (_state.currentTool === 'image' && !_state.pendingImage) return;
+  // 편집 모드: 텍스트 미입력 시 배치 불가
+  if (_state.currentTool === 'text' && !_state.pendingTextDataUrl) return;
 
   _state.placing = true;
   updatePreview();
@@ -1364,6 +1673,8 @@ function onOverlayMouseDown(e) {
 
   if (_state.currentTool === 'image' && _state.pendingImage) {
     _preview.innerHTML = '<img src="' + _state.pendingImage.dataUrl + '" alt="">';
+  } else if (_state.currentTool === 'text' && _state.pendingTextDataUrl) {
+    _preview.innerHTML = '<img src="' + _state.pendingTextDataUrl + '" alt="">';
   }
 }
 
@@ -1385,17 +1696,22 @@ function onOverlayMouseMove(e) {
     return;
   }
   // 스탬프 미리보기: 드래그 중이 아닐 때 이전 크기로 커서 위치에 표시
-  if (_state.lastStampSize && _state.currentTool === 'image' && _state.pendingImage && _state.mode === 'edit') {
-    var sw = _state.lastStampSize.w;
-    var sh = _state.lastStampSize.h;
-    _preview.style.left = (e.clientX - sw / 2) + 'px';
-    _preview.style.top = (e.clientY - sh / 2) + 'px';
-    _preview.style.width = sw + 'px';
-    _preview.style.height = sh + 'px';
-    _preview.style.transform = '';
-    if (!_preview.classList.contains('bwbr-placement-preview--visible')) {
-      _preview.classList.add('bwbr-placement-preview--visible');
-      _preview.innerHTML = '<img src="' + _state.pendingImage.dataUrl + '" alt="">';
+  if (_state.lastStampSize && _state.mode === 'edit') {
+    var hasContent = (_state.currentTool === 'image' && _state.pendingImage) ||
+                     (_state.currentTool === 'text' && _state.pendingTextDataUrl);
+    if (hasContent) {
+      var sw = _state.lastStampSize.w;
+      var sh = _state.lastStampSize.h;
+      _preview.style.left = (e.clientX - sw / 2) + 'px';
+      _preview.style.top = (e.clientY - sh / 2) + 'px';
+      _preview.style.width = sw + 'px';
+      _preview.style.height = sh + 'px';
+      _preview.style.transform = '';
+      if (!_preview.classList.contains('bwbr-placement-preview--visible')) {
+        var previewSrc = _state.currentTool === 'image' ? _state.pendingImage.dataUrl : _state.pendingTextDataUrl;
+        _preview.classList.add('bwbr-placement-preview--visible');
+        _preview.innerHTML = '<img src="' + previewSrc + '" alt="">';
+      }
     }
   }
 }
@@ -1414,7 +1730,9 @@ function onOverlayMouseUp(e) {
   var rect = getPreviewRect();
   if (rect.w < 5 && rect.h < 5) {
     // 클릭(드래그 없음) → 스탬프 모드: 이전 크기로 배치
-    if (_state.lastStampSize && _state.currentTool === 'image' && _state.pendingImage) {
+    var hasStampContent = (_state.currentTool === 'image' && _state.pendingImage) ||
+                          (_state.currentTool === 'text' && _state.pendingTextDataUrl);
+    if (_state.lastStampSize && hasStampContent) {
       var sw = _state.lastStampSize.w;
       var sh = _state.lastStampSize.h;
       var stampRect = {
@@ -1426,9 +1744,10 @@ function onOverlayMouseUp(e) {
       deselectStaged();
       stageObject(stampRect);
       // 스탬프 미리보기 유지 (다음 클릭을 위해)
+      var previewSrc = _state.currentTool === 'image' ? _state.pendingImage.dataUrl : _state.pendingTextDataUrl;
       _preview.classList.add('bwbr-placement-preview--visible');
       if (!_preview.querySelector('img')) {
-        _preview.innerHTML = '<img src="' + _state.pendingImage.dataUrl + '" alt="">';
+        _preview.innerHTML = '<img src="' + previewSrc + '" alt="">';
       }
     }
     return;
@@ -1475,7 +1794,8 @@ function stageObject(screenRect) {
     id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
     mapCoords: mapCoords,
     angle: 0,
-    imageDataUrl: _state.pendingImage ? _state.pendingImage.dataUrl : null,
+    imageDataUrl: _state.pendingImage ? _state.pendingImage.dataUrl :
+                  _state.pendingTextDataUrl ? _state.pendingTextDataUrl : null,
     settings: {
       type: _state.panelSettings.type,
       z: _state.panelSettings.z,
