@@ -714,11 +714,18 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 
 /* ── 텍스트 WYSIWYG 편집기 ───────────────────────── */
 
-.bwbr-text-editor {
-  position: fixed;
-  background: transparent;
+.bwbr-text-editor-wrap {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
   border: 2px dashed #42a5f5;
   border-radius: 2px;
+  z-index: 107;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.bwbr-text-editor {
   padding: 8px;
   font-size: 16px;
   font-family: sans-serif;
@@ -727,12 +734,12 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   word-break: break-all;
   overflow-wrap: break-word;
   outline: none;
-  z-index: 107;
   box-sizing: border-box;
-  overflow-y: auto;
   min-height: 32px;
   cursor: text;
   text-shadow: 0 1px 3px rgba(0,0,0,0.7);
+  width: 100%;
+  background: transparent;
 }
 
 .bwbr-text-toolbar {
@@ -770,6 +777,12 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 .bwbr-text-toolbar-btn.bwbr-tb-active {
   background: #e0e7ff;
   color: #1a56db;
+}
+
+.bwbr-text-toolbar [title]::before,
+.bwbr-text-toolbar [title]::after {
+  display: none !important;
+  content: none !important;
 }
 
 .bwbr-text-toolbar-sep {
@@ -1578,39 +1591,51 @@ function createTextSettingsMenu() {
 
 // ── 텍스트 편집기 (Phase 2: area-first WYSIWYG) ────────────────
 
+var _textEditorWrap = null; // 외부 래퍼 (zoom container 내 position:absolute)
 var _textEditor = null;    // contentEditable div
 var _textToolbar = null;   // 서식 바
-var _textEditorRect = null; // { x, y, w, h } screen px
 var _textMapCoords = null; // 편집 시작 시점의 맵 좌표 (패닝/줌 드리프트 방지)
 var _textBgColor = '';     // 텍스트 박스 배경색 ('' = 투명)
 var _textAlign = 'left';   // 수평 정렬: left / center / right
 var _textVAlign = 'top';   // 수직 정렬: top / middle / bottom
+var _reopenedObj = null;   // 재편집 시 원본 객체 (ESC로 복원용)
+var _tbPosRaf = null;      // 툴바 위치 추적 rAF
 
 function startTextEditing(rect) {
   if (_textEditor) cleanupTextEditor();
 
-  _textEditorRect = rect;
-  // 맵 좌표 즉시 저장 (패닝/줌 후에도 정확한 위치)
   _textMapCoords = screenToMapCoords(rect);
+  if (!_textMapCoords) return;
   _textBgColor = '';
   _state.textEditing = true;
-  document.documentElement.setAttribute('data-bwbr-text-editing', '1');
 
-  // contentEditable 생성
+  var zoomEl = getZoomContainer();
+  if (!zoomEl) return;
+  if (getComputedStyle(zoomEl).position === 'static') zoomEl.style.position = 'relative';
+
+  var mc = _textMapCoords;
+
+  // 래퍼 (zoom container 내 absolute — 패닝/줌 자동 추종)
+  _textEditorWrap = document.createElement('div');
+  _textEditorWrap.className = 'bwbr-text-editor-wrap';
+  _textEditorWrap.style.left = (mc.x * CELL_PX) + 'px';
+  _textEditorWrap.style.top = (mc.y * CELL_PX) + 'px';
+  _textEditorWrap.style.width = (mc.width * CELL_PX) + 'px';
+  _textEditorWrap.style.minHeight = (mc.height * CELL_PX) + 'px';
+  _applyVAlignCSS();
+  zoomEl.appendChild(_textEditorWrap);
+
+  // contentEditable (inner)
   _textEditor = document.createElement('div');
   _textEditor.className = 'bwbr-text-editor';
   _textEditor.contentEditable = 'true';
-  _textEditor.style.left = rect.x + 'px';
-  _textEditor.style.top = rect.y + 'px';
-  _textEditor.style.width = rect.w + 'px';
-  _textEditor.style.minHeight = rect.h + 'px';
   _textEditor.style.textAlign = _textAlign;
-  document.body.appendChild(_textEditor);
+  _textEditorWrap.appendChild(_textEditor);
 
-  // 서식 바 생성
+  // 서식 바 (screen 좌표 — body에 부착)
   _textToolbar = createTextToolbar();
   document.body.appendChild(_textToolbar);
-  positionTextToolbar();
+  _startToolbarPosTracker();
 
   // 포커스
   _textEditor.focus();
@@ -1622,6 +1647,32 @@ function startTextEditing(rect) {
   setTimeout(function () {
     document.addEventListener('mousedown', _onTextClickOutside, true);
   }, 50);
+}
+
+function _applyVAlignCSS() {
+  if (!_textEditorWrap) return;
+  _textEditorWrap.style.justifyContent =
+    _textVAlign === 'middle' ? 'center' :
+    _textVAlign === 'bottom' ? 'flex-end' : 'flex-start';
+}
+
+function _startToolbarPosTracker() {
+  _stopToolbarPosTracker();
+  function tick() {
+    if (!_textEditorWrap || !_textToolbar) return;
+    var r = _textEditorWrap.getBoundingClientRect();
+    var barH = 40;
+    var y = r.top - barH - 4;
+    if (y < 4) y = r.bottom + 4;
+    _textToolbar.style.left = r.left + 'px';
+    _textToolbar.style.top = y + 'px';
+    _tbPosRaf = requestAnimationFrame(tick);
+  }
+  _tbPosRaf = requestAnimationFrame(tick);
+}
+
+function _stopToolbarPosTracker() {
+  if (_tbPosRaf) { cancelAnimationFrame(_tbPosRaf); _tbPosRaf = null; }
 }
 
 function createTextToolbar() {
@@ -1751,6 +1802,7 @@ function createTextToolbar() {
     btn.addEventListener('mousedown', function(e) { e.preventDefault(); });
     btn.addEventListener('click', function() {
       _textVAlign = vb.val;
+      _applyVAlignCSS();
       bar.querySelectorAll('[data-align-v]').forEach(function(b) {
         b.classList.toggle('bwbr-tb-active', b.dataset.alignV === vb.val);
       });
@@ -1770,12 +1822,12 @@ function createTextToolbar() {
   boxBgInput.value = '#ffffff';
   boxBgInput.addEventListener('input', function () {
     _textBgColor = boxBgInput.value;
-    if (_textEditor) _textEditor.style.background = boxBgInput.value;
+    if (_textEditorWrap) _textEditorWrap.style.background = boxBgInput.value;
   });
   boxBgInput.addEventListener('contextmenu', function (ev) {
     ev.preventDefault();
     _textBgColor = '';
-    if (_textEditor) _textEditor.style.background = 'transparent';
+    if (_textEditorWrap) _textEditorWrap.style.background = 'transparent';
   });
   var boxBgLabel = document.createElement('span');
   boxBgLabel.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14z"/></svg>';
@@ -1859,20 +1911,14 @@ function _applyFontSize(px) {
 }
 
 function positionTextToolbar() {
-  if (!_textToolbar || !_textEditorRect) return;
-  var barH = 40;
-  var y = _textEditorRect.y - barH - 4;
-  if (y < 4) y = _textEditorRect.y + _textEditorRect.h + 4;
-  _textToolbar.style.left = _textEditorRect.x + 'px';
-  _textToolbar.style.top = y + 'px';
+  // 이제 _startToolbarPosTracker()로 rAF 기반 추적 (패닝/줌 추종)
 }
 
 function _onTextClickOutside(e) {
   if (!_textEditor) return;
-  if (_textEditor.contains(e.target)) return;
+  if (e.button !== 0) return; // 좌클릭만 외부 클릭으로 인식
+  if (_textEditorWrap && _textEditorWrap.contains(e.target)) return;
   if (_textToolbar && _textToolbar.contains(e.target)) return;
-  // 중클릭 패닝 중에는 편집기 닫지 않음
-  if (document.documentElement.getAttribute('data-bwbr-midpan') === '1') return;
   finishTextEditing(true);
 }
 
@@ -1883,9 +1929,9 @@ function finishTextEditing(confirm) {
     var mapCoords = _textMapCoords;
 
     // 에디터 높이가 입력으로 변경됐을 수 있으므로 현재 높이로 mapCoords 갱신
+    // 에디터는 zoom container 내부 → scrollHeight가 이미 언스케일드 px
     var actualH = _textEditor.scrollHeight;
-    var scale = getZoomScale();
-    mapCoords.height = Math.max(1, Math.round(actualH / (scale * CELL_PX)));
+    mapCoords.height = Math.max(1, Math.round(actualH / CELL_PX));
 
     var dataUrl = renderTextEditorToCanvas();
     if (dataUrl) {
@@ -1912,28 +1958,36 @@ function finishTextEditing(confirm) {
       pushUndo({ type: 'stage', ids: [obj.id] });
       updateConfirmBar();
     }
+    _reopenedObj = null;
     cleanupTextEditor();
   } else {
+    // 취소: 재편집 중이면 원본 복원
+    if (_reopenedObj) {
+      _state.stagedObjects.push(_reopenedObj);
+      renderStagedItem(_reopenedObj);
+      updateConfirmBar();
+      _reopenedObj = null;
+    }
     cleanupTextEditor();
   }
 }
 
 function cleanupTextEditor() {
-  if (_textEditor) { _textEditor.remove(); _textEditor = null; }
+  _stopToolbarPosTracker();
+  if (_textEditorWrap) { _textEditorWrap.remove(); _textEditorWrap = null; }
+  _textEditor = null;
   if (_textToolbar) { _textToolbar.remove(); _textToolbar = null; }
-  _textEditorRect = null;
   _textMapCoords = null;
   _textBgColor = '';
   _textAlign = 'left';
   _textVAlign = 'top';
   _state.textEditing = false;
-  document.documentElement.removeAttribute('data-bwbr-text-editing');
   // 오버레이 복원
   if (_overlay) _overlay.style.pointerEvents = '';
 }
 
 function renderTextEditorToCanvas() {
-  if (!_textEditor || !_textEditorRect) return null;
+  if (!_textEditor || !_textMapCoords) return null;
 
   var PAD = 8;
   var w = _textEditor.clientWidth;
@@ -2493,6 +2547,9 @@ function reopenTextEditor(objId) {
   var obj = _state.stagedObjects[idx];
   if (!obj.textHtml) return;
 
+  // 원본 보관 (ESC 취소 시 복원용)
+  _reopenedObj = cloneObj(obj);
+
   // Remove from staged
   _state.stagedObjects.splice(idx, 1);
   var selIdx = _state.selectedStagedIds.indexOf(objId);
@@ -2502,7 +2559,7 @@ function reopenTextEditor(objId) {
   renumberStagedBadges();
   updateConfirmBar();
 
-  // mapCoords → screen rect
+  // mapCoords → screen rect (startTextEditing에서 screenToMapCoords 역변환)
   var origin = getMapOriginOnScreen();
   if (!origin) return;
   var scale = getZoomScale();
@@ -2519,12 +2576,12 @@ function reopenTextEditor(objId) {
 
   startTextEditing(rect);
 
-  // Restore content
+  // Restore content + bgColor
   if (_textEditor) {
     _textEditor.innerHTML = obj.textHtml;
     if (obj.textBgColor) {
       _textBgColor = obj.textBgColor;
-      _textEditor.style.background = obj.textBgColor;
+      if (_textEditorWrap) _textEditorWrap.style.background = obj.textBgColor;
     }
   }
 }

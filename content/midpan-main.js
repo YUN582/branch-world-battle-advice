@@ -8,8 +8,6 @@
 
   document.addEventListener('pointerdown', function(e) {
     if (e.button !== 1 || !e.isTrusted) return;
-    // 텍스트 편집 중 패닝 차단
-    if (document.documentElement.getAttribute('data-bwbr-text-editing') === '1') return;
     _midPanning = true;
     document.documentElement.setAttribute('data-bwbr-midpan', '1');
 
