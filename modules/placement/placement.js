@@ -852,11 +852,8 @@ function togglePlacementMode() {
 function activateMode(mode) {
   if (mode !== 'edit' && mode !== 'select') return;
 
-  // 같은 모드 토글 → select로 돌아감
-  if (_state.mode === mode) {
-    if (mode === 'edit') { activateMode('select'); }
-    return;
-  }
+  // 같은 모드 → 무시
+  if (_state.mode === mode) return;
 
   // 이전 모드 정리
   Object.keys(_modeButtons).forEach(function(k) {
@@ -945,10 +942,10 @@ function createToolbar() {
   _settingsPanel = createSettingsPanel();
   _toolbar.appendChild(_settingsPanel);
 
-  // 모드 버튼 (아래→위: 편집, 선택)
+  // 모드 버튼 (column-reverse: 배열 첫번째=맨 아래, 마지막=맨 위)
   var modes = [
-    { id: 'edit', label: '편집 (A)', icon: MODE_ICONS.edit },
-    { id: 'select', label: '선택 (V)', icon: MODE_ICONS.select }
+    { id: 'select', label: '선택 (V)', icon: MODE_ICONS.select },
+    { id: 'edit', label: '편집 (A)', icon: MODE_ICONS.edit }
   ];
 
   modes.forEach(function (mode) {
@@ -1816,6 +1813,31 @@ function setupSelectModeHandlers() {
     var dy = e.clientY - _selectDrag.start.screenY;
     if (!_selectDrag.dragging && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
       _selectDrag.dragging = true;
+
+      // Alt+드래그 복사: 드래그 시작 시 복사본 생성
+      if (_selectDrag.start.altCopy && !_selectDrag.start.copied) {
+        _selectDrag.start.copied = true;
+        var oldIds = _state.selectedStagedIds.slice();
+        var newIds = [];
+        var newOrigins = {};
+        oldIds.forEach(function(id) {
+          var orig = _state.stagedObjects.find(function(o) { return o.id === id; });
+          if (!orig) return;
+          var copy = JSON.parse(JSON.stringify(orig));
+          copy.id = 'staged_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+          _state.stagedObjects.push(copy);
+          renderStagedObject(copy);
+          newIds.push(copy.id);
+          newOrigins[copy.id] = { x: copy.mapCoords.x, y: copy.mapCoords.y };
+        });
+        // undo: 복사본 추가
+        pushUndo({ type: 'add', ids: newIds });
+        // 원본 선택 해제, 복사본 선택
+        deselectStaged();
+        newIds.forEach(function(id) { selectStagedItem(id, true); });
+        _selectDrag.start.origins = newOrigins;
+      }
+
       _state.selectedStagedIds.forEach(function(id) {
         var el = document.querySelector('[data-staged-id="' + id + '"]');
         if (el) el.classList.add('bwbr-staged-item--dragging');
@@ -1887,6 +1909,7 @@ function setupSelectModeHandlers() {
       _altBoxSelect.rectEl = rect;
       if (!e.altKey) deselectStaged();
       e.preventDefault();
+      e.stopPropagation();
       return;
     }
     deselectStaged();
@@ -2349,6 +2372,22 @@ function setupKeyboard() {
   document.addEventListener('keydown', function (e) {
     if (!_state.active) return;
 
+    // Ctrl+Z/C/V: capture 단계에서 네이티브 차단
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
+      if (e.key === 'z' || e.key === 'Z') {
+        e.preventDefault(); e.stopImmediatePropagation();
+        undo(); return;
+      }
+      if (e.key === 'c' || e.key === 'C') {
+        e.preventDefault(); e.stopImmediatePropagation();
+        copySelected(); return;
+      }
+      if (e.key === 'v' || e.key === 'V') {
+        e.preventDefault(); e.stopImmediatePropagation();
+        pasteClipboard(); return;
+      }
+    }
+
     // Escape: 단계별 취소 (입력 중에도 동작)
     if (e.key === 'Escape') {
       if (_state.placing) {
@@ -2366,30 +2405,6 @@ function setupKeyboard() {
       } else {
         togglePlacementMode();
       }
-      return;
-    }
-
-    // Ctrl+Z: 실행 취소
-    if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && !e.shiftKey) {
-      e.preventDefault();
-      e.stopPropagation();
-      undo();
-      return;
-    }
-
-    // Ctrl+C: 복사
-    if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
-      e.preventDefault();
-      e.stopPropagation();
-      copySelected();
-      return;
-    }
-
-    // Ctrl+V: 붙여넣기
-    if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V')) {
-      e.preventDefault();
-      e.stopPropagation();
-      pasteClipboard();
       return;
     }
 
@@ -2428,7 +2443,7 @@ function setupKeyboard() {
       e.preventDefault();
       removeSelectedStaged();
     }
-  });
+  }, true);
 }
 
 var _angleTimeout = null;
@@ -2449,57 +2464,58 @@ function showAngleIndicator(angle) {
 // ── 미들클릭 패닝 (코어 기능 — 배치 모드 여부 무관) ─────────────
 
 function setupMiddleClickPanning() {
-  var _pan = { active: false, startX: 0, startY: 0, origLeft: 0, origTop: 0, target: null };
+  var _pan = { active: false, target: null };
 
+  // 미들클릭 → 합성 좌클릭으로 변환하여 ccfolia 네이티브 팬 활용
   document.addEventListener('pointerdown', function(e) {
-    if (e.button !== 1) return; // 미들 클릭만
+    if (e.button !== 1) return;
     e.preventDefault();
+    e.stopPropagation();
 
-    // ccfolia 뷰 컨테이너: .movable의 부모
-    var movable = document.querySelector('.movable');
-    if (!movable || !movable.parentElement) return;
-    var container = movable.parentElement;
+    // 오버레이/UI 아래의 실제 요소를 찾기
+    var elems = [_overlay, _alignBar, _confirmBar].filter(Boolean);
+    elems.forEach(function(el) { el.style.pointerEvents = 'none'; });
+    var realTarget = document.elementFromPoint(e.clientX, e.clientY);
+    elems.forEach(function(el) { el.style.pointerEvents = ''; });
 
-    // 현재 transform 값 추출
-    var style = getComputedStyle(container);
-    var matrix = style.transform;
-    var tx = 0, ty = 0;
-    if (matrix && matrix !== 'none') {
-      var vals = matrix.match(/matrix\(([^)]+)\)/);
-      if (vals) {
-        var parts = vals[1].split(',').map(function(s) { return parseFloat(s.trim()); });
-        tx = parts[4] || 0;
-        ty = parts[5] || 0;
-      }
-    }
-
+    if (!realTarget) return;
     _pan.active = true;
-    _pan.startX = e.clientX;
-    _pan.startY = e.clientY;
-    _pan.origLeft = tx;
-    _pan.origTop = ty;
-    _pan.target = container;
+    _pan.target = realTarget;
+
+    // 합성 좌클릭 pointerdown 전달
+    realTarget.dispatchEvent(new PointerEvent('pointerdown', {
+      button: 0, buttons: 1,
+      clientX: e.clientX, clientY: e.clientY,
+      screenX: e.screenX, screenY: e.screenY,
+      pointerId: e.pointerId || 1,
+      pointerType: e.pointerType || 'mouse',
+      bubbles: true, cancelable: true, composed: true
+    }));
     document.body.style.cursor = 'grabbing';
-  });
+  }, true);
 
   document.addEventListener('pointermove', function(e) {
     if (!_pan.active || !_pan.target) return;
-    var dx = e.clientX - _pan.startX;
-    var dy = e.clientY - _pan.startY;
-    // 기존 transform에서 scale 유지, translate만 변경
-    var style = getComputedStyle(_pan.target);
-    var matrix = style.transform;
-    var scale = 1;
-    if (matrix && matrix !== 'none') {
-      var m = matrix.match(/matrix\(([^,]+)/);
-      if (m) scale = parseFloat(m[1]);
-    }
-    _pan.target.style.transform = 'matrix(' + scale + ',0,0,' + scale + ',' +
-      (_pan.origLeft + dx) + ',' + (_pan.origTop + dy) + ')';
+    _pan.target.dispatchEvent(new PointerEvent('pointermove', {
+      button: 0, buttons: 1,
+      clientX: e.clientX, clientY: e.clientY,
+      screenX: e.screenX, screenY: e.screenY,
+      pointerId: e.pointerId || 1,
+      pointerType: e.pointerType || 'mouse',
+      bubbles: true, cancelable: true, composed: true
+    }));
   });
 
   document.addEventListener('pointerup', function(e) {
     if (e.button !== 1 || !_pan.active) return;
+    _pan.target.dispatchEvent(new PointerEvent('pointerup', {
+      button: 0, buttons: 0,
+      clientX: e.clientX, clientY: e.clientY,
+      screenX: e.screenX, screenY: e.screenY,
+      pointerId: e.pointerId || 1,
+      pointerType: e.pointerType || 'mouse',
+      bubbles: true, cancelable: true, composed: true
+    }));
     _pan.active = false;
     _pan.target = null;
     document.body.style.cursor = '';
