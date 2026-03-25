@@ -3232,6 +3232,12 @@ function setupSelectModeHandlers() {
         e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar') ||
         e.target.closest('.bwbr-placement-overlay')) return; // 오버레이 클릭은 통과 (배치 동작)
 
+    // 리사이즈 핸들 클릭: 핸들 자체 mousedown이 처리하도록 통과
+    if (e.target.closest('.bwbr-resize-handle')) {
+      e.stopImmediatePropagation();
+      return;
+    }
+
     // 스테이징 아이템 클릭: 기존 핸들러 대신 여기서 직접 호출
     var stagedEl = e.target.closest('.bwbr-staged-item');
     if (stagedEl) {
