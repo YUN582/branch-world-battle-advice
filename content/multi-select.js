@@ -820,6 +820,8 @@
   // ============================================================
 
   function onPointerDown(e) {
+    // 배치 모드 활성 시 선택 기능 양보
+    if (window.BWBR_PlacementActive) return;
     // 컨텍스트 메뉴가 열려있으면 backdrop 이 닫기를 처리하므로 무시
     if (_ctxMenuEl && _ctxMenuEl.contains(e.target)) return;
 

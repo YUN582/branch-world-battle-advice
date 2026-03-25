@@ -745,6 +745,7 @@ function updatePlacementCursor() {
 
 function togglePlacementMode() {
   _state.active = !_state.active;
+  window.BWBR_PlacementActive = _state.active;
 
   if (window.BWBR_FabButtons) {
     window.BWBR_FabButtons.setActive('placement', _state.active);
