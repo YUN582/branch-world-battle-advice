@@ -476,7 +476,8 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 
 .bwbr-staged-item {
   position: absolute;
-  border: 2px dashed rgba(66, 165, 245, 0.6);
+  outline: 2px dashed rgba(66, 165, 245, 0.6);
+  outline-offset: -2px;
   background: rgba(66, 165, 245, 0.08);
   box-sizing: border-box;
   pointer-events: none;
@@ -484,10 +485,12 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 }
 
 .bwbr-staged-item img {
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
   opacity: 0.65;
+  pointer-events: none;
 }
 
 .bwbr-staged-badge {
@@ -505,11 +508,12 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   align-items: center;
   justify-content: center;
   box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  z-index: 100001;
+  pointer-events: none;
 }
 
 .bwbr-staged-item--selected {
-  outline: none;
-  border-color: rgba(255,152,0,0.85);
+  outline-color: rgba(255,152,0,0.85);
 }
 
 .bwbr-staged-item--selected .bwbr-staged-badge {
@@ -2925,16 +2929,21 @@ function _startResize(objId, dir, e) {
 
   function onUp() {
     if (_resizeDrag) {
-      // undo 기록
-      pushUndo({
-        type: 'resize',
-        id: objId,
-        prev: { x: _resizeDrag.origX, y: _resizeDrag.origY, width: _resizeDrag.origW, height: _resizeDrag.origH }
-      });
+      // 실제 변경이 있을 때만 undo 기록
+      var mc = obj.mapCoords;
+      if (mc.x !== _resizeDrag.origX || mc.y !== _resizeDrag.origY ||
+          mc.width !== _resizeDrag.origW || mc.height !== _resizeDrag.origH) {
+        pushUndo({
+          type: 'resize',
+          id: objId,
+          prev: { x: _resizeDrag.origX, y: _resizeDrag.origY, width: _resizeDrag.origW, height: _resizeDrag.origH }
+        });
+      }
     }
     _resizeDrag = null;
     document.removeEventListener('mousemove', onMove, true);
     document.removeEventListener('mouseup', onUp, true);
+    _updateResizeHandles();
   }
 
   document.addEventListener('mousemove', onMove, true);
