@@ -486,7 +486,7 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 .bwbr-staged-item img {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
   opacity: 0.65;
 }
 
@@ -765,6 +765,11 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 
 .bwbr-text-toolbar-btn:hover {
   background: #f0f0f0;
+}
+
+.bwbr-text-toolbar-btn.bwbr-tb-active {
+  background: #e0e7ff;
+  color: #1a56db;
 }
 
 .bwbr-text-toolbar-sep {
@@ -1578,6 +1583,8 @@ var _textToolbar = null;   // 서식 바
 var _textEditorRect = null; // { x, y, w, h } screen px
 var _textMapCoords = null; // 편집 시작 시점의 맵 좌표 (패닝/줌 드리프트 방지)
 var _textBgColor = '';     // 텍스트 박스 배경색 ('' = 투명)
+var _textAlign = 'left';   // 수평 정렬: left / center / right
+var _textVAlign = 'top';   // 수직 정렬: top / middle / bottom
 
 function startTextEditing(rect) {
   if (_textEditor) cleanupTextEditor();
@@ -1587,6 +1594,7 @@ function startTextEditing(rect) {
   _textMapCoords = screenToMapCoords(rect);
   _textBgColor = '';
   _state.textEditing = true;
+  document.documentElement.setAttribute('data-bwbr-text-editing', '1');
 
   // contentEditable 생성
   _textEditor = document.createElement('div');
@@ -1596,6 +1604,7 @@ function startTextEditing(rect) {
   _textEditor.style.top = rect.y + 'px';
   _textEditor.style.width = rect.w + 'px';
   _textEditor.style.minHeight = rect.h + 'px';
+  _textEditor.style.textAlign = _textAlign;
   document.body.appendChild(_textEditor);
 
   // 서식 바 생성
@@ -1695,6 +1704,60 @@ function createTextToolbar() {
     _textEditor.focus();
   });
   bar.appendChild(sizeSelect);
+
+  bar.appendChild(_makeToolbarSep());
+
+  // 수평 정렬 (좌/가운데/우)
+  var alignBtns = [
+    { val: 'left', icon: '\u2261', tip: '왼쪽 정렬' },
+    { val: 'center', icon: '\u2263', tip: '가운데 정렬' },
+    { val: 'right', icon: '\u2262', tip: '오른쪽 정렬' }
+  ];
+  alignBtns.forEach(function(ab) {
+    var btn = document.createElement('button');
+    btn.className = 'bwbr-text-toolbar-btn' + (_textAlign === ab.val ? ' bwbr-tb-active' : '');
+    btn.dataset.alignH = ab.val;
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">' +
+      (ab.val === 'left' ? '<path d="M3 3h18v2H3zm0 4h12v2H3zm0 4h18v2H3zm0 4h12v2H3zm0 4h18v2H3z"/>' :
+       ab.val === 'center' ? '<path d="M3 3h18v2H3zm3 4h12v2H6zm-3 4h18v2H3zm3 4h12v2H6zm-3 4h18v2H3z"/>' :
+       '<path d="M3 3h18v2H3zm6 4h12v2H9zm-6 4h18v2H3zm6 4h12v2H9zm-6 4h18v2H3z"/>') +
+      '</svg>';
+    btn.title = ab.tip;
+    btn.addEventListener('mousedown', function(e) { e.preventDefault(); });
+    btn.addEventListener('click', function() {
+      _textAlign = ab.val;
+      if (_textEditor) _textEditor.style.textAlign = ab.val;
+      bar.querySelectorAll('[data-align-h]').forEach(function(b) {
+        b.classList.toggle('bwbr-tb-active', b.dataset.alignH === ab.val);
+      });
+      _textEditor.focus();
+    });
+    bar.appendChild(btn);
+  });
+
+  // 수직 정렬 (상/중/하)
+  var vAlignBtns = [
+    { val: 'top', tip: '상단 정렬', icon: 'T\u2191' },
+    { val: 'middle', tip: '중간 정렬', icon: 'M' },
+    { val: 'bottom', tip: '하단 정렬', icon: 'B\u2193' }
+  ];
+  vAlignBtns.forEach(function(vb) {
+    var btn = document.createElement('button');
+    btn.className = 'bwbr-text-toolbar-btn' + (_textVAlign === vb.val ? ' bwbr-tb-active' : '');
+    btn.dataset.alignV = vb.val;
+    btn.textContent = vb.icon;
+    btn.title = vb.tip;
+    btn.style.fontSize = '11px';
+    btn.addEventListener('mousedown', function(e) { e.preventDefault(); });
+    btn.addEventListener('click', function() {
+      _textVAlign = vb.val;
+      bar.querySelectorAll('[data-align-v]').forEach(function(b) {
+        b.classList.toggle('bwbr-tb-active', b.dataset.alignV === vb.val);
+      });
+      _textEditor.focus();
+    });
+    bar.appendChild(btn);
+  });
 
   bar.appendChild(_makeToolbarSep());
 
@@ -1832,6 +1895,10 @@ function finishTextEditing(confirm) {
         mapCoords: mapCoords,
         angle: 0,
         imageDataUrl: dataUrl,
+        textHtml: _textEditor ? _textEditor.innerHTML : '',
+        textBgColor: _textBgColor,
+        textAlign: _textAlign,
+        textVAlign: _textVAlign,
         settings: {
           type: _state.panelSettings.type,
           z: _state.panelSettings.z,
@@ -1857,7 +1924,10 @@ function cleanupTextEditor() {
   _textEditorRect = null;
   _textMapCoords = null;
   _textBgColor = '';
+  _textAlign = 'left';
+  _textVAlign = 'top';
   _state.textEditing = false;
+  document.documentElement.removeAttribute('data-bwbr-text-editing');
   // 오버레이 복원
   if (_overlay) _overlay.style.pointerEvents = '';
 }
@@ -1866,31 +1936,27 @@ function renderTextEditorToCanvas() {
   if (!_textEditor || !_textEditorRect) return null;
 
   var PAD = 8;
-  // clientWidth/scrollHeight = 테두리 제외, 패딩 포함 → 실제 텍스트 렌더 영역과 동일
   var w = _textEditor.clientWidth;
   var h = _textEditor.scrollHeight;
   if (w < 1 || h < 1) return null;
 
-  var scale = 2;
+  var scaleF = 2;
   var canvas = document.createElement('canvas');
-  canvas.width = w * scale;
-  canvas.height = h * scale;
+  canvas.width = w * scaleF;
+  canvas.height = h * scaleF;
   var ctx = canvas.getContext('2d');
-  ctx.scale(scale, scale);
+  ctx.scale(scaleF, scaleF);
 
-  // 텍스트 박스 배경색
   if (_textBgColor) {
     ctx.fillStyle = _textBgColor;
     ctx.fillRect(0, 0, w, h);
   }
 
-  // 에디터 computedStyle에서 기본값 추출
   var edCS = getComputedStyle(_textEditor);
   var defaultFS = parseInt(edCS.fontSize) || 16;
   var defaultColor = edCS.color || '#fff';
   var defaultFamily = edCS.fontFamily || 'sans-serif';
 
-  // DOM 트리 탐색 → 런 추출 → Canvas 렌더
   var runs = [];
   _extractRuns(_textEditor, {
     fontSize: defaultFS, fontWeight: 'normal', fontStyle: 'normal',
@@ -1898,15 +1964,18 @@ function renderTextEditorToCanvas() {
   }, runs);
 
   var maxW = w - PAD * 2;
-  var x = PAD, y = PAD;
   var baseLH = 1.5;
+
+  // ── 1차 패스: 시각적 라인 구축 ──
+  var lines = [{ chars: [], height: defaultFS * baseLH }];
+  var xPos = 0;
 
   for (var ri = 0; ri < runs.length; ri++) {
     var run = runs[ri];
 
     if (run.newline) {
-      x = PAD;
-      y += (run.fontSize || defaultFS) * baseLH;
+      lines.push({ chars: [], height: (run.fontSize || defaultFS) * baseLH });
+      xPos = 0;
       continue;
     }
 
@@ -1917,51 +1986,88 @@ function renderTextEditorToCanvas() {
                   fs + 'px ' + defaultFamily;
     ctx.font = fontStr;
 
-    var words = run.text;
-    for (var ci = 0; ci < words.length; ci++) {
-      var ch = words[ci];
+    var curLine = lines[lines.length - 1];
+    if (lh > curLine.height) curLine.height = lh;
+
+    var text = run.text;
+    for (var ci = 0; ci < text.length; ci++) {
+      var ch = text[ci];
       var cw = ctx.measureText(ch).width;
 
-      // 줄바꿈
-      if (x + cw > PAD + maxW && x > PAD) {
-        x = PAD;
-        y += lh;
+      if (xPos + cw > maxW && xPos > 0) {
+        lines.push({ chars: [], height: lh });
+        xPos = 0;
       }
 
-      // 배경색
-      if (run.bgColor) {
-        ctx.fillStyle = run.bgColor;
-        ctx.fillRect(x, y, cw, lh);
-      }
-
-      // 글자
-      ctx.fillStyle = run.color || defaultColor;
-      ctx.font = fontStr;
-      ctx.textBaseline = 'top';
-      ctx.fillText(ch, x, y + (lh - fs) / 2);
-
-      // 밑줄
-      if (run.underline) {
-        ctx.strokeStyle = run.color || defaultColor;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(x, y + lh - 2);
-        ctx.lineTo(x + cw, y + lh - 2);
-        ctx.stroke();
-      }
-
-      // 취소선
-      if (run.strikethrough) {
-        ctx.strokeStyle = run.color || defaultColor;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(x, y + lh / 2);
-        ctx.lineTo(x + cw, y + lh / 2);
-        ctx.stroke();
-      }
-
-      x += cw;
+      curLine = lines[lines.length - 1];
+      if (lh > curLine.height) curLine.height = lh;
+      curLine.chars.push({ ch: ch, cw: cw, run: run, fs: fs, fontStr: fontStr, lh: lh });
+      xPos += cw;
     }
+  }
+
+  // ── 2차: 전체 높이 계산 + 수직 정렬 오프셋 ──
+  var totalH = 0;
+  for (var li = 0; li < lines.length; li++) totalH += lines[li].height;
+
+  var yStart = PAD;
+  if (_textVAlign === 'middle') {
+    yStart = Math.max(PAD, (h - totalH) / 2);
+  } else if (_textVAlign === 'bottom') {
+    yStart = Math.max(PAD, h - totalH - PAD);
+  }
+
+  // ── 3차: 렌더 ──
+  var y = yStart;
+  for (var li2 = 0; li2 < lines.length; li2++) {
+    var line = lines[li2];
+    var lineH = line.height;
+
+    var lineW = 0;
+    for (var ci2 = 0; ci2 < line.chars.length; ci2++) lineW += line.chars[ci2].cw;
+
+    var x = PAD;
+    if (_textAlign === 'center') {
+      x = (w - lineW) / 2;
+    } else if (_textAlign === 'right') {
+      x = w - PAD - lineW;
+    }
+
+    for (var ci3 = 0; ci3 < line.chars.length; ci3++) {
+      var c = line.chars[ci3];
+
+      if (c.run.bgColor) {
+        ctx.fillStyle = c.run.bgColor;
+        ctx.fillRect(x, y, c.cw, lineH);
+      }
+
+      ctx.fillStyle = c.run.color || defaultColor;
+      ctx.font = c.fontStr;
+      ctx.textBaseline = 'top';
+      ctx.fillText(c.ch, x, y + (lineH - c.fs) / 2);
+
+      if (c.run.underline) {
+        ctx.strokeStyle = c.run.color || defaultColor;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x, y + lineH - 2);
+        ctx.lineTo(x + c.cw, y + lineH - 2);
+        ctx.stroke();
+      }
+
+      if (c.run.strikethrough) {
+        ctx.strokeStyle = c.run.color || defaultColor;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x, y + lineH / 2);
+        ctx.lineTo(x + c.cw, y + lineH / 2);
+        ctx.stroke();
+      }
+
+      x += c.cw;
+    }
+
+    y += lineH;
   }
 
   try {
@@ -2370,7 +2476,57 @@ function renderStagedItem(obj) {
     onStagedItemMouseDown(obj.id, ev);
   });
 
+  // 더블클릭으로 텍스트 다시 편집 (textHtml이 있는 객체만)
+  if (obj.textHtml) {
+    el.addEventListener('dblclick', function(ev) {
+      ev.stopPropagation();
+      reopenTextEditor(obj.id);
+    });
+  }
+
   zoomEl.appendChild(el);
+}
+
+function reopenTextEditor(objId) {
+  var idx = _state.stagedObjects.findIndex(function(o) { return o.id === objId; });
+  if (idx === -1) return;
+  var obj = _state.stagedObjects[idx];
+  if (!obj.textHtml) return;
+
+  // Remove from staged
+  _state.stagedObjects.splice(idx, 1);
+  var selIdx = _state.selectedStagedIds.indexOf(objId);
+  if (selIdx !== -1) _state.selectedStagedIds.splice(selIdx, 1);
+  var el = document.querySelector('[data-staged-id="' + objId + '"]');
+  if (el) el.remove();
+  renumberStagedBadges();
+  updateConfirmBar();
+
+  // mapCoords → screen rect
+  var origin = getMapOriginOnScreen();
+  if (!origin) return;
+  var scale = getZoomScale();
+  var rect = {
+    x: origin.x + obj.mapCoords.x * CELL_PX * scale,
+    y: origin.y + obj.mapCoords.y * CELL_PX * scale,
+    w: obj.mapCoords.width * CELL_PX * scale,
+    h: obj.mapCoords.height * CELL_PX * scale
+  };
+
+  // Restore alignment state before opening editor
+  _textAlign = obj.textAlign || 'left';
+  _textVAlign = obj.textVAlign || 'top';
+
+  startTextEditing(rect);
+
+  // Restore content
+  if (_textEditor) {
+    _textEditor.innerHTML = obj.textHtml;
+    if (obj.textBgColor) {
+      _textBgColor = obj.textBgColor;
+      _textEditor.style.background = obj.textBgColor;
+    }
+  }
 }
 
 function clearAllStaged() {
@@ -2412,7 +2568,7 @@ function pushUndo(action) {
 }
 
 function cloneObj(obj) {
-  return {
+  var c = {
     id: obj.id,
     mapCoords: { x: obj.mapCoords.x, y: obj.mapCoords.y, width: obj.mapCoords.width, height: obj.mapCoords.height },
     angle: obj.angle || 0,
@@ -2425,6 +2581,11 @@ function cloneObj(obj) {
       freezed: obj.settings.freezed
     }
   };
+  if (obj.textHtml) c.textHtml = obj.textHtml;
+  if (obj.textBgColor) c.textBgColor = obj.textBgColor;
+  if (obj.textAlign) c.textAlign = obj.textAlign;
+  if (obj.textVAlign) c.textVAlign = obj.textVAlign;
+  return c;
 }
 
 function undo() {
