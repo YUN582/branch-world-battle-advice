@@ -16,7 +16,7 @@ var TOOL_ICONS = {
 
 var MODE_ICONS = {
   select: '<path fill="currentColor" d="M21 3L3 10.53V11.51L9.84 14.16L12.48 21H13.46L21 3Z"/>',
-  add: '<path fill="currentColor" d="M19 13H13V19H11V13H5V11H11V5H13V11H19V13Z"/>'
+  edit: '<path fill="currentColor" d="M3 11h8V3H3v8zm2-6h4v4H5V5zm8-2v8h8V3h-8zm6 6h-4V5h4v4zM3 21h8v-8H3v8zm2-6h4v4H5v-4zm13 0h2v3h3v2h-3v3h-2v-3h-3v-2h3v-3z"/>'
 };
 
 var CELL_PX = 24;  // ccfolia 1타일 = 24px
@@ -112,28 +112,30 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 /* ── 패널 설정 영역 ────────────────────────────── */
 
 .bwbr-place-settings {
+  position: absolute;
+  left: calc(100% + 8px);
+  bottom: 0;
   background: #fff;
   border-radius: 12px;
   box-shadow: 0 2px 12px rgba(0,0,0,0.18);
   padding: 12px;
-  width: 220px;
+  width: 240px;
+  max-height: 80vh;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-bottom: 4px;
-  max-height: 0;
-  overflow: hidden;
+  transform: translateX(-20px);
   opacity: 0;
-  transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-              opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1),
-              padding 0.25s;
-  padding: 0 12px;
+  pointer-events: none;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .bwbr-place-settings--open {
-  max-height: 600px;
+  transform: translateX(0);
   opacity: 1;
-  padding: 12px;
+  pointer-events: auto;
 }
 
 .bwbr-place-settings label {
@@ -457,6 +459,25 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   background: #ff9800;
 }
 
+.bwbr-staged-item--interactive {
+  pointer-events: auto;
+  cursor: pointer;
+  transition: box-shadow 0.15s;
+}
+
+.bwbr-staged-item--interactive:hover {
+  box-shadow: 0 0 8px rgba(66, 165, 245, 0.6);
+}
+
+.bwbr-staged-item--interactive.bwbr-staged-item--selected {
+  cursor: move;
+}
+
+.bwbr-staged-item--dragging {
+  opacity: 0.7;
+  box-shadow: 0 0 16px rgba(255, 152, 0, 0.7) !important;
+}
+
 /* ── 확인 바 (하단 중앙) ───────────────────────── */
 
 .bwbr-place-confirm-bar {
@@ -542,8 +563,8 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 
 var _state = {
   active: false,          // 배치 모드 활성
-  mode: null,             // 'select' | 'add' | null
-  currentTool: null,      // 'image' | 'text' | 'draw' (추가 모드 하위 도구)
+  mode: null,             // 'select' | 'edit' | null
+  currentTool: null,      // 'image' | 'text' | 'draw' (편집 모드 하위 도구)
   placing: false,         // 현재 배치 중 (드래그)
 
   // 패널 설정 기본값
@@ -596,6 +617,7 @@ function init() {
   createConfirmBar();
   registerFabButton();
   setupKeyboard();
+  setupSelectModeHandlers();
 }
 
 
@@ -637,29 +659,31 @@ function togglePlacementMode() {
 // ── 모드 전환 (선택 / 추가) ─────────────────────────────────────
 
 function activateMode(mode) {
-  if (_state.mode && _modeButtons[_state.mode]) {
-    _modeButtons[_state.mode].classList.remove('bwbr-place-tool-btn--active');
-  }
-
+  // 같은 모드 → 해제
   if (_state.mode === mode) {
     deactivateMode();
     return;
   }
 
+  // 이전 모드 정리
+  if (_state.mode && _modeButtons[_state.mode]) {
+    _modeButtons[_state.mode].classList.remove('bwbr-place-tool-btn--active');
+  }
+  disableStagedInteraction();
+  _overlay.classList.remove('bwbr-placement-overlay--active');
+  _overlay.classList.remove('bwbr-placement-overlay--no-image');
+
+  // 새 모드
   _state.mode = mode;
   if (_modeButtons[mode]) {
     _modeButtons[mode].classList.add('bwbr-place-tool-btn--active');
   }
 
   if (mode === 'select') {
-    _overlay.classList.add('bwbr-placement-overlay--active');
-    _overlay.classList.add('bwbr-placement-overlay--select');
-    _overlay.classList.remove('bwbr-placement-overlay--no-image');
     _settingsPanel.classList.remove('bwbr-place-settings--open');
-  } else if (mode === 'add') {
-    _overlay.classList.remove('bwbr-placement-overlay--select');
+    enableStagedInteraction();
+  } else if (mode === 'edit') {
     _settingsPanel.classList.add('bwbr-place-settings--open');
-    if (_subToolRow) _subToolRow.style.display = '';
     if (_state.currentTool) {
       _overlay.classList.add('bwbr-placement-overlay--active');
       updateOverlayCursor();
@@ -674,12 +698,12 @@ function deactivateMode() {
   _state.mode = null;
   _state.currentTool = null;
   _state.placing = false;
+  disableStagedInteraction();
   Object.keys(_subToolButtons).forEach(function(k) {
     _subToolButtons[k].classList.remove('bwbr-place-subtool-btn--active');
   });
   _overlay.classList.remove('bwbr-placement-overlay--active');
   _overlay.classList.remove('bwbr-placement-overlay--no-image');
-  _overlay.classList.remove('bwbr-placement-overlay--select');
   _preview.classList.remove('bwbr-placement-preview--visible');
   _settingsPanel.classList.remove('bwbr-place-settings--open');
 }
@@ -731,8 +755,8 @@ function createToolbar() {
 
   // 모드 버튼: 선택, 추가
   var modes = [
-    { id: 'select', label: '선택', icon: MODE_ICONS.select },
-    { id: 'add',    label: '추가', icon: MODE_ICONS.add }
+    { id: 'select', label: '선택 (V)', icon: MODE_ICONS.select },
+    { id: 'edit',   label: '편집 (A)', icon: MODE_ICONS.edit }
   ];
 
   modes.forEach(function (mode) {
@@ -757,9 +781,9 @@ function createSubToolRow() {
   row.className = 'bwbr-place-subtool-row';
 
   var tools = [
-    { id: 'image', label: '이미지', icon: TOOL_ICONS.image },
-    { id: 'text',  label: '텍스트', icon: TOOL_ICONS.text },
-    { id: 'draw',  label: '그리기', icon: TOOL_ICONS.draw }
+    { id: 'image', label: '이미지 (I)', icon: TOOL_ICONS.image },
+    { id: 'text',  label: '텍스트 (T)', icon: TOOL_ICONS.text },
+    { id: 'draw',  label: '그리기 (D)', icon: TOOL_ICONS.draw }
   ];
 
   tools.forEach(function (tool) {
@@ -1008,12 +1032,34 @@ function createOverlay() {
   _overlay.addEventListener('mousedown', onOverlayMouseDown);
   _overlay.addEventListener('mousemove', onOverlayMouseMove);
   _overlay.addEventListener('mouseup', onOverlayMouseUp);
+
+  // 마우스 휠 패스스루 (줌 동작 유지)
+  _overlay.addEventListener('wheel', function(e) {
+    e.preventDefault();
+    _overlay.style.pointerEvents = 'none';
+    var below = document.elementFromPoint(e.clientX, e.clientY);
+    _overlay.style.pointerEvents = '';
+    if (below && below !== _overlay) {
+      below.dispatchEvent(new WheelEvent(e.type, e));
+    }
+  });
 }
 
 
 // ── 오버레이 마우스 이벤트 ──────────────────────────────────────
 
 function onOverlayMouseDown(e) {
+  // 중간 버튼 → 패스스루 (화면 이동)
+  if (e.button === 1) {
+    _overlay.style.pointerEvents = 'none';
+    document.addEventListener('mouseup', function restorePE(ev) {
+      if (ev.button === 1) {
+        _overlay.style.pointerEvents = '';
+        document.removeEventListener('mouseup', restorePE);
+      }
+    });
+    return;
+  }
   if (e.button !== 0) return;
 
   // 드래그 시작 좌표 기록 (클릭 감지용)
@@ -1128,6 +1174,7 @@ function renderStagedItem(obj) {
   var mc = obj.mapCoords;
   var el = document.createElement('div');
   el.className = 'bwbr-staged-item';
+  if (_state.mode === 'select') el.classList.add('bwbr-staged-item--interactive');
   el.dataset.stagedId = obj.id;
   el.style.left = (mc.x * CELL_PX) + 'px';
   el.style.top = (mc.y * CELL_PX) + 'px';
@@ -1242,6 +1289,83 @@ function rotateSelectedStaged(delta) {
     el.style.transform = obj.angle ? 'rotate(' + obj.angle + 'deg)' : '';
   }
   showAngleIndicator(obj.angle);
+}
+
+
+// ── 선택 모드 상호작용 ──────────────────────────────────────────
+
+function enableStagedInteraction() {
+  document.querySelectorAll('.bwbr-staged-item').forEach(function(el) {
+    el.classList.add('bwbr-staged-item--interactive');
+  });
+}
+
+function disableStagedInteraction() {
+  document.querySelectorAll('.bwbr-staged-item').forEach(function(el) {
+    el.classList.remove('bwbr-staged-item--interactive');
+    el.classList.remove('bwbr-staged-item--dragging');
+  });
+}
+
+function setupSelectModeHandlers() {
+  var _dragStart = null;
+  var _isDragging = false;
+
+  document.addEventListener('mousedown', function(e) {
+    if (_state.mode !== 'select' || e.button !== 0) return;
+    var stagedEl = e.target.closest('.bwbr-staged-item--interactive');
+    if (!stagedEl) {
+      if (!e.target.closest('.bwbr-placement-toolbar') &&
+          !e.target.closest('.bwbr-place-confirm-bar')) {
+        deselectStaged();
+      }
+      return;
+    }
+    var id = stagedEl.dataset.stagedId;
+    selectStagedItem(id);
+    e.preventDefault();
+    var obj = _state.stagedObjects.find(function(o) { return o.id === id; });
+    if (obj) {
+      _dragStart = {
+        screenX: e.clientX, screenY: e.clientY,
+        origX: obj.mapCoords.x, origY: obj.mapCoords.y
+      };
+    }
+  });
+
+  document.addEventListener('mousemove', function(e) {
+    if (!_dragStart || !_state.selectedStagedId) return;
+    var dx = e.clientX - _dragStart.screenX;
+    var dy = e.clientY - _dragStart.screenY;
+    if (!_isDragging && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
+      _isDragging = true;
+      var el = document.querySelector('[data-staged-id="' + _state.selectedStagedId + '"]');
+      if (el) el.classList.add('bwbr-staged-item--dragging');
+    }
+    if (!_isDragging) return;
+    var scale = getZoomScale();
+    var newX = Math.round(_dragStart.origX + dx / (scale * CELL_PX));
+    var newY = Math.round(_dragStart.origY + dy / (scale * CELL_PX));
+    var obj = _state.stagedObjects.find(function(o) { return o.id === _state.selectedStagedId; });
+    if (!obj) return;
+    obj.mapCoords.x = newX;
+    obj.mapCoords.y = newY;
+    var el = document.querySelector('[data-staged-id="' + obj.id + '"]');
+    if (el) {
+      el.style.left = (newX * CELL_PX) + 'px';
+      el.style.top = (newY * CELL_PX) + 'px';
+    }
+  });
+
+  document.addEventListener('mouseup', function(e) {
+    if (e.button !== 0) return;
+    if (_isDragging) {
+      var el = document.querySelector('[data-staged-id="' + _state.selectedStagedId + '"]');
+      if (el) el.classList.remove('bwbr-staged-item--dragging');
+    }
+    _dragStart = null;
+    _isDragging = false;
+  });
 }
 
 
@@ -1385,14 +1509,14 @@ function compressCanvasToDataUrl(canvas) {
   var maxLen = 900000;
   var qualities = [0.85, 0.7, 0.5, 0.3];
   for (var i = 0; i < qualities.length; i++) {
-    var url = canvas.toDataURL('image/jpeg', qualities[i]);
+    var url = canvas.toDataURL('image/webp', qualities[i]);
     if (url.length < maxLen) return url;
   }
   var half = document.createElement('canvas');
   half.width = Math.floor(canvas.width / 2);
   half.height = Math.floor(canvas.height / 2);
   half.getContext('2d').drawImage(canvas, 0, 0, half.width, half.height);
-  return half.toDataURL('image/jpeg', 0.5);
+  return half.toDataURL('image/webp', 0.5);
 }
 
 
@@ -1449,24 +1573,7 @@ function setupKeyboard() {
   document.addEventListener('keydown', function (e) {
     if (!_state.active) return;
 
-    // R: 선택된 스테이징 오브젝트 회전 (15도 단위)
-    if (e.key === 'r' || e.key === 'R') {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-      if (!_state.selectedStagedId) return;
-      e.preventDefault();
-      rotateSelectedStaged(e.shiftKey ? -15 : 15);
-    }
-
-    // Delete / Backspace: 선택된 스테이징 오브젝트 삭제
-    if (e.key === 'Delete' || e.key === 'Backspace') {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-      if (_state.selectedStagedId) {
-        e.preventDefault();
-        removeSelectedStaged();
-      }
-    }
-
-    // Escape: 단계별 취소
+    // Escape: 단계별 취소 (입력 중에도 동작)
     if (e.key === 'Escape') {
       if (_state.placing) {
         _state.placing = false;
@@ -1481,6 +1588,43 @@ function setupKeyboard() {
       } else {
         togglePlacementMode();
       }
+      return;
+    }
+
+    // 입력 필드에서는 나머지 단축키 무시
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+    // V: 선택 모드
+    if (e.key === 'v' || e.key === 'V') {
+      e.preventDefault();
+      activateMode('select');
+      return;
+    }
+
+    // A: 편집 모드
+    if (e.key === 'a' || e.key === 'A') {
+      e.preventDefault();
+      activateMode('edit');
+      return;
+    }
+
+    // I / T / D: 편집 모드 서브 도구
+    if (_state.mode === 'edit') {
+      if (e.key === 'i' || e.key === 'I') { e.preventDefault(); setSubTool('image'); return; }
+      if (e.key === 't' || e.key === 'T') { e.preventDefault(); setSubTool('text'); return; }
+      if (e.key === 'd' || e.key === 'D') { e.preventDefault(); setSubTool('draw'); return; }
+    }
+
+    // R: 선택된 스테이징 오브젝트 회전 (15도 단위)
+    if ((e.key === 'r' || e.key === 'R') && _state.selectedStagedId) {
+      e.preventDefault();
+      rotateSelectedStaged(e.shiftKey ? -15 : 15);
+    }
+
+    // Delete / Backspace: 선택된 스테이징 오브젝트 삭제
+    if ((e.key === 'Delete' || e.key === 'Backspace') && _state.selectedStagedId) {
+      e.preventDefault();
+      removeSelectedStaged();
     }
   });
 }
