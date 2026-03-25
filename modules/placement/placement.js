@@ -740,7 +740,10 @@ var _state = {
   undoStack: [],          // [{ type, data }]
 
   // 클립보드
-  clipboard: []           // [{ mapCoords, angle, imageDataUrl, settings }]
+  clipboard: [],           // [{ mapCoords, angle, imageDataUrl, settings }]
+
+  // 스탬프 모드: 이전 배치 크기 기억 (클릭만으로 연속 배치)
+  lastStampSize: null      // { w, h } (screen px) — 드래그 배치 후 저장됨
 };
 
 
@@ -1375,10 +1378,26 @@ function onOverlayMouseMove(e) {
     _altBoxSelect.rectEl.style.height = Math.abs(e.clientY - _altBoxSelect.startY) + 'px';
     return;
   }
-  if (!_state.placing) return;
-  _state.drag.currentX = e.clientX;
-  _state.drag.currentY = e.clientY;
-  updatePreview();
+  if (_state.placing) {
+    _state.drag.currentX = e.clientX;
+    _state.drag.currentY = e.clientY;
+    updatePreview();
+    return;
+  }
+  // 스탬프 미리보기: 드래그 중이 아닐 때 이전 크기로 커서 위치에 표시
+  if (_state.lastStampSize && _state.currentTool === 'image' && _state.pendingImage && _state.mode === 'edit') {
+    var sw = _state.lastStampSize.w;
+    var sh = _state.lastStampSize.h;
+    _preview.style.left = (e.clientX - sw / 2) + 'px';
+    _preview.style.top = (e.clientY - sh / 2) + 'px';
+    _preview.style.width = sw + 'px';
+    _preview.style.height = sh + 'px';
+    _preview.style.transform = '';
+    if (!_preview.classList.contains('bwbr-placement-preview--visible')) {
+      _preview.classList.add('bwbr-placement-preview--visible');
+      _preview.innerHTML = '<img src="' + _state.pendingImage.dataUrl + '" alt="">';
+    }
+  }
 }
 
 function onOverlayMouseUp(e) {
@@ -1393,7 +1412,30 @@ function onOverlayMouseUp(e) {
   _preview.innerHTML = '';
 
   var rect = getPreviewRect();
-  if (rect.w < 5 && rect.h < 5) return;
+  if (rect.w < 5 && rect.h < 5) {
+    // 클릭(드래그 없음) → 스탬프 모드: 이전 크기로 배치
+    if (_state.lastStampSize && _state.currentTool === 'image' && _state.pendingImage) {
+      var sw = _state.lastStampSize.w;
+      var sh = _state.lastStampSize.h;
+      var stampRect = {
+        x: _state.drag.startX - sw / 2,
+        y: _state.drag.startY - sh / 2,
+        w: sw,
+        h: sh
+      };
+      deselectStaged();
+      stageObject(stampRect);
+      // 스탬프 미리보기 유지 (다음 클릭을 위해)
+      _preview.classList.add('bwbr-placement-preview--visible');
+      if (!_preview.querySelector('img')) {
+        _preview.innerHTML = '<img src="' + _state.pendingImage.dataUrl + '" alt="">';
+      }
+    }
+    return;
+  }
+
+  // 드래그 배치 → 크기 저장 (스탬프 모드용)
+  _state.lastStampSize = { w: rect.w, h: rect.h };
 
   deselectStaged();
   stageObject(rect);
