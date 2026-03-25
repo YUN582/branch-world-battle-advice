@@ -623,11 +623,11 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   display: block;
 }
 
-/* ── 정렬 바 (상단 중앙) ───────────────────────── */
+/* ── 정렬 바 (하단 중앙) ───────────────────────── */
 
 .bwbr-place-align-bar {
   position: fixed;
-  top: 12px;
+  bottom: 80px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 106;
@@ -1749,42 +1749,21 @@ function onStagedItemMouseDown(stagedId, e) {
   e.stopPropagation();
   e.preventDefault();
 
-  var additive = e.altKey;
-
-  // Alt+드래그 → 복사해서 드래그
+  // Alt+클릭 = 추가/토글 선택, Alt+드래그 = 복사 (deferred)
   if (e.altKey) {
-    // 먼저 현재 아이템이 선택 안 되어 있으면 선택
-    if (_state.selectedStagedIds.indexOf(stagedId) === -1) {
-      selectStagedItem(stagedId, false);
-    }
-    // 선택된 오브젝트 복사
-    var newIds = [];
-    var newOrigins = {};
-    _state.selectedStagedIds.forEach(function(id) {
-      var orig = _state.stagedObjects.find(function(o) { return o.id === id; });
-      if (!orig) return;
-      var copy = cloneObj(orig);
-      copy.id = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-      _state.stagedObjects.push(copy);
-      renderStagedItem(copy);
-      newIds.push(copy.id);
-      newOrigins[copy.id] = { x: copy.mapCoords.x, y: copy.mapCoords.y };
-    });
-    pushUndo({ type: 'stage', ids: newIds });
-    renumberStagedBadges();
-    updateConfirmBar();
-    // 원본 선택 해제, 복사본 선택
-    deselectStaged();
-    newIds.forEach(function(id) {
-      _state.selectedStagedIds.push(id);
-      var el = document.querySelector('[data-staged-id="' + id + '"]');
-      if (el) el.classList.add('bwbr-staged-item--selected');
-    });
+    selectStagedItem(stagedId, true);
     updateAlignBar();
-    // 복사본 드래그 시작
+    if (_state.selectedStagedIds.length === 0) return;
+    // Alt+드래그 복사를 위해 deferred 플래그 설정
+    var origins = {};
+    _state.selectedStagedIds.forEach(function(id) {
+      var o = _state.stagedObjects.find(function(so) { return so.id === id; });
+      if (o) origins[id] = { x: o.mapCoords.x, y: o.mapCoords.y };
+    });
     _selectDrag.start = {
       screenX: e.clientX, screenY: e.clientY,
-      origins: newOrigins
+      origins: origins,
+      altCopy: true, copied: false
     };
     _selectDrag.dragging = false;
     return;
@@ -1826,16 +1805,18 @@ function setupSelectModeHandlers() {
           var copy = JSON.parse(JSON.stringify(orig));
           copy.id = 'staged_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
           _state.stagedObjects.push(copy);
-          renderStagedObject(copy);
+          renderStagedItem(copy);
           newIds.push(copy.id);
           newOrigins[copy.id] = { x: copy.mapCoords.x, y: copy.mapCoords.y };
         });
         // undo: 복사본 추가
-        pushUndo({ type: 'add', ids: newIds });
+        pushUndo({ type: 'stage', ids: newIds });
         // 원본 선택 해제, 복사본 선택
         deselectStaged();
         newIds.forEach(function(id) { selectStagedItem(id, true); });
         _selectDrag.start.origins = newOrigins;
+        renumberStagedBadges();
+        updateConfirmBar();
       }
 
       _state.selectedStagedIds.forEach(function(id) {
@@ -1916,6 +1897,26 @@ function setupSelectModeHandlers() {
     updateAlignBar();
   });
 
+  // 배치 모드 중 ccfolia 패닝 방지 (capture phase에서 pointer 이벤트 차단)
+  document.addEventListener('pointerdown', function(e) {
+    if (!e.isTrusted) return; // 합성 이벤트(미들클릭 패닝)는 통과
+    if (!_state.active || e.button !== 0) return;
+    if (e.target.closest('.bwbr-placement-toolbar') ||
+        e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar')) return;
+    // 스테이징 아이템 클릭/드래그 시에도 ccfolia 패닝 차단
+    if (e.target.closest('.bwbr-staged-item')) { e.stopImmediatePropagation(); return; }
+    var shouldBox = (_state.mode === 'select' || e.altKey) && _state.stagedObjects.length > 0;
+    if (shouldBox) { e.stopImmediatePropagation(); }
+  }, true);
+  document.addEventListener('pointermove', function(e) {
+    if (!e.isTrusted) return;
+    if (_altBoxSelect.active || _selectDrag.dragging) { e.stopImmediatePropagation(); }
+  }, true);
+  document.addEventListener('pointerup', function(e) {
+    if (!e.isTrusted) return;
+    if (_altBoxSelect.active || _selectDrag.dragging) { e.stopImmediatePropagation(); }
+  }, true);
+
   // 범위 선택용 mousemove/mouseup (document 레벨)
   document.addEventListener('mousemove', function(e) {
     if (_altBoxSelect.active && _altBoxSelect.rectEl) {
@@ -1989,6 +1990,24 @@ function updateAlignBar() {
   if (!_alignBar) return;
   if (_state.selectedStagedIds.length >= 2) {
     _alignBar.classList.add('bwbr-place-align-bar--visible');
+    // 동적 중앙 정렬: 채팅패널 영역 제외한 보드 영역 기준
+    var rightInset = 0;
+    var chatPanel = document.querySelector('div[class*="MuiDrawer"] > div');
+    if (!chatPanel) {
+      // fallback: 우측 끝에 고정된 패널 찾기
+      var panels = document.querySelectorAll('aside, div[style*="position: fixed"][style*="right"]');
+      panels.forEach(function(p) {
+        var pr = p.getBoundingClientRect();
+        if (pr.right >= window.innerWidth - 5 && pr.width > 50 && pr.width < window.innerWidth * 0.6) {
+          rightInset = Math.max(rightInset, pr.width);
+        }
+      });
+    } else {
+      var cr = chatPanel.getBoundingClientRect();
+      if (cr.width > 50 && cr.right >= window.innerWidth - 5) rightInset = cr.width;
+    }
+    var centerX = (window.innerWidth - rightInset) / 2;
+    _alignBar.style.left = centerX + 'px';
   } else {
     _alignBar.classList.remove('bwbr-place-align-bar--visible');
   }
@@ -2495,7 +2514,7 @@ function setupMiddleClickPanning() {
   }, true);
 
   document.addEventListener('pointermove', function(e) {
-    if (!_pan.active || !_pan.target) return;
+    if (!_pan.active || !_pan.target || !e.isTrusted) return;
     _pan.target.dispatchEvent(new PointerEvent('pointermove', {
       button: 0, buttons: 1,
       clientX: e.clientX, clientY: e.clientY,
@@ -2507,7 +2526,7 @@ function setupMiddleClickPanning() {
   });
 
   document.addEventListener('pointerup', function(e) {
-    if (e.button !== 1 || !_pan.active) return;
+    if (e.button !== 1 || !_pan.active || !e.isTrusted) return;
     _pan.target.dispatchEvent(new PointerEvent('pointerup', {
       button: 0, buttons: 0,
       clientX: e.clientX, clientY: e.clientY,
