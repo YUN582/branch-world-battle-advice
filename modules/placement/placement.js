@@ -507,9 +507,9 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 }
 
 .bwbr-staged-item--selected {
-  border-color: #ff9800;
-  border-width: 3px;
-  box-shadow: 0 0 12px rgba(255, 152, 0, 0.5);
+  outline: 2px dashed rgba(255,152,0,0.85);
+  outline-offset: 2px;
+  border-color: rgba(255,152,0,0.85);
 }
 
 .bwbr-staged-item--selected .bwbr-staged-badge {
@@ -533,6 +533,16 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 .bwbr-staged-item--dragging {
   opacity: 0.7;
   box-shadow: 0 0 16px rgba(255, 152, 0, 0.7) !important;
+}
+
+/* ── Alt+드래그 선택 사각형 ───────────────── */
+
+.bwbr-place-select-rect {
+  position: fixed;
+  border: 2px dashed rgba(255,152,0,0.85);
+  background: rgba(255,152,0,0.08);
+  z-index: 100000;
+  pointer-events: none;
 }
 
 /* ── 확인 바 (하단 중앙) ───────────────────────── */
@@ -1165,6 +1175,23 @@ function createOverlay() {
 function onOverlayMouseDown(e) {
   if (e.button !== 0) return;
 
+  // Alt+드래그 → 스테이징 아이템 범위 선택 (오버레이 위에서도 동작)
+  if (e.altKey) {
+    _altBoxSelect.active = true;
+    _altBoxSelect.startX = e.clientX;
+    _altBoxSelect.startY = e.clientY;
+    var rect = document.createElement('div');
+    rect.className = 'bwbr-place-select-rect';
+    rect.style.left = e.clientX + 'px';
+    rect.style.top = e.clientY + 'px';
+    rect.style.width = '0';
+    rect.style.height = '0';
+    document.body.appendChild(rect);
+    _altBoxSelect.rectEl = rect;
+    deselectStaged();
+    return;
+  }
+
   // 드래그 시작 좌표 기록
   _state.drag.startX = e.clientX;
   _state.drag.startY = e.clientY;
@@ -1187,6 +1214,16 @@ function onOverlayMouseDown(e) {
 }
 
 function onOverlayMouseMove(e) {
+  // Alt 범위 선택 사각형 업데이트
+  if (_altBoxSelect.active && _altBoxSelect.rectEl) {
+    var l = Math.min(_altBoxSelect.startX, e.clientX);
+    var t = Math.min(_altBoxSelect.startY, e.clientY);
+    _altBoxSelect.rectEl.style.left = l + 'px';
+    _altBoxSelect.rectEl.style.top = t + 'px';
+    _altBoxSelect.rectEl.style.width = Math.abs(e.clientX - _altBoxSelect.startX) + 'px';
+    _altBoxSelect.rectEl.style.height = Math.abs(e.clientY - _altBoxSelect.startY) + 'px';
+    return;
+  }
   if (!_state.placing) return;
   _state.drag.currentX = e.clientX;
   _state.drag.currentY = e.clientY;
@@ -1194,6 +1231,11 @@ function onOverlayMouseMove(e) {
 }
 
 function onOverlayMouseUp(e) {
+  // Alt 범위 선택 완료
+  if (_altBoxSelect.active) {
+    finishAltBoxSelect();
+    return;
+  }
   if (!_state.placing) return;
   _state.placing = false;
   _preview.classList.remove('bwbr-placement-preview--visible');
@@ -1374,6 +1416,33 @@ function deselectStaged() {
   _state.selectedStagedIds = [];
 }
 
+function finishAltBoxSelect() {
+  if (!_altBoxSelect.rectEl) { _altBoxSelect.active = false; return; }
+  var selR = _altBoxSelect.rectEl.getBoundingClientRect();
+  _altBoxSelect.rectEl.remove();
+  _altBoxSelect.rectEl = null;
+  _altBoxSelect.active = false;
+
+  // 너무 작으면 무시 (5px threshold)
+  if (selR.width < 5 && selR.height < 5) return;
+
+  // 모든 스테이징 DOM 요소와 교차 검사
+  var items = document.querySelectorAll('.bwbr-staged-item');
+  items.forEach(function(el) {
+    var r = el.getBoundingClientRect();
+    var intersects =
+      r.left < selR.right && r.right > selR.left &&
+      r.top < selR.bottom && r.bottom > selR.top;
+    if (intersects) {
+      var sid = el.getAttribute('data-staged-id');
+      if (sid && _state.selectedStagedIds.indexOf(sid) === -1) {
+        _state.selectedStagedIds.push(sid);
+        el.classList.add('bwbr-staged-item--selected');
+      }
+    }
+  });
+}
+
 function removeSelectedStaged() {
   if (_state.selectedStagedIds.length === 0) return;
   _state.selectedStagedIds.forEach(function(id) {
@@ -1408,6 +1477,7 @@ function rotateSelectedStaged(delta) {
 // ── 선택 모드 상호작용 ──────────────────────────────────────────
 
 var _selectDrag = { start: null, dragging: false };
+var _altBoxSelect = { active: false, startX: 0, startY: 0, rectEl: null };
 
 function onStagedItemMouseDown(stagedId, e) {
   if (e.button !== 0 || !_state.active) return;
@@ -1479,7 +1549,41 @@ function setupSelectModeHandlers() {
     if (e.target.closest('.bwbr-staged-item')) return;
     if (e.target.closest('.bwbr-placement-toolbar')) return;
     if (e.target.closest('.bwbr-place-confirm-bar')) return;
+    // Alt+드래그 → 범위 선택 (오버레이 없을 때도 동작)
+    if (e.altKey && _state.stagedObjects.length > 0) {
+      _altBoxSelect.active = true;
+      _altBoxSelect.startX = e.clientX;
+      _altBoxSelect.startY = e.clientY;
+      var rect = document.createElement('div');
+      rect.className = 'bwbr-place-select-rect';
+      rect.style.left = e.clientX + 'px';
+      rect.style.top = e.clientY + 'px';
+      rect.style.width = '0';
+      rect.style.height = '0';
+      document.body.appendChild(rect);
+      _altBoxSelect.rectEl = rect;
+      deselectStaged();
+      e.preventDefault();
+      return;
+    }
     deselectStaged();
+  });
+
+  // Alt 범위 선택용 mousemove/mouseup (document 레벨)
+  document.addEventListener('mousemove', function(e) {
+    if (_altBoxSelect.active && _altBoxSelect.rectEl) {
+      var l = Math.min(_altBoxSelect.startX, e.clientX);
+      var t = Math.min(_altBoxSelect.startY, e.clientY);
+      _altBoxSelect.rectEl.style.left = l + 'px';
+      _altBoxSelect.rectEl.style.top = t + 'px';
+      _altBoxSelect.rectEl.style.width = Math.abs(e.clientX - _altBoxSelect.startX) + 'px';
+      _altBoxSelect.rectEl.style.height = Math.abs(e.clientY - _altBoxSelect.startY) + 'px';
+    }
+  });
+  document.addEventListener('mouseup', function(e) {
+    if (_altBoxSelect.active) {
+      finishAltBoxSelect();
+    }
   });
 }
 
