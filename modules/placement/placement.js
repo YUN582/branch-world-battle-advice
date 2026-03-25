@@ -668,6 +668,34 @@ var _settingsPanel = null;
 var _overlay = null;
 var _preview = null;
 var _angleIndicator = null;
+
+// 설정 DOM 요소 참조 (이벤트 의존 없이 직접 읽기 위함)
+var _settingsEls = {
+  typePlaneBtn: null,
+  typeObjectBtn: null,
+  zInput: null,
+  memoInput: null,
+  lockedInput: null,
+  freezedInput: null
+};
+
+function readSettingsFromDOM() {
+  if (_settingsEls.typePlaneBtn) {
+    _state.panelSettings.type = _settingsEls.typePlaneBtn.classList.contains('active') ? 'plane' : 'object';
+  }
+  if (_settingsEls.zInput) {
+    _state.panelSettings.z = parseInt(_settingsEls.zInput.value, 10) || 150;
+  }
+  if (_settingsEls.memoInput) {
+    _state.panelSettings.memo = _settingsEls.memoInput.value || '';
+  }
+  if (_settingsEls.lockedInput) {
+    _state.panelSettings.locked = !!_settingsEls.lockedInput.checked;
+  }
+  if (_settingsEls.freezedInput) {
+    _state.panelSettings.freezed = !!_settingsEls.freezedInput.checked;
+  }
+}
 var _modeButtons = {};
 var _subToolRow = null;
 var _subToolButtons = {};
@@ -884,6 +912,8 @@ function createSettingsPanel() {
   typeToggle.appendChild(btnScreen);
   typeField.appendChild(typeToggle);
   panel.appendChild(typeField);
+  _settingsEls.typePlaneBtn = btnMarker;
+  _settingsEls.typeObjectBtn = btnScreen;
 
   // 겹침 우선도
   var zField = createField('겹침 우선도');
@@ -897,6 +927,7 @@ function createSettingsPanel() {
   });
   zField.appendChild(zInput);
   panel.appendChild(zField);
+  _settingsEls.zInput = zInput;
 
   // 메모
   var memoField = createField('패널 메모');
@@ -907,16 +938,21 @@ function createSettingsPanel() {
   });
   memoField.appendChild(memoInput);
   panel.appendChild(memoField);
+  _settingsEls.memoInput = memoInput;
 
   // 위치 고정
-  panel.appendChild(createToggleField('위치 고정', false, function (val) {
+  var lockedField = createToggleField('위치 고정', false, function (val) {
     _state.panelSettings.locked = val;
-  }));
+  });
+  panel.appendChild(lockedField);
+  _settingsEls.lockedInput = lockedField.querySelector('input[type="checkbox"]');
 
   // 사이즈 고정
-  panel.appendChild(createToggleField('사이즈 고정', false, function (val) {
+  var freezedField = createToggleField('사이즈 고정', false, function (val) {
     _state.panelSettings.freezed = val;
-  }));
+  });
+  panel.appendChild(freezedField);
+  _settingsEls.freezedInput = freezedField.querySelector('input[type="checkbox"]');
 
   return panel;
 }
@@ -1272,6 +1308,9 @@ function stageObject(screenRect) {
   var mapCoords = screenToMapCoords(screenRect);
   if (!mapCoords) return;
 
+  // DOM에서 직접 설정값 읽기 (이벤트 리스너 불발 대비)
+  readSettingsFromDOM();
+
   console.log('[CE 배치] 스테이징:', screenRect, '→ 타일:', mapCoords);
   console.log('[CE 배치] panelSettings:', JSON.stringify(_state.panelSettings));
 
@@ -1423,24 +1462,34 @@ function finishAltBoxSelect() {
   _altBoxSelect.rectEl = null;
   _altBoxSelect.active = false;
 
-  // 너무 작으면 무시 (5px threshold)
-  if (selR.width < 5 && selR.height < 5) return;
+  var isClick = (selR.width < 5 && selR.height < 5);
 
   // 모든 스테이징 DOM 요소와 교차 검사
   var items = document.querySelectorAll('.bwbr-staged-item');
+  var found = false;
   items.forEach(function(el) {
     var r = el.getBoundingClientRect();
-    var intersects =
-      r.left < selR.right && r.right > selR.left &&
-      r.top < selR.bottom && r.bottom > selR.top;
+    var intersects;
+    if (isClick) {
+      // 클릭 → 클릭 지점이 아이템 내부인지 확인
+      var cx = _altBoxSelect.startX, cy = _altBoxSelect.startY;
+      intersects = cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom;
+    } else {
+      // 드래그 → 사각형 교차 검사
+      intersects =
+        r.left < selR.right && r.right > selR.left &&
+        r.top < selR.bottom && r.bottom > selR.top;
+    }
     if (intersects) {
       var sid = el.getAttribute('data-staged-id');
       if (sid && _state.selectedStagedIds.indexOf(sid) === -1) {
         _state.selectedStagedIds.push(sid);
         el.classList.add('bwbr-staged-item--selected');
+        found = true;
       }
     }
   });
+  if (found) console.log('[CE 배치] Alt 선택:', _state.selectedStagedIds.length + '개');
 }
 
 function removeSelectedStaged() {
@@ -1630,6 +1679,16 @@ function updateConfirmBar() {
 
 function compositeAndCommit() {
   if (_state.stagedObjects.length === 0) return;
+
+  // 확인 시에도 DOM에서 설정 다시 읽기 → 모든 스테이징에 반영
+  readSettingsFromDOM();
+  _state.stagedObjects.forEach(function(obj) {
+    obj.settings.type = _state.panelSettings.type;
+    obj.settings.z = _state.panelSettings.z;
+    obj.settings.memo = _state.panelSettings.memo;
+    obj.settings.locked = _state.panelSettings.locked;
+    obj.settings.freezed = _state.panelSettings.freezed;
+  });
 
   // 1. 바운딩 박스 계산 (타일 좌표)
   var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
