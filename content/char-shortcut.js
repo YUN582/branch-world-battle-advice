@@ -36,6 +36,7 @@
     setupCharStatusPanelInjector();
     setupCharListKeyLabels();
     suppressNativeContextMenu();
+    setupCharListContextMenu();
     refreshCharacterCache();
     setTimeout(refreshCharacterCache, 5000);
     setTimeout(refreshCharacterCache, 15000);
@@ -394,18 +395,32 @@
       if (texts[t].indexOf('집어넣기') === 0 || texts[t].indexOf('ID 복사') === 0
         || texts[t].indexOf('しまう') === 0) isToken = true;
     }
+
+    // 캐릭터 목록 메뉴 확인: "편집" 또는 "복제" 등
+    var isCharList = false;
     if (!isToken) {
-      log('캐릭터 토큰 메뉴 아님. 항목:', texts.join(', '));
+      isCharList = texts.some(function (t) {
+        return t.indexOf('편집') === 0 || t.indexOf('복제') === 0 || t.indexOf('삭제') === 0
+          || t.indexOf('編集') === 0 || t.indexOf('複製') === 0 || t.indexOf('削除') === 0;
+      });
+    }
+
+    if (!isToken && !isCharList) {
+      log('캐릭터 메뉴 아님. 항목:', texts.join(', '));
       return;
     }
 
-    log('캐릭터 토큰 메뉴 → 주입');
+    log(isToken ? '캐릭터 토큰 메뉴 → 주입' : '캐릭터 목록 메뉴 → 주입');
     var charName = identifyCharacterFromTarget();
+    var charIconUrl = identifyCharacterIconFromTarget();
     var firstItem = menuList.querySelector('li[role="menuitem"]');
     var itemClass = firstItem ? firstItem.className : 'MuiButtonBase-root MuiMenuItem-root MuiMenuItem-gutters';
     var popover = paper.closest('.MuiPopover-root') || paper.parentElement;
 
-    // ── 확대 보기: 회전 아래 ──
+    // 삽입 위치: 토큰 메뉴는 회전 아래, 목록 메뉴는 맨 아래
+    var insertAfter = rotateItem || null;
+
+    // ── 확대 보기 ──
     var zoomItem = document.createElement('li');
     zoomItem.className = itemClass;
     zoomItem.tabIndex = -1;
@@ -415,14 +430,15 @@
     zoomItem.addEventListener('click', function (ev) {
       ev.stopPropagation();
       dismissMenu(popover);
-      var tokenEl = findTokenElement(lastRightClickTarget);
-      if (tokenEl) {
-        var imgUrl = extractImageUrl(tokenEl);
-        if (imgUrl) openZoomView(imgUrl);
+      var imgUrl = charIconUrl || null;
+      if (!imgUrl) {
+        var tokenEl = findTokenElement(lastRightClickTarget);
+        if (tokenEl) imgUrl = extractImageUrl(tokenEl);
       }
+      if (imgUrl) openZoomView(imgUrl);
     });
-    if (rotateItem && rotateItem.nextSibling) {
-      menuList.insertBefore(zoomItem, rotateItem.nextSibling);
+    if (insertAfter && insertAfter.nextSibling) {
+      menuList.insertBefore(zoomItem, insertAfter.nextSibling);
     } else {
       menuList.appendChild(zoomItem);
     }
@@ -450,12 +466,91 @@
   }
 
   function identifyCharacterFromTarget() {
+    // 1. 보드 토큰(.movable)에서 식별
     var tokenEl = findTokenElement(lastRightClickTarget);
-    if (!tokenEl) return null;
-    var imgUrl = extractImageUrl(tokenEl);
-    if (!imgUrl) return null;
-    var m = matchCharacterByImage(imgUrl);
-    return m ? m.name : null;
+    if (tokenEl) {
+      var imgUrl = extractImageUrl(tokenEl);
+      if (imgUrl) {
+        var m = matchCharacterByImage(imgUrl);
+        if (m) return m.name;
+      }
+    }
+    // 2. 캐릭터 목록/아바타 영역에서 식별
+    return _findCharNameFromNearby(lastRightClickTarget);
+  }
+
+  /** 우클릭 대상에서 캐릭터 아이콘 URL 추출 (확대 보기용) */
+  function identifyCharacterIconFromTarget() {
+    var tokenEl = findTokenElement(lastRightClickTarget);
+    if (tokenEl) return extractImageUrl(tokenEl);
+    var info = _findCharInfoFromNearby(lastRightClickTarget);
+    return info ? info.iconUrl : null;
+  }
+
+  /** 캐릭터 목록/아바타 근처에서 캐릭터 이름 반환 */
+  function _findCharNameFromNearby(target) {
+    var info = _findCharInfoFromNearby(target);
+    return info ? info.name : null;
+  }
+
+  /** 캐릭터 목록/아바타 근처에서 { name, iconUrl } 반환 */
+  function _findCharInfoFromNearby(target) {
+    if (!target || !target.closest) return null;
+    // 채팅 메시지 영역 제외
+    if (target.closest('[class*="ChatMessage"], [data-testid="chat-messages"]')) return null;
+
+    // 1. MuiAvatar-root 에서 이미지 탐색
+    var avatarRoot = target.closest('.MuiAvatar-root');
+    if (avatarRoot) {
+      var img = avatarRoot.querySelector('img[src]');
+      if (img) {
+        var m = matchCharacterByImage(img.src);
+        if (m) return { name: m.name, iconUrl: img.src };
+      }
+    }
+
+    // 2. 리스트 아이템에서 이미지 탐색
+    var listItem = target.closest('.MuiListItemButton-root, .MuiListItem-root, [role="option"]');
+    if (listItem) {
+      var img2 = listItem.querySelector('.MuiAvatar-root img[src], img[src]');
+      if (img2) {
+        var m2 = matchCharacterByImage(img2.src);
+        if (m2) return { name: m2.name, iconUrl: img2.src };
+      }
+    }
+
+    // 3. 상위로 올라가며 MuiAvatar img 탐색
+    var el = target;
+    for (var d = 0; el && d < 8; d++, el = el.parentElement) {
+      if (el === document.body) break;
+      var ava = el.querySelector && el.querySelector('.MuiAvatar-root img[src]');
+      if (ava) {
+        var m3 = matchCharacterByImage(ava.src);
+        if (m3) return { name: m3.name, iconUrl: ava.src };
+      }
+    }
+
+    // 4. 캐릭터 이름 텍스트 매칭 (캐시된 캐릭터와 비교)
+    if (cachedCharacters.length) {
+      var nameMap = {};
+      for (var c = 0; c < cachedCharacters.length; c++) {
+        nameMap[cachedCharacters[c].name] = cachedCharacters[c];
+      }
+      var searchEl = listItem || target;
+      for (var u = 0; searchEl && u < 5; u++, searchEl = searchEl.parentElement) {
+        var walker = document.createTreeWalker(searchEl, NodeFilter.SHOW_TEXT, null, false);
+        var node;
+        while ((node = walker.nextNode())) {
+          var txt = node.textContent.trim();
+          if (txt && nameMap[txt]) {
+            var ch = nameMap[txt];
+            return { name: ch.name, iconUrl: ch.iconUrl || '' };
+          }
+        }
+      }
+    }
+
+    return null;
   }
 
   function dismissMenu(popover) {
@@ -463,6 +558,123 @@
     var bd = popover.querySelector('.MuiBackdrop-root');
     if (bd) { bd.click(); return; }
     document.body.click();
+  }
+
+  // ================================================================
+  //  캐릭터 목록/아바타 커스텀 컨텍스트 메뉴
+  //  ccfolia가 MuiPopover를 열지 않는 영역(아바타 이미지 등)에서 CE 메뉴 표시
+  // ================================================================
+
+  var _charCtxMenu = null;
+  var _rightClickCharCache = null;
+
+  function setupCharListContextMenu() {
+    // capture-phase mousedown: 선점 캐시 (MUI ClickAwayListener가 mousedown에서 팝오버를 닫으므로)
+    document.addEventListener('mousedown', function (e) {
+      _rightClickCharCache = null;
+      if (e.button !== 2 || !enabled) return;
+      var tag = (e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+      if (findTokenElement(e.target)) return;
+      var info = _findCharInfoFromNearby(e.target);
+      if (info) _rightClickCharCache = info;
+    }, true);
+
+    // bubble-phase contextmenu: ccfolia가 메뉴를 안 열 때만 CE 메뉴 표시
+    document.addEventListener('contextmenu', function (e) {
+      if (!enabled) return;
+      if (_charCtxMenu) { _charCtxMenu.remove(); _charCtxMenu = null; }
+      var tag = (e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+      if (e.target.isContentEditable) return;
+      if (findTokenElement(e.target)) return;
+
+      // 직접 감지
+      var info = _findCharInfoFromNearby(e.target);
+      // 폴백: mousedown 캐시
+      if (!info && _rightClickCharCache) info = _rightClickCharCache;
+      _rightClickCharCache = null;
+      if (!info) return;
+
+      // 딜레이 후 ccfolia MuiPopover가 나타났는지 확인
+      // 나타났으면 onPaperReady()가 주입하므로 CE 메뉴 불필요
+      var cx = e.clientX, cy = e.clientY;
+      var charInfo = info;
+      setTimeout(function () {
+        var pops = document.querySelectorAll('.MuiPopover-root');
+        for (var i = 0; i < pops.length; i++) {
+          var cs = getComputedStyle(pops[i]);
+          if (cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0') return;
+        }
+        // ccfolia 메뉴 안 나옴 → CE 커스텀 메뉴 표시
+        _showCharContextMenu(cx, cy, charInfo.name, charInfo.iconUrl);
+      }, 120);
+    }, false);
+  }
+
+  function _showCharContextMenu(x, y, charName, iconUrl) {
+    if (_charCtxMenu) { _charCtxMenu.remove(); _charCtxMenu = null; }
+    var menu = document.createElement('div');
+    menu.className = 'bwbr-char-ctx-menu';
+    menu.style.cssText = 'position:fixed;z-index:1500;min-width:160px;' +
+      'background:rgb(40,40,40);border:1px solid rgba(255,255,255,0.1);' +
+      'border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.4);' +
+      'padding:4px 0;font-family:"Roboto","Helvetica","Arial",sans-serif;' +
+      'font-size:14px;color:#fff;';
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+
+    // 캐릭터 이름 헤더
+    var header = document.createElement('div');
+    header.style.cssText = 'padding:4px 16px 2px;color:rgba(255,255,255,0.5);font-size:12px;user-select:none';
+    header.textContent = charName;
+    menu.appendChild(header);
+
+    // 확대 보기
+    if (iconUrl) {
+      _addCtxItem(menu, '확대 보기', function () { openZoomView(iconUrl); });
+    }
+
+    // 단축키 지정
+    _addCtxItem(menu, '단축키 지정', function () {
+      if (charName) openBindDialog(charName);
+      else showToast('캐릭터를 식별할 수 없습니다', 2000);
+    });
+
+    document.body.appendChild(menu);
+    _charCtxMenu = menu;
+
+    // 화면 밖 방지
+    requestAnimationFrame(function () {
+      var rect = menu.getBoundingClientRect();
+      if (rect.right > window.innerWidth) menu.style.left = (window.innerWidth - rect.width - 4) + 'px';
+      if (rect.bottom > window.innerHeight) menu.style.top = (window.innerHeight - rect.height - 4) + 'px';
+    });
+
+    // 외부 클릭 닫기
+    var closeOnOutside = function (ev) {
+      if (menu && !menu.contains(ev.target)) {
+        if (menu.parentElement) menu.remove();
+        _charCtxMenu = null;
+        document.removeEventListener('mousedown', closeOnOutside, true);
+      }
+    };
+    setTimeout(function () { document.addEventListener('mousedown', closeOnOutside, true); }, 0);
+  }
+
+  function _addCtxItem(menu, text, onClick) {
+    var item = document.createElement('div');
+    item.style.cssText = 'padding:6px 16px;cursor:pointer;user-select:none;transition:background 0.1s';
+    item.textContent = text;
+    item.addEventListener('mouseenter', function () { item.style.background = 'rgba(255,255,255,0.08)'; });
+    item.addEventListener('mouseleave', function () { item.style.background = ''; });
+    item.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      if (_charCtxMenu && _charCtxMenu.parentElement) _charCtxMenu.remove();
+      _charCtxMenu = null;
+      onClick();
+    });
+    menu.appendChild(item);
   }
 
   // ================================================================
