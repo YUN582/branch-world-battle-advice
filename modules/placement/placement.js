@@ -881,14 +881,6 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 .bwbr-text-toolbar-btn:hover { background: #f0f0f0; }
 .bwbr-text-toolbar-btn.bwbr-tb-active { background: #e0e7ff; color: #1a56db; }
 
-.bwbr-trans-btn {
-  width: 18px !important;
-  height: 28px;
-  font-size: 12px;
-  padding: 0 !important;
-  margin-left: -2px;
-}
-
 .bwbr-text-toolbar-sep {
   width: 1px;
   height: 20px;
@@ -910,16 +902,67 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   flex-shrink: 0;
 }
 .bwbr-text-toolbar-color:hover { background: #f0f0f0; }
-.bwbr-text-toolbar-color input[type=color] {
+.bwbr-text-toolbar-color .bwbr-color-indicator {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  cursor: pointer;
-  border: none;
-  padding: 0;
+  bottom: 1px;
+  left: 4px;
+  right: 4px;
+  height: 3px;
+  border-radius: 1px;
 }
+
+/* ── 커스텀 컬러 팝업 ── */
+.bwbr-color-popup {
+  position: fixed;
+  z-index: 130;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+  padding: 10px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.bwbr-color-popup canvas {
+  display: block;
+  touch-action: none;
+}
+.bwbr-color-popup-hue {
+  margin-top: 6px;
+}
+.bwbr-color-popup-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.bwbr-color-popup-preview {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  flex-shrink: 0;
+}
+.bwbr-color-popup-hex {
+  width: 68px;
+  height: 24px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: monospace;
+  padding: 0 4px;
+  outline: none;
+}
+.bwbr-color-popup-hex:focus { border-color: #5b9bf5; }
+.bwbr-color-popup-trans {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: #555;
+  cursor: pointer;
+  margin-left: auto;
+}
+.bwbr-color-popup-trans input { cursor: pointer; margin: 0; }
 
 .bwbr-text-toolbar-select {
   height: 28px;
@@ -2323,117 +2366,103 @@ function createTextToolbar() {
 
   row2.appendChild(_makeToolbarSep());
 
+  // 색상 버튼: 클릭 → 커스텀 컬러 팝업
+  var _fgHex = '#000000', _fgTrans = false;
+  var _bgHex = '#ffff00', _bgTrans = true;
+  var _boxBgHex = '#ffffff', _boxBgTrans = true;
+
   // 글자 색상
   var fgWrap = document.createElement('div');
   fgWrap.className = 'bwbr-text-toolbar-color';
   _setTooltip(fgWrap, '글자 색상');
-  var fgInput = document.createElement('input');
-  fgInput.type = 'color';
-  fgInput.value = '#000000';
-  fgInput.addEventListener('input', function () {
-    fgTransBtn.classList.remove('bwbr-tb-active');
-    _restoreTextSelection();
-    _applyStyleToSelection('color', fgInput.value);
-    _textEditor.focus();
-  });
   var fgLabel = document.createElement('span');
   fgLabel.textContent = 'A';
-  fgLabel.style.cssText = 'font-weight:bold;pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:14px;';
-  fgWrap.appendChild(fgInput);
+  fgLabel.style.cssText = 'font-weight:bold;pointer-events:none;position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);font-size:14px;';
+  var fgInd = document.createElement('div');
+  fgInd.className = 'bwbr-color-indicator';
+  fgInd.style.background = _fgHex;
   fgWrap.appendChild(fgLabel);
-  row2.appendChild(fgWrap);
-  // 글자 투명 토글
-  var fgTransBtn = document.createElement('button');
-  fgTransBtn.className = 'bwbr-text-toolbar-btn bwbr-trans-btn';
-  fgTransBtn.textContent = '\u2205';
-  _setTooltip(fgTransBtn, '글자 투명');
-  fgTransBtn.addEventListener('click', function() {
-    var isActive = fgTransBtn.classList.toggle('bwbr-tb-active');
-    _restoreTextSelection();
-    _applyStyleToSelection('color', isActive ? 'transparent' : fgInput.value);
-    _textEditor.focus();
+  fgWrap.appendChild(fgInd);
+  fgWrap.addEventListener('mousedown', function(e) { e.preventDefault(); });
+  fgWrap.addEventListener('click', function() {
+    _openColorPopup(fgWrap, _fgHex, _fgTrans, true, function(color, isTrans, hex) {
+      _fgHex = hex; _fgTrans = isTrans;
+      fgInd.style.background = isTrans ? 'repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%) 50%/6px 6px' : hex;
+      _restoreTextSelection();
+      _applyStyleToSelection('color', color);
+      _textEditor.focus();
+    });
   });
-  row2.appendChild(fgTransBtn);
+  row2.appendChild(fgWrap);
 
-  // 윤곽선 색상 (outlined A)
+  // 윤곽선 색상
   var strokeColorWrap = document.createElement('div');
   strokeColorWrap.className = 'bwbr-text-toolbar-color';
   _setTooltip(strokeColorWrap, '윤곽선 색상');
-  var strokeColorInput = document.createElement('input');
-  strokeColorInput.type = 'color';
-  strokeColorInput.value = _textStrokeColor;
-  strokeColorInput.addEventListener('input', function () {
-    _textStrokeColor = strokeColorInput.value;
-    _updateStrokePreview();
-  });
   var strokeColorLabel = document.createElement('span');
   strokeColorLabel.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><text x="4" y="18" font-size="18" font-weight="bold" fill="none" stroke="currentColor" stroke-width="2">A</text></svg>';
-  strokeColorLabel.style.cssText = 'pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;';
-  strokeColorWrap.appendChild(strokeColorInput);
+  strokeColorLabel.style.cssText = 'pointer-events:none;position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);display:flex;';
+  var strokeInd = document.createElement('div');
+  strokeInd.className = 'bwbr-color-indicator';
+  strokeInd.style.background = _textStrokeColor;
   strokeColorWrap.appendChild(strokeColorLabel);
+  strokeColorWrap.appendChild(strokeInd);
+  strokeColorWrap.addEventListener('mousedown', function(e) { e.preventDefault(); });
+  strokeColorWrap.addEventListener('click', function() {
+    _openColorPopup(strokeColorWrap, _textStrokeColor, false, false, function(color, isTrans, hex) {
+      _textStrokeColor = hex;
+      strokeInd.style.background = hex;
+      _updateStrokePreview();
+    });
+  });
   row2.appendChild(strokeColorWrap);
 
   // 글자 배경색
   var bgWrap = document.createElement('div');
   bgWrap.className = 'bwbr-text-toolbar-color';
   _setTooltip(bgWrap, '글자 배경색');
-  var bgInput = document.createElement('input');
-  bgInput.type = 'color';
-  bgInput.value = '#ffff00';
-  bgInput.addEventListener('input', function () {
-    bgTransBtn.classList.remove('bwbr-tb-active');
-    _restoreTextSelection();
-    _applyStyleToSelection('backgroundColor', bgInput.value);
-    _textEditor.focus();
-  });
   var bgLabel = document.createElement('span');
   bgLabel.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16.56 8.94L7.62 0 6.21 1.41l2.38 2.38-5.15 5.15c-.59.59-.59 1.54 0 2.12l5.5 5.5c.29.29.68.44 1.06.44s.77-.15 1.06-.44l5.5-5.5c.59-.58.59-1.53 0-2.12zM5.21 10L10 5.21 14.79 10H5.21zM19 11.5s-2 2.17-2 3.5c0 1.1.9 2 2 2s2-.9 2-2c0-1.33-2-3.5-2-3.5z"/></svg>';
-  bgLabel.style.cssText = 'pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;';
-  bgWrap.appendChild(bgInput);
+  bgLabel.style.cssText = 'pointer-events:none;position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);display:flex;';
+  var bgInd = document.createElement('div');
+  bgInd.className = 'bwbr-color-indicator';
+  bgInd.style.background = 'repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%) 50%/6px 6px';
   bgWrap.appendChild(bgLabel);
-  row2.appendChild(bgWrap);
-  // 글자 배경 투명 토글
-  var bgTransBtn = document.createElement('button');
-  bgTransBtn.className = 'bwbr-text-toolbar-btn bwbr-trans-btn';
-  bgTransBtn.textContent = '\u2205';
-  _setTooltip(bgTransBtn, '배경 투명');
-  bgTransBtn.addEventListener('click', function() {
-    var isActive = bgTransBtn.classList.toggle('bwbr-tb-active');
-    _restoreTextSelection();
-    _applyStyleToSelection('backgroundColor', isActive ? 'transparent' : bgInput.value);
-    _textEditor.focus();
+  bgWrap.appendChild(bgInd);
+  bgWrap.addEventListener('mousedown', function(e) { e.preventDefault(); });
+  bgWrap.addEventListener('click', function() {
+    _openColorPopup(bgWrap, _bgHex, _bgTrans, true, function(color, isTrans, hex) {
+      _bgHex = hex; _bgTrans = isTrans;
+      bgInd.style.background = isTrans ? 'repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%) 50%/6px 6px' : hex;
+      _restoreTextSelection();
+      _applyStyleToSelection('backgroundColor', color);
+      _textEditor.focus();
+    });
   });
-  row2.appendChild(bgTransBtn);
+  row2.appendChild(bgWrap);
 
   // 박스 배경색
   var boxBgWrap = document.createElement('div');
   boxBgWrap.className = 'bwbr-text-toolbar-color';
   _setTooltip(boxBgWrap, '박스 배경색');
-  var boxBgInput = document.createElement('input');
-  boxBgInput.type = 'color';
-  boxBgInput.value = '#ffffff';
-  boxBgInput.addEventListener('input', function () {
-    boxBgTransBtn.classList.remove('bwbr-tb-active');
-    _textBgColor = boxBgInput.value;
-    if (_textEditorWrap) _textEditorWrap.style.background = boxBgInput.value;
-  });
   var boxBgLabel = document.createElement('span');
   boxBgLabel.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14z"/></svg>';
-  boxBgLabel.style.cssText = 'pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;';
-  boxBgWrap.appendChild(boxBgInput);
+  boxBgLabel.style.cssText = 'pointer-events:none;position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);display:flex;';
+  var boxBgInd = document.createElement('div');
+  boxBgInd.className = 'bwbr-color-indicator';
+  boxBgInd.style.background = 'repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%) 50%/6px 6px';
   boxBgWrap.appendChild(boxBgLabel);
-  row2.appendChild(boxBgWrap);
-  // 박스 배경 투명 토글
-  var boxBgTransBtn = document.createElement('button');
-  boxBgTransBtn.className = 'bwbr-text-toolbar-btn bwbr-trans-btn';
-  boxBgTransBtn.textContent = '\u2205';
-  _setTooltip(boxBgTransBtn, '박스 투명');
-  boxBgTransBtn.addEventListener('click', function() {
-    var isActive = boxBgTransBtn.classList.toggle('bwbr-tb-active');
-    _textBgColor = isActive ? '' : boxBgInput.value;
-    if (_textEditorWrap) _textEditorWrap.style.background = isActive ? 'transparent' : boxBgInput.value;
+  boxBgWrap.appendChild(boxBgInd);
+  boxBgWrap.addEventListener('mousedown', function(e) { e.preventDefault(); });
+  boxBgWrap.addEventListener('click', function() {
+    _openColorPopup(boxBgWrap, _boxBgHex, _boxBgTrans, true, function(color, isTrans, hex) {
+      _boxBgHex = hex; _boxBgTrans = isTrans;
+      boxBgInd.style.background = isTrans ? 'repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%) 50%/6px 6px' : hex;
+      _textBgColor = isTrans ? '' : hex;
+      if (_textEditorWrap) _textEditorWrap.style.background = isTrans ? 'transparent' : hex;
+    });
   });
-  row2.appendChild(boxBgTransBtn);
+  row2.appendChild(boxBgWrap);
 
   row2.appendChild(_makeToolbarSep());
 
@@ -2477,6 +2506,228 @@ function _makeToolbarSep() {
   var s = document.createElement('div');
   s.className = 'bwbr-text-toolbar-sep';
   return s;
+}
+
+/* ── 커스텀 컬러 팝업 (SV + Hue + 투명 체크) ── */
+var _colorPopupEl = null;
+var _colorPopupClose = null;
+
+function _hsvToRgb(h, s, v) {
+  var i = Math.floor(h * 6), f = h * 6 - i;
+  var p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
+  var r, g, b;
+  switch (i % 6) {
+    case 0: r=v;g=t;b=p; break; case 1: r=q;g=v;b=p; break;
+    case 2: r=p;g=v;b=t; break; case 3: r=p;g=q;b=v; break;
+    case 4: r=t;g=p;b=v; break; case 5: r=v;g=p;b=q; break;
+  }
+  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+}
+function _rgbToHsv(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  var mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  var h = 0, s = mx ? d / mx : 0, v = mx;
+  if (d) {
+    switch (mx) {
+      case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+      case g: h = ((b - r) / d + 2) / 6; break;
+      case b: h = ((r - g) / d + 4) / 6; break;
+    }
+  }
+  return [h, s, v];
+}
+function _hexToRgb(hex) {
+  hex = hex.replace(/^#/, '');
+  if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+  if (hex.length !== 6) return [0, 0, 0];
+  return [parseInt(hex.substr(0, 2), 16), parseInt(hex.substr(2, 2), 16), parseInt(hex.substr(4, 2), 16)];
+}
+function _rgbToHex(r, g, b) {
+  return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+}
+function _clamp01(x) { return Math.max(0, Math.min(1, x)); }
+
+function _closeColorPopup() {
+  if (_colorPopupEl && _colorPopupEl.parentNode) _colorPopupEl.parentNode.removeChild(_colorPopupEl);
+  _colorPopupEl = null;
+  if (_colorPopupClose) { document.removeEventListener('mousedown', _colorPopupClose, true); _colorPopupClose = null; }
+}
+
+function _openColorPopup(anchorEl, currentHex, isTransparent, allowTransparent, onChange) {
+  _closeColorPopup();
+  var PW = 160, SV_H = 100, HUE_H = 12;
+
+  // 현재 색상 파싱
+  var rgb = _hexToRgb(currentHex || '#000000');
+  var hsv = _rgbToHsv(rgb[0], rgb[1], rgb[2]);
+  var ch = hsv[0], cs = hsv[1], cv = hsv[2];
+  var trans = !!isTransparent;
+
+  var popup = document.createElement('div');
+  popup.className = 'bwbr-color-popup';
+
+  // SV canvas
+  var svC = document.createElement('canvas');
+  svC.width = PW * 2; svC.height = SV_H * 2;
+  svC.style.cssText = 'width:' + PW + 'px;height:' + SV_H + 'px;cursor:crosshair;border-radius:4px;';
+  popup.appendChild(svC);
+
+  // Hue canvas
+  var hueC = document.createElement('canvas');
+  hueC.width = PW * 2; hueC.height = HUE_H * 2;
+  hueC.style.cssText = 'width:' + PW + 'px;height:' + HUE_H + 'px;cursor:pointer;border-radius:3px;';
+  hueC.className = 'bwbr-color-popup-hue';
+  popup.appendChild(hueC);
+
+  var svCtx = svC.getContext('2d');
+  var hueCtx = hueC.getContext('2d');
+  svCtx.scale(2, 2);
+  hueCtx.scale(2, 2);
+
+  // 하단 행: 미리보기 + hex + 투명
+  var row = document.createElement('div');
+  row.className = 'bwbr-color-popup-row';
+  var preview = document.createElement('div');
+  preview.className = 'bwbr-color-popup-preview';
+  row.appendChild(preview);
+  var hexIn = document.createElement('input');
+  hexIn.className = 'bwbr-color-popup-hex';
+  hexIn.value = currentHex || '#000000';
+  row.appendChild(hexIn);
+
+  var transLabel = null;
+  var transCheck = null;
+  if (allowTransparent) {
+    transLabel = document.createElement('label');
+    transLabel.className = 'bwbr-color-popup-trans';
+    transCheck = document.createElement('input');
+    transCheck.type = 'checkbox';
+    transCheck.checked = trans;
+    transLabel.appendChild(transCheck);
+    transLabel.appendChild(document.createTextNode('투명'));
+    row.appendChild(transLabel);
+  }
+  popup.appendChild(row);
+
+  // 그리기
+  function drawSV() {
+    var c = _hsvToRgb(ch, 1, 1);
+    svCtx.fillStyle = 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
+    svCtx.fillRect(0, 0, PW, SV_H);
+    var wg = svCtx.createLinearGradient(0, 0, PW, 0);
+    wg.addColorStop(0, '#fff'); wg.addColorStop(1, 'rgba(255,255,255,0)');
+    svCtx.fillStyle = wg; svCtx.fillRect(0, 0, PW, SV_H);
+    var bg = svCtx.createLinearGradient(0, 0, 0, SV_H);
+    bg.addColorStop(0, 'rgba(0,0,0,0)'); bg.addColorStop(1, '#000');
+    svCtx.fillStyle = bg; svCtx.fillRect(0, 0, PW, SV_H);
+    var cx = cs * PW, cy = (1 - cv) * SV_H;
+    svCtx.beginPath(); svCtx.arc(cx, cy, 5, 0, Math.PI * 2);
+    svCtx.strokeStyle = (cv > 0.5 && cs < 0.5) ? '#000' : '#fff';
+    svCtx.lineWidth = 1.5; svCtx.stroke();
+  }
+  function drawHue() {
+    var grad = hueCtx.createLinearGradient(0, 0, PW, 0);
+    for (var i = 0; i <= 6; i++) {
+      var c = _hsvToRgb(i / 6, 1, 1);
+      grad.addColorStop(Math.min(i / 6, 1), 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')');
+    }
+    hueCtx.fillStyle = grad; hueCtx.fillRect(0, 0, PW, HUE_H);
+    var ix = ch * PW;
+    hueCtx.fillStyle = '#fff'; hueCtx.fillRect(ix - 3, -1, 6, HUE_H + 2);
+    hueCtx.strokeStyle = 'rgba(0,0,0,0.4)'; hueCtx.lineWidth = 1;
+    hueCtx.strokeRect(ix - 3, -1, 6, HUE_H + 2);
+  }
+  function updatePreview() {
+    var c = _hsvToRgb(ch, cs, cv);
+    var hex = _rgbToHex(c[0], c[1], c[2]);
+    hexIn.value = hex;
+    if (trans) {
+      preview.style.background = 'repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%) 50%/8px 8px';
+    } else {
+      preview.style.background = hex;
+    }
+  }
+  function commit() {
+    var c = _hsvToRgb(ch, cs, cv);
+    var hex = _rgbToHex(c[0], c[1], c[2]);
+    onChange(trans ? 'transparent' : hex, trans, hex);
+  }
+  function redraw() { drawSV(); drawHue(); updatePreview(); }
+
+  // 드래그 헬퍼
+  function addDrag(canvas, onMove) {
+    var dragging = false;
+    function pick(e) {
+      var r = canvas.getBoundingClientRect();
+      onMove((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+    }
+    canvas.addEventListener('pointerdown', function(e) {
+      dragging = true; canvas.setPointerCapture(e.pointerId); pick(e);
+    });
+    canvas.addEventListener('pointermove', function(e) { if (dragging) pick(e); });
+    canvas.addEventListener('pointerup', function() { dragging = false; });
+    canvas.addEventListener('lostpointercapture', function() { dragging = false; });
+  }
+
+  addDrag(svC, function(xr, yr) {
+    cs = _clamp01(xr); cv = 1 - _clamp01(yr);
+    if (trans && transCheck) { trans = false; transCheck.checked = false; }
+    redraw(); commit();
+  });
+  addDrag(hueC, function(xr) {
+    ch = _clamp01(xr) * 0.9999;
+    if (trans && transCheck) { trans = false; transCheck.checked = false; }
+    redraw(); commit();
+  });
+
+  if (transCheck) {
+    transCheck.addEventListener('change', function() {
+      trans = transCheck.checked;
+      redraw(); commit();
+    });
+  }
+
+  hexIn.addEventListener('keydown', function(e) {
+    e.stopPropagation();
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      var val = hexIn.value.trim();
+      if (!/^#/.test(val)) val = '#' + val;
+      if (/^#[0-9a-fA-F]{6}$/.test(val) || /^#[0-9a-fA-F]{3}$/.test(val)) {
+        var rgb2 = _hexToRgb(val);
+        var hsv2 = _rgbToHsv(rgb2[0], rgb2[1], rgb2[2]);
+        ch = hsv2[0]; cs = hsv2[1]; cv = hsv2[2];
+        if (trans && transCheck) { trans = false; transCheck.checked = false; }
+        redraw(); commit();
+      }
+    }
+  });
+  hexIn.addEventListener('mousedown', function(e) { e.stopPropagation(); });
+
+  // 팝업 위치
+  document.body.appendChild(popup);
+  _colorPopupEl = popup;
+  var ar = anchorEl.getBoundingClientRect();
+  var ph = popup.offsetHeight;
+  var py = ar.bottom + 4;
+  if (py + ph > window.innerHeight - 8) py = ar.top - ph - 4;
+  if (py < 4) py = 4;
+  var px = ar.left;
+  if (px + popup.offsetWidth > window.innerWidth - 8) px = window.innerWidth - popup.offsetWidth - 8;
+  popup.style.left = px + 'px';
+  popup.style.top = py + 'px';
+
+  redraw();
+
+  // 외부 클릭 닫기
+  _colorPopupClose = function(e) {
+    if (!popup.contains(e.target) && !anchorEl.contains(e.target)) {
+      _closeColorPopup();
+    }
+  };
+  setTimeout(function() {
+    document.addEventListener('mousedown', _colorPopupClose, true);
+  }, 0);
 }
 
 function _enforceMinHeight() {
@@ -2537,6 +2788,7 @@ function _onTextClickOutside(e) {
   if (e.button !== 0) return; // 좌클릭만 외부 클릭으로 인식
   if (_textEditorWrap && _textEditorWrap.contains(e.target)) return;
   if (_textToolbar && _textToolbar.contains(e.target)) return;
+  if (_colorPopupEl && _colorPopupEl.contains(e.target)) return;
   finishTextEditing(true);
 }
 
@@ -2619,6 +2871,7 @@ function finishTextEditing(confirm) {
 }
 
 function cleanupTextEditor() {
+  _closeColorPopup();
   _stopToolbarPosTracker();
   if (_textEditorWrap) { _textEditorWrap.remove(); _textEditorWrap = null; }
   _textEditor = null;
@@ -3830,6 +4083,7 @@ function setupSelectModeHandlers() {
     if (e.target.closest('.bwbr-place-align-bar')) return;
     if (e.target.closest('.bwbr-text-toolbar')) return;
     if (e.target.closest('.bwbr-text-editor-wrap')) return;
+    if (e.target.closest('.bwbr-color-popup')) return;
 
     // 선택 모드: 드래그 = 범위 선택
     // 편집 모드: Alt+드래그 → 자동으로 선택 모드 전환 후 범위 선택
@@ -3865,7 +4119,8 @@ function setupSelectModeHandlers() {
     if (!_state.active) return;
     if (e.target.closest('.bwbr-placement-toolbar') ||
         e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar') ||
-        e.target.closest('.bwbr-text-toolbar') || e.target.closest('.bwbr-placement-overlay')) return;
+        e.target.closest('.bwbr-text-toolbar') || e.target.closest('.bwbr-placement-overlay') ||
+        e.target.closest('.bwbr-color-popup')) return;
     // 스테이징 아이템 dblclick은 통과 (텍스트 편집기 열기)
     if (e.target.closest('.bwbr-staged-item')) return;
     e.stopImmediatePropagation();
@@ -3879,7 +4134,8 @@ function setupSelectModeHandlers() {
     if (e.target.closest('.bwbr-placement-toolbar') ||
         e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar') ||
         e.target.closest('.bwbr-text-toolbar') ||
-        e.target.closest('.bwbr-text-editor-wrap')) return;
+        e.target.closest('.bwbr-text-editor-wrap') ||
+        e.target.closest('.bwbr-color-popup')) return;
 
     // 편집 모드: 항상 좌클릭 패닝 차단
     if (_state.mode === 'edit') { e.stopImmediatePropagation(); return; }
@@ -3898,7 +4154,8 @@ function setupSelectModeHandlers() {
     if (e.target.closest('.bwbr-placement-toolbar') ||
         e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar') ||
         e.target.closest('.bwbr-text-toolbar') ||
-        e.target.closest('.bwbr-placement-overlay')) return; // 오버레이 클릭은 통과 (배치 동작)
+        e.target.closest('.bwbr-placement-overlay') ||
+        e.target.closest('.bwbr-color-popup')) return; // 오버레이/컬러팝업 클릭은 통과
 
     // 리사이즈 핸들 클릭: 핸들 자체 mousedown이 처리하도록 통과
     // 패닝 차단은 pointerdown capture에서 이미 처리됨
