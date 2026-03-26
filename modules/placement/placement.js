@@ -881,6 +881,14 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 .bwbr-text-toolbar-btn:hover { background: #f0f0f0; }
 .bwbr-text-toolbar-btn.bwbr-tb-active { background: #e0e7ff; color: #1a56db; }
 
+.bwbr-trans-btn {
+  width: 18px !important;
+  height: 28px;
+  font-size: 12px;
+  padding: 0 !important;
+  margin-left: -2px;
+}
+
 .bwbr-text-toolbar-sep {
   width: 1px;
   height: 20px;
@@ -948,8 +956,6 @@ var _tooltipTimer = null;
 
 function _showTooltip(text, anchorEl) {
   if (!text) return;
-  // 텍스트 편집 중에는 툴팁 표시 안 함 (텍스트 영역과 겹침 방지)
-  if (_textEditor) return;
   if (!_tooltipEl) {
     _tooltipEl = document.createElement('div');
     _tooltipEl.className = 'bwbr-tooltip';
@@ -1947,6 +1953,10 @@ function startTextEditing(rect) {
   document.body.appendChild(_textToolbar);
   _startToolbarPosTracker();
 
+  // 우클릭 컨텍스트 메뉴 차단
+  _textEditor.addEventListener('contextmenu', function(ev) { ev.preventDefault(); });
+  _textEditorWrap.addEventListener('contextmenu', function(ev) { ev.preventDefault(); });
+
   // 포커스
   _textEditor.focus();
 
@@ -1979,9 +1989,11 @@ function _startToolbarPosTracker() {
   function tick() {
     if (!_textEditorWrap || !_textToolbar) return;
     var r = _textEditorWrap.getBoundingClientRect();
-    var barH = 40;
+    var barH = _textToolbar.offsetHeight || 60;
     var y = r.top - barH - 4;
     if (y < 4) y = r.bottom + 4;
+    // 툴바가 텍스트 박스와 겹치면 아래로 이동 (툴바가 박스 내부에 들어가는 경우)
+    if (y > r.top && y < r.bottom) y = r.bottom + 4;
     _textToolbar.style.left = r.left + 'px';
     _textToolbar.style.top = y + 'px';
     _tbPosRaf = requestAnimationFrame(tick);
@@ -2311,22 +2323,17 @@ function createTextToolbar() {
 
   row2.appendChild(_makeToolbarSep());
 
-  // 글자 색상 (우클릭: 투명)
+  // 글자 색상
   var fgWrap = document.createElement('div');
   fgWrap.className = 'bwbr-text-toolbar-color';
-  _setTooltip(fgWrap, '글자 색상 (우클릭: 투명)');
+  _setTooltip(fgWrap, '글자 색상');
   var fgInput = document.createElement('input');
   fgInput.type = 'color';
   fgInput.value = '#000000';
   fgInput.addEventListener('input', function () {
+    fgTransBtn.classList.remove('bwbr-tb-active');
     _restoreTextSelection();
     _applyStyleToSelection('color', fgInput.value);
-    _textEditor.focus();
-  });
-  fgInput.addEventListener('contextmenu', function (ev) {
-    ev.preventDefault();
-    _restoreTextSelection();
-    _applyStyleToSelection('color', 'transparent');
     _textEditor.focus();
   });
   var fgLabel = document.createElement('span');
@@ -2335,6 +2342,18 @@ function createTextToolbar() {
   fgWrap.appendChild(fgInput);
   fgWrap.appendChild(fgLabel);
   row2.appendChild(fgWrap);
+  // 글자 투명 토글
+  var fgTransBtn = document.createElement('button');
+  fgTransBtn.className = 'bwbr-text-toolbar-btn bwbr-trans-btn';
+  fgTransBtn.textContent = '\u2205';
+  _setTooltip(fgTransBtn, '글자 투명');
+  fgTransBtn.addEventListener('click', function() {
+    var isActive = fgTransBtn.classList.toggle('bwbr-tb-active');
+    _restoreTextSelection();
+    _applyStyleToSelection('color', isActive ? 'transparent' : fgInput.value);
+    _textEditor.focus();
+  });
+  row2.appendChild(fgTransBtn);
 
   // 윤곽선 색상 (outlined A)
   var strokeColorWrap = document.createElement('div');
@@ -2354,22 +2373,17 @@ function createTextToolbar() {
   strokeColorWrap.appendChild(strokeColorLabel);
   row2.appendChild(strokeColorWrap);
 
-  // 글자 배경색 (우클릭: 투명)
+  // 글자 배경색
   var bgWrap = document.createElement('div');
   bgWrap.className = 'bwbr-text-toolbar-color';
-  _setTooltip(bgWrap, '글자 배경색 (우클릭: 투명)');
+  _setTooltip(bgWrap, '글자 배경색');
   var bgInput = document.createElement('input');
   bgInput.type = 'color';
   bgInput.value = '#ffff00';
   bgInput.addEventListener('input', function () {
+    bgTransBtn.classList.remove('bwbr-tb-active');
     _restoreTextSelection();
     _applyStyleToSelection('backgroundColor', bgInput.value);
-    _textEditor.focus();
-  });
-  bgInput.addEventListener('contextmenu', function (ev) {
-    ev.preventDefault();
-    _restoreTextSelection();
-    _applyStyleToSelection('backgroundColor', 'transparent');
     _textEditor.focus();
   });
   var bgLabel = document.createElement('span');
@@ -2378,22 +2392,30 @@ function createTextToolbar() {
   bgWrap.appendChild(bgInput);
   bgWrap.appendChild(bgLabel);
   row2.appendChild(bgWrap);
+  // 글자 배경 투명 토글
+  var bgTransBtn = document.createElement('button');
+  bgTransBtn.className = 'bwbr-text-toolbar-btn bwbr-trans-btn';
+  bgTransBtn.textContent = '\u2205';
+  _setTooltip(bgTransBtn, '배경 투명');
+  bgTransBtn.addEventListener('click', function() {
+    var isActive = bgTransBtn.classList.toggle('bwbr-tb-active');
+    _restoreTextSelection();
+    _applyStyleToSelection('backgroundColor', isActive ? 'transparent' : bgInput.value);
+    _textEditor.focus();
+  });
+  row2.appendChild(bgTransBtn);
 
-  // 박스 배경색 (우클릭: 투명)
+  // 박스 배경색
   var boxBgWrap = document.createElement('div');
   boxBgWrap.className = 'bwbr-text-toolbar-color';
-  _setTooltip(boxBgWrap, '박스 배경색 (우클릭: 투명)');
+  _setTooltip(boxBgWrap, '박스 배경색');
   var boxBgInput = document.createElement('input');
   boxBgInput.type = 'color';
   boxBgInput.value = '#ffffff';
   boxBgInput.addEventListener('input', function () {
+    boxBgTransBtn.classList.remove('bwbr-tb-active');
     _textBgColor = boxBgInput.value;
     if (_textEditorWrap) _textEditorWrap.style.background = boxBgInput.value;
-  });
-  boxBgInput.addEventListener('contextmenu', function (ev) {
-    ev.preventDefault();
-    _textBgColor = '';
-    if (_textEditorWrap) _textEditorWrap.style.background = 'transparent';
   });
   var boxBgLabel = document.createElement('span');
   boxBgLabel.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14z"/></svg>';
@@ -2401,6 +2423,17 @@ function createTextToolbar() {
   boxBgWrap.appendChild(boxBgInput);
   boxBgWrap.appendChild(boxBgLabel);
   row2.appendChild(boxBgWrap);
+  // 박스 배경 투명 토글
+  var boxBgTransBtn = document.createElement('button');
+  boxBgTransBtn.className = 'bwbr-text-toolbar-btn bwbr-trans-btn';
+  boxBgTransBtn.textContent = '\u2205';
+  _setTooltip(boxBgTransBtn, '박스 투명');
+  boxBgTransBtn.addEventListener('click', function() {
+    var isActive = boxBgTransBtn.classList.toggle('bwbr-tb-active');
+    _textBgColor = isActive ? '' : boxBgInput.value;
+    if (_textEditorWrap) _textEditorWrap.style.background = isActive ? 'transparent' : boxBgInput.value;
+  });
+  row2.appendChild(boxBgTransBtn);
 
   row2.appendChild(_makeToolbarSep());
 
@@ -2446,6 +2479,18 @@ function _makeToolbarSep() {
   return s;
 }
 
+function _enforceMinHeight() {
+  if (!_textEditorWrap || !_textEditor) return;
+  var maxFs = 16;
+  _textEditor.querySelectorAll('[style*="font-size"]').forEach(function(el) {
+    var fs = parseFloat(el.style.fontSize);
+    if (fs > maxFs) maxFs = fs;
+  });
+  var needed = Math.ceil(maxFs * 1.6) + 16;
+  var cur = parseInt(_textEditorWrap.style.minHeight) || 0;
+  if (needed > cur) _textEditorWrap.style.minHeight = needed + 'px';
+}
+
 function _applyFontSize(px) {
   var sel = window.getSelection();
   if (!sel || sel.rangeCount === 0) return;
@@ -2459,6 +2504,7 @@ function _applyFontSize(px) {
     range.collapse(true);
     sel.removeAllRanges();
     sel.addRange(range);
+    _enforceMinHeight();
     return;
   }
   var frag = range.extractContents();
@@ -2472,6 +2518,7 @@ function _applyFontSize(px) {
   var nr = document.createRange();
   nr.selectNodeContents(span2);
   sel.addRange(nr);
+  _enforceMinHeight();
 }
 
 function _stripFontSize(node) {
@@ -3781,6 +3828,8 @@ function setupSelectModeHandlers() {
     if (e.target.closest('.bwbr-placement-toolbar')) return;
     if (e.target.closest('.bwbr-place-confirm-bar')) return;
     if (e.target.closest('.bwbr-place-align-bar')) return;
+    if (e.target.closest('.bwbr-text-toolbar')) return;
+    if (e.target.closest('.bwbr-text-editor-wrap')) return;
 
     // 선택 모드: 드래그 = 범위 선택
     // 편집 모드: Alt+드래그 → 자동으로 선택 모드 전환 후 범위 선택
@@ -3829,7 +3878,8 @@ function setupSelectModeHandlers() {
     if (!_state.active || e.button !== 0) return;
     if (e.target.closest('.bwbr-placement-toolbar') ||
         e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar') ||
-        e.target.closest('.bwbr-text-toolbar')) return;
+        e.target.closest('.bwbr-text-toolbar') ||
+        e.target.closest('.bwbr-text-editor-wrap')) return;
 
     // 편집 모드: 항상 좌클릭 패닝 차단
     if (_state.mode === 'edit') { e.stopImmediatePropagation(); return; }
@@ -3854,9 +3904,13 @@ function setupSelectModeHandlers() {
     // 패닝 차단은 pointerdown capture에서 이미 처리됨
     if (e.target.closest('.bwbr-resize-handle')) return;
 
-    // 스테이징 아이템 클릭: 기존 핸들러 대신 여기서 직접 호출
+    // 텍스트 에디터 영역 클릭: 통과
+    if (e.target.closest('.bwbr-text-editor-wrap')) return;
+
+    // 스테이징 아이템 클릭: 텍스트 편집 중이면 무시 (툴바 Z 아래 스테이지 관통 방지)
     var stagedEl = e.target.closest('.bwbr-staged-item');
     if (stagedEl) {
+      if (_state.textEditing) { e.stopImmediatePropagation(); return; }
       var stagedId = stagedEl.getAttribute('data-staged-id');
       if (stagedId) onStagedItemMouseDown(stagedId, e);
       e.stopImmediatePropagation();
