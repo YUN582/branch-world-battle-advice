@@ -1999,6 +1999,7 @@ function startTextEditing(rect) {
   // 우클릭 컨텍스트 메뉴 차단
   _textEditor.addEventListener('contextmenu', function(ev) { ev.preventDefault(); });
   _textEditorWrap.addEventListener('contextmenu', function(ev) { ev.preventDefault(); });
+  _textToolbar.addEventListener('contextmenu', function(ev) { ev.preventDefault(); });
 
   // 포커스
   _textEditor.focus();
@@ -2010,6 +2011,9 @@ function startTextEditing(rect) {
       _savedTextRange = sel.getRangeAt(0).cloneRange();
     }
   });
+
+  // min-height 강제 (기본 폰트 사이즈 기준)
+  _enforceMinHeight();
 
   // 오버레이 숨김 (편집 중 클릭/입력 방해 방지)
   if (_overlay) _overlay.style.pointerEvents = 'none';
@@ -2033,10 +2037,11 @@ function _startToolbarPosTracker() {
     if (!_textEditorWrap || !_textToolbar) return;
     var r = _textEditorWrap.getBoundingClientRect();
     var barH = _textToolbar.offsetHeight || 60;
-    var y = r.top - barH - 4;
-    if (y < 4) y = r.bottom + 4;
-    // 툴바가 텍스트 박스와 겹치면 아래로 이동 (툴바가 박스 내부에 들어가는 경우)
-    if (y > r.top && y < r.bottom) y = r.bottom + 4;
+    var gap = 8;
+    var y = r.top - barH - gap;
+    if (y < 4) y = r.bottom + gap;
+    // 툴바가 텍스트 박스와 겹치면 아래로 이동
+    if (y > r.top && y < r.bottom) y = r.bottom + gap;
     _textToolbar.style.left = r.left + 'px';
     _textToolbar.style.top = y + 'px';
     _tbPosRaf = requestAnimationFrame(tick);
@@ -2371,6 +2376,48 @@ function createTextToolbar() {
   var _bgHex = '#ffff00', _bgTrans = true;
   var _boxBgHex = '#ffffff', _boxBgTrans = true;
 
+  // 색상 라이브 프리뷰 헬퍼: 처음에 선택을 span으로 wrapping하고, 이후 drag에서는 그 span의 style만 업데이트
+  var _colorLiveSpan = null;
+  var _colorLiveProp = null;
+
+  function _colorOnChange(prop, color, isTrans, hex) {
+    if (_colorLiveSpan && _colorLiveProp === prop) {
+      // 이미 wrap된 span 재사용 — style만 변경
+      _colorLiveSpan.style[prop] = color;
+      return;
+    }
+    // 처음: 선택영역 wrap
+    _restoreTextSelection();
+    var sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    var range = sel.getRangeAt(0);
+    if (range.collapsed) {
+      var span = document.createElement('span');
+      span.style[prop] = color;
+      span.appendChild(document.createTextNode('\u200B'));
+      range.insertNode(span);
+      range.setStartAfter(span);
+      sel.removeAllRanges(); sel.addRange(range);
+      _colorLiveSpan = span;
+      _colorLiveProp = prop;
+      return;
+    }
+    var span2 = document.createElement('span');
+    span2.style[prop] = color;
+    try { range.surroundContents(span2); } catch(e) {
+      var frag = range.extractContents();
+      span2.appendChild(frag);
+      range.insertNode(span2);
+    }
+    sel.removeAllRanges();
+    var nr = document.createRange();
+    nr.selectNodeContents(span2);
+    sel.addRange(nr);
+    _savedTextRange = nr.cloneRange();
+    _colorLiveSpan = span2;
+    _colorLiveProp = prop;
+  }
+
   // 글자 색상
   var fgWrap = document.createElement('div');
   fgWrap.className = 'bwbr-text-toolbar-color';
@@ -2385,12 +2432,11 @@ function createTextToolbar() {
   fgWrap.appendChild(fgInd);
   fgWrap.addEventListener('mousedown', function(e) { e.preventDefault(); });
   fgWrap.addEventListener('click', function() {
+    _colorLiveSpan = null; _colorLiveProp = null;
     _openColorPopup(fgWrap, _fgHex, _fgTrans, true, function(color, isTrans, hex) {
       _fgHex = hex; _fgTrans = isTrans;
       fgInd.style.background = isTrans ? 'repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%) 50%/6px 6px' : hex;
-      _restoreTextSelection();
-      _applyStyleToSelection('color', color);
-      _textEditor.focus();
+      _colorOnChange('color', color, isTrans, hex);
     });
   });
   row2.appendChild(fgWrap);
@@ -2431,12 +2477,11 @@ function createTextToolbar() {
   bgWrap.appendChild(bgInd);
   bgWrap.addEventListener('mousedown', function(e) { e.preventDefault(); });
   bgWrap.addEventListener('click', function() {
+    _colorLiveSpan = null; _colorLiveProp = null;
     _openColorPopup(bgWrap, _bgHex, _bgTrans, true, function(color, isTrans, hex) {
       _bgHex = hex; _bgTrans = isTrans;
       bgInd.style.background = isTrans ? 'repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%) 50%/6px 6px' : hex;
-      _restoreTextSelection();
-      _applyStyleToSelection('backgroundColor', color);
-      _textEditor.focus();
+      _colorOnChange('backgroundColor', color, isTrans, hex);
     });
   });
   row2.appendChild(bgWrap);
@@ -2565,6 +2610,7 @@ function _openColorPopup(anchorEl, currentHex, isTransparent, allowTransparent, 
 
   var popup = document.createElement('div');
   popup.className = 'bwbr-color-popup';
+  popup.addEventListener('contextmenu', function(ev) { ev.preventDefault(); });
 
   // SV canvas
   var svC = document.createElement('canvas');
@@ -2732,14 +2778,13 @@ function _openColorPopup(anchorEl, currentHex, isTransparent, allowTransparent, 
 
 function _enforceMinHeight() {
   if (!_textEditorWrap || !_textEditor) return;
-  var maxFs = 16;
+  var maxFs = parseFloat(window.getComputedStyle(_textEditor).fontSize) || 16;
   _textEditor.querySelectorAll('[style*="font-size"]').forEach(function(el) {
     var fs = parseFloat(el.style.fontSize);
     if (fs > maxFs) maxFs = fs;
   });
   var needed = Math.ceil(maxFs * 1.6) + 16;
-  var cur = parseInt(_textEditorWrap.style.minHeight) || 0;
-  if (needed > cur) _textEditorWrap.style.minHeight = needed + 'px';
+  _textEditorWrap.style.minHeight = Math.max(needed, parseInt(_textEditorWrap.style.minHeight) || 0) + 'px';
 }
 
 function _applyFontSize(px) {
@@ -4120,7 +4165,7 @@ function setupSelectModeHandlers() {
     if (e.target.closest('.bwbr-placement-toolbar') ||
         e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar') ||
         e.target.closest('.bwbr-text-toolbar') || e.target.closest('.bwbr-placement-overlay') ||
-        e.target.closest('.bwbr-color-popup')) return;
+        e.target.closest('.bwbr-color-popup') || e.target.closest('.bwbr-text-editor-wrap')) return;
     // 스테이징 아이템 dblclick은 통과 (텍스트 편집기 열기)
     if (e.target.closest('.bwbr-staged-item')) return;
     e.stopImmediatePropagation();
