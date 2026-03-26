@@ -855,18 +855,7 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   text-align: center;
 }
 .bwbr-size-combo-opt:hover { background: #e3f2fd; }
-.bwbr-stroke-input {
-  width: 34px;
-  height: 26px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 11px;
-  padding: 0 2px;
-  outline: none;
-  text-align: center;
-  background: #fff;
-}
-.bwbr-stroke-input:focus { border-color: #42a5f5; }
+
 .bwbr-toolbar-label {
   font-size: 10px;
   color: #666;
@@ -959,6 +948,8 @@ var _tooltipTimer = null;
 
 function _showTooltip(text, anchorEl) {
   if (!text) return;
+  // 텍스트 편집 중에는 툴팁 표시 안 함 (텍스트 영역과 겹침 방지)
+  if (_textEditor) return;
   if (!_tooltipEl) {
     _tooltipEl = document.createElement('div');
     _tooltipEl.className = 'bwbr-tooltip';
@@ -2210,7 +2201,7 @@ function createTextToolbar() {
   sizeInput.type = 'text';
   sizeInput.className = 'bwbr-size-combo-input';
   sizeInput.value = '16';
-  _setTooltip(sizeInput, '글꼴 크기 (직접 입력 가능)');
+  _setTooltip(sizeInput, '글꼴 크기');
   var sizeDropBtn = document.createElement('button');
   sizeDropBtn.className = 'bwbr-size-combo-btn';
   sizeDropBtn.type = 'button';
@@ -2262,29 +2253,61 @@ function createTextToolbar() {
   sizeCombo.appendChild(sizeDrop);
   row2.appendChild(sizeCombo);
 
-  // 윤곽 두께
+  // 윤곽 두께 콤보 (입력 + 드롭다운)
   var strokeLabel = document.createElement('span');
   strokeLabel.className = 'bwbr-toolbar-label';
   strokeLabel.textContent = '윤곽';
   row2.appendChild(strokeLabel);
 
-  var strokeWidthInput = document.createElement('input');
-  strokeWidthInput.type = 'text';
-  strokeWidthInput.className = 'bwbr-stroke-input';
-  strokeWidthInput.value = _textStrokeWidth || '0';
-  _setTooltip(strokeWidthInput, '윤곽선 두께 (0=없음)');
-  strokeWidthInput.addEventListener('change', function () {
-    var v = parseInt(strokeWidthInput.value);
+  var strokeCombo = document.createElement('div');
+  strokeCombo.className = 'bwbr-size-combo';
+  var strokeInput = document.createElement('input');
+  strokeInput.type = 'text';
+  strokeInput.className = 'bwbr-size-combo-input';
+  strokeInput.value = _textStrokeWidth || '0';
+  _setTooltip(strokeInput, '윤곽선 두께');
+  var strokeDropBtn = document.createElement('button');
+  strokeDropBtn.className = 'bwbr-size-combo-btn';
+  strokeDropBtn.type = 'button';
+  strokeDropBtn.textContent = '\u25BC';
+  _setTooltip(strokeDropBtn, '윤곽 두께 목록');
+  var strokeDrop = document.createElement('div');
+  strokeDrop.className = 'bwbr-size-combo-drop';
+  [0, 1, 2, 3, 4, 5, 6, 8, 10].forEach(function(s) {
+    var opt = document.createElement('div');
+    opt.className = 'bwbr-size-combo-opt';
+    opt.textContent = s;
+    opt.addEventListener('mousedown', function(ev) {
+      ev.preventDefault();
+      strokeInput.value = s;
+      strokeDrop.classList.remove('bwbr-size-combo-drop--open');
+      _textStrokeWidth = s;
+      _updateStrokePreview();
+    });
+    strokeDrop.appendChild(opt);
+  });
+  strokeDropBtn.addEventListener('click', function(ev) {
+    ev.preventDefault();
+    strokeDrop.classList.toggle('bwbr-size-combo-drop--open');
+  });
+  document.addEventListener('mousedown', function(ev) {
+    if (!strokeCombo.contains(ev.target)) strokeDrop.classList.remove('bwbr-size-combo-drop--open');
+  });
+  strokeInput.addEventListener('change', function () {
+    var v = parseInt(strokeInput.value);
     _textStrokeWidth = (v && v > 0) ? v : 0;
-    strokeWidthInput.value = _textStrokeWidth;
+    strokeInput.value = _textStrokeWidth;
     _updateStrokePreview();
   });
-  strokeWidthInput.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') { e.preventDefault(); strokeWidthInput.blur(); }
+  strokeInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); strokeInput.blur(); }
     e.stopPropagation();
   });
-  strokeWidthInput.addEventListener('focus', function() { strokeWidthInput.select(); });
-  row2.appendChild(strokeWidthInput);
+  strokeInput.addEventListener('focus', function() { strokeInput.select(); });
+  strokeCombo.appendChild(strokeInput);
+  strokeCombo.appendChild(strokeDropBtn);
+  strokeCombo.appendChild(strokeDrop);
+  row2.appendChild(strokeCombo);
 
   row2.appendChild(_makeToolbarSep());
 
@@ -3805,7 +3828,8 @@ function setupSelectModeHandlers() {
     if (!e.isTrusted) return;
     if (!_state.active || e.button !== 0) return;
     if (e.target.closest('.bwbr-placement-toolbar') ||
-        e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar')) return;
+        e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar') ||
+        e.target.closest('.bwbr-text-toolbar')) return;
 
     // 편집 모드: 항상 좌클릭 패닝 차단
     if (_state.mode === 'edit') { e.stopImmediatePropagation(); return; }
@@ -3823,6 +3847,7 @@ function setupSelectModeHandlers() {
     if (_state.mode !== 'select' && _state.mode !== 'edit') return;
     if (e.target.closest('.bwbr-placement-toolbar') ||
         e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar') ||
+        e.target.closest('.bwbr-text-toolbar') ||
         e.target.closest('.bwbr-placement-overlay')) return; // 오버레이 클릭은 통과 (배치 동작)
 
     // 리사이즈 핸들 클릭: 핸들 자체 mousedown이 처리하도록 통과
