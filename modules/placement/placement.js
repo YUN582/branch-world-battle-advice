@@ -863,6 +863,10 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   background: #fff;
 }
 
+.bwbr-font-select {
+  max-width: 150px;
+}
+
 .bwbr-text-toolbar-confirm {
   color: #4caf50 !important;
   font-weight: bold;
@@ -1667,8 +1671,55 @@ var _textMapCoords = null; // 편집 시작 시점의 맵 좌표 (패닝/줌 드
 var _textBgColor = '';     // 텍스트 박스 배경색 ('' = 투명)
 var _textAlign = 'left';   // 수평 정렬: left / center / right
 var _textVAlign = 'top';   // 수직 정렬: top / middle / bottom
+var _textFontFamily = 'sans-serif'; // 글꼴
 var _reopenedObj = null;   // 재편집 시 원본 객체 (ESC로 복원용)
 var _tbPosRaf = null;      // 툴바 위치 추적 rAF
+var _loadedWebFonts = {};  // 이미 로드된 웹 폰트 캐시
+
+// 폰트 목록: { label, value, type: 'local'|'web', gfName? }
+var _FONT_LIST = [
+  { label: '기본 (sans-serif)', value: 'sans-serif', type: 'local' },
+  { label: 'serif', value: 'serif', type: 'local' },
+  { label: 'monospace', value: 'monospace', type: 'local' },
+  { label: 'Arial', value: 'Arial, sans-serif', type: 'local' },
+  { label: 'Georgia', value: 'Georgia, serif', type: 'local' },
+  { label: 'Times New Roman', value: '"Times New Roman", serif', type: 'local' },
+  { label: 'Courier New', value: '"Courier New", monospace', type: 'local' },
+  { label: 'Impact', value: 'Impact, sans-serif', type: 'local' },
+  { label: 'Comic Sans MS', value: '"Comic Sans MS", cursive', type: 'local' },
+  { label: '─ 웹 폰트 (Google) ─', value: '__sep__', type: 'sep' },
+  { label: 'Noto Sans KR', value: '"Noto Sans KR", sans-serif', type: 'web', gfName: 'Noto+Sans+KR' },
+  { label: 'Noto Serif KR', value: '"Noto Serif KR", serif', type: 'web', gfName: 'Noto+Serif+KR' },
+  { label: 'Nanum Gothic', value: '"Nanum Gothic", sans-serif', type: 'web', gfName: 'Nanum+Gothic' },
+  { label: 'Nanum Myeongjo', value: '"Nanum Myeongjo", serif', type: 'web', gfName: 'Nanum+Myeongjo' },
+  { label: 'Nanum Pen', value: '"Nanum Pen Script", cursive', type: 'web', gfName: 'Nanum+Pen+Script' },
+  { label: 'Black Han Sans', value: '"Black Han Sans", sans-serif', type: 'web', gfName: 'Black+Han+Sans' },
+  { label: 'Jua', value: '"Jua", sans-serif', type: 'web', gfName: 'Jua' },
+  { label: 'Gothic A1', value: '"Gothic A1", sans-serif', type: 'web', gfName: 'Gothic+A1' },
+  { label: 'Do Hyeon', value: '"Do Hyeon", sans-serif', type: 'web', gfName: 'Do+Hyeon' },
+  { label: 'Gaegu', value: '"Gaegu", cursive', type: 'web', gfName: 'Gaegu' },
+  { label: 'Sunflower', value: '"Sunflower", sans-serif', type: 'web', gfName: 'Sunflower' },
+  { label: 'Gugi', value: '"Gugi", cursive', type: 'web', gfName: 'Gugi' },
+  { label: 'East Sea Dokdo', value: '"East Sea Dokdo", cursive', type: 'web', gfName: 'East+Sea+Dokdo' },
+  { label: 'Hi Melody', value: '"Hi Melody", cursive', type: 'web', gfName: 'Hi+Melody' },
+  { label: 'Dokdo', value: '"Dokdo", cursive', type: 'web', gfName: 'Dokdo' },
+  { label: 'Roboto', value: '"Roboto", sans-serif', type: 'web', gfName: 'Roboto' },
+  { label: 'Playfair Display', value: '"Playfair Display", serif', type: 'web', gfName: 'Playfair+Display' },
+  { label: 'Caveat', value: '"Caveat", cursive', type: 'web', gfName: 'Caveat' },
+  { label: 'Permanent Marker', value: '"Permanent Marker", cursive', type: 'web', gfName: 'Permanent+Marker' }
+];
+
+function _loadWebFont(fontEntry, cb) {
+  if (!fontEntry || fontEntry.type !== 'web' || !fontEntry.gfName) { if (cb) cb(); return; }
+  if (_loadedWebFonts[fontEntry.gfName]) { if (cb) cb(); return; }
+  _loadedWebFonts[fontEntry.gfName] = true;
+  var link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = 'https://fonts.googleapis.com/css2?family=' + fontEntry.gfName + ':wght@400;700&display=swap';
+  link.onload = function() { if (cb) cb(); };
+  link.onerror = function() { if (cb) cb(); };
+  document.head.appendChild(link);
+}
 
 function startTextEditing(rect) {
   if (_textEditor) cleanupTextEditor();
@@ -1699,7 +1750,12 @@ function startTextEditing(rect) {
   _textEditor.className = 'bwbr-text-editor';
   _textEditor.contentEditable = 'true';
   _textEditor.style.textAlign = _textAlign;
+  _textEditor.style.fontFamily = _textFontFamily;
   _textEditorWrap.appendChild(_textEditor);
+
+  // 웹 폰트 선로드
+  var fontEntry = _FONT_LIST.find(function(f) { return f.value === _textFontFamily; });
+  if (fontEntry) _loadWebFont(fontEntry);
 
   // 서식 바 (screen 좌표 — body에 부착)
   _textToolbar = createTextToolbar();
@@ -1824,6 +1880,33 @@ function createTextToolbar() {
     _textEditor.focus();
   });
   bar.appendChild(sizeSelect);
+
+  // 글꼴 선택
+  var fontSelect = document.createElement('select');
+  fontSelect.className = 'bwbr-text-toolbar-select bwbr-font-select';
+  _setTooltip(fontSelect, '글꼴');
+  _FONT_LIST.forEach(function(f) {
+    var opt = document.createElement('option');
+    if (f.type === 'sep') {
+      opt.disabled = true;
+      opt.textContent = f.label;
+    } else {
+      opt.value = f.value;
+      opt.textContent = f.label;
+      opt.style.fontFamily = f.value;
+      if (f.value === _textFontFamily) opt.selected = true;
+    }
+    fontSelect.appendChild(opt);
+  });
+  fontSelect.addEventListener('change', function() {
+    var val = fontSelect.value;
+    _textFontFamily = val;
+    if (_textEditor) _textEditor.style.fontFamily = val;
+    var entry = _FONT_LIST.find(function(f) { return f.value === val; });
+    if (entry && entry.type === 'web') _loadWebFont(entry);
+    _textEditor.focus();
+  });
+  bar.appendChild(fontSelect);
 
   bar.appendChild(_makeToolbarSep());
 
@@ -2014,6 +2097,7 @@ function finishTextEditing(confirm) {
         textBgColor: _textBgColor,
         textAlign: _textAlign,
         textVAlign: _textVAlign,
+        textFontFamily: _textFontFamily,
         settings: {
           type: _state.panelSettings.type,
           z: _state.panelSettings.z,
@@ -2050,6 +2134,7 @@ function cleanupTextEditor() {
   _textBgColor = '';
   _textAlign = 'left';
   _textVAlign = 'top';
+  _textFontFamily = 'sans-serif';
   _state.textEditing = false;
   // 오버레이 복원
   if (_overlay) _overlay.style.pointerEvents = '';
@@ -2084,6 +2169,7 @@ function renderTextEditorToCanvas() {
   var runs = [];
   _extractRuns(_textEditor, {
     fontSize: defaultFS, fontWeight: 'normal', fontStyle: 'normal',
+    fontFamily: defaultFamily,
     color: defaultColor, bgColor: '', underline: false, strikethrough: false
   }, runs);
 
@@ -2105,9 +2191,10 @@ function renderTextEditorToCanvas() {
 
     var fs = run.fontSize || defaultFS;
     var lh = fs * baseLH;
+    var runFamily = run.fontFamily || defaultFamily;
     var fontStr = (run.fontStyle === 'italic' ? 'italic ' : '') +
                   (run.fontWeight === 'bold' ? 'bold ' : '') +
-                  fs + 'px ' + defaultFamily;
+                  fs + 'px ' + runFamily;
     ctx.font = fontStr;
 
     var curLine = lines[lines.length - 1];
@@ -2204,7 +2291,7 @@ function renderTextEditorToCanvas() {
 function _extractRuns(node, style, runs) {
   if (node.nodeType === 3) {
     var txt = node.textContent;
-    if (txt) runs.push({ text: txt, fontSize: style.fontSize, fontWeight: style.fontWeight, fontStyle: style.fontStyle, color: style.color, bgColor: style.bgColor, underline: style.underline, strikethrough: style.strikethrough });
+    if (txt) runs.push({ text: txt, fontSize: style.fontSize, fontWeight: style.fontWeight, fontStyle: style.fontStyle, fontFamily: style.fontFamily, color: style.color, bgColor: style.bgColor, underline: style.underline, strikethrough: style.strikethrough });
     return;
   }
   if (node.nodeType !== 1) return;
@@ -2235,6 +2322,7 @@ function _extractRuns(node, style, runs) {
     if (ns.fontStyle === 'italic') s.fontStyle = 'italic';
     if (ns.textDecoration && ns.textDecoration.indexOf('underline') >= 0) s.underline = true;
     if (ns.textDecoration && ns.textDecoration.indexOf('line-through') >= 0) s.strikethrough = true;
+    if (ns.fontFamily) s.fontFamily = ns.fontFamily;
   }
 
   // <font color="..."> (execCommand foreColor 결과)
@@ -2643,10 +2731,11 @@ function reopenTextEditor(objId) {
   // Restore alignment state before opening editor
   _textAlign = obj.textAlign || 'left';
   _textVAlign = obj.textVAlign || 'top';
+  _textFontFamily = obj.textFontFamily || 'sans-serif';
 
   startTextEditing(rect);
 
-  // Restore content + bgColor
+  // Restore content + bgColor + font
   if (_textEditor) {
     _textEditor.innerHTML = obj.textHtml;
     if (obj.textBgColor) {
