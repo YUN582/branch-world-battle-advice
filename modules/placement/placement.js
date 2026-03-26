@@ -1143,8 +1143,8 @@ function showPlacementHelp() {
       '<div style="margin-bottom:4px;"><b>Del</b> — 선택 삭제</div>' +
       '<div style="margin-bottom:4px;"><b>Ctrl+Z/C/V</b> — 되돌리기/복사/붙여넣기</div>' +
       '<div style="margin-bottom:4px;"><b>Alt+드래그</b> — 범위 선택 / 복사</div>' +
-      '<div style="margin-bottom:4px;"><b>Esc</b> — 단계별 취소</div>' +
-      '<div style="margin-bottom:0;"><b>Alt+-</b> — 배치 모드 진입/나가기</div>' +
+      '<div style="margin-bottom:0;opacity:0.5;font-size:11px;color:#999;margin-top:6px;">' +
+      'Esc — 단계별 취소 · Alt+- — 진입/나가기</div>' +
     '</div>' +
     '<div id="bwbr-place-help-tab" style="position:absolute;top:0;left:0;right:0;bottom:0;' +
     'display:flex;align-items:center;justify-content:center;' +
@@ -2240,7 +2240,7 @@ function finishTextEditing(confirm) {
     var fontLoadPromise;
     try {
       var baseName = _capturedFont.replace(/["']/g, '').split(',')[0].trim();
-      fontLoadPromise = document.fonts.load('16px "' + baseName + '"');
+      fontLoadPromise = document.fonts.load('16px "' + baseName + '"').catch(function() {});
     } catch (e) {
       fontLoadPromise = Promise.resolve();
     }
@@ -2466,6 +2466,40 @@ function renderTextEditorToCanvas() {
     return canvas.toDataURL('image/webp', 0.9);
   } catch (ex) {
     return canvas.toDataURL('image/png');
+  }
+}
+
+// 스테이지된 텍스트 블록을 새 크기로 캔버스 리렌더
+function _reRenderTextBlock(obj) {
+  if (!obj || !obj.textHtml) return;
+  // 임시 편집기 DOM 생성
+  var tmp = document.createElement('div');
+  tmp.contentEditable = 'true';
+  tmp.style.cssText = 'position:absolute;left:-9999px;top:-9999px;white-space:pre-wrap;word-break:break-all;font-size:16px;color:#fff;font-family:' + (obj.textFontFamily || 'sans-serif') + ';';
+  tmp.innerHTML = obj.textHtml;
+  document.body.appendChild(tmp);
+  // 전역 변수 백업 → 임시 설정
+  var prevEditor = _textEditor, prevCoords = _textMapCoords;
+  var prevBg = _textBgColor, prevAlign = _textAlign, prevVAlign = _textVAlign, prevFont = _textFontFamily;
+  _textEditor = tmp;
+  _textMapCoords = obj.mapCoords;
+  _textBgColor = obj.textBgColor || '';
+  _textAlign = obj.textAlign || 'left';
+  _textVAlign = obj.textVAlign || 'top';
+  _textFontFamily = obj.textFontFamily || 'sans-serif';
+  _ensureFontFace(_textFontFamily);
+  var dataUrl = renderTextEditorToCanvas();
+  // 전역 변수 복원
+  _textEditor = prevEditor; _textMapCoords = prevCoords;
+  _textBgColor = prevBg; _textAlign = prevAlign; _textVAlign = prevVAlign; _textFontFamily = prevFont;
+  tmp.remove();
+  if (dataUrl) {
+    obj.imageDataUrl = dataUrl;
+    var el = document.querySelector('[data-staged-id="' + obj.id + '"]');
+    if (el) {
+      var img = el.querySelector('img');
+      if (img) img.src = dataUrl;
+    }
   }
 }
 
@@ -3208,6 +3242,8 @@ function _startResize(objId, dir, e) {
           id: objId,
           prev: { x: _resizeDrag.origX, y: _resizeDrag.origY, width: _resizeDrag.origW, height: _resizeDrag.origH }
         });
+        // 텍스트 블록이면 새 크기로 캔버스 리렌더 (찌그러짐 방지)
+        if (obj.textHtml) _reRenderTextBlock(obj);
       }
     }
     _resizeDrag = null;
