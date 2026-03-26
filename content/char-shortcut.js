@@ -492,8 +492,8 @@
   function findCharacterItemFromTarget(target) {
     if (!target || !target.closest) return null;
 
-    // 채팅 메시지 영역은 제외
-    if (target.closest('[role="log"], [class*="ChatMessage"], [data-testid="chat-messages"]')) return null;
+    // 채팅 메시지 영역은 제외 (채팅 패널은 MuiDrawer-root 내부)
+    if (target.closest('.MuiDrawer-root, [role="log"], [class*="ChatMessage"], [data-testid="chat-messages"]')) return null;
 
     // .movable(보드 토큰)은 제외 (별도 MUI 메뉴에서 처리)
     if (target.closest('.movable')) return null;
