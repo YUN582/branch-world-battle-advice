@@ -2028,29 +2028,14 @@ function createDrawSettingsMenu() {
 
 function initDrawCanvas() {
   cleanupDrawCanvas();
-  var zoomEl = getZoomContainer();
-  if (!zoomEl) return;
-  if (getComputedStyle(zoomEl).position === 'static') zoomEl.style.position = 'relative';
 
-  // .movable 요소의 크기를 기준으로 캔버스 생성
-  var movable = document.querySelector('.movable');
-  var canvasW, canvasH;
-  if (movable) {
-    var mr = movable.getBoundingClientRect();
-    var scale = getZoomScale();
-    canvasW = Math.round(mr.width / scale);
-    canvasH = Math.round(mr.height / scale);
-  } else {
-    canvasW = 2400;
-    canvasH = 2400;
-  }
-
+  // 뷰포트 크기의 고정 캔버스 (오버레이 위에 배치하여 실시간 미리보기)
   _drawCanvas = document.createElement('canvas');
   _drawCanvas.className = 'bwbr-draw-canvas';
-  _drawCanvas.width = canvasW;
-  _drawCanvas.height = canvasH;
-  _drawCanvas.style.cssText = 'position:absolute;left:0;top:0;width:' + canvasW + 'px;height:' + canvasH + 'px;pointer-events:none;z-index:100000;';
-  zoomEl.appendChild(_drawCanvas);
+  _drawCanvas.width = window.innerWidth;
+  _drawCanvas.height = window.innerHeight;
+  _drawCanvas.style.cssText = 'position:fixed;inset:0;z-index:103;pointer-events:none;';
+  document.body.appendChild(_drawCanvas);
   _drawCtx = _drawCanvas.getContext('2d');
   _drawStrokes = [];
   _drawPoints = [];
@@ -2106,23 +2091,10 @@ function _hideDrawFinishBar() {
   _drawFinishBar = null;
 }
 
-// 마우스/포인터 좌표 → 캔버스 로컬 좌표 변환
-function _screenToCanvasCoords(clientX, clientY) {
-  if (!_drawCanvas) return null;
-  var origin = getMapOriginOnScreen();
-  if (!origin) return null;
-  var scale = getZoomScale();
-  return {
-    x: (clientX - origin.x) / scale,
-    y: (clientY - origin.y) / scale
-  };
-}
-
 function onDrawMouseDown(e) {
   if (!_drawCanvas || !_drawCtx) return;
   _isDrawing = true;
-  var pt = _screenToCanvasCoords(e.clientX, e.clientY);
-  if (!pt) return;
+  var pt = { x: e.clientX, y: e.clientY };
   _drawPoints = [pt];
 
   // 즉시 점 렌더 (클릭만 했을 때도 점이 찍히도록)
@@ -2147,8 +2119,7 @@ function onDrawMouseDown(e) {
 
 function onDrawMouseMove(e) {
   if (!_isDrawing || !_drawCanvas || !_drawCtx) return;
-  var pt = _screenToCanvasCoords(e.clientX, e.clientY);
-  if (!pt) return;
+  var pt = { x: e.clientX, y: e.clientY };
   var prev = _drawPoints[_drawPoints.length - 1];
   _drawPoints.push(pt);
 
@@ -2204,49 +2175,7 @@ function undoDrawStroke() {
 function _redrawAllStrokes() {
   if (!_drawCanvas || !_drawCtx) return;
   _drawCtx.clearRect(0, 0, _drawCanvas.width, _drawCanvas.height);
-  _drawStrokes.forEach(function(stroke) {
-    if (stroke.points.length === 0) return;
-    _drawCtx.save();
-    _drawCtx.globalAlpha = stroke.penOpacity;
-    _drawCtx.lineCap = 'round';
-    _drawCtx.lineJoin = 'round';
-
-    // 윤곽선 패스
-    if (stroke.outlineEnabled && stroke.points.length > 1) {
-      _drawCtx.strokeStyle = stroke.outlineColor;
-      _drawCtx.lineWidth = stroke.penSize + stroke.outlineSize * 2;
-      _drawCtx.beginPath();
-      _drawCtx.moveTo(stroke.points[0].x, stroke.points[0].y);
-      for (var i = 1; i < stroke.points.length; i++) {
-        _drawCtx.lineTo(stroke.points[i].x, stroke.points[i].y);
-      }
-      _drawCtx.stroke();
-    } else if (stroke.outlineEnabled && stroke.points.length === 1) {
-      _drawCtx.strokeStyle = stroke.outlineColor;
-      _drawCtx.lineWidth = stroke.penSize + stroke.outlineSize * 2;
-      _drawCtx.beginPath();
-      _drawCtx.arc(stroke.points[0].x, stroke.points[0].y, 0.5, 0, Math.PI * 2);
-      _drawCtx.stroke();
-    }
-
-    // 메인 펜 패스
-    _drawCtx.strokeStyle = stroke.penColor;
-    _drawCtx.lineWidth = stroke.penSize;
-    if (stroke.points.length > 1) {
-      _drawCtx.beginPath();
-      _drawCtx.moveTo(stroke.points[0].x, stroke.points[0].y);
-      for (var j = 1; j < stroke.points.length; j++) {
-        _drawCtx.lineTo(stroke.points[j].x, stroke.points[j].y);
-      }
-      _drawCtx.stroke();
-    } else {
-      _drawCtx.beginPath();
-      _drawCtx.arc(stroke.points[0].x, stroke.points[0].y, 0.5, 0, Math.PI * 2);
-      _drawCtx.stroke();
-    }
-
-    _drawCtx.restore();
-  });
+  _renderStrokesToCtx(_drawCtx, _drawStrokes);
 }
 
 function finishDrawing() {
@@ -2255,7 +2184,7 @@ function finishDrawing() {
     return;
   }
 
-  // 모든 스트로크의 바운딩 박스 계산
+  // 모든 스트로크의 바운딩 박스 계산 (화면 좌표)
   var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   _drawStrokes.forEach(function(stroke) {
     var pad = (stroke.penSize + (stroke.outlineEnabled ? stroke.outlineSize * 2 : 0)) / 2 + 2;
@@ -2280,87 +2209,88 @@ function finishDrawing() {
   var bw = maxX - minX;
   var bh = maxY - minY;
 
-  // 크롭된 캔버스 생성 (COMPOSITE_PX_PER_TILE 해상도)
-  var scaleUp = COMPOSITE_PX_PER_TILE / CELL_PX; // 2x
+  // 화면 좌표 → 맵 좌표 변환 시 스케일 계산
+  var zoomScale = getZoomScale();
+  var compositeScale = COMPOSITE_PX_PER_TILE / CELL_PX; // 2x 해상도
+  var renderScale = compositeScale / zoomScale;
+
+  // 크롭된 캔버스 생성 (COMPOSITE 해상도)
   var cropCanvas = document.createElement('canvas');
-  cropCanvas.width = Math.round(bw * scaleUp);
-  cropCanvas.height = Math.round(bh * scaleUp);
+  cropCanvas.width = Math.max(1, Math.round(bw * renderScale));
+  cropCanvas.height = Math.max(1, Math.round(bh * renderScale));
   var cropCtx = cropCanvas.getContext('2d');
-  cropCtx.scale(scaleUp, scaleUp);
+  cropCtx.scale(renderScale, renderScale);
   cropCtx.translate(-minX, -minY);
 
   // 스트로크 다시 그리기 (고해상도)
-  _drawStrokes.forEach(function(stroke) {
-    if (stroke.points.length === 0) return;
-    cropCtx.save();
-    cropCtx.globalAlpha = stroke.penOpacity;
-    cropCtx.lineCap = 'round';
-    cropCtx.lineJoin = 'round';
-
-    if (stroke.outlineEnabled && stroke.points.length > 1) {
-      cropCtx.strokeStyle = stroke.outlineColor;
-      cropCtx.lineWidth = stroke.penSize + stroke.outlineSize * 2;
-      cropCtx.beginPath();
-      cropCtx.moveTo(stroke.points[0].x, stroke.points[0].y);
-      for (var i = 1; i < stroke.points.length; i++) {
-        cropCtx.lineTo(stroke.points[i].x, stroke.points[i].y);
-      }
-      cropCtx.stroke();
-    } else if (stroke.outlineEnabled && stroke.points.length === 1) {
-      cropCtx.strokeStyle = stroke.outlineColor;
-      cropCtx.lineWidth = stroke.penSize + stroke.outlineSize * 2;
-      cropCtx.beginPath();
-      cropCtx.arc(stroke.points[0].x, stroke.points[0].y, 0.5, 0, Math.PI * 2);
-      cropCtx.stroke();
-    }
-
-    cropCtx.strokeStyle = stroke.penColor;
-    cropCtx.lineWidth = stroke.penSize;
-    if (stroke.points.length > 1) {
-      cropCtx.beginPath();
-      cropCtx.moveTo(stroke.points[0].x, stroke.points[0].y);
-      for (var j = 1; j < stroke.points.length; j++) {
-        cropCtx.lineTo(stroke.points[j].x, stroke.points[j].y);
-      }
-      cropCtx.stroke();
-    } else {
-      cropCtx.beginPath();
-      cropCtx.arc(stroke.points[0].x, stroke.points[0].y, 0.5, 0, Math.PI * 2);
-      cropCtx.stroke();
-    }
-
-    cropCtx.restore();
-  });
+  _renderStrokesToCtx(cropCtx, _drawStrokes);
 
   var dataUrl = cropCanvas.toDataURL('image/png');
 
-  // 맵 좌표(px) → 화면 좌표로 역변환하여 stageObject 호출
-  var origin = getMapOriginOnScreen();
-  var scale = getZoomScale();
-  if (origin) {
-    var screenRect = {
-      x: minX * scale + origin.x,
-      y: minY * scale + origin.y,
-      w: bw * scale,
-      h: bh * scale
-    };
+  // 화면 좌표 rect → stageObject (screenToMapCoords가 처리)
+  var screenRect = { x: minX, y: minY, w: bw, h: bh };
 
-    // pendingImage를 임시로 설정 → stageObject가 사용
-    var prevPending = _state.pendingImage;
-    var prevTextData = _state.pendingTextDataUrl;
-    _state.pendingImage = null;
-    _state.pendingTextDataUrl = dataUrl;
+  var prevPending = _state.pendingImage;
+  var prevTextData = _state.pendingTextDataUrl;
+  _state.pendingImage = null;
+  _state.pendingTextDataUrl = dataUrl;
 
-    deselectStaged();
-    stageObject(screenRect);
+  deselectStaged();
+  stageObject(screenRect);
 
-    _state.pendingImage = prevPending;
-    _state.pendingTextDataUrl = prevTextData;
-  }
+  _state.pendingImage = prevPending;
+  _state.pendingTextDataUrl = prevTextData;
 
   // 캔버스 정리 & 새 캔버스 시작 (연속 그리기 지원)
   cleanupDrawCanvas();
   initDrawCanvas();
+}
+
+// 스트로크를 지정된 캔버스 컨텍스트에 렌더링 (재사용 가능)
+function _renderStrokesToCtx(ctx, strokes) {
+  strokes.forEach(function(stroke) {
+    if (stroke.points.length === 0) return;
+    ctx.save();
+    ctx.globalAlpha = stroke.penOpacity;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // 윤곽선 패스
+    if (stroke.outlineEnabled) {
+      ctx.strokeStyle = stroke.outlineColor;
+      ctx.lineWidth = stroke.penSize + stroke.outlineSize * 2;
+      if (stroke.points.length > 1) {
+        ctx.beginPath();
+        ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+        for (var i = 1; i < stroke.points.length; i++) {
+          ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+        }
+        ctx.stroke();
+      } else {
+        ctx.beginPath();
+        ctx.arc(stroke.points[0].x, stroke.points[0].y, 0.5, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    // 메인 펜 패스
+    ctx.strokeStyle = stroke.penColor;
+    ctx.lineWidth = stroke.penSize;
+    if (stroke.points.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+      for (var j = 1; j < stroke.points.length; j++) {
+        ctx.lineTo(stroke.points[j].x, stroke.points[j].y);
+      }
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.arc(stroke.points[0].x, stroke.points[0].y, 0.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  });
 }
 
 
