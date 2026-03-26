@@ -2041,9 +2041,43 @@ function initDrawCanvas() {
   _drawPoints = [];
   _isDrawing = false;
 
+  // Ctrl+Z 키보드 핸들러
+  _drawKeyHandler = function(e) {
+    if (e.ctrlKey && e.key === 'z' && _state.currentTool === 'draw') {
+      e.preventDefault();
+      e.stopPropagation();
+      undoDrawStroke();
+    }
+  };
+  document.addEventListener('keydown', _drawKeyHandler, true);
+
+  // 줌 변경 감시 (rAF 루프)
+  _drawLastZoom = getZoomScale();
+  _drawLastOrigin = getMapOriginOnScreen();
+  _drawZoomWatchId = requestAnimationFrame(_drawZoomWatch);
+
   // 완료/취소 바
   _showDrawFinishBar();
 }
+
+// 줌/패닝 변경 감시 → 스트로크 재렌더
+function _drawZoomWatch() {
+  if (!_drawCanvas) return;
+  _drawZoomWatchId = requestAnimationFrame(_drawZoomWatch);
+  var z = getZoomScale();
+  var o = getMapOriginOnScreen();
+  if (!o || !_drawLastOrigin) { _drawLastZoom = z; _drawLastOrigin = o; return; }
+  if (z !== _drawLastZoom || o.x !== _drawLastOrigin.x || o.y !== _drawLastOrigin.y) {
+    _drawLastZoom = z;
+    _drawLastOrigin = o;
+    _redrawAllStrokes();
+  }
+}
+
+var _drawKeyHandler = null;
+var _drawLastZoom = 1;
+var _drawLastOrigin = null;
+var _drawZoomWatchId = null;
 
 function cleanupDrawCanvas() {
   if (_drawCanvas && _drawCanvas.parentNode) {
@@ -2054,6 +2088,14 @@ function cleanupDrawCanvas() {
   _isDrawing = false;
   _drawPoints = [];
   _drawStrokes = [];
+  if (_drawKeyHandler) {
+    document.removeEventListener('keydown', _drawKeyHandler, true);
+    _drawKeyHandler = null;
+  }
+  if (_drawZoomWatchId) {
+    cancelAnimationFrame(_drawZoomWatchId);
+    _drawZoomWatchId = null;
+  }
   _hideDrawFinishBar();
 }
 
@@ -2091,59 +2133,81 @@ function _hideDrawFinishBar() {
   _drawFinishBar = null;
 }
 
+// 화면 좌표 → 맵 픽셀 좌표 변환
+function _screenToMapPx(clientX, clientY) {
+  var origin = getMapOriginOnScreen();
+  if (!origin) return null;
+  var scale = getZoomScale();
+  return { x: (clientX - origin.x) / scale, y: (clientY - origin.y) / scale };
+}
+
+// 맵 픽셀 좌표 → 화면 좌표 변환
+function _mapPxToScreen(mx, my) {
+  var origin = getMapOriginOnScreen();
+  if (!origin) return null;
+  var scale = getZoomScale();
+  return { x: mx * scale + origin.x, y: my * scale + origin.y };
+}
+
 function onDrawMouseDown(e) {
   if (!_drawCanvas || !_drawCtx) return;
   _isDrawing = true;
-  var pt = { x: e.clientX, y: e.clientY };
-  _drawPoints = [pt];
-
-  // 즉시 점 렌더 (클릭만 했을 때도 점이 찍히도록)
-  _drawCtx.save();
-  _drawCtx.globalAlpha = _drawSettings.penOpacity;
-  _drawCtx.lineCap = 'round';
-  _drawCtx.lineJoin = 'round';
-  if (_drawSettings.outlineEnabled) {
-    _drawCtx.strokeStyle = _drawSettings.outlineColor;
-    _drawCtx.lineWidth = _drawSettings.penSize + _drawSettings.outlineSize * 2;
-    _drawCtx.beginPath();
-    _drawCtx.arc(pt.x, pt.y, 0.5, 0, Math.PI * 2);
-    _drawCtx.stroke();
-  }
-  _drawCtx.strokeStyle = _drawSettings.penColor;
-  _drawCtx.lineWidth = _drawSettings.penSize;
-  _drawCtx.beginPath();
-  _drawCtx.arc(pt.x, pt.y, 0.5, 0, Math.PI * 2);
-  _drawCtx.stroke();
-  _drawCtx.restore();
+  var mapPt = _screenToMapPx(e.clientX, e.clientY);
+  if (!mapPt) return;
+  // 펜 굵기도 맵 픽셀 단위로 저장 (현재 줌에서의 화면 크기를 맵 단위로 변환)
+  var scale = getZoomScale();
+  var mapPenSize = _drawSettings.penSize / scale;
+  var mapOutlineSize = _drawSettings.outlineSize / scale;
+  _drawCurrentStrokeSettings = {
+    penSize: mapPenSize,
+    penColor: _drawSettings.penColor,
+    penOpacity: _drawSettings.penOpacity,
+    outlineEnabled: _drawSettings.outlineEnabled,
+    outlineSize: mapOutlineSize,
+    outlineColor: _drawSettings.outlineColor
+  };
+  _drawPoints = [mapPt];
+  _redrawAllStrokes(); // 이전 스트로크 + 현재 점 렌더
 }
+
+var _drawCurrentStrokeSettings = null;
 
 function onDrawMouseMove(e) {
   if (!_isDrawing || !_drawCanvas || !_drawCtx) return;
-  var pt = { x: e.clientX, y: e.clientY };
-  var prev = _drawPoints[_drawPoints.length - 1];
-  _drawPoints.push(pt);
+  var mapPt = _screenToMapPx(e.clientX, e.clientY);
+  if (!mapPt) return;
+  _drawPoints.push(mapPt);
+
+  // 증분 렌더: 마지막 두 점만 화면에 그리기 (성능)
+  var prev = _drawPoints[_drawPoints.length - 2];
+  var cur = _drawPoints[_drawPoints.length - 1];
+  var origin = getMapOriginOnScreen();
+  if (!origin) return;
+  var scale = getZoomScale();
+  var s = _drawCurrentStrokeSettings;
+
+  var sx1 = prev.x * scale + origin.x, sy1 = prev.y * scale + origin.y;
+  var sx2 = cur.x * scale + origin.x, sy2 = cur.y * scale + origin.y;
 
   _drawCtx.save();
-  _drawCtx.globalAlpha = _drawSettings.penOpacity;
+  _drawCtx.globalAlpha = s.penOpacity;
   _drawCtx.lineCap = 'round';
   _drawCtx.lineJoin = 'round';
 
-  // 윤곽선 (더 두꺼운 선을 먼저 그림)
-  if (_drawSettings.outlineEnabled) {
-    _drawCtx.strokeStyle = _drawSettings.outlineColor;
-    _drawCtx.lineWidth = _drawSettings.penSize + _drawSettings.outlineSize * 2;
+  if (s.outlineEnabled) {
+    _drawCtx.strokeStyle = s.outlineColor;
+    _drawCtx.lineWidth = (s.penSize + s.outlineSize * 2) * scale;
     _drawCtx.beginPath();
-    _drawCtx.moveTo(prev.x, prev.y);
-    _drawCtx.lineTo(pt.x, pt.y);
+    _drawCtx.moveTo(sx1, sy1);
+    _drawCtx.lineTo(sx2, sy2);
     _drawCtx.stroke();
   }
 
-  // 펜 선
-  _drawCtx.strokeStyle = _drawSettings.penColor;
-  _drawCtx.lineWidth = _drawSettings.penSize;
+  _drawCtx.strokeStyle = s.penColor;
+  _drawCtx.lineWidth = s.penSize * scale;
   _drawCtx.beginPath();
-  _drawCtx.moveTo(prev.x, prev.y);
-  _drawCtx.lineTo(pt.x, pt.y);
+  _drawCtx.moveTo(sx1, sy1);
+  _drawCtx.lineTo(sx2, sy2);
   _drawCtx.stroke();
 
   _drawCtx.restore();
@@ -2152,18 +2216,19 @@ function onDrawMouseMove(e) {
 function onDrawMouseUp(e) {
   if (!_isDrawing) return;
   _isDrawing = false;
-  if (_drawPoints.length > 0) {
+  if (_drawPoints.length > 0 && _drawCurrentStrokeSettings) {
     _drawStrokes.push({
       points: _drawPoints.slice(),
-      penSize: _drawSettings.penSize,
-      penColor: _drawSettings.penColor,
-      penOpacity: _drawSettings.penOpacity,
-      outlineEnabled: _drawSettings.outlineEnabled,
-      outlineSize: _drawSettings.outlineSize,
-      outlineColor: _drawSettings.outlineColor
+      penSize: _drawCurrentStrokeSettings.penSize,
+      penColor: _drawCurrentStrokeSettings.penColor,
+      penOpacity: _drawCurrentStrokeSettings.penOpacity,
+      outlineEnabled: _drawCurrentStrokeSettings.outlineEnabled,
+      outlineSize: _drawCurrentStrokeSettings.outlineSize,
+      outlineColor: _drawCurrentStrokeSettings.outlineColor
     });
   }
   _drawPoints = [];
+  _drawCurrentStrokeSettings = null;
 }
 
 function undoDrawStroke() {
@@ -2175,7 +2240,74 @@ function undoDrawStroke() {
 function _redrawAllStrokes() {
   if (!_drawCanvas || !_drawCtx) return;
   _drawCtx.clearRect(0, 0, _drawCanvas.width, _drawCanvas.height);
-  _renderStrokesToCtx(_drawCtx, _drawStrokes);
+  var origin = getMapOriginOnScreen();
+  if (!origin) return;
+  var scale = getZoomScale();
+
+  // 완료된 스트로크 렌더
+  _drawStrokes.forEach(function(stroke) {
+    _renderOneStrokeToScreen(_drawCtx, stroke, origin, scale);
+  });
+
+  // 진행 중인 스트로크 렌더
+  if (_isDrawing && _drawPoints.length > 0 && _drawCurrentStrokeSettings) {
+    _renderOneStrokeToScreen(_drawCtx, {
+      points: _drawPoints,
+      penSize: _drawCurrentStrokeSettings.penSize,
+      penColor: _drawCurrentStrokeSettings.penColor,
+      penOpacity: _drawCurrentStrokeSettings.penOpacity,
+      outlineEnabled: _drawCurrentStrokeSettings.outlineEnabled,
+      outlineSize: _drawCurrentStrokeSettings.outlineSize,
+      outlineColor: _drawCurrentStrokeSettings.outlineColor
+    }, origin, scale);
+  }
+}
+
+// 맵 픽셀 좌표의 스트로크 하나를 화면 캔버스에 렌더
+function _renderOneStrokeToScreen(ctx, stroke, origin, scale) {
+  if (stroke.points.length === 0) return;
+  ctx.save();
+  ctx.globalAlpha = stroke.penOpacity;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // 맵 → 화면 좌표 변환 배열 준비
+  var pts = stroke.points.map(function(p) {
+    return { x: p.x * scale + origin.x, y: p.y * scale + origin.y };
+  });
+
+  // 윤곽선
+  if (stroke.outlineEnabled) {
+    ctx.strokeStyle = stroke.outlineColor;
+    ctx.lineWidth = (stroke.penSize + stroke.outlineSize * 2) * scale;
+    if (pts.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.arc(pts[0].x, pts[0].y, Math.max(0.5, ctx.lineWidth / 2), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // 메인 펜
+  ctx.strokeStyle = stroke.penColor;
+  ctx.lineWidth = stroke.penSize * scale;
+  if (pts.length > 1) {
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (var j = 1; j < pts.length; j++) ctx.lineTo(pts[j].x, pts[j].y);
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = stroke.penColor;
+    ctx.beginPath();
+    ctx.arc(pts[0].x, pts[0].y, Math.max(0.5, ctx.lineWidth / 2), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
 }
 
 function finishDrawing() {
@@ -2184,7 +2316,7 @@ function finishDrawing() {
     return;
   }
 
-  // 모든 스트로크의 바운딩 박스 계산 (화면 좌표)
+  // 모든 스트로크의 바운딩 박스 계산 (맵 픽셀 좌표)
   var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   _drawStrokes.forEach(function(stroke) {
     var pad = (stroke.penSize + (stroke.outlineEnabled ? stroke.outlineSize * 2 : 0)) / 2 + 2;
@@ -2201,7 +2333,6 @@ function finishDrawing() {
     return;
   }
 
-  // 바운딩 박스 정수화
   minX = Math.floor(minX);
   minY = Math.floor(minY);
   maxX = Math.ceil(maxX);
@@ -2209,39 +2340,43 @@ function finishDrawing() {
   var bw = maxX - minX;
   var bh = maxY - minY;
 
-  // 화면 좌표 → 맵 좌표 변환 시 스케일 계산
-  var zoomScale = getZoomScale();
-  var compositeScale = COMPOSITE_PX_PER_TILE / CELL_PX; // 2x 해상도
-  var renderScale = compositeScale / zoomScale;
-
-  // 크롭된 캔버스 생성 (COMPOSITE 해상도)
+  // 맵 픽셀 → 고해상도 캔버스 (COMPOSITE_PX_PER_TILE / CELL_PX = 2x)
+  var compositeScale = COMPOSITE_PX_PER_TILE / CELL_PX;
   var cropCanvas = document.createElement('canvas');
-  cropCanvas.width = Math.max(1, Math.round(bw * renderScale));
-  cropCanvas.height = Math.max(1, Math.round(bh * renderScale));
+  cropCanvas.width = Math.max(1, Math.round(bw * compositeScale));
+  cropCanvas.height = Math.max(1, Math.round(bh * compositeScale));
   var cropCtx = cropCanvas.getContext('2d');
-  cropCtx.scale(renderScale, renderScale);
+  cropCtx.scale(compositeScale, compositeScale);
   cropCtx.translate(-minX, -minY);
 
-  // 스트로크 다시 그리기 (고해상도)
+  // 맵 픽셀 좌표로 직접 렌더 (화면 변환 불필요)
   _renderStrokesToCtx(cropCtx, _drawStrokes);
 
   var dataUrl = cropCanvas.toDataURL('image/png');
 
-  // 화면 좌표 rect → stageObject (screenToMapCoords가 처리)
-  var screenRect = { x: minX, y: minY, w: bw, h: bh };
+  // 맵 픽셀 바운딩 → 화면 좌표 rect로 변환하여 stageObject 호출
+  var origin = getMapOriginOnScreen();
+  var zoomScale = getZoomScale();
+  if (origin) {
+    var screenRect = {
+      x: minX * zoomScale + origin.x,
+      y: minY * zoomScale + origin.y,
+      w: bw * zoomScale,
+      h: bh * zoomScale
+    };
 
-  var prevPending = _state.pendingImage;
-  var prevTextData = _state.pendingTextDataUrl;
-  _state.pendingImage = null;
-  _state.pendingTextDataUrl = dataUrl;
+    var prevPending = _state.pendingImage;
+    var prevTextData = _state.pendingTextDataUrl;
+    _state.pendingImage = null;
+    _state.pendingTextDataUrl = dataUrl;
 
-  deselectStaged();
-  stageObject(screenRect);
+    deselectStaged();
+    stageObject(screenRect);
 
-  _state.pendingImage = prevPending;
-  _state.pendingTextDataUrl = prevTextData;
+    _state.pendingImage = prevPending;
+    _state.pendingTextDataUrl = prevTextData;
+  }
 
-  // 캔버스 정리 & 새 캔버스 시작 (연속 그리기 지원)
   cleanupDrawCanvas();
   initDrawCanvas();
 }
