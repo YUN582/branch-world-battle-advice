@@ -1040,7 +1040,7 @@ function registerFabButton() {
   }
   window.BWBR_FabButtons.register('placement', {
     icon: PLACEMENT_ICON,
-    tooltip: '배치 모드',
+    tooltip: '배치 모드 (Alt+-)',
     onClick: togglePlacementMode,
     order: 1
   });
@@ -1143,7 +1143,7 @@ function showPlacementHelp() {
       '<div style="margin-bottom:4px;"><b>Ctrl+Z/C/V</b> — 되돌리기/복사/붙여넣기</div>' +
       '<div style="margin-bottom:4px;"><b>Alt+드래그</b> — 범위 선택 / 복사</div>' +
       '<div style="margin-bottom:0;opacity:0.5;font-size:11px;margin-top:6px;">' +
-      'Esc로 단계별 취소 · 중클릭 패닝</div>' +
+      'Esc로 단계별 취소 · 중클릭 패닝 · Alt+- 진입/나가기</div>' +
     '</div>' +
     '<div id="bwbr-place-help-tab" style="position:absolute;top:0;left:0;right:0;bottom:0;' +
     'display:flex;align-items:center;justify-content:center;' +
@@ -1677,7 +1677,7 @@ var _tbPosRaf = null;      // 툴바 위치 추적 rAF
 var _loadedWebFonts = {};  // 이미 로드된 웹 폰트 캐시
 
 // 폰트 목록: { label, value, type: 'local'|'web', gfName? }
-var _FONT_LIST = [
+var _BUILTIN_FONTS = [
   { label: '기본 (sans-serif)', value: 'sans-serif', type: 'local' },
   { label: 'serif', value: 'serif', type: 'local' },
   { label: 'monospace', value: 'monospace', type: 'local' },
@@ -1708,6 +1708,76 @@ var _FONT_LIST = [
   { label: 'Caveat', value: '"Caveat", cursive', type: 'web', gfName: 'Caveat' },
   { label: 'Permanent Marker', value: '"Permanent Marker", cursive', type: 'web', gfName: 'Permanent+Marker' }
 ];
+
+var _CUSTOM_FONTS_KEY = 'bwbr-placement-custom-fonts';
+
+function _loadCustomFonts() {
+  try {
+    var raw = localStorage.getItem(_CUSTOM_FONTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) { return []; }
+}
+
+function _saveCustomFonts(arr) {
+  try { localStorage.setItem(_CUSTOM_FONTS_KEY, JSON.stringify(arr)); } catch (e) {}
+}
+
+function _buildFontList() {
+  var custom = _loadCustomFonts();
+  var list = _BUILTIN_FONTS.slice();
+  if (custom.length > 0) {
+    list.push({ label: '─ 사용자 폰트 ─', value: '__sep2__', type: 'sep' });
+    custom.forEach(function(c) { list.push(c); });
+  }
+  return list;
+}
+
+var _FONT_LIST = _buildFontList();
+
+function _rebuildFontSelect(sel) {
+  while (sel.firstChild) sel.removeChild(sel.firstChild);
+  _FONT_LIST.forEach(function(f) {
+    var opt = document.createElement('option');
+    if (f.type === 'sep') {
+      opt.disabled = true;
+      opt.textContent = f.label;
+    } else {
+      opt.value = f.value;
+      opt.textContent = f.label;
+      opt.style.fontFamily = f.value;
+      if (f.value === _textFontFamily) opt.selected = true;
+    }
+    sel.appendChild(opt);
+  });
+  // "폰트 추가" 옵션
+  var addOpt = document.createElement('option');
+  addOpt.value = '__add_custom__';
+  addOpt.textContent = '+ 웹 폰트 추가...';
+  addOpt.style.color = '#42a5f5';
+  sel.appendChild(addOpt);
+}
+
+function _promptAddCustomFont(cb) {
+  var fontName = prompt('Google Fonts 이름을 입력하세요\n(예: Noto Sans JP, Kosugi Maru, Roboto Slab)');
+  if (!fontName || !fontName.trim()) { cb(null); return; }
+  fontName = fontName.trim();
+  var gfName = fontName.replace(/\s+/g, '+');
+  var cssFamily = '"' + fontName + '", sans-serif';
+
+  // 중복 검사
+  if (_FONT_LIST.some(function(f) { return f.gfName === gfName; })) {
+    cb(null); return;
+  }
+
+  var entry = { label: fontName, value: cssFamily, type: 'web', gfName: gfName };
+  var custom = _loadCustomFonts();
+  custom.push(entry);
+  _saveCustomFonts(custom);
+  _FONT_LIST = _buildFontList();
+
+  // 폰트 로드
+  _loadWebFont(entry, function() { cb(entry); });
+}
 
 function _loadWebFont(fontEntry, cb) {
   if (!fontEntry || fontEntry.type !== 'web' || !fontEntry.gfName) { if (cb) cb(); return; }
@@ -1898,8 +1968,26 @@ function createTextToolbar() {
     }
     fontSelect.appendChild(opt);
   });
+  // "폰트 추가" 옵션
+  var addOpt = document.createElement('option');
+  addOpt.value = '__add_custom__';
+  addOpt.textContent = '+ 웹 폰트 추가...';
+  addOpt.style.color = '#42a5f5';
+  fontSelect.appendChild(addOpt);
   fontSelect.addEventListener('change', function() {
     var val = fontSelect.value;
+    if (val === '__add_custom__') {
+      fontSelect.value = _textFontFamily;
+      _promptAddCustomFont(function(newEntry) {
+        if (!newEntry) return;
+        _FONT_LIST = _buildFontList();
+        _textFontFamily = newEntry.value;
+        if (_textEditor) _textEditor.style.fontFamily = newEntry.value;
+        _loadWebFont(newEntry);
+        _rebuildFontSelect(fontSelect);
+      });
+      return;
+    }
     _textFontFamily = val;
     if (_textEditor) _textEditor.style.fontFamily = val;
     var entry = _FONT_LIST.find(function(f) { return f.value === val; });
@@ -2164,7 +2252,7 @@ function renderTextEditorToCanvas() {
   var edCS = getComputedStyle(_textEditor);
   var defaultFS = parseInt(edCS.fontSize) || 16;
   var defaultColor = edCS.color || '#fff';
-  var defaultFamily = edCS.fontFamily || 'sans-serif';
+  var defaultFamily = _textFontFamily || 'sans-serif';
 
   var runs = [];
   _extractRuns(_textEditor, {
@@ -3842,6 +3930,16 @@ function pasteClipboard() {
 // ── 키보드 단축키 ───────────────────────────────────────────────
 
 function setupKeyboard() {
+  // Alt+- 글로벌 단축키: 배치 모드 토글 (배치 모드 비활성 상태에서도 작동)
+  document.addEventListener('keydown', function (e) {
+    if (e.altKey && (e.key === '-' || e.key === '–')) {
+      // 입력 필드에서는 무시
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+      e.preventDefault();
+      togglePlacementMode();
+    }
+  }, false);
+
   document.addEventListener('keydown', function (e) {
     if (!_state.active) return;
 
