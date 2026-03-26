@@ -1196,9 +1196,9 @@ function showPlacementHelp() {
       '<div style="margin-bottom:4px;"><b>Del</b> — 선택 삭제</div>' +
       '<div style="margin-bottom:4px;"><b>Ctrl+Z/C/V</b> — 되돌리기/복사/붙여넣기</div>' +
       '<div style="margin-bottom:4px;"><b>Alt+드래그</b> — 범위 선택 / 복사</div>' +
-      '<div style="margin-bottom:2px;opacity:0.5;font-size:11px;color:#999;margin-top:6px;">' +
+      '<div style="margin-bottom:2px;opacity:0.65;font-size:11px;color:#999;margin-top:6px;">' +
       'Esc — 단계별 취소</div>' +
-      '<div style="margin-bottom:0;opacity:0.5;font-size:11px;color:#999;">' +
+      '<div style="margin-bottom:0;opacity:0.65;font-size:11px;color:#999;">' +
       'Alt+- — 진입/나가기</div>' +
     '</div>' +
     '<div id="bwbr-place-help-tab" style="position:absolute;top:0;left:0;right:0;bottom:0;' +
@@ -1977,6 +1977,42 @@ function _stopToolbarPosTracker() {
   if (_tbPosRaf) { cancelAnimationFrame(_tbPosRaf); _tbPosRaf = null; }
 }
 
+function _updateStrokePreview() {
+  if (!_textEditor) return;
+  if (_textStrokeWidth > 0) {
+    _textEditor.style.webkitTextStroke = _textStrokeWidth + 'px ' + _textStrokeColor;
+  } else {
+    _textEditor.style.webkitTextStroke = '';
+  }
+}
+
+function _applyStyleToSelection(prop, value) {
+  var sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+  var range = sel.getRangeAt(0);
+  if (range.collapsed) {
+    var span = document.createElement('span');
+    span.style[prop] = value;
+    span.appendChild(document.createTextNode('\u200B'));
+    range.insertNode(span);
+    range.setStartAfter(span);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    return;
+  }
+  var span2 = document.createElement('span');
+  span2.style[prop] = value;
+  try { range.surroundContents(span2); } catch (e) {
+    var frag = range.extractContents();
+    span2.appendChild(frag);
+    range.insertNode(span2);
+  }
+  sel.removeAllRanges();
+  var nr = document.createRange();
+  nr.selectNodeContents(span2);
+  sel.addRange(nr);
+}
+
 function createTextToolbar() {
   var bar = document.createElement('div');
   bar.className = 'bwbr-text-toolbar';
@@ -2020,7 +2056,7 @@ function createTextToolbar() {
   });
   fgInput.addEventListener('contextmenu', function (ev) {
     ev.preventDefault();
-    document.execCommand('foreColor', false, 'transparent');
+    _applyStyleToSelection('color', 'transparent');
     _textEditor.focus();
   });
   var fgLabel = document.createElement('span');
@@ -2029,6 +2065,24 @@ function createTextToolbar() {
   fgWrap.appendChild(fgInput);
   fgWrap.appendChild(fgLabel);
   row1.appendChild(fgWrap);
+
+  // Stroke color (윤곽선 색상 — outlined A)
+  var strokeColorWrap = document.createElement('div');
+  strokeColorWrap.className = 'bwbr-text-toolbar-color';
+  _setTooltip(strokeColorWrap, '윤곽선 색상');
+  var strokeColorInput = document.createElement('input');
+  strokeColorInput.type = 'color';
+  strokeColorInput.value = _textStrokeColor;
+  strokeColorInput.addEventListener('input', function () {
+    _textStrokeColor = strokeColorInput.value;
+    _updateStrokePreview();
+  });
+  var strokeColorLabel = document.createElement('span');
+  strokeColorLabel.textContent = 'A';
+  strokeColorLabel.style.cssText = 'font-weight:bold;pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:14px;-webkit-text-stroke:1.5px currentColor;color:transparent;';
+  strokeColorWrap.appendChild(strokeColorInput);
+  strokeColorWrap.appendChild(strokeColorLabel);
+  row1.appendChild(strokeColorWrap);
 
   // Background color (글자 배경, 우클릭: 투명)
   var bgWrap = document.createElement('div');
@@ -2043,7 +2097,7 @@ function createTextToolbar() {
   });
   bgInput.addEventListener('contextmenu', function (ev) {
     ev.preventDefault();
-    document.execCommand('hiliteColor', false, 'transparent');
+    _applyStyleToSelection('backgroundColor', 'transparent');
     _textEditor.focus();
   });
   var bgLabel = document.createElement('span');
@@ -2078,12 +2132,20 @@ function createTextToolbar() {
 
   row1.appendChild(_makeToolbarSep());
 
-  // Font size (직접 입력 가능한 input)
+  // Font size (datalist 드롭다운 + 직접 입력)
   var sizeInput = document.createElement('input');
   sizeInput.type = 'text';
   sizeInput.className = 'bwbr-size-input';
   sizeInput.value = '16';
-  _setTooltip(sizeInput, '글꼴 크기 (직접 입력 가능)');
+  sizeInput.setAttribute('list', 'bwbr-font-sizes');
+  _setTooltip(sizeInput, '글꼴 크기');
+  var sizeList = document.createElement('datalist');
+  sizeList.id = 'bwbr-font-sizes';
+  [8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72, 96].forEach(function(s) {
+    var opt = document.createElement('option');
+    opt.value = s;
+    sizeList.appendChild(opt);
+  });
   sizeInput.addEventListener('change', function () {
     var v = parseInt(sizeInput.value);
     if (v && v > 0 && v <= 200) {
@@ -2100,6 +2162,7 @@ function createTextToolbar() {
   });
   sizeInput.addEventListener('focus', function() { sizeInput.select(); });
   row1.appendChild(sizeInput);
+  row1.appendChild(sizeList);
 
   // 글꼴 선택
   var fontSelect = document.createElement('select');
@@ -2221,27 +2284,11 @@ function createTextToolbar() {
 
   row2.appendChild(_makeToolbarSep());
 
-  // 윤곽선 (stroke)
+  // 윤곽선 두께
   var strokeLabel = document.createElement('span');
   strokeLabel.className = 'bwbr-toolbar-label';
   strokeLabel.textContent = '윤곽';
   row2.appendChild(strokeLabel);
-
-  var strokeColorWrap = document.createElement('div');
-  strokeColorWrap.className = 'bwbr-text-toolbar-color';
-  _setTooltip(strokeColorWrap, '윤곽선 색상');
-  var strokeColorInput = document.createElement('input');
-  strokeColorInput.type = 'color';
-  strokeColorInput.value = _textStrokeColor;
-  strokeColorInput.addEventListener('input', function () {
-    _textStrokeColor = strokeColorInput.value;
-  });
-  var strokeColorLabel = document.createElement('span');
-  strokeColorLabel.textContent = 'O';
-  strokeColorLabel.style.cssText = 'font-weight:bold;pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:12px;-webkit-text-stroke:1px #333;color:transparent;';
-  strokeColorWrap.appendChild(strokeColorInput);
-  strokeColorWrap.appendChild(strokeColorLabel);
-  row2.appendChild(strokeColorWrap);
 
   var strokeWidthInput = document.createElement('input');
   strokeWidthInput.type = 'text';
@@ -2252,6 +2299,7 @@ function createTextToolbar() {
     var v = parseInt(strokeWidthInput.value);
     _textStrokeWidth = (v && v > 0) ? v : 0;
     strokeWidthInput.value = _textStrokeWidth;
+    _updateStrokePreview();
   });
   strokeWidthInput.addEventListener('keydown', function(e) {
     if (e.key === 'Enter') { e.preventDefault(); strokeWidthInput.blur(); }
@@ -2259,11 +2307,6 @@ function createTextToolbar() {
   });
   strokeWidthInput.addEventListener('focus', function() { strokeWidthInput.select(); });
   row2.appendChild(strokeWidthInput);
-
-  // spacer to push confirm/cancel right
-  var spacer = document.createElement('div');
-  spacer.style.flex = '1';
-  row2.appendChild(spacer);
 
   // Confirm
   var btnOk = document.createElement('button');
@@ -3104,13 +3147,14 @@ function reopenTextEditor(objId) {
 
   startTextEditing(rect);
 
-  // Restore content + bgColor + font
+  // Restore content + bgColor + font + stroke preview
   if (_textEditor) {
     _textEditor.innerHTML = obj.textHtml;
     if (obj.textBgColor) {
       _textBgColor = obj.textBgColor;
       if (_textEditorWrap) _textEditorWrap.style.background = obj.textBgColor;
     }
+    _updateStrokePreview();
   }
 }
 
