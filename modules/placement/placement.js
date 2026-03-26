@@ -2341,27 +2341,38 @@ function finishDrawing() {
 
   var dataUrl = cropCanvas.toDataURL('image/png');
 
-  // 맵 픽셀 바운딩 → 화면 좌표 rect로 변환하여 stageObject 호출
-  var origin = getMapOriginOnScreen();
-  var zoomScale = getZoomScale();
-  if (origin) {
-    var screenRect = {
-      x: minX * zoomScale + origin.x,
-      y: minY * zoomScale + origin.y,
-      w: bw * zoomScale,
-      h: bh * zoomScale
+  // 맵 픽셀 → 소수 타일 좌표 (그리드 스냅 없이 정확한 위치 유지)
+  var mapCoords = {
+    x: minX / CELL_PX,
+    y: minY / CELL_PX,
+    width: Math.max(1, bw / CELL_PX),
+    height: Math.max(1, bh / CELL_PX)
+  };
+
+  // stageObject 변환 우회 — 그리기는 서브타일 정밀도 필요
+  var zoomEl = getZoomContainer();
+  if (zoomEl) {
+    if (_cachedZoomEl && _cachedZoomEl !== zoomEl) _migrateStaged(zoomEl);
+    _cachedZoomEl = zoomEl;
+    readSettingsFromDOM();
+
+    var obj = {
+      id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+      mapCoords: mapCoords,
+      angle: 0,
+      imageDataUrl: dataUrl,
+      settings: {
+        type: _state.panelSettings.type,
+        z: _state.panelSettings.z,
+        memo: _state.panelSettings.memo,
+        locked: _state.panelSettings.locked,
+        freezed: _state.panelSettings.freezed
+      }
     };
-
-    var prevPending = _state.pendingImage;
-    var prevTextData = _state.pendingTextDataUrl;
-    _state.pendingImage = null;
-    _state.pendingTextDataUrl = dataUrl;
-
-    deselectStaged();
-    stageObject(screenRect);
-
-    _state.pendingImage = prevPending;
-    _state.pendingTextDataUrl = prevTextData;
+    _state.stagedObjects.push(obj);
+    renderStagedItem(obj);
+    pushUndo({ type: 'stage', ids: [obj.id] });
+    updateConfirmBar();
   }
 
   cleanupDrawCanvas();
