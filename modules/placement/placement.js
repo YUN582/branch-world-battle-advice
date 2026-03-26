@@ -784,6 +784,7 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 .bwbr-text-toolbar {
   position: fixed;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 2px;
   background: #fff;
@@ -792,6 +793,58 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   box-shadow: 0 2px 12px rgba(0,0,0,0.18);
   z-index: 108;
   user-select: none;
+  max-width: 520px;
+}
+.bwbr-text-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+}
+.bwbr-size-input {
+  width: 48px;
+  height: 28px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 12px;
+  padding: 0 4px;
+  outline: none;
+  text-align: center;
+  background: #fff;
+}
+.bwbr-size-input:focus {
+  border-color: #42a5f5;
+}
+.bwbr-stroke-input {
+  width: 36px;
+  height: 24px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 11px;
+  padding: 0 2px;
+  outline: none;
+  text-align: center;
+  background: #fff;
+}
+.bwbr-toolbar-label {
+  font-size: 10px;
+  color: #999;
+  margin-right: 2px;
+  white-space: nowrap;
+}
+.bwbr-transparent-btn {
+  font-size: 16px;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.15s;
+  padding: 0 1px;
+}
+.bwbr-transparent-btn:hover {
+  opacity: 1;
+}
+.bwbr-transparent-btn.active {
+  opacity: 1;
+  color: #e53935;
 }
 
 .bwbr-text-toolbar-btn {
@@ -1143,8 +1196,10 @@ function showPlacementHelp() {
       '<div style="margin-bottom:4px;"><b>Del</b> — 선택 삭제</div>' +
       '<div style="margin-bottom:4px;"><b>Ctrl+Z/C/V</b> — 되돌리기/복사/붙여넣기</div>' +
       '<div style="margin-bottom:4px;"><b>Alt+드래그</b> — 범위 선택 / 복사</div>' +
-      '<div style="margin-bottom:0;opacity:0.5;font-size:11px;color:#999;margin-top:6px;">' +
-      'Esc — 단계별 취소 · Alt+- — 진입/나가기</div>' +
+      '<div style="margin-bottom:2px;opacity:0.5;font-size:11px;color:#999;margin-top:6px;">' +
+      'Esc — 단계별 취소</div>' +
+      '<div style="margin-bottom:0;opacity:0.5;font-size:11px;color:#999;">' +
+      'Alt+- — 진입/나가기</div>' +
     '</div>' +
     '<div id="bwbr-place-help-tab" style="position:absolute;top:0;left:0;right:0;bottom:0;' +
     'display:flex;align-items:center;justify-content:center;' +
@@ -1673,6 +1728,8 @@ var _textBgColor = '';     // 텍스트 박스 배경색 ('' = 투명)
 var _textAlign = 'left';   // 수평 정렬: left / center / right
 var _textVAlign = 'top';   // 수직 정렬: top / middle / bottom
 var _textFontFamily = 'sans-serif'; // 글꼴
+var _textStrokeColor = '#000000'; // 윤곽선 색상
+var _textStrokeWidth = 0;  // 윤곽선 두께 (0=없음)
 var _reopenedObj = null;   // 재편집 시 원본 객체 (ESC로 복원용)
 var _tbPosRaf = null;      // 툴바 위치 추적 rAF
 var _loadedWebFonts = {};  // 이미 로드된 웹 폰트 캐시
@@ -1684,21 +1741,21 @@ var _BUILTIN_FONTS = [
   { label: 'serif', value: 'serif', type: 'local' },
   { label: 'monospace', value: 'monospace', type: 'local' },
   { label: '─ 웹 폰트 (Google) ─', value: '__sep__', type: 'sep' },
-  { label: 'Noto Sans KR', value: '"Noto Sans KR", sans-serif', type: 'web', gfName: 'Noto+Sans+KR' },
-  { label: 'Noto Serif KR', value: '"Noto Serif KR", serif', type: 'web', gfName: 'Noto+Serif+KR' },
-  { label: 'Nanum Gothic', value: '"Nanum Gothic", sans-serif', type: 'web', gfName: 'Nanum+Gothic' },
-  { label: 'Nanum Myeongjo', value: '"Nanum Myeongjo", serif', type: 'web', gfName: 'Nanum+Myeongjo' },
-  { label: 'Nanum Pen', value: '"Nanum Pen Script", cursive', type: 'web', gfName: 'Nanum+Pen+Script' },
-  { label: 'Black Han Sans', value: '"Black Han Sans", sans-serif', type: 'web', gfName: 'Black+Han+Sans' },
-  { label: 'Jua', value: '"Jua", sans-serif', type: 'web', gfName: 'Jua' },
-  { label: 'Gothic A1', value: '"Gothic A1", sans-serif', type: 'web', gfName: 'Gothic+A1' },
-  { label: 'Do Hyeon', value: '"Do Hyeon", sans-serif', type: 'web', gfName: 'Do+Hyeon' },
-  { label: 'Gaegu', value: '"Gaegu", cursive', type: 'web', gfName: 'Gaegu' },
-  { label: 'Sunflower', value: '"Sunflower", sans-serif', type: 'web', gfName: 'Sunflower' },
-  { label: 'Gugi', value: '"Gugi", cursive', type: 'web', gfName: 'Gugi' },
-  { label: 'East Sea Dokdo', value: '"East Sea Dokdo", cursive', type: 'web', gfName: 'East+Sea+Dokdo' },
-  { label: 'Hi Melody', value: '"Hi Melody", cursive', type: 'web', gfName: 'Hi+Melody' },
-  { label: 'Dokdo', value: '"Dokdo", cursive', type: 'web', gfName: 'Dokdo' },
+  { label: 'Noto Sans KR (본고딕)', value: '"Noto Sans KR", sans-serif', type: 'web', gfName: 'Noto+Sans+KR' },
+  { label: 'Noto Serif KR (본명조)', value: '"Noto Serif KR", serif', type: 'web', gfName: 'Noto+Serif+KR' },
+  { label: 'Nanum Gothic (나눔고딕)', value: '"Nanum Gothic", sans-serif', type: 'web', gfName: 'Nanum+Gothic' },
+  { label: 'Nanum Myeongjo (나눔명조)', value: '"Nanum Myeongjo", serif', type: 'web', gfName: 'Nanum+Myeongjo' },
+  { label: 'Nanum Pen (나눔펜)', value: '"Nanum Pen Script", cursive', type: 'web', gfName: 'Nanum+Pen+Script' },
+  { label: 'Black Han Sans (검은 한산스)', value: '"Black Han Sans", sans-serif', type: 'web', gfName: 'Black+Han+Sans' },
+  { label: 'Jua (주아)', value: '"Jua", sans-serif', type: 'web', gfName: 'Jua' },
+  { label: 'Gothic A1 (고딕 A1)', value: '"Gothic A1", sans-serif', type: 'web', gfName: 'Gothic+A1' },
+  { label: 'Do Hyeon (도현)', value: '"Do Hyeon", sans-serif', type: 'web', gfName: 'Do+Hyeon' },
+  { label: 'Gaegu (개구)', value: '"Gaegu", cursive', type: 'web', gfName: 'Gaegu' },
+  { label: 'Sunflower (해바라기)', value: '"Sunflower", sans-serif', type: 'web', gfName: 'Sunflower' },
+  { label: 'Gugi (구기)', value: '"Gugi", cursive', type: 'web', gfName: 'Gugi' },
+  { label: 'East Sea Dokdo (동해독도)', value: '"East Sea Dokdo", cursive', type: 'web', gfName: 'East+Sea+Dokdo' },
+  { label: 'Hi Melody (하이멜로디)', value: '"Hi Melody", cursive', type: 'web', gfName: 'Hi+Melody' },
+  { label: 'Dokdo (독도)', value: '"Dokdo", cursive', type: 'web', gfName: 'Dokdo' },
   { label: 'Roboto', value: '"Roboto", sans-serif', type: 'web', gfName: 'Roboto' },
   { label: 'Playfair Display', value: '"Playfair Display", serif', type: 'web', gfName: 'Playfair+Display' },
   { label: 'Caveat', value: '"Caveat", cursive', type: 'web', gfName: 'Caveat' },
@@ -1724,8 +1781,8 @@ function _buildFontList() {
   // 시스템 로컬 폰트
   if (_localSystemFonts && _localSystemFonts.length > 0) {
     list.push({ label: '─ 내 컴퓨터 폰트 ─', value: '__sep_sys__', type: 'sep' });
-    _localSystemFonts.forEach(function(name) {
-      list.push({ label: name, value: '"' + name + '"', type: 'system' });
+    _localSystemFonts.forEach(function(item) {
+      list.push({ label: item.label, value: '"' + item.family + '"', type: 'system' });
     });
   }
   // 사용자 추가 웹 폰트
@@ -1773,17 +1830,29 @@ function _loadLocalSystemFonts(cb) {
     cb(null); return;
   }
   window.queryLocalFonts().then(function(fonts) {
-    // family 이름 중복 제거 (같은 폰트의 Bold/Italic 등 변형 제거)
-    var seen = {};
-    var families = [];
+    // family별 대표 표시명 결정 (한국어 fullName 우선)
+    var familyMap = {};
     fonts.forEach(function(f) {
-      if (!seen[f.family]) {
-        seen[f.family] = true;
-        families.push(f.family);
+      if (!familyMap[f.family]) {
+        // fullName에 한글이 포함되어 있으면 한글 이름 사용
+        var hasKorean = /[\uAC00-\uD7A3]/.test(f.fullName);
+        var label = f.family;
+        if (hasKorean) {
+          // fullName에서 스타일 제거 (e.g. "맑은 고딕 Bold" → "맑은 고딕")
+          var cleaned = f.fullName.replace(/\s*(Regular|Bold|Italic|Light|Medium|SemiBold|ExtraBold|Thin|Black|Heavy|Condensed|Expanded)$/i, '').trim();
+          if (cleaned && cleaned !== f.family) label = cleaned + ' (' + f.family + ')';
+          else if (cleaned) label = cleaned;
+        }
+        familyMap[f.family] = label;
       }
     });
-    families.sort(function(a, b) { return a.localeCompare(b); });
-    _localSystemFonts = families;
+    var families = Object.keys(familyMap);
+    families.sort(function(a, b) {
+      return familyMap[a].localeCompare(familyMap[b], 'ko');
+    });
+    _localSystemFonts = families.map(function(fam) {
+      return { family: fam, label: familyMap[fam] };
+    });
 
     // 시스템 폰트를 _FONT_LIST에 추가
     _FONT_LIST = _buildFontList();
@@ -1912,32 +1981,36 @@ function createTextToolbar() {
   var bar = document.createElement('div');
   bar.className = 'bwbr-text-toolbar';
 
+  // ── Row 1: 서식 + 색상 + 크기 + 글꼴 ──
+  var row1 = document.createElement('div');
+  row1.className = 'bwbr-text-toolbar-row';
+
   // Bold
   var btnB = _makeToolbarBtn('B', 'bold', '볼드 (Ctrl+B)');
   btnB.style.fontWeight = 'bold';
-  bar.appendChild(btnB);
+  row1.appendChild(btnB);
 
   // Italic
   var btnI = _makeToolbarBtn('I', 'italic', '이탤릭 (Ctrl+I)');
   btnI.style.fontStyle = 'italic';
-  bar.appendChild(btnI);
+  row1.appendChild(btnI);
 
   // Underline
   var btnU = _makeToolbarBtn('U', 'underline', '밑줄 (Ctrl+U)');
   btnU.style.textDecoration = 'underline';
-  bar.appendChild(btnU);
+  row1.appendChild(btnU);
 
   // Strikethrough
   var btnS = _makeToolbarBtn('S', 'strikethrough', '취소선');
   btnS.style.textDecoration = 'line-through';
-  bar.appendChild(btnS);
+  row1.appendChild(btnS);
 
-  bar.appendChild(_makeToolbarSep());
+  row1.appendChild(_makeToolbarSep());
 
-  // Font color
+  // Font color (우클릭: 투명)
   var fgWrap = document.createElement('div');
   fgWrap.className = 'bwbr-text-toolbar-color';
-  _setTooltip(fgWrap, '글자 색상');
+  _setTooltip(fgWrap, '글자 색상 (우클릭: 투명)');
   var fgInput = document.createElement('input');
   fgInput.type = 'color';
   fgInput.value = '#000000';
@@ -1945,17 +2018,22 @@ function createTextToolbar() {
     document.execCommand('foreColor', false, fgInput.value);
     _textEditor.focus();
   });
+  fgInput.addEventListener('contextmenu', function (ev) {
+    ev.preventDefault();
+    document.execCommand('foreColor', false, 'transparent');
+    _textEditor.focus();
+  });
   var fgLabel = document.createElement('span');
   fgLabel.textContent = 'A';
   fgLabel.style.cssText = 'font-weight:bold;pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:14px;';
   fgWrap.appendChild(fgInput);
   fgWrap.appendChild(fgLabel);
-  bar.appendChild(fgWrap);
+  row1.appendChild(fgWrap);
 
-  // Background color
+  // Background color (글자 배경, 우클릭: 투명)
   var bgWrap = document.createElement('div');
   bgWrap.className = 'bwbr-text-toolbar-color';
-  _setTooltip(bgWrap, '배경 색상');
+  _setTooltip(bgWrap, '글자 배경색 (우클릭: 투명)');
   var bgInput = document.createElement('input');
   bgInput.type = 'color';
   bgInput.value = '#ffff00';
@@ -1963,31 +2041,65 @@ function createTextToolbar() {
     document.execCommand('hiliteColor', false, bgInput.value);
     _textEditor.focus();
   });
+  bgInput.addEventListener('contextmenu', function (ev) {
+    ev.preventDefault();
+    document.execCommand('hiliteColor', false, 'transparent');
+    _textEditor.focus();
+  });
   var bgLabel = document.createElement('span');
   bgLabel.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16.56 8.94L7.62 0 6.21 1.41l2.38 2.38-5.15 5.15c-.59.59-.59 1.54 0 2.12l5.5 5.5c.29.29.68.44 1.06.44s.77-.15 1.06-.44l5.5-5.5c.59-.58.59-1.53 0-2.12zM5.21 10L10 5.21 14.79 10H5.21zM19 11.5s-2 2.17-2 3.5c0 1.1.9 2 2 2s2-.9 2-2c0-1.33-2-3.5-2-3.5z"/></svg>';
   bgLabel.style.cssText = 'pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;';
   bgWrap.appendChild(bgInput);
   bgWrap.appendChild(bgLabel);
-  bar.appendChild(bgWrap);
+  row1.appendChild(bgWrap);
 
-  bar.appendChild(_makeToolbarSep());
-
-  // Font size
-  var sizeSelect = document.createElement('select');
-  sizeSelect.className = 'bwbr-text-toolbar-select';
-  _setTooltip(sizeSelect, '글꼴 크기');
-  [12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64].forEach(function (s) {
-    var opt = document.createElement('option');
-    opt.value = s;
-    opt.textContent = s + 'px';
-    if (s === 16) opt.selected = true;
-    sizeSelect.appendChild(opt);
+  // Text box background color (우클릭: 투명)
+  var boxBgWrap = document.createElement('div');
+  boxBgWrap.className = 'bwbr-text-toolbar-color';
+  _setTooltip(boxBgWrap, '박스 배경색 (우클릭: 투명)');
+  var boxBgInput = document.createElement('input');
+  boxBgInput.type = 'color';
+  boxBgInput.value = '#ffffff';
+  boxBgInput.addEventListener('input', function () {
+    _textBgColor = boxBgInput.value;
+    if (_textEditorWrap) _textEditorWrap.style.background = boxBgInput.value;
   });
-  sizeSelect.addEventListener('change', function () {
-    _applyFontSize(sizeSelect.value);
+  boxBgInput.addEventListener('contextmenu', function (ev) {
+    ev.preventDefault();
+    _textBgColor = '';
+    if (_textEditorWrap) _textEditorWrap.style.background = 'transparent';
+  });
+  var boxBgLabel = document.createElement('span');
+  boxBgLabel.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14z"/></svg>';
+  boxBgLabel.style.cssText = 'pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;';
+  boxBgWrap.appendChild(boxBgInput);
+  boxBgWrap.appendChild(boxBgLabel);
+  row1.appendChild(boxBgWrap);
+
+  row1.appendChild(_makeToolbarSep());
+
+  // Font size (직접 입력 가능한 input)
+  var sizeInput = document.createElement('input');
+  sizeInput.type = 'text';
+  sizeInput.className = 'bwbr-size-input';
+  sizeInput.value = '16';
+  _setTooltip(sizeInput, '글꼴 크기 (직접 입력 가능)');
+  sizeInput.addEventListener('change', function () {
+    var v = parseInt(sizeInput.value);
+    if (v && v > 0 && v <= 200) {
+      _applyFontSize(v);
+      sizeInput.value = v;
+    } else {
+      sizeInput.value = '16';
+    }
     _textEditor.focus();
   });
-  bar.appendChild(sizeSelect);
+  sizeInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); sizeInput.blur(); }
+    e.stopPropagation();
+  });
+  sizeInput.addEventListener('focus', function() { sizeInput.select(); });
+  row1.appendChild(sizeInput);
 
   // 글꼴 선택
   var fontSelect = document.createElement('select');
@@ -2006,7 +2118,6 @@ function createTextToolbar() {
     }
     fontSelect.appendChild(opt);
   });
-  // "폰트 추가" 옵션
   var loadLocalOpt = document.createElement('option');
   loadLocalOpt.value = '__load_local__';
   loadLocalOpt.textContent = '\uD83D\uDCC1 내 컴퓨터 폰트 불러오기...';
@@ -2047,9 +2158,13 @@ function createTextToolbar() {
     if (entry && entry.type === 'web') _loadWebFont(entry);
     _textEditor.focus();
   });
-  bar.appendChild(fontSelect);
+  row1.appendChild(fontSelect);
 
-  bar.appendChild(_makeToolbarSep());
+  bar.appendChild(row1);
+
+  // ── Row 2: 정렬 + 윤곽선 + 확인/취소 ──
+  var row2 = document.createElement('div');
+  row2.className = 'bwbr-text-toolbar-row';
 
   // 수평 정렬 (좌/가운데/우)
   var alignBtns = [
@@ -2076,7 +2191,7 @@ function createTextToolbar() {
       });
       _textEditor.focus();
     });
-    bar.appendChild(btn);
+    row2.appendChild(btn);
   });
 
   // 수직 정렬 (상/중/하)
@@ -2101,35 +2216,54 @@ function createTextToolbar() {
       });
       _textEditor.focus();
     });
-    bar.appendChild(btn);
+    row2.appendChild(btn);
   });
 
-  bar.appendChild(_makeToolbarSep());
+  row2.appendChild(_makeToolbarSep());
 
-  // Text box background color
-  var boxBgWrap = document.createElement('div');
-  boxBgWrap.className = 'bwbr-text-toolbar-color';
-  _setTooltip(boxBgWrap, '텍스트 박스 배경색 (우클릭: 투명)');
-  var boxBgInput = document.createElement('input');
-  boxBgInput.type = 'color';
-  boxBgInput.value = '#ffffff';
-  boxBgInput.addEventListener('input', function () {
-    _textBgColor = boxBgInput.value;
-    if (_textEditorWrap) _textEditorWrap.style.background = boxBgInput.value;
-  });
-  boxBgInput.addEventListener('contextmenu', function (ev) {
-    ev.preventDefault();
-    _textBgColor = '';
-    if (_textEditorWrap) _textEditorWrap.style.background = 'transparent';
-  });
-  var boxBgLabel = document.createElement('span');
-  boxBgLabel.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14z"/></svg>';
-  boxBgLabel.style.cssText = 'pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;';
-  boxBgWrap.appendChild(boxBgInput);
-  boxBgWrap.appendChild(boxBgLabel);
-  bar.appendChild(boxBgWrap);
+  // 윤곽선 (stroke)
+  var strokeLabel = document.createElement('span');
+  strokeLabel.className = 'bwbr-toolbar-label';
+  strokeLabel.textContent = '윤곽';
+  row2.appendChild(strokeLabel);
 
-  bar.appendChild(_makeToolbarSep());
+  var strokeColorWrap = document.createElement('div');
+  strokeColorWrap.className = 'bwbr-text-toolbar-color';
+  _setTooltip(strokeColorWrap, '윤곽선 색상');
+  var strokeColorInput = document.createElement('input');
+  strokeColorInput.type = 'color';
+  strokeColorInput.value = _textStrokeColor;
+  strokeColorInput.addEventListener('input', function () {
+    _textStrokeColor = strokeColorInput.value;
+  });
+  var strokeColorLabel = document.createElement('span');
+  strokeColorLabel.textContent = 'O';
+  strokeColorLabel.style.cssText = 'font-weight:bold;pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:12px;-webkit-text-stroke:1px #333;color:transparent;';
+  strokeColorWrap.appendChild(strokeColorInput);
+  strokeColorWrap.appendChild(strokeColorLabel);
+  row2.appendChild(strokeColorWrap);
+
+  var strokeWidthInput = document.createElement('input');
+  strokeWidthInput.type = 'text';
+  strokeWidthInput.className = 'bwbr-stroke-input';
+  strokeWidthInput.value = _textStrokeWidth || '0';
+  _setTooltip(strokeWidthInput, '윤곽선 두께 (0=없음)');
+  strokeWidthInput.addEventListener('change', function () {
+    var v = parseInt(strokeWidthInput.value);
+    _textStrokeWidth = (v && v > 0) ? v : 0;
+    strokeWidthInput.value = _textStrokeWidth;
+  });
+  strokeWidthInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); strokeWidthInput.blur(); }
+    e.stopPropagation();
+  });
+  strokeWidthInput.addEventListener('focus', function() { strokeWidthInput.select(); });
+  row2.appendChild(strokeWidthInput);
+
+  // spacer to push confirm/cancel right
+  var spacer = document.createElement('div');
+  spacer.style.flex = '1';
+  row2.appendChild(spacer);
 
   // Confirm
   var btnOk = document.createElement('button');
@@ -2138,7 +2272,7 @@ function createTextToolbar() {
   _setTooltip(btnOk, '확인');
   btnOk.addEventListener('mousedown', function (e) { e.preventDefault(); });
   btnOk.addEventListener('click', function () { finishTextEditing(true); });
-  bar.appendChild(btnOk);
+  row2.appendChild(btnOk);
 
   // Cancel
   var btnX = document.createElement('button');
@@ -2147,7 +2281,9 @@ function createTextToolbar() {
   _setTooltip(btnX, '취소 (Esc)');
   btnX.addEventListener('mousedown', function (e) { e.preventDefault(); });
   btnX.addEventListener('click', function () { finishTextEditing(false); });
-  bar.appendChild(btnX);
+  row2.appendChild(btnX);
+
+  bar.appendChild(row2);
 
   return bar;
 }
@@ -2232,6 +2368,8 @@ function finishTextEditing(confirm) {
     var _capturedAlign = _textAlign;
     var _capturedVAlign = _textVAlign;
     var _capturedFont = _textFontFamily;
+    var _capturedStrokeColor = _textStrokeColor;
+    var _capturedStrokeWidth = _textStrokeWidth;
     var _capturedHtml = _textEditor ? _textEditor.innerHTML : '';
     var _capturedReopened = _reopenedObj;
 
@@ -2261,6 +2399,8 @@ function finishTextEditing(confirm) {
           textAlign: _capturedAlign,
           textVAlign: _capturedVAlign,
           textFontFamily: _capturedFont,
+          textStrokeColor: _capturedStrokeColor,
+          textStrokeWidth: _capturedStrokeWidth,
           settings: {
             type: _state.panelSettings.type,
             z: _state.panelSettings.z,
@@ -2299,6 +2439,8 @@ function cleanupTextEditor() {
   _textAlign = 'left';
   _textVAlign = 'top';
   _textFontFamily = 'sans-serif';
+  _textStrokeColor = '#000000';
+  _textStrokeWidth = 0;
   _state.textEditing = false;
   // 오버레이 복원
   if (_overlay) _overlay.style.pointerEvents = '';
@@ -2436,7 +2578,15 @@ function renderTextEditorToCanvas() {
       ctx.fillStyle = c.run.color || defaultColor;
       ctx.font = c.fontStr;
       ctx.textBaseline = 'top';
-      ctx.fillText(c.ch, x, y + (lineH - c.fs) / 2);
+      var charY = y + (lineH - c.fs) / 2;
+      // 윤곽선 (stroke) 렌더: fill 뒤에 그려서 fill 위에 겹침 방지 → stroke 먼저
+      if (_textStrokeWidth > 0) {
+        ctx.strokeStyle = _textStrokeColor;
+        ctx.lineWidth = _textStrokeWidth * 2;
+        ctx.lineJoin = 'round';
+        ctx.strokeText(c.ch, x, charY);
+      }
+      ctx.fillText(c.ch, x, charY);
 
       if (c.run.underline) {
         ctx.strokeStyle = c.run.color || defaultColor;
@@ -2487,6 +2637,8 @@ function _reRenderTextBlock(obj) {
   _textAlign = obj.textAlign || 'left';
   _textVAlign = obj.textVAlign || 'top';
   _textFontFamily = obj.textFontFamily || 'sans-serif';
+  _textStrokeColor = obj.textStrokeColor || '#000000';
+  _textStrokeWidth = obj.textStrokeWidth || 0;
   _ensureFontFace(_textFontFamily);
   var dataUrl = renderTextEditorToCanvas();
   // 전역 변수 복원
@@ -2947,6 +3099,8 @@ function reopenTextEditor(objId) {
   _textAlign = obj.textAlign || 'left';
   _textVAlign = obj.textVAlign || 'top';
   _textFontFamily = obj.textFontFamily || 'sans-serif';
+  _textStrokeColor = obj.textStrokeColor || '#000000';
+  _textStrokeWidth = obj.textStrokeWidth || 0;
 
   startTextEditing(rect);
 
