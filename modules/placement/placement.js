@@ -2041,15 +2041,7 @@ function initDrawCanvas() {
   _drawPoints = [];
   _isDrawing = false;
 
-  // Ctrl+Z 키보드 핸들러
-  _drawKeyHandler = function(e) {
-    if (e.ctrlKey && (e.key === 'z' || e.key === 'Z' || e.code === 'KeyZ') && _state.currentTool === 'draw') {
-      e.preventDefault();
-      e.stopPropagation();
-      undoDrawStroke();
-    }
-  };
-  document.addEventListener('keydown', _drawKeyHandler, true);
+
 
   // 줌 변경 감시 (rAF 루프)
   _drawLastZoom = getZoomScale();
@@ -2074,7 +2066,6 @@ function _drawZoomWatch() {
   }
 }
 
-var _drawKeyHandler = null;
 var _drawLastZoom = 1;
 var _drawLastOrigin = null;
 var _drawZoomWatchId = null;
@@ -2088,10 +2079,6 @@ function cleanupDrawCanvas() {
   _isDrawing = false;
   _drawPoints = [];
   _drawStrokes = [];
-  if (_drawKeyHandler) {
-    document.removeEventListener('keydown', _drawKeyHandler, true);
-    _drawKeyHandler = null;
-  }
   if (_drawZoomWatchId) {
     cancelAnimationFrame(_drawZoomWatchId);
     _drawZoomWatchId = null;
@@ -5527,9 +5514,10 @@ function setupKeyboard() {
 
     // Ctrl+Z/C/V: capture 단계에서 네이티브 차단
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
-      if (e.key === 'z' || e.key === 'Z') {
+      if (e.key === 'z' || e.key === 'Z' || e.code === 'KeyZ') {
         e.preventDefault(); e.stopImmediatePropagation();
-        undo(); return;
+        if (_state.currentTool === 'draw' && _drawCanvas) { undoDrawStroke(); } else { undo(); }
+        return;
       }
       if (e.key === 'c' || e.key === 'C') {
         e.preventDefault(); e.stopImmediatePropagation();
