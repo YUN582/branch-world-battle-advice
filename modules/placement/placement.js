@@ -1138,12 +1138,13 @@ function showPlacementHelp() {
       '<div style="margin-bottom:4px;"><b>I / T / D</b> — 이미지 / 텍스트 / 그리기</div>' +
       '<div style="margin-bottom:4px;">\uD83D\uDDB1\uFE0F <b>드래그</b> — 영역 지정 배치</div>' +
       '<div style="margin-bottom:4px;">\uD83D\uDDB1\uFE0F <b>클릭</b> — 스탬프 반복</div>' +
+      '<div style="margin-bottom:4px;">\uD83D\uDDB1\uFE0F <b>중 클릭 드래그</b> — 패닝</div>' +
       '<div style="margin-bottom:4px;"><b>R / Shift+R</b> — 선택 회전</div>' +
       '<div style="margin-bottom:4px;"><b>Del</b> — 선택 삭제</div>' +
       '<div style="margin-bottom:4px;"><b>Ctrl+Z/C/V</b> — 되돌리기/복사/붙여넣기</div>' +
       '<div style="margin-bottom:4px;"><b>Alt+드래그</b> — 범위 선택 / 복사</div>' +
-      '<div style="margin-bottom:0;opacity:0.5;font-size:11px;margin-top:6px;">' +
-      'Esc로 단계별 취소 · 중클릭 패닝 · Alt+- 진입/나가기</div>' +
+      '<div style="margin-bottom:4px;"><b>Esc</b> — 단계별 취소</div>' +
+      '<div style="margin-bottom:0;"><b>Alt+-</b> — 배치 모드 진입/나가기</div>' +
     '</div>' +
     '<div id="bwbr-place-help-tab" style="position:absolute;top:0;left:0;right:0;bottom:0;' +
     'display:flex;align-items:center;justify-content:center;' +
@@ -1823,7 +1824,8 @@ function startTextEditing(rect) {
   _textEditor.style.fontFamily = _textFontFamily;
   _textEditorWrap.appendChild(_textEditor);
 
-  // 웹 폰트 선로드
+  // 웹 폰트 선로드 + @font-face local() 등록
+  _ensureFontFace(_textFontFamily);
   var fontEntry = _FONT_LIST.find(function(f) { return f.value === _textFontFamily; });
   if (fontEntry) _loadWebFont(fontEntry);
 
@@ -1990,6 +1992,7 @@ function createTextToolbar() {
     }
     _textFontFamily = val;
     if (_textEditor) _textEditor.style.fontFamily = val;
+    _ensureFontFace(val);
     var entry = _FONT_LIST.find(function(f) { return f.value === val; });
     if (entry && entry.type === 'web') _loadWebFont(entry);
     _textEditor.focus();
@@ -2173,34 +2176,58 @@ function finishTextEditing(confirm) {
     var actualH = _textEditor.scrollHeight;
     mapCoords.height = Math.max(1, Math.ceil(actualH / CELL_PX));
 
-    var dataUrl = renderTextEditorToCanvas();
-    if (dataUrl) {
-      readSettingsFromDOM();
-      var obj = {
-        id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
-        mapCoords: mapCoords,
-        angle: 0,
-        imageDataUrl: dataUrl,
-        textHtml: _textEditor ? _textEditor.innerHTML : '',
-        textBgColor: _textBgColor,
-        textAlign: _textAlign,
-        textVAlign: _textVAlign,
-        textFontFamily: _textFontFamily,
-        settings: {
-          type: _state.panelSettings.type,
-          z: _state.panelSettings.z,
-          memo: _state.panelSettings.memo,
-          locked: _state.panelSettings.locked,
-          freezed: _state.panelSettings.freezed
-        }
-      };
-      _state.stagedObjects.push(obj);
-      renderStagedItem(obj);
-      pushUndo({ type: 'stage', ids: [obj.id] });
-      updateConfirmBar();
+    // 폰트 로드 완료 대기 후 캔버스 렌더링
+    // async 전에 필요한 값을 캡처
+    var _capturedEditor = _textEditor;
+    var _capturedBgColor = _textBgColor;
+    var _capturedAlign = _textAlign;
+    var _capturedVAlign = _textVAlign;
+    var _capturedFont = _textFontFamily;
+    var _capturedHtml = _textEditor ? _textEditor.innerHTML : '';
+    var _capturedReopened = _reopenedObj;
+
+    // @font-face 등록 + 폰트 프리로드
+    _ensureFontFace(_capturedFont);
+    var fontLoadPromise;
+    try {
+      var baseName = _capturedFont.replace(/["']/g, '').split(',')[0].trim();
+      fontLoadPromise = document.fonts.load('16px "' + baseName + '"');
+    } catch (e) {
+      fontLoadPromise = Promise.resolve();
     }
-    _reopenedObj = null;
-    cleanupTextEditor();
+
+    fontLoadPromise.then(function() {
+      return document.fonts.ready;
+    }).then(function() {
+      var dataUrl = renderTextEditorToCanvas();
+      if (dataUrl) {
+        readSettingsFromDOM();
+        var obj = {
+          id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+          mapCoords: mapCoords,
+          angle: 0,
+          imageDataUrl: dataUrl,
+          textHtml: _capturedHtml,
+          textBgColor: _capturedBgColor,
+          textAlign: _capturedAlign,
+          textVAlign: _capturedVAlign,
+          textFontFamily: _capturedFont,
+          settings: {
+            type: _state.panelSettings.type,
+            z: _state.panelSettings.z,
+            memo: _state.panelSettings.memo,
+            locked: _state.panelSettings.locked,
+            freezed: _state.panelSettings.freezed
+          }
+        };
+        _state.stagedObjects.push(obj);
+        renderStagedItem(obj);
+        pushUndo({ type: 'stage', ids: [obj.id] });
+        updateConfirmBar();
+      }
+      _reopenedObj = null;
+      cleanupTextEditor();
+    });
   } else {
     // 취소: 재편집 중이면 원본 복원
     if (_reopenedObj) {
@@ -2228,6 +2255,20 @@ function cleanupTextEditor() {
   if (_overlay) _overlay.style.pointerEvents = '';
 }
 
+var _registeredFontFaces = {};
+
+function _ensureFontFace(family) {
+  // CSS font-family 값에서 1차 폰트 이름을 추출하여 @font-face local() 등록
+  // Canvas API가 시스템 설치 폰트를 인식하도록 보장
+  var name = family.replace(/["']/g, '').split(',')[0].trim();
+  if (!name || name === 'sans-serif' || name === 'serif' || name === 'monospace' || name === 'cursive') return;
+  if (_registeredFontFaces[name]) return;
+  _registeredFontFaces[name] = true;
+  var style = document.createElement('style');
+  style.textContent = '@font-face { font-family: "' + name + '"; src: local("' + name + '"); font-weight: 100 900; }';
+  document.head.appendChild(style);
+}
+
 function renderTextEditorToCanvas() {
   if (!_textEditor || !_textMapCoords) return null;
 
@@ -2253,6 +2294,9 @@ function renderTextEditorToCanvas() {
   var defaultFS = parseInt(edCS.fontSize) || 16;
   var defaultColor = edCS.color || '#fff';
   var defaultFamily = _textFontFamily || 'sans-serif';
+
+  // Canvas가 폰트를 인식하도록 @font-face local() 등록
+  _ensureFontFace(defaultFamily);
 
   var runs = [];
   _extractRuns(_textEditor, {
