@@ -799,18 +799,62 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   align-items: center;
   gap: 2px;
 }
-.bwbr-size-input {
+.bwbr-size-combo {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+}
+.bwbr-size-combo-input {
   width: 34px;
   height: 26px;
   border: 1px solid #ddd;
-  border-radius: 4px;
+  border-radius: 4px 0 0 4px;
   font-size: 11px;
   padding: 0 2px;
   outline: none;
   text-align: center;
   background: #fff;
 }
-.bwbr-size-input:focus { border-color: #42a5f5; }
+.bwbr-size-combo-input:focus { border-color: #42a5f5; }
+.bwbr-size-combo-btn {
+  width: 16px;
+  height: 26px;
+  border: 1px solid #ddd;
+  border-left: none;
+  border-radius: 0 4px 4px 0;
+  background: #f5f5f5;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 9px;
+  color: #666;
+}
+.bwbr-size-combo-btn:hover { background: #e0e0e0; }
+.bwbr-size-combo-drop {
+  display: none;
+  position: absolute;
+  top: 28px;
+  left: 0;
+  min-width: 54px;
+  max-height: 180px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  z-index: 120;
+}
+.bwbr-size-combo-drop--open { display: block; }
+.bwbr-size-combo-opt {
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  text-align: center;
+}
+.bwbr-size-combo-opt:hover { background: #e3f2fd; }
 .bwbr-stroke-input {
   width: 34px;
   height: 26px;
@@ -2159,18 +2203,43 @@ function createTextToolbar() {
   sizeLabel.textContent = '크기';
   row2.appendChild(sizeLabel);
 
+  // 크기 콤보 (입력 + 드롭다운)
+  var sizeCombo = document.createElement('div');
+  sizeCombo.className = 'bwbr-size-combo';
   var sizeInput = document.createElement('input');
   sizeInput.type = 'text';
-  sizeInput.className = 'bwbr-size-input';
+  sizeInput.className = 'bwbr-size-combo-input';
   sizeInput.value = '16';
-  sizeInput.setAttribute('list', 'bwbr-font-sizes');
   _setTooltip(sizeInput, '글꼴 크기 (직접 입력 가능)');
-  var sizeList = document.createElement('datalist');
-  sizeList.id = 'bwbr-font-sizes';
-  [8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72, 96].forEach(function(s) {
-    var opt = document.createElement('option');
-    opt.value = s;
-    sizeList.appendChild(opt);
+  var sizeDropBtn = document.createElement('button');
+  sizeDropBtn.className = 'bwbr-size-combo-btn';
+  sizeDropBtn.type = 'button';
+  sizeDropBtn.textContent = '\u25BC';
+  _setTooltip(sizeDropBtn, '크기 목록');
+  var sizeDrop = document.createElement('div');
+  sizeDrop.className = 'bwbr-size-combo-drop';
+  var _sizeSizes = [8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72, 96];
+  _sizeSizes.forEach(function(s) {
+    var opt = document.createElement('div');
+    opt.className = 'bwbr-size-combo-opt';
+    opt.textContent = s;
+    opt.addEventListener('mousedown', function(ev) {
+      ev.preventDefault(); // 포커스 이동 방지
+      sizeInput.value = s;
+      sizeDrop.classList.remove('bwbr-size-combo-drop--open');
+      _restoreTextSelection();
+      _applyFontSize(s);
+      _textEditor.focus();
+    });
+    sizeDrop.appendChild(opt);
+  });
+  sizeDropBtn.addEventListener('click', function(ev) {
+    ev.preventDefault();
+    sizeDrop.classList.toggle('bwbr-size-combo-drop--open');
+  });
+  // 콤보 바깥 클릭 시 드롭다운 닫기
+  document.addEventListener('mousedown', function(ev) {
+    if (!sizeCombo.contains(ev.target)) sizeDrop.classList.remove('bwbr-size-combo-drop--open');
   });
   sizeInput.addEventListener('change', function() {
     var v = parseInt(sizeInput.value);
@@ -2188,8 +2257,10 @@ function createTextToolbar() {
     e.stopPropagation();
   });
   sizeInput.addEventListener('focus', function() { sizeInput.select(); });
-  row2.appendChild(sizeInput);
-  bar.appendChild(sizeList); // datalist는 flex row 바깥에 (레이아웃 영향 방지)
+  sizeCombo.appendChild(sizeInput);
+  sizeCombo.appendChild(sizeDropBtn);
+  sizeCombo.appendChild(sizeDrop);
+  row2.appendChild(sizeCombo);
 
   // 윤곽 두께
   var strokeLabel = document.createElement('span');
@@ -3716,6 +3787,18 @@ function setupSelectModeHandlers() {
     deselectStaged();
     updateAlignBar();
   });
+
+  // 배치 모드 중 ccfolia 전경 더블클릭(설정 창) 차단
+  document.addEventListener('dblclick', function(e) {
+    if (!_state.active) return;
+    if (e.target.closest('.bwbr-placement-toolbar') ||
+        e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar') ||
+        e.target.closest('.bwbr-text-toolbar') || e.target.closest('.bwbr-placement-overlay')) return;
+    // 스테이징 아이템 dblclick은 통과 (텍스트 편집기 열기)
+    if (e.target.closest('.bwbr-staged-item')) return;
+    e.stopImmediatePropagation();
+    e.preventDefault();
+  }, true);
 
   // 배치 모드 중 ccfolia 패닝 방지 (capture phase에서 pointer 이벤트 차단)
   document.addEventListener('pointerdown', function(e) {
