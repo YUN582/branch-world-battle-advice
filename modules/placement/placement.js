@@ -3834,6 +3834,7 @@ function _updateResizeHandles() {
   HANDLE_DIRS.forEach(function(dir) {
     var h = document.createElement('div');
     h.className = 'bwbr-resize-handle bwbr-resize-handle--' + dir;
+    _setTooltip(h, '크기 조절 (Alt: 양쪽)');
     h.addEventListener('mousedown', function(ev) {
       ev.stopPropagation();
       ev.preventDefault();
@@ -3866,11 +3867,12 @@ function _startResize(objId, dir, e) {
     var d = _resizeDrag.dir;
     var nx = _resizeDrag.origX, ny = _resizeDrag.origY;
     var nw = _resizeDrag.origW, nh = _resizeDrag.origH;
+    var alt = ev.altKey; // Alt: 양쪽 대칭 리사이즈
 
-    if (d.indexOf('w') >= 0) { nx += dx; nw -= dx; }
-    if (d.indexOf('e') >= 0) { nw += dx; }
-    if (d.indexOf('n') >= 0) { ny += dy; nh -= dy; }
-    if (d.indexOf('s') >= 0) { nh += dy; }
+    if (d.indexOf('w') >= 0) { nx += dx; nw -= dx; if (alt) { nw -= dx; } }
+    if (d.indexOf('e') >= 0) { nw += dx; if (alt) { nx -= dx; nw += dx; } }
+    if (d.indexOf('n') >= 0) { ny += dy; nh -= dy; if (alt) { nh -= dy; } }
+    if (d.indexOf('s') >= 0) { nh += dy; if (alt) { ny -= dy; nh += dy; } }
 
     if (nw < 1) { nw = 1; nx = _resizeDrag.origX + _resizeDrag.origW - 1; }
     if (nh < 1) { nh = 1; ny = _resizeDrag.origY + _resizeDrag.origH - 1; }
