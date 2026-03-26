@@ -36,7 +36,7 @@
     setupCharStatusPanelInjector();
     setupCharListKeyLabels();
     suppressNativeContextMenu();
-    setupCharListContextMenu();
+    setupCharListRightClick();
     refreshCharacterCache();
     setTimeout(refreshCharacterCache, 5000);
     setTimeout(refreshCharacterCache, 15000);
@@ -476,77 +476,106 @@
       }
     }
     // 2. 캐릭터 목록/아바타 영역에서 식별
-    return _findCharNameFromNearby(lastRightClickTarget);
+    var info = findCharacterItemFromTarget(lastRightClickTarget);
+    return info ? info.name : null;
   }
 
   /** 우클릭 대상에서 캐릭터 아이콘 URL 추출 (확대 보기용) */
   function identifyCharacterIconFromTarget() {
     var tokenEl = findTokenElement(lastRightClickTarget);
     if (tokenEl) return extractImageUrl(tokenEl);
-    var info = _findCharInfoFromNearby(lastRightClickTarget);
+    var info = findCharacterItemFromTarget(lastRightClickTarget);
     return info ? info.iconUrl : null;
   }
 
-  /** 캐릭터 목록/아바타 근처에서 캐릭터 이름 반환 */
-  function _findCharNameFromNearby(target) {
-    var info = _findCharInfoFromNearby(target);
-    return info ? info.name : null;
-  }
-
-  /** 캐릭터 목록/아바타 근처에서 { name, iconUrl } 반환 */
-  function _findCharInfoFromNearby(target) {
+  /** 캐릭터 선택 드롭다운 / 화면 캐릭터 목록 내부의 캐릭터 아이템 감지 */
+  function findCharacterItemFromTarget(target) {
     if (!target || !target.closest) return null;
-    // 채팅 메시지 영역 제외
+
+    // 채팅 메시지 영역은 제외
     if (target.closest('[class*="ChatMessage"], [data-testid="chat-messages"]')) return null;
 
-    // 1. MuiAvatar-root 에서 이미지 탐색
-    var avatarRoot = target.closest('.MuiAvatar-root');
-    if (avatarRoot) {
-      var img = avatarRoot.querySelector('img[src]');
-      if (img) {
-        var m = matchCharacterByImage(img.src);
-        if (m) return { name: m.name, iconUrl: img.src };
-      }
-    }
+    // .movable(보드 토큰)은 제외 (별도 MUI 메뉴에서 처리)
+    if (target.closest('.movable')) return null;
 
-    // 2. 리스트 아이템에서 이미지 탐색
-    var listItem = target.closest('.MuiListItemButton-root, .MuiListItem-root, [role="option"]');
-    if (listItem) {
-      var img2 = listItem.querySelector('.MuiAvatar-root img[src], img[src]');
-      if (img2) {
-        var m2 = matchCharacterByImage(img2.src);
-        if (m2) return { name: m2.name, iconUrl: img2.src };
-      }
-    }
-
-    // 3. 상위로 올라가며 MuiAvatar img 탐색
     var el = target;
-    for (var d = 0; el && d < 8; d++, el = el.parentElement) {
-      if (el === document.body) break;
-      var ava = el.querySelector && el.querySelector('.MuiAvatar-root img[src]');
-      if (ava) {
-        var m3 = matchCharacterByImage(ava.src);
-        if (m3) return { name: m3.name, iconUrl: ava.src };
+    for (var d = 0; el && d < 12; d++, el = el.parentElement) {
+      if (el === document.body) return null;
+
+      // MuiListItemButton (캐릭터 드롭다운 아이템)
+      if (el.classList && el.classList.contains('MuiListItemButton-root')) {
+        var info = extractCharFromElement(el);
+        if (info) return info;
+      }
+
+      // MuiListItem (내 캐릭터 목록 등 일반 리스트 아이템)
+      if (el.classList && el.classList.contains('MuiListItem-root')) {
+        var info2 = extractCharFromElement(el);
+        if (info2) return info2;
+      }
+
+      // role="option" (MUI Autocomplete 폴백)
+      if (el.getAttribute && el.getAttribute('role') === 'option') {
+        return extractCharFromElement(el);
+      }
+
+      // downshift item 폴백
+      if (el.id && /^downshift-.+-item/.test(el.id)) {
+        return extractCharFromElement(el);
+      }
+
+      // styled-components 캐릭터 아이템 — MuiPopover > MuiPaper 직계 자식
+      // (MuiListItemButton 없이 sc-* 클래스만 사용하는 드롭다운 변형)
+      if (el.parentElement && el.parentElement.classList &&
+          el.parentElement.classList.contains('MuiPaper-root') &&
+          el.closest('.MuiPopover-root') &&
+          !el.closest('.MuiDialog-root') && !el.closest('.MuiMenu-paper')) {
+        var info3 = extractCharFromElement(el);
+        if (info3) return info3;
       }
     }
 
-    // 4. 캐릭터 이름 텍스트 매칭 (캐시된 캐릭터와 비교)
-    if (cachedCharacters.length) {
-      var nameMap = {};
-      for (var c = 0; c < cachedCharacters.length; c++) {
-        nameMap[cachedCharacters[c].name] = cachedCharacters[c];
+    // 이미지 기반 폴백 — MuiPopover 또는 화면 캐릭터 상태 패널(MuiAvatar-root 포함)
+    // (MuiDialog, .movable 내부는 이미 상단에서 제외됨)
+    var inPopover = !!target.closest('.MuiPopover-root');
+    var nearAvatar = !!target.closest('.MuiAvatar-root');
+    if (!nearAvatar) {
+      // target 위로 올라가며 MuiAvatar-root 를 포함하는 조상 탐색
+      var up2 = target;
+      for (var a = 0; up2 && a < 6; a++, up2 = up2.parentElement) {
+        if (up2.querySelector && up2.querySelector('.MuiAvatar-root')) { nearAvatar = true; break; }
       }
-      var searchEl = listItem || target;
-      for (var u = 0; searchEl && u < 5; u++, searchEl = searchEl.parentElement) {
-        var walker = document.createTreeWalker(searchEl, NodeFilter.SHOW_TEXT, null, false);
-        var node;
-        while ((node = walker.nextNode())) {
-          var txt = node.textContent.trim();
-          if (txt && nameMap[txt]) {
-            var ch = nameMap[txt];
-            return { name: ch.name, iconUrl: ch.iconUrl || '' };
-          }
+    }
+    if (!inPopover && !nearAvatar) return null;
+
+    var img = (target.tagName === 'IMG') ? target : null;
+    if (!img) {
+      // MuiAvatar-root 내부 이미지 우선 검색
+      var avatarEl = target.closest('.MuiAvatar-root');
+      if (!avatarEl) {
+        var up3 = target;
+        for (var a2 = 0; up3 && a2 < 6; a2++, up3 = up3.parentElement) {
+          avatarEl = up3.querySelector && up3.querySelector('.MuiAvatar-root');
+          if (avatarEl) break;
         }
+      }
+      if (avatarEl) img = avatarEl.querySelector('img[src]');
+    }
+    if (!img) {
+      img = target.querySelector && target.querySelector('img[src]');
+    }
+    if (!img) {
+      var up = target.parentElement;
+      for (var u = 0; up && u < 3; u++, up = up.parentElement) {
+        var found = up.querySelector && up.querySelector('img[src]');
+        if (found) { img = found; break; }
+      }
+    }
+    if (img && img.src) {
+      var charMatch = matchCharacterByImage(img.src);
+      if (charMatch) {
+        if (target.closest('.MuiDialog-root')) return null;
+        return { name: charMatch.name, iconUrl: charMatch.iconUrl };
       }
     }
 
@@ -561,120 +590,162 @@
   }
 
   // ================================================================
-  //  캐릭터 목록/아바타 커스텀 컨텍스트 메뉴
-  //  ccfolia가 MuiPopover를 열지 않는 영역(아바타 이미지 등)에서 CE 메뉴 표시
+  //  채팅 패널 캐릭터 리스트 우클릭
+  //  이미지 기반 매칭 — DOM 구조에 의존하지 않음
   // ================================================================
 
-  var _charCtxMenu = null;
-  var _rightClickCharCache = null;
+  function setupCharListRightClick() {
+    var menu = null;
+    var _rightClickCache = null;
 
-  function setupCharListContextMenu() {
-    // capture-phase mousedown: 선점 캐시 (MUI ClickAwayListener가 mousedown에서 팝오버를 닫으므로)
+    // ── mousedown capture (button=2) ──
+    // MUI ClickAwayListener가 mousedown에서 팝오버를 닫으므로,
+    // contextmenu 이벤트 시점에는 캐릭터 드롭다운이 이미 DOM에서 제거됨.
+    // 따라서 mousedown 시점에 캐릭터 정보를 선점 캐시한다.
     document.addEventListener('mousedown', function (e) {
-      _rightClickCharCache = null;
-      if (e.button !== 2 || !enabled) return;
-      var tag = (e.target.tagName || '').toLowerCase();
-      if (tag === 'input' || tag === 'textarea') return;
-      if (findTokenElement(e.target)) return;
-      var info = _findCharInfoFromNearby(e.target);
-      if (info) _rightClickCharCache = info;
-    }, true);
-
-    // bubble-phase contextmenu: ccfolia가 메뉴를 안 열 때만 CE 메뉴 표시
-    document.addEventListener('contextmenu', function (e) {
+      _rightClickCache = null;
+      if (e.button !== 2) return;
       if (!enabled) return;
-      if (_charCtxMenu) { _charCtxMenu.remove(); _charCtxMenu = null; }
       var tag = (e.target.tagName || '').toLowerCase();
       if (tag === 'input' || tag === 'textarea') return;
-      if (e.target.isContentEditable) return;
       if (findTokenElement(e.target)) return;
 
-      // 직접 감지
-      var info = _findCharInfoFromNearby(e.target);
-      // 폴백: mousedown 캐시
-      if (!info && _rightClickCharCache) info = _rightClickCharCache;
-      _rightClickCharCache = null;
+      var info = findCharacterItemFromTarget(e.target);
       if (!info) return;
 
-      // 딜레이 후 ccfolia MuiPopover가 나타났는지 확인
-      // 나타났으면 onPaperReady()가 주입하므로 CE 메뉴 불필요
-      var cx = e.clientX, cy = e.clientY;
-      var charInfo = info;
-      setTimeout(function () {
-        var pops = document.querySelectorAll('.MuiPopover-root');
-        for (var i = 0; i < pops.length; i++) {
-          var cs = getComputedStyle(pops[i]);
-          if (cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0') return;
+      var isActive = true;
+      var itemEl = e.target.closest
+        ? e.target.closest('.MuiListItemButton-root, .MuiListItem-root, [role="option"]')
+        : null;
+      if (itemEl) {
+        var itemText = itemEl.textContent || '';
+        if (itemText.indexOf('비활성화 상태') !== -1) isActive = false;
+      }
+      _rightClickCache = { info: info, isActive: isActive };
+    }, true);
+
+    // ── contextmenu ──
+    document.addEventListener('contextmenu', function (e) {
+      if (!enabled) return;
+      if (menu) { menu.remove(); menu = null; }
+
+      var tag = (e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+      if (findTokenElement(e.target)) return;
+
+      // 1) 직접 감지 시도
+      var info = findCharacterItemFromTarget(e.target);
+      var isActive = true;
+      if (info) {
+        var itemEl = e.target.closest
+          ? e.target.closest('.MuiListItemButton-root, .MuiListItem-root, [role="option"]')
+          : null;
+        if (itemEl) {
+          var itemText = itemEl.textContent || '';
+          if (itemText.indexOf('비활성화 상태') !== -1) isActive = false;
         }
-        // ccfolia 메뉴 안 나옴 → CE 커스텀 메뉴 표시
-        _showCharContextMenu(cx, cy, charInfo.name, charInfo.iconUrl);
-      }, 120);
+      }
+
+      // 2) 직접 감지 실패 → mousedown 선점 캐시 사용
+      if (!info && _rightClickCache) {
+        info = _rightClickCache.info;
+        isActive = _rightClickCache.isActive;
+      }
+      _rightClickCache = null;
+
+      if (!info) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      menu = buildCustomMenu(e.clientX, e.clientY, info.name, info.iconUrl, isActive);
+      document.body.appendChild(menu);
+
+      var close = function (ev) {
+        if (menu && !menu.contains(ev.target)) {
+          menu.remove(); menu = null;
+          document.removeEventListener('mousedown', close, true);
+        }
+      };
+      setTimeout(function () { document.addEventListener('mousedown', close, true); }, 0);
     }, false);
   }
 
-  function _showCharContextMenu(x, y, charName, iconUrl) {
-    if (_charCtxMenu) { _charCtxMenu.remove(); _charCtxMenu = null; }
-    var menu = document.createElement('div');
-    menu.className = 'bwbr-char-ctx-menu';
-    menu.style.cssText = 'position:fixed;z-index:1500;min-width:160px;' +
-      'background:rgb(40,40,40);border:1px solid rgba(255,255,255,0.1);' +
-      'border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.4);' +
-      'padding:4px 0;font-family:"Roboto","Helvetica","Arial",sans-serif;' +
-      'font-size:14px;color:#fff;';
-    menu.style.left = x + 'px';
-    menu.style.top = y + 'px';
+  /** 커스텀 우클릭 메뉴 */
+  function buildCustomMenu(x, y, charName, iconUrl, isActive) {
+    var wrap = document.createElement('div');
+    wrap.className = 'bwbr-ctx-menu';
+    wrap.style.cssText = 'position:fixed;z-index:13000;background:rgba(50,50,50,0.96);border-radius:4px;box-shadow:0 5px 15px rgba(0,0,0,0.4);padding:4px 0;min-width:160px;color:#fff;font-size:0.875rem;font-family:"Roboto","Helvetica","Arial",sans-serif';
+    wrap.style.left = x + 'px';
+    wrap.style.top = y + 'px';
 
-    // 캐릭터 이름 헤더
-    var header = document.createElement('div');
-    header.style.cssText = 'padding:4px 16px 2px;color:rgba(255,255,255,0.5);font-size:12px;user-select:none';
-    header.textContent = charName;
-    menu.appendChild(header);
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'padding:4px 16px 8px;font-size:0.75rem;color:rgba(255,255,255,0.5);user-select:none;border-bottom:1px solid rgba(255,255,255,0.12);margin-bottom:4px';
+    hdr.textContent = charName;
+    wrap.appendChild(hdr);
+
+    // 편집
+    wrap.appendChild(ctxItem('편집', function () {
+      wrap.remove();
+      dispatchCharAction('bwbr-character-edit', charName);
+    }));
 
     // 확대 보기
     if (iconUrl) {
-      _addCtxItem(menu, '확대 보기', function () { openZoomView(iconUrl); });
+      wrap.appendChild(ctxItem('확대 보기', function () { wrap.remove(); openZoomView(iconUrl); }));
     }
 
     // 단축키 지정
-    _addCtxItem(menu, '단축키 지정', function () {
-      if (charName) openBindDialog(charName);
-      else showToast('캐릭터를 식별할 수 없습니다', 2000);
-    });
+    wrap.appendChild(ctxItem('단축키 지정', function () { wrap.remove(); openBindDialog(charName); }));
 
-    document.body.appendChild(menu);
-    _charCtxMenu = menu;
+    var curKey = findBindingForCharacter(charName);
+    if (curKey) {
+      wrap.appendChild(ctxItem('단축키 해제 (' + fmtKey(curKey) + ')', function () {
+        wrap.remove(); delete bindings[curKey]; saveBindings();
+        showToast(charName + ' 해제됨', 2000);
+      }));
+    }
 
-    // 화면 밖 방지
+    // 구분선
+    var sep = document.createElement('div');
+    sep.style.cssText = 'border-bottom:1px solid rgba(255,255,255,0.12);margin:4px 0';
+    wrap.appendChild(sep);
+
+    // 집어넣기/꺼내기 (DOM의 활성화 상태에 따라 토글)
+    var isOnBoard = (isActive !== undefined) ? isActive : true;
+    wrap.appendChild(ctxItem(isOnBoard ? '집어넣기' : '꺼내기', function () {
+      wrap.remove();
+      dispatchCharAction('bwbr-character-store', charName);
+    }));
+
+    // 복제
+    wrap.appendChild(ctxItem('복제', function () {
+      wrap.remove();
+      dispatchCharAction('bwbr-character-copy', charName);
+    }));
+
+    // 삭제
+    wrap.appendChild(ctxItem('삭제', function () {
+      wrap.remove();
+      dispatchCharAction('bwbr-character-delete', charName);
+    }));
+
     requestAnimationFrame(function () {
-      var rect = menu.getBoundingClientRect();
-      if (rect.right > window.innerWidth) menu.style.left = (window.innerWidth - rect.width - 4) + 'px';
-      if (rect.bottom > window.innerHeight) menu.style.top = (window.innerHeight - rect.height - 4) + 'px';
+      var r = wrap.getBoundingClientRect();
+      if (r.right > innerWidth) wrap.style.left = (innerWidth - r.width - 8) + 'px';
+      if (r.bottom > innerHeight) wrap.style.top = (innerHeight - r.height - 8) + 'px';
     });
-
-    // 외부 클릭 닫기
-    var closeOnOutside = function (ev) {
-      if (menu && !menu.contains(ev.target)) {
-        if (menu.parentElement) menu.remove();
-        _charCtxMenu = null;
-        document.removeEventListener('mousedown', closeOnOutside, true);
-      }
-    };
-    setTimeout(function () { document.addEventListener('mousedown', closeOnOutside, true); }, 0);
+    return wrap;
   }
 
-  function _addCtxItem(menu, text, onClick) {
-    var item = document.createElement('div');
-    item.style.cssText = 'padding:6px 16px;cursor:pointer;user-select:none;transition:background 0.1s';
-    item.textContent = text;
-    item.addEventListener('mouseenter', function () { item.style.background = 'rgba(255,255,255,0.08)'; });
-    item.addEventListener('mouseleave', function () { item.style.background = ''; });
-    item.addEventListener('click', function (ev) {
-      ev.stopPropagation();
-      if (_charCtxMenu && _charCtxMenu.parentElement) _charCtxMenu.remove();
-      _charCtxMenu = null;
-      onClick();
-    });
-    menu.appendChild(item);
+  function ctxItem(label, onClick) {
+    var d = document.createElement('div');
+    d.textContent = label;
+    d.style.cssText = 'padding:6px 16px;cursor:pointer;user-select:none';
+    d.onmouseenter = function () { d.style.backgroundColor = 'rgba(255,255,255,0.08)'; };
+    d.onmouseleave = function () { d.style.backgroundColor = ''; };
+    d.addEventListener('click', function (e) { e.stopPropagation(); onClick(); });
+    return d;
   }
 
   // ================================================================
