@@ -2611,6 +2611,15 @@ function _openColorPopup(anchorEl, currentHex, isTransparent, allowTransparent, 
   var popup = document.createElement('div');
   popup.className = 'bwbr-color-popup';
   popup.addEventListener('contextmenu', function(ev) { ev.preventDefault(); });
+  // 팝업 내 모든 클릭에서 에디터 포커스 유지 (선택 보존)
+  popup.addEventListener('mousedown', function(ev) {
+    if (ev.target.tagName === 'INPUT') return; // hex input은 포커스 허용
+    ev.preventDefault();
+  });
+  popup.addEventListener('pointerdown', function(ev) {
+    if (ev.target.tagName === 'INPUT') return;
+    ev.preventDefault();
+  });
 
   // SV canvas
   var svC = document.createElement('canvas');
@@ -2748,7 +2757,11 @@ function _openColorPopup(anchorEl, currentHex, isTransparent, allowTransparent, 
       }
     }
   });
-  hexIn.addEventListener('mousedown', function(e) { e.stopPropagation(); });
+  hexIn.addEventListener('mousedown', function(e) {
+    e.stopPropagation();
+    // hex input 클릭 시 에디터 블러 허용 (입력을 위해 포커스 필요)
+    // 하지만 _savedTextRange는 blur 핸들러에서 이미 저장됨
+  });
 
   // 팝업 위치
   document.body.appendChild(popup);
