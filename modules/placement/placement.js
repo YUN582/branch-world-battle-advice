@@ -2043,7 +2043,7 @@ function initDrawCanvas() {
 
   // Ctrl+Z 키보드 핸들러
   _drawKeyHandler = function(e) {
-    if (e.ctrlKey && e.key === 'z' && _state.currentTool === 'draw') {
+    if (e.ctrlKey && (e.key === 'z' || e.key === 'Z' || e.code === 'KeyZ') && _state.currentTool === 'draw') {
       e.preventDefault();
       e.stopPropagation();
       undoDrawStroke();
@@ -2177,40 +2177,7 @@ function onDrawMouseMove(e) {
   var mapPt = _screenToMapPx(e.clientX, e.clientY);
   if (!mapPt) return;
   _drawPoints.push(mapPt);
-
-  // 증분 렌더: 마지막 두 점만 화면에 그리기 (성능)
-  var prev = _drawPoints[_drawPoints.length - 2];
-  var cur = _drawPoints[_drawPoints.length - 1];
-  var origin = getMapOriginOnScreen();
-  if (!origin) return;
-  var scale = getZoomScale();
-  var s = _drawCurrentStrokeSettings;
-
-  var sx1 = prev.x * scale + origin.x, sy1 = prev.y * scale + origin.y;
-  var sx2 = cur.x * scale + origin.x, sy2 = cur.y * scale + origin.y;
-
-  _drawCtx.save();
-  _drawCtx.globalAlpha = s.penOpacity;
-  _drawCtx.lineCap = 'round';
-  _drawCtx.lineJoin = 'round';
-
-  if (s.outlineEnabled) {
-    _drawCtx.strokeStyle = s.outlineColor;
-    _drawCtx.lineWidth = (s.penSize + s.outlineSize * 2) * scale;
-    _drawCtx.beginPath();
-    _drawCtx.moveTo(sx1, sy1);
-    _drawCtx.lineTo(sx2, sy2);
-    _drawCtx.stroke();
-  }
-
-  _drawCtx.strokeStyle = s.penColor;
-  _drawCtx.lineWidth = s.penSize * scale;
-  _drawCtx.beginPath();
-  _drawCtx.moveTo(sx1, sy1);
-  _drawCtx.lineTo(sx2, sy2);
-  _drawCtx.stroke();
-
-  _drawCtx.restore();
+  _redrawAllStrokes();
 }
 
 function onDrawMouseUp(e) {
@@ -2229,6 +2196,7 @@ function onDrawMouseUp(e) {
   }
   _drawPoints = [];
   _drawCurrentStrokeSettings = null;
+  _redrawAllStrokes();
 }
 
 function undoDrawStroke() {
@@ -2263,49 +2231,81 @@ function _redrawAllStrokes() {
   }
 }
 
+// 부드러운 경로 그리기 (2차 베지어 곡선 보간)
+function _drawSmoothPath(ctx, pts) {
+  if (pts.length === 0) return;
+  ctx.beginPath();
+  if (pts.length === 1) {
+    ctx.arc(pts[0].x, pts[0].y, 0.5, 0, Math.PI * 2);
+    return;
+  }
+  ctx.moveTo(pts[0].x, pts[0].y);
+  if (pts.length === 2) {
+    ctx.lineTo(pts[1].x, pts[1].y);
+    return;
+  }
+  for (var i = 1; i < pts.length - 1; i++) {
+    var mx = (pts[i].x + pts[i + 1].x) / 2;
+    var my = (pts[i].y + pts[i + 1].y) / 2;
+    ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
+  }
+  ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+}
+
 // 맵 픽셀 좌표의 스트로크 하나를 화면 캔버스에 렌더
 function _renderOneStrokeToScreen(ctx, stroke, origin, scale) {
   if (stroke.points.length === 0) return;
+
+  // 맵 → 화면 좌표 변환
+  var pts = stroke.points.map(function(p) {
+    return { x: p.x * scale + origin.x, y: p.y * scale + origin.y };
+  });
+
+  var outW = (stroke.penSize + stroke.outlineSize * 2) * scale;
+  var penW = stroke.penSize * scale;
+
+  // 윤곽선+펜을 임시 캔버스에 불투명으로 그린 뒤 알파 합성 (겹침 방지)
+  if (stroke.outlineEnabled && stroke.penOpacity < 1) {
+    var tmp = document.createElement('canvas');
+    tmp.width = ctx.canvas.width;
+    tmp.height = ctx.canvas.height;
+    var tc = tmp.getContext('2d');
+    tc.lineCap = 'round';
+    tc.lineJoin = 'round';
+
+    tc.strokeStyle = stroke.outlineColor;
+    tc.lineWidth = outW;
+    _drawSmoothPath(tc, pts);
+    tc.stroke();
+
+    tc.strokeStyle = stroke.penColor;
+    tc.lineWidth = penW;
+    _drawSmoothPath(tc, pts);
+    tc.stroke();
+
+    ctx.save();
+    ctx.globalAlpha = stroke.penOpacity;
+    ctx.drawImage(tmp, 0, 0);
+    ctx.restore();
+    return;
+  }
+
   ctx.save();
   ctx.globalAlpha = stroke.penOpacity;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
-  // 맵 → 화면 좌표 변환 배열 준비
-  var pts = stroke.points.map(function(p) {
-    return { x: p.x * scale + origin.x, y: p.y * scale + origin.y };
-  });
-
-  // 윤곽선
   if (stroke.outlineEnabled) {
     ctx.strokeStyle = stroke.outlineColor;
-    ctx.lineWidth = (stroke.penSize + stroke.outlineSize * 2) * scale;
-    if (pts.length > 1) {
-      ctx.beginPath();
-      ctx.moveTo(pts[0].x, pts[0].y);
-      for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-      ctx.stroke();
-    } else {
-      ctx.beginPath();
-      ctx.arc(pts[0].x, pts[0].y, Math.max(0.5, ctx.lineWidth / 2), 0, Math.PI * 2);
-      ctx.fill();
-    }
+    ctx.lineWidth = outW;
+    _drawSmoothPath(ctx, pts);
+    ctx.stroke();
   }
 
-  // 메인 펜
   ctx.strokeStyle = stroke.penColor;
-  ctx.lineWidth = stroke.penSize * scale;
-  if (pts.length > 1) {
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (var j = 1; j < pts.length; j++) ctx.lineTo(pts[j].x, pts[j].y);
-    ctx.stroke();
-  } else {
-    ctx.fillStyle = stroke.penColor;
-    ctx.beginPath();
-    ctx.arc(pts[0].x, pts[0].y, Math.max(0.5, ctx.lineWidth / 2), 0, Math.PI * 2);
-    ctx.fill();
-  }
+  ctx.lineWidth = penW;
+  _drawSmoothPath(ctx, pts);
+  ctx.stroke();
 
   ctx.restore();
 }
@@ -2385,44 +2385,54 @@ function finishDrawing() {
 function _renderStrokesToCtx(ctx, strokes) {
   strokes.forEach(function(stroke) {
     if (stroke.points.length === 0) return;
+
+    var outW = stroke.penSize + stroke.outlineSize * 2;
+    var penW = stroke.penSize;
+
+    // 윤곽선+펜을 임시 캔버스에 불투명으로 그린 뒤 알파 합성 (겹침 방지)
+    if (stroke.outlineEnabled && stroke.penOpacity < 1) {
+      var tmp = document.createElement('canvas');
+      tmp.width = ctx.canvas.width;
+      tmp.height = ctx.canvas.height;
+      var tc = tmp.getContext('2d');
+      tc.setTransform(ctx.getTransform());
+      tc.lineCap = 'round';
+      tc.lineJoin = 'round';
+
+      tc.strokeStyle = stroke.outlineColor;
+      tc.lineWidth = outW;
+      _drawSmoothPath(tc, stroke.points);
+      tc.stroke();
+
+      tc.strokeStyle = stroke.penColor;
+      tc.lineWidth = penW;
+      _drawSmoothPath(tc, stroke.points);
+      tc.stroke();
+
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalAlpha = stroke.penOpacity;
+      ctx.drawImage(tmp, 0, 0);
+      ctx.restore();
+      return;
+    }
+
     ctx.save();
     ctx.globalAlpha = stroke.penOpacity;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    // 윤곽선 패스
     if (stroke.outlineEnabled) {
       ctx.strokeStyle = stroke.outlineColor;
-      ctx.lineWidth = stroke.penSize + stroke.outlineSize * 2;
-      if (stroke.points.length > 1) {
-        ctx.beginPath();
-        ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-        for (var i = 1; i < stroke.points.length; i++) {
-          ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-        }
-        ctx.stroke();
-      } else {
-        ctx.beginPath();
-        ctx.arc(stroke.points[0].x, stroke.points[0].y, 0.5, 0, Math.PI * 2);
-        ctx.stroke();
-      }
+      ctx.lineWidth = outW;
+      _drawSmoothPath(ctx, stroke.points);
+      ctx.stroke();
     }
 
-    // 메인 펜 패스
     ctx.strokeStyle = stroke.penColor;
-    ctx.lineWidth = stroke.penSize;
-    if (stroke.points.length > 1) {
-      ctx.beginPath();
-      ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-      for (var j = 1; j < stroke.points.length; j++) {
-        ctx.lineTo(stroke.points[j].x, stroke.points[j].y);
-      }
-      ctx.stroke();
-    } else {
-      ctx.beginPath();
-      ctx.arc(stroke.points[0].x, stroke.points[0].y, 0.5, 0, Math.PI * 2);
-      ctx.stroke();
-    }
+    ctx.lineWidth = penW;
+    _drawSmoothPath(ctx, stroke.points);
+    ctx.stroke();
 
     ctx.restore();
   });
