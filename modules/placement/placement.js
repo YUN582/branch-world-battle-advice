@@ -799,21 +799,18 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   align-items: center;
   gap: 2px;
 }
-.bwbr-size-select {
-  width: 52px;
+.bwbr-size-input {
+  width: 34px;
   height: 26px;
   border: 1px solid #ddd;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 11px;
   padding: 0 2px;
   outline: none;
   text-align: center;
   background: #fff;
-  cursor: pointer;
-  -webkit-appearance: none;
-  appearance: none;
 }
-.bwbr-size-select:focus { border-color: #42a5f5; }
+.bwbr-size-input:focus { border-color: #42a5f5; }
 .bwbr-stroke-input {
   width: 34px;
   height: 26px;
@@ -2138,25 +2135,42 @@ function createTextToolbar() {
 
   row2.appendChild(_makeToolbarSep());
 
-  // Font size (select dropdown — 직접 편집도 가능)
-  var sizeSelect = document.createElement('select');
-  sizeSelect.className = 'bwbr-size-select';
-  _setTooltip(sizeSelect, '글꼴 크기');
+  // 크기 라벨 + 입력
+  var sizeLabel = document.createElement('span');
+  sizeLabel.className = 'bwbr-toolbar-label';
+  sizeLabel.textContent = '크기';
+  row2.appendChild(sizeLabel);
+
+  var sizeInput = document.createElement('input');
+  sizeInput.type = 'text';
+  sizeInput.className = 'bwbr-size-input';
+  sizeInput.value = '16';
+  sizeInput.setAttribute('list', 'bwbr-font-sizes');
+  _setTooltip(sizeInput, '글꼴 크기 (직접 입력 가능)');
+  var sizeList = document.createElement('datalist');
+  sizeList.id = 'bwbr-font-sizes';
   [8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72, 96].forEach(function(s) {
     var opt = document.createElement('option');
     opt.value = s;
-    opt.textContent = s;
-    if (s === 16) opt.selected = true;
-    sizeSelect.appendChild(opt);
+    sizeList.appendChild(opt);
   });
-  sizeSelect.addEventListener('change', function() {
-    var v = parseInt(sizeSelect.value);
-    if (v && v > 0) {
+  sizeInput.addEventListener('change', function() {
+    var v = parseInt(sizeInput.value);
+    if (v && v > 0 && v <= 200) {
       _applyFontSize(v);
+      sizeInput.value = v;
+    } else {
+      sizeInput.value = '16';
     }
     _textEditor.focus();
   });
-  row2.appendChild(sizeSelect);
+  sizeInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); sizeInput.blur(); }
+    e.stopPropagation();
+  });
+  sizeInput.addEventListener('focus', function() { sizeInput.select(); });
+  row2.appendChild(sizeInput);
+  row2.appendChild(sizeList);
 
   // 윤곽 두께
   var strokeLabel = document.createElement('span');
@@ -2320,10 +2334,9 @@ function _applyFontSize(px) {
   if (!sel || sel.rangeCount === 0) return;
   var range = sel.getRangeAt(0);
   if (range.collapsed) {
-    // 커서만 있을 때 → 이후 입력에 적용되도록 빈 span 삽입
     var span = document.createElement('span');
     span.style.fontSize = px + 'px';
-    span.appendChild(document.createTextNode('\u200B')); // zero-width space
+    span.appendChild(document.createTextNode('\u200B'));
     range.insertNode(span);
     range.setStartAfter(span);
     range.collapse(true);
@@ -2331,20 +2344,24 @@ function _applyFontSize(px) {
     sel.addRange(range);
     return;
   }
+  var frag = range.extractContents();
+  // 자식 노드의 기존 fontSize 제거 (축소가 적용되도록)
+  _stripFontSize(frag);
   var span2 = document.createElement('span');
   span2.style.fontSize = px + 'px';
-  try {
-    range.surroundContents(span2);
-  } catch (ex) {
-    // 복합 노드 선택 시 fallback
-    var frag = range.extractContents();
-    span2.appendChild(frag);
-    range.insertNode(span2);
-  }
+  span2.appendChild(frag);
+  range.insertNode(span2);
   sel.removeAllRanges();
   var nr = document.createRange();
   nr.selectNodeContents(span2);
   sel.addRange(nr);
+}
+
+function _stripFontSize(node) {
+  if (node.nodeType === 1) {
+    if (node.style && node.style.fontSize) node.style.fontSize = '';
+    for (var i = 0; i < node.childNodes.length; i++) _stripFontSize(node.childNodes[i]);
+  }
 }
 
 function positionTextToolbar() {
