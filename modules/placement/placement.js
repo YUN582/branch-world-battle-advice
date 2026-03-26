@@ -1702,6 +1702,7 @@ var _textVAlign = 'top';   // 수직 정렬: top / middle / bottom
 var _textFontFamily = 'sans-serif'; // 글꼴
 var _textStrokeColor = '#000000'; // 윤곽선 색상
 var _textStrokeWidth = 0;  // 윤곽선 두께 (0=없음)
+var _savedTextRange = null; // 툴바 조작 시 보존할 선택 범위
 var _reopenedObj = null;   // 재편집 시 원본 객체 (ESC로 복원용)
 var _tbPosRaf = null;      // 툴바 위치 추적 rAF
 var _loadedWebFonts = {};  // 이미 로드된 웹 폰트 캐시
@@ -1914,6 +1915,14 @@ function startTextEditing(rect) {
   // 포커스
   _textEditor.focus();
 
+  // 툴바 조작 시 선택 범위 보존 (포커스 잃으면 선택도 잃음)
+  _textEditor.addEventListener('blur', function() {
+    var sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && _textEditor && _textEditor.contains(sel.anchorNode)) {
+      _savedTextRange = sel.getRangeAt(0).cloneRange();
+    }
+  });
+
   // 오버레이 숨김 (편집 중 클릭/입력 방해 방지)
   if (_overlay) _overlay.style.pointerEvents = 'none';
 
@@ -1955,6 +1964,15 @@ function _updateStrokePreview() {
     _textEditor.style.webkitTextStroke = _textStrokeWidth + 'px ' + _textStrokeColor;
   } else {
     _textEditor.style.webkitTextStroke = '';
+  }
+}
+
+function _restoreTextSelection() {
+  if (_savedTextRange && _textEditor) {
+    _textEditor.focus();
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(_savedTextRange);
   }
 }
 
@@ -2157,6 +2175,7 @@ function createTextToolbar() {
   sizeInput.addEventListener('change', function() {
     var v = parseInt(sizeInput.value);
     if (v && v > 0 && v <= 200) {
+      _restoreTextSelection();
       _applyFontSize(v);
       sizeInput.value = v;
     } else {
@@ -2170,7 +2189,7 @@ function createTextToolbar() {
   });
   sizeInput.addEventListener('focus', function() { sizeInput.select(); });
   row2.appendChild(sizeInput);
-  row2.appendChild(sizeList);
+  bar.appendChild(sizeList); // datalist는 flex row 바깥에 (레이아웃 영향 방지)
 
   // 윤곽 두께
   var strokeLabel = document.createElement('span');
@@ -2206,11 +2225,13 @@ function createTextToolbar() {
   fgInput.type = 'color';
   fgInput.value = '#000000';
   fgInput.addEventListener('input', function () {
+    _restoreTextSelection();
     _applyStyleToSelection('color', fgInput.value);
     _textEditor.focus();
   });
   fgInput.addEventListener('contextmenu', function (ev) {
     ev.preventDefault();
+    _restoreTextSelection();
     _applyStyleToSelection('color', 'transparent');
     _textEditor.focus();
   });
@@ -2247,11 +2268,13 @@ function createTextToolbar() {
   bgInput.type = 'color';
   bgInput.value = '#ffff00';
   bgInput.addEventListener('input', function () {
+    _restoreTextSelection();
     _applyStyleToSelection('backgroundColor', bgInput.value);
     _textEditor.focus();
   });
   bgInput.addEventListener('contextmenu', function (ev) {
     ev.preventDefault();
+    _restoreTextSelection();
     _applyStyleToSelection('backgroundColor', 'transparent');
     _textEditor.focus();
   });
@@ -2466,6 +2489,7 @@ function cleanupTextEditor() {
   _textFontFamily = 'sans-serif';
   _textStrokeColor = '#000000';
   _textStrokeWidth = 0;
+  _savedTextRange = null;
   _state.textEditing = false;
   // 오버레이 복원
   if (_overlay) _overlay.style.pointerEvents = '';
