@@ -5743,6 +5743,71 @@
   });
 
   // ================================================================
+  //  배치 모드: 마커 생성 (room.markers 필드에 추가)
+  //  Content Script에서 bwbr-create-marker 이벤트로 요청
+  // ================================================================
+  document.addEventListener('bwbr-create-marker', async () => {
+    const _raw = document.documentElement.getAttribute('data-bwbr-create-marker');
+    document.documentElement.removeAttribute('data-bwbr-create-marker');
+    const d = _raw ? JSON.parse(_raw) : {};
+    const respond = (detail) => {
+      document.documentElement.setAttribute('data-bwbr-create-marker-result', JSON.stringify(detail));
+      document.dispatchEvent(new CustomEvent('bwbr-create-marker-result', { detail }));
+    };
+
+    try {
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) throw new Error('Firestore SDK 없음');
+      if (!reduxStore) throw new Error('Redux Store 없음');
+
+      const roomId = getRoomId();
+      if (!roomId) throw new Error('방 ID를 찾을 수 없음');
+
+      const markerKey = Date.now().toString(16);
+      const markerData = {
+        x: d.x ?? 0,
+        y: d.y ?? 0,
+        z: d.z ?? 50,
+        width: d.width ?? 4,
+        height: d.height ?? 4,
+        locked: d.locked ?? false,
+        freezed: d.freezed ?? false,
+        text: d.memo || '',
+        imageUrl: d.imageUrl || '',
+        clickAction: null
+      };
+
+      const roomRef = sdk.doc(sdk.collection(sdk.db, 'rooms'), roomId);
+      const now = Date.now();
+
+      if (sdk.writeBatch) {
+        // writeBatch.update()는 dot notation 지원 → 기존 markers 보존
+        const batch = sdk.writeBatch(sdk.db);
+        batch.update(roomRef, {
+          [`markers.${markerKey}`]: markerData,
+          updatedAt: now
+        });
+        await batch.commit();
+      } else {
+        // fallback: setDoc merge (중첩 객체 merge)
+        await sdk.setDoc(roomRef, {
+          markers: { [markerKey]: markerData },
+          updatedAt: now
+        }, { merge: true });
+      }
+
+      _dbg(`%c[CE]%c ✅ 마커 생성: ${markerKey} (${markerData.width}×${markerData.height})`,
+        'color: #4caf50; font-weight: bold;', 'color: inherit;');
+
+      respond({ success: true, id: markerKey });
+
+    } catch (err) {
+      console.error('[CE] 마커 생성 실패:', err);
+      respond({ success: false, error: err.message });
+    }
+  });
+
+  // ================================================================
   //  배치 모드: 패널 일괄 생성 (스테이징 → 확정)
   //  Content Script에서 bwbr-create-panels-batch 이벤트로 요청
   // ================================================================

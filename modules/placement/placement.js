@@ -4505,6 +4505,17 @@ function updateConfirmBar() {
   }
 }
 
+// type에 따라 스크린(items) 또는 마커(room.markers)로 생성
+function _dispatchCreatePanelOrMarker(panelData) {
+  if (panelData.type === 'plane') {
+    document.documentElement.setAttribute('data-bwbr-create-marker', JSON.stringify(panelData));
+    document.dispatchEvent(new CustomEvent('bwbr-create-marker'));
+  } else {
+    document.documentElement.setAttribute('data-bwbr-create-panel', JSON.stringify(panelData));
+    document.dispatchEvent(new CustomEvent('bwbr-create-panel'));
+  }
+}
+
 
 // ── 합성 확정 (하나의 이미지로 합성 → Firestore) ────────────────
 
@@ -4546,8 +4557,7 @@ function compositeAndCommit() {
       angle: obj0.angle || 0, memo: s.memo, locked: s.locked, freezed: s.freezed,
       imageUrl: obj0.imageDataUrl
     };
-    document.documentElement.setAttribute('data-bwbr-create-panel', JSON.stringify(panelData));
-    document.dispatchEvent(new CustomEvent('bwbr-create-panel'));
+    _dispatchCreatePanelOrMarker(panelData);
     clearAllStaged();
     return;
   }
@@ -4623,8 +4633,7 @@ function compositeAndCommit() {
       imageUrl: dataUrl
     };
 
-    document.documentElement.setAttribute('data-bwbr-create-panel', JSON.stringify(panelData));
-    document.dispatchEvent(new CustomEvent('bwbr-create-panel'));
+    _dispatchCreatePanelOrMarker(panelData);
     clearAllStaged();
   }
 
@@ -4638,8 +4647,7 @@ function compositeAndCommit() {
         memo: s.memo, locked: s.locked, freezed: s.freezed,
         imageUrl: obj.imageDataUrl || ''
       };
-      document.documentElement.setAttribute('data-bwbr-create-panel', JSON.stringify(panelData));
-      document.dispatchEvent(new CustomEvent('bwbr-create-panel'));
+      _dispatchCreatePanelOrMarker(panelData);
     });
     clearAllStaged();
   }
