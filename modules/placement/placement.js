@@ -593,6 +593,7 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
+  /* left는 JS에서 필드 영역 기준으로 재계산됨 */
   z-index: 105;
   display: none;
   align-items: center;
@@ -670,6 +671,7 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   top: 56px;
   left: 50%;
   transform: translateX(-50%);
+  /* left는 JS에서 필드 영역 기준으로 재계산됨 */
   z-index: 106;
   display: none;
   align-items: center;
@@ -3877,6 +3879,15 @@ function _startResize(objId, dir, e) {
     if (nw < 1) { nw = 1; nx = _resizeDrag.origX + _resizeDrag.origW - 1; }
     if (nh < 1) { nh = 1; ny = _resizeDrag.origY + _resizeDrag.origH - 1; }
 
+    // 텍스트 블록: 폰트 최소 높이 적용 (1타일 = CELL_PX, baseline 16px → 최소 2타일)
+    if (obj.textHtml) {
+      var minH = 2; // 기본 최소 2타일
+      if (nh < minH) {
+        if (d.indexOf('n') >= 0) ny = _resizeDrag.origY + _resizeDrag.origH - minH;
+        nh = minH;
+      }
+    }
+
     obj.mapCoords.x = nx; obj.mapCoords.y = ny;
     obj.mapCoords.width = nw; obj.mapCoords.height = nh;
 
@@ -4351,17 +4362,8 @@ function updateAlignBar() {
     if (topBar) {
       _alignBar.style.top = (topBar.getBoundingClientRect().bottom + 8) + 'px';
     }
-    // 수평 중앙: 화면 왼쪽 ~ 우측 채팅 드로어 사이의 보드 영역 기준
-    var boardRight = window.innerWidth;
-    var drawers = document.querySelectorAll('[class*="MuiDrawer"]');
-    drawers.forEach(function(d) {
-      var r = d.getBoundingClientRect();
-      // 화면 안에 보이는 우측 드로어 (left < viewport, right > 0, width > 50)
-      if (r.left > 0 && r.left < window.innerWidth && r.width > 50 && r.right <= window.innerWidth + 5) {
-        boardRight = Math.min(boardRight, r.left);
-      }
-    });
-    _alignBar.style.left = (boardRight / 2) + 'px';
+    // 수평 중앙: 필드 영역 기준
+    _alignBar.style.left = _getFieldCenter() + 'px';
   } else {
     _alignBar.classList.remove('bwbr-place-align-bar--visible');
   }
@@ -4496,6 +4498,7 @@ function updateConfirmBar() {
   if (count > 0) {
     _confirmBar.classList.add('bwbr-place-confirm-bar--visible');
     _stagedCountEl.textContent = count + '개 배치됨';
+    _confirmBar.style.left = _getFieldCenter() + 'px';
   } else {
     _confirmBar.classList.remove('bwbr-place-confirm-bar--visible');
   }
@@ -4670,6 +4673,19 @@ function getZoomScale() {
   if (!t || t === 'none') return 1;
   var m = t.match(/matrix\(([^,]+)/);
   return m ? parseFloat(m[1]) : 1;
+}
+
+// 필드 영역(채팅 드로어 제외) 가로 중앙 px 계산
+function _getFieldCenter() {
+  var boardRight = window.innerWidth;
+  var drawers = document.querySelectorAll('[class*="MuiDrawer"]');
+  drawers.forEach(function(d) {
+    var r = d.getBoundingClientRect();
+    if (r.left > 0 && r.left < window.innerWidth && r.width > 50 && r.right <= window.innerWidth + 5) {
+      boardRight = Math.min(boardRight, r.left);
+    }
+  });
+  return boardRight / 2;
 }
 
 function getMapOriginOnScreen() {
@@ -4858,9 +4874,27 @@ var _angleTimeout = null;
 
 function showAngleIndicator(angle) {
   _angleIndicator.textContent = angle + '°';
-  _angleIndicator.style.left = '50%';
-  _angleIndicator.style.top = '50%';
-  _angleIndicator.style.transform = 'translate(-50%, -50%)';
+
+  // 선택된 오브젝트 근처에 표시
+  var positioned = false;
+  if (_state.selectedStagedIds.length > 0) {
+    var lastId = _state.selectedStagedIds[_state.selectedStagedIds.length - 1];
+    var el = document.querySelector('[data-staged-id="' + lastId + '"]');
+    if (el) {
+      var r = el.getBoundingClientRect();
+      _angleIndicator.style.left = (r.left + r.width / 2) + 'px';
+      _angleIndicator.style.top = (r.top - 30) + 'px';
+      _angleIndicator.style.transform = 'translateX(-50%)';
+      positioned = true;
+    }
+  }
+  if (!positioned) {
+    var fc = _getFieldCenter();
+    _angleIndicator.style.left = fc + 'px';
+    _angleIndicator.style.top = '50%';
+    _angleIndicator.style.transform = 'translate(-50%, -50%)';
+  }
+
   _angleIndicator.classList.add('bwbr-placement-angle-indicator--visible');
   clearTimeout(_angleTimeout);
   _angleTimeout = setTimeout(function () {
