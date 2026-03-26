@@ -179,6 +179,11 @@
       box.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:14000;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none';
       root.appendChild(box);
     }
+    // 필드 센터로 위치 갱신 (채팅 드로어 고려)
+    var fc = typeof window.BWBR_getFieldCenter === 'function' ? window.BWBR_getFieldCenter() : null;
+    if (fc !== null) {
+      box.style.left = fc + 'px';
+    }
     var t = document.createElement('div');
     t.className = 'bwbr-fab-toast';
     t.style.cssText = 'background:' + bg + ';color:' + color + ';padding:6px 16px;border-radius:4px;font-size:0.875rem;box-shadow:0 3px 8px rgba(0,0,0,0.3);max-width:520px;opacity:0;transform:translateY(100%);transition:opacity 225ms,transform 225ms;pointer-events:auto;white-space:nowrap;font-family:"Roboto","Helvetica","Arial",sans-serif';

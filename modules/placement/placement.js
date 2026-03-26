@@ -1139,6 +1139,7 @@ function init() {
   setupMiddleClickPanning();  // 미들클릭 핸들러 먼저 (capture phase 우선순위)
   setupKeyboard();
   setupSelectModeHandlers();
+  _startFieldCenterMonitor();
 }
 
 
@@ -4678,14 +4679,71 @@ function getZoomScale() {
 // 필드 영역(채팅 드로어 제외) 가로 중앙 px 계산
 function _getFieldCenter() {
   var boardRight = window.innerWidth;
-  var drawers = document.querySelectorAll('[class*="MuiDrawer"]');
-  drawers.forEach(function(d) {
-    var r = d.getBoundingClientRect();
-    if (r.left > 0 && r.left < window.innerWidth && r.width > 50 && r.right <= window.innerWidth + 5) {
-      boardRight = Math.min(boardRight, r.left);
+  // 1순위: MUI Drawer paper (showPlacementHelp과 동일 셀렉터)
+  var paper = document.querySelector('.MuiDrawer-paperAnchorDockedRight')
+    || document.querySelector('.MuiDrawer-paperAnchorRight')
+    || document.querySelector('.MuiDrawer-paper');
+  if (paper) {
+    var r = paper.getBoundingClientRect();
+    if (r.width > 50 && r.left > 0 && r.left < window.innerWidth) {
+      boardRight = r.left;
+    }
+  }
+  // 2순위: textarea 기준 역추적
+  if (boardRight === window.innerWidth) {
+    var ta = document.querySelector('textarea[name="text"]');
+    if (ta) {
+      var ancestor = ta.parentElement;
+      while (ancestor && ancestor !== document.body) {
+        var ar = ancestor.getBoundingClientRect();
+        if (ar.width > 50 && ar.width < window.innerWidth * 0.6
+            && ar.right >= window.innerWidth - 5 && ar.left > 0) {
+          boardRight = ar.left;
+          break;
+        }
+        ancestor = ancestor.parentElement;
+      }
+    }
+  }
+  return boardRight / 2;
+}
+window.BWBR_getFieldCenter = _getFieldCenter;
+
+// ── 드로어 열림/닫힘 감시 → 센터 재계산 ───────────────────────
+var _lastFC = null;
+var _fcTimer = null;
+
+function _onFieldCenterChanged() {
+  if (_confirmBar && _confirmBar.classList.contains('bwbr-place-confirm-bar--visible')) {
+    _confirmBar.style.left = _getFieldCenter() + 'px';
+  }
+  if (_alignBar && _alignBar.classList.contains('bwbr-place-align-bar--visible')) {
+    _alignBar.style.left = _getFieldCenter() + 'px';
+  }
+  // 토스트 컨테이너도 갱신 (fab-buttons.js)
+  var toastBox = document.getElementById('bwbr-fab-toast-container');
+  if (toastBox) {
+    toastBox.style.left = _getFieldCenter() + 'px';
+  }
+}
+
+function _startFieldCenterMonitor() {
+  if (_fcTimer) return;
+  _lastFC = _getFieldCenter();
+  _fcTimer = setInterval(function() {
+    var fc = _getFieldCenter();
+    if (fc !== _lastFC) {
+      _lastFC = fc;
+      _onFieldCenterChanged();
+    }
+  }, 400);
+  window.addEventListener('resize', function() {
+    var fc = _getFieldCenter();
+    if (fc !== _lastFC) {
+      _lastFC = fc;
+      _onFieldCenterChanged();
     }
   });
-  return boardRight / 2;
 }
 
 function getMapOriginOnScreen() {
