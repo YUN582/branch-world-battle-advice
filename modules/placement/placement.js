@@ -747,6 +747,89 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   padding: 4px 0;
 }
 
+/* ── 그리기 도구 패널 ──────────────────────────── */
+
+.bwbr-place-draw-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0;
+  border-bottom: 1px solid #eee;
+  margin-bottom: 4px;
+}
+
+.bwbr-draw-range-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bwbr-draw-slider {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #ddd;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.bwbr-draw-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #42a5f5;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  cursor: pointer;
+}
+
+.bwbr-draw-range-val {
+  font-size: 11px;
+  color: #666;
+  min-width: 32px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.bwbr-draw-color-btn {
+  width: 32px;
+  height: 24px;
+  border: 2px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+  transition: border-color 0.15s;
+}
+
+.bwbr-draw-color-btn:hover {
+  border-color: #999;
+}
+
+/* ── 그리기 캔버스 ─────────────────────────────── */
+
+.bwbr-draw-canvas {
+  image-rendering: auto;
+}
+
+/* ── 그리기 완료/취소 바 ───────────────────────── */
+
+.bwbr-draw-finish-bar {
+  position: fixed;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 105;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border-radius: 12px;
+  padding: 8px 16px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+}
+
 /* ── 텍스트 영역 드래그 미리보기 ─────────────────── */
 
 .bwbr-placement-preview--text {
@@ -1081,6 +1164,26 @@ var _state = {
 };
 
 
+// ── 그리기 도구 상태 ────────────────────────────────────────────
+
+var _drawSettings = {
+  penSize: 4,             // 펜 굵기 (px)
+  penColor: '#ffffff',    // 펜 색상
+  penOpacity: 1.0,        // 펜 투명도 (0~1)
+  outlineEnabled: false,  // 윤곽선 활성
+  outlineSize: 2,         // 윤곽선 두께 (px)
+  outlineColor: '#000000' // 윤곽선 색상
+};
+
+var _drawCanvas = null;    // 그리기 캔버스 (zoom container 내)
+var _drawCtx = null;       // 캔버스 2D 컨텍스트
+var _isDrawing = false;    // 현재 그리기 중
+var _drawPoints = [];      // 현재 스트로크 포인트 [{x,y}]
+var _drawStrokes = [];     // 완료된 스트로크 목록 [{points, penSize, penColor, penOpacity, outlineEnabled, outlineSize, outlineColor}]
+var _drawSettingsMenu = null; // 그리기 설정 메뉴 DOM
+var _drawFinishBar = null; // 그리기 완료/취소 바
+
+
 // ── DOM 요소 ────────────────────────────────────────────────────
 
 var _toolbar = null;
@@ -1354,6 +1457,8 @@ function activateMode(mode) {
     _settingsPanel.classList.remove('bwbr-place-settings--open');
     if (_imageSourceMenu) _imageSourceMenu.style.display = 'none';
     if (_textSettingsMenu) _textSettingsMenu.style.display = 'none';
+    if (_drawSettingsMenu) _drawSettingsMenu.style.display = 'none';
+    cleanupDrawCanvas();
   } else if (mode === 'edit') {
     // 편집 모드: 설정 패널 열기
     _settingsPanel.classList.add('bwbr-place-settings--open');
@@ -1378,6 +1483,7 @@ function deactivateMode() {
   _overlay.classList.remove('bwbr-placement-overlay--active');
   _preview.classList.remove('bwbr-placement-preview--visible');
   _settingsPanel.classList.remove('bwbr-place-settings--open');
+  cleanupDrawCanvas();
   updatePlacementCursor();
   updateAlignBar();
 }
@@ -1392,8 +1498,15 @@ function setSubTool(toolId) {
     _overlay.classList.remove('bwbr-placement-overlay--active');
     if (_imageSourceMenu) _imageSourceMenu.style.display = 'none';
     if (_textSettingsMenu) _textSettingsMenu.style.display = 'none';
+    if (_drawSettingsMenu) _drawSettingsMenu.style.display = 'none';
+    cleanupDrawCanvas();
     updatePlacementCursor();
     return;
+  }
+
+  // 이전 도구가 draw였으면 캔버스 정리
+  if (_state.currentTool === 'draw') {
+    cleanupDrawCanvas();
   }
 
   _state.currentTool = toolId;
@@ -1402,14 +1515,23 @@ function setSubTool(toolId) {
   if (toolId === 'image') {
     if (_imageSourceMenu) _imageSourceMenu.style.display = '';
     if (_textSettingsMenu) _textSettingsMenu.style.display = 'none';
+    if (_drawSettingsMenu) _drawSettingsMenu.style.display = 'none';
     _overlay.classList.add('bwbr-placement-overlay--active');
   } else if (toolId === 'text') {
     if (_imageSourceMenu) _imageSourceMenu.style.display = 'none';
     if (_textSettingsMenu) _textSettingsMenu.style.display = '';
+    if (_drawSettingsMenu) _drawSettingsMenu.style.display = 'none';
     _overlay.classList.add('bwbr-placement-overlay--active');
+  } else if (toolId === 'draw') {
+    if (_imageSourceMenu) _imageSourceMenu.style.display = 'none';
+    if (_textSettingsMenu) _textSettingsMenu.style.display = 'none';
+    if (_drawSettingsMenu) _drawSettingsMenu.style.display = '';
+    _overlay.classList.add('bwbr-placement-overlay--active');
+    initDrawCanvas();
   } else {
     if (_imageSourceMenu) _imageSourceMenu.style.display = 'none';
     if (_textSettingsMenu) _textSettingsMenu.style.display = 'none';
+    if (_drawSettingsMenu) _drawSettingsMenu.style.display = 'none';
     _overlay.classList.add('bwbr-placement-overlay--active');
   }
   updatePlacementCursor();
@@ -1486,6 +1608,10 @@ function createSettingsPanel() {
   // 텍스트 설정 메뉴 (텍스트 도구용)
   _textSettingsMenu = createTextSettingsMenu();
   panel.appendChild(_textSettingsMenu);
+
+  // 그리기 설정 메뉴 (그리기 도구용)
+  _drawSettingsMenu = createDrawSettingsMenu();
+  panel.appendChild(_drawSettingsMenu);
 
   // 타입 토글
   var typeField = createField('타입');
@@ -1774,6 +1900,467 @@ function createTextSettingsMenu() {
   menu.appendChild(notice);
 
   return menu;
+}
+
+
+// ── 그리기 도구 패널 ────────────────────────────────────────────
+
+function createDrawSettingsMenu() {
+  var menu = document.createElement('div');
+  menu.className = 'bwbr-place-draw-menu';
+  menu.style.display = 'none';
+
+  // 펜 굵기
+  var sizeField = createField('펜 굵기');
+  var sizeRow = document.createElement('div');
+  sizeRow.className = 'bwbr-draw-range-row';
+  var sizeSlider = document.createElement('input');
+  sizeSlider.type = 'range';
+  sizeSlider.min = '1';
+  sizeSlider.max = '40';
+  sizeSlider.value = String(_drawSettings.penSize);
+  sizeSlider.className = 'bwbr-draw-slider';
+  var sizeVal = document.createElement('span');
+  sizeVal.className = 'bwbr-draw-range-val';
+  sizeVal.textContent = _drawSettings.penSize + 'px';
+  sizeSlider.addEventListener('input', function() {
+    _drawSettings.penSize = parseInt(sizeSlider.value, 10);
+    sizeVal.textContent = _drawSettings.penSize + 'px';
+  });
+  sizeRow.appendChild(sizeSlider);
+  sizeRow.appendChild(sizeVal);
+  sizeField.appendChild(sizeRow);
+  menu.appendChild(sizeField);
+
+  // 펜 색상
+  var colorField = createField('펜 색상');
+  var colorBtn = document.createElement('button');
+  colorBtn.className = 'bwbr-draw-color-btn';
+  colorBtn.style.background = _drawSettings.penColor;
+  colorBtn.addEventListener('click', function() {
+    _openColorPopup(colorBtn, _drawSettings.penColor, false, false, function(hex) {
+      _drawSettings.penColor = hex;
+      colorBtn.style.background = hex;
+    });
+  });
+  colorField.appendChild(colorBtn);
+  menu.appendChild(colorField);
+
+  // 펜 투명도
+  var opacityField = createField('투명도');
+  var opacityRow = document.createElement('div');
+  opacityRow.className = 'bwbr-draw-range-row';
+  var opacitySlider = document.createElement('input');
+  opacitySlider.type = 'range';
+  opacitySlider.min = '5';
+  opacitySlider.max = '100';
+  opacitySlider.value = String(Math.round(_drawSettings.penOpacity * 100));
+  opacitySlider.className = 'bwbr-draw-slider';
+  var opacityVal = document.createElement('span');
+  opacityVal.className = 'bwbr-draw-range-val';
+  opacityVal.textContent = Math.round(_drawSettings.penOpacity * 100) + '%';
+  opacitySlider.addEventListener('input', function() {
+    _drawSettings.penOpacity = parseInt(opacitySlider.value, 10) / 100;
+    opacityVal.textContent = opacitySlider.value + '%';
+  });
+  opacityRow.appendChild(opacitySlider);
+  opacityRow.appendChild(opacityVal);
+  opacityField.appendChild(opacityRow);
+  menu.appendChild(opacityField);
+
+  // 윤곽선 토글
+  var outlineToggle = createToggleField('윤곽선', _drawSettings.outlineEnabled, function(val) {
+    _drawSettings.outlineEnabled = val;
+    outlineSizeField.style.display = val ? '' : 'none';
+    outlineColorField.style.display = val ? '' : 'none';
+  });
+  menu.appendChild(outlineToggle);
+
+  // 윤곽선 굵기
+  var outlineSizeField = createField('윤곽선 굵기');
+  outlineSizeField.style.display = _drawSettings.outlineEnabled ? '' : 'none';
+  var outlineSizeRow = document.createElement('div');
+  outlineSizeRow.className = 'bwbr-draw-range-row';
+  var outlineSizeSlider = document.createElement('input');
+  outlineSizeSlider.type = 'range';
+  outlineSizeSlider.min = '1';
+  outlineSizeSlider.max = '20';
+  outlineSizeSlider.value = String(_drawSettings.outlineSize);
+  outlineSizeSlider.className = 'bwbr-draw-slider';
+  var outlineSizeVal = document.createElement('span');
+  outlineSizeVal.className = 'bwbr-draw-range-val';
+  outlineSizeVal.textContent = _drawSettings.outlineSize + 'px';
+  outlineSizeSlider.addEventListener('input', function() {
+    _drawSettings.outlineSize = parseInt(outlineSizeSlider.value, 10);
+    outlineSizeVal.textContent = _drawSettings.outlineSize + 'px';
+  });
+  outlineSizeRow.appendChild(outlineSizeSlider);
+  outlineSizeRow.appendChild(outlineSizeVal);
+  outlineSizeField.appendChild(outlineSizeRow);
+  menu.appendChild(outlineSizeField);
+
+  // 윤곽선 색상
+  var outlineColorField = createField('윤곽선 색상');
+  outlineColorField.style.display = _drawSettings.outlineEnabled ? '' : 'none';
+  var outlineColorBtn = document.createElement('button');
+  outlineColorBtn.className = 'bwbr-draw-color-btn';
+  outlineColorBtn.style.background = _drawSettings.outlineColor;
+  outlineColorBtn.addEventListener('click', function() {
+    _openColorPopup(outlineColorBtn, _drawSettings.outlineColor, false, false, function(hex) {
+      _drawSettings.outlineColor = hex;
+      outlineColorBtn.style.background = hex;
+    });
+  });
+  outlineColorField.appendChild(outlineColorBtn);
+  menu.appendChild(outlineColorField);
+
+  // 안내 문구
+  var notice = document.createElement('div');
+  notice.style.cssText = 'text-align:center;padding:8px 4px;color:#888;font-size:11px;line-height:1.5;';
+  notice.innerHTML = '오버레이에서 자유롭게 그리세요.<br>그리기가 끝나면 <b>완료</b> 버튼을 누르세요.';
+  menu.appendChild(notice);
+
+  return menu;
+}
+
+
+// ── 그리기 캔버스 엔진 ──────────────────────────────────────────
+
+function initDrawCanvas() {
+  cleanupDrawCanvas();
+  var zoomEl = getZoomContainer();
+  if (!zoomEl) return;
+  if (getComputedStyle(zoomEl).position === 'static') zoomEl.style.position = 'relative';
+
+  // .movable 요소의 크기를 기준으로 캔버스 생성
+  var movable = document.querySelector('.movable');
+  var canvasW, canvasH;
+  if (movable) {
+    var mr = movable.getBoundingClientRect();
+    var scale = getZoomScale();
+    canvasW = Math.round(mr.width / scale);
+    canvasH = Math.round(mr.height / scale);
+  } else {
+    canvasW = 2400;
+    canvasH = 2400;
+  }
+
+  _drawCanvas = document.createElement('canvas');
+  _drawCanvas.className = 'bwbr-draw-canvas';
+  _drawCanvas.width = canvasW;
+  _drawCanvas.height = canvasH;
+  _drawCanvas.style.cssText = 'position:absolute;left:0;top:0;width:' + canvasW + 'px;height:' + canvasH + 'px;pointer-events:none;z-index:100000;';
+  zoomEl.appendChild(_drawCanvas);
+  _drawCtx = _drawCanvas.getContext('2d');
+  _drawStrokes = [];
+  _drawPoints = [];
+  _isDrawing = false;
+
+  // 완료/취소 바
+  _showDrawFinishBar();
+}
+
+function cleanupDrawCanvas() {
+  if (_drawCanvas && _drawCanvas.parentNode) {
+    _drawCanvas.parentNode.removeChild(_drawCanvas);
+  }
+  _drawCanvas = null;
+  _drawCtx = null;
+  _isDrawing = false;
+  _drawPoints = [];
+  _drawStrokes = [];
+  _hideDrawFinishBar();
+}
+
+function _showDrawFinishBar() {
+  _hideDrawFinishBar();
+  _drawFinishBar = document.createElement('div');
+  _drawFinishBar.className = 'bwbr-draw-finish-bar';
+  _drawFinishBar.style.left = _getFieldCenter() + 'px';
+
+  var undoBtn = document.createElement('button');
+  undoBtn.className = 'bwbr-place-confirm-bar-btn bwbr-place-cancel-btn';
+  undoBtn.textContent = '↩ 실행취소';
+  undoBtn.addEventListener('click', undoDrawStroke);
+
+  var cancelBtn = document.createElement('button');
+  cancelBtn.className = 'bwbr-place-confirm-bar-btn bwbr-place-cancel-btn';
+  cancelBtn.textContent = '취소';
+  cancelBtn.addEventListener('click', function() { cleanupDrawCanvas(); });
+
+  var confirmBtn = document.createElement('button');
+  confirmBtn.className = 'bwbr-place-confirm-bar-btn bwbr-place-confirm-btn';
+  confirmBtn.textContent = '✓ 완료';
+  confirmBtn.addEventListener('click', finishDrawing);
+
+  _drawFinishBar.appendChild(undoBtn);
+  _drawFinishBar.appendChild(cancelBtn);
+  _drawFinishBar.appendChild(confirmBtn);
+  document.body.appendChild(_drawFinishBar);
+}
+
+function _hideDrawFinishBar() {
+  if (_drawFinishBar && _drawFinishBar.parentNode) {
+    _drawFinishBar.parentNode.removeChild(_drawFinishBar);
+  }
+  _drawFinishBar = null;
+}
+
+// 마우스/포인터 좌표 → 캔버스 로컬 좌표 변환
+function _screenToCanvasCoords(clientX, clientY) {
+  if (!_drawCanvas) return null;
+  var origin = getMapOriginOnScreen();
+  if (!origin) return null;
+  var scale = getZoomScale();
+  return {
+    x: (clientX - origin.x) / scale,
+    y: (clientY - origin.y) / scale
+  };
+}
+
+function onDrawMouseDown(e) {
+  if (!_drawCanvas || !_drawCtx) return;
+  _isDrawing = true;
+  var pt = _screenToCanvasCoords(e.clientX, e.clientY);
+  if (!pt) return;
+  _drawPoints = [pt];
+
+  // 즉시 점 렌더 (클릭만 했을 때도 점이 찍히도록)
+  _drawCtx.save();
+  _drawCtx.globalAlpha = _drawSettings.penOpacity;
+  _drawCtx.lineCap = 'round';
+  _drawCtx.lineJoin = 'round';
+  if (_drawSettings.outlineEnabled) {
+    _drawCtx.strokeStyle = _drawSettings.outlineColor;
+    _drawCtx.lineWidth = _drawSettings.penSize + _drawSettings.outlineSize * 2;
+    _drawCtx.beginPath();
+    _drawCtx.arc(pt.x, pt.y, 0.5, 0, Math.PI * 2);
+    _drawCtx.stroke();
+  }
+  _drawCtx.strokeStyle = _drawSettings.penColor;
+  _drawCtx.lineWidth = _drawSettings.penSize;
+  _drawCtx.beginPath();
+  _drawCtx.arc(pt.x, pt.y, 0.5, 0, Math.PI * 2);
+  _drawCtx.stroke();
+  _drawCtx.restore();
+}
+
+function onDrawMouseMove(e) {
+  if (!_isDrawing || !_drawCanvas || !_drawCtx) return;
+  var pt = _screenToCanvasCoords(e.clientX, e.clientY);
+  if (!pt) return;
+  var prev = _drawPoints[_drawPoints.length - 1];
+  _drawPoints.push(pt);
+
+  _drawCtx.save();
+  _drawCtx.globalAlpha = _drawSettings.penOpacity;
+  _drawCtx.lineCap = 'round';
+  _drawCtx.lineJoin = 'round';
+
+  // 윤곽선 (더 두꺼운 선을 먼저 그림)
+  if (_drawSettings.outlineEnabled) {
+    _drawCtx.strokeStyle = _drawSettings.outlineColor;
+    _drawCtx.lineWidth = _drawSettings.penSize + _drawSettings.outlineSize * 2;
+    _drawCtx.beginPath();
+    _drawCtx.moveTo(prev.x, prev.y);
+    _drawCtx.lineTo(pt.x, pt.y);
+    _drawCtx.stroke();
+  }
+
+  // 펜 선
+  _drawCtx.strokeStyle = _drawSettings.penColor;
+  _drawCtx.lineWidth = _drawSettings.penSize;
+  _drawCtx.beginPath();
+  _drawCtx.moveTo(prev.x, prev.y);
+  _drawCtx.lineTo(pt.x, pt.y);
+  _drawCtx.stroke();
+
+  _drawCtx.restore();
+}
+
+function onDrawMouseUp(e) {
+  if (!_isDrawing) return;
+  _isDrawing = false;
+  if (_drawPoints.length > 0) {
+    _drawStrokes.push({
+      points: _drawPoints.slice(),
+      penSize: _drawSettings.penSize,
+      penColor: _drawSettings.penColor,
+      penOpacity: _drawSettings.penOpacity,
+      outlineEnabled: _drawSettings.outlineEnabled,
+      outlineSize: _drawSettings.outlineSize,
+      outlineColor: _drawSettings.outlineColor
+    });
+  }
+  _drawPoints = [];
+}
+
+function undoDrawStroke() {
+  if (_drawStrokes.length === 0) return;
+  _drawStrokes.pop();
+  _redrawAllStrokes();
+}
+
+function _redrawAllStrokes() {
+  if (!_drawCanvas || !_drawCtx) return;
+  _drawCtx.clearRect(0, 0, _drawCanvas.width, _drawCanvas.height);
+  _drawStrokes.forEach(function(stroke) {
+    if (stroke.points.length === 0) return;
+    _drawCtx.save();
+    _drawCtx.globalAlpha = stroke.penOpacity;
+    _drawCtx.lineCap = 'round';
+    _drawCtx.lineJoin = 'round';
+
+    // 윤곽선 패스
+    if (stroke.outlineEnabled && stroke.points.length > 1) {
+      _drawCtx.strokeStyle = stroke.outlineColor;
+      _drawCtx.lineWidth = stroke.penSize + stroke.outlineSize * 2;
+      _drawCtx.beginPath();
+      _drawCtx.moveTo(stroke.points[0].x, stroke.points[0].y);
+      for (var i = 1; i < stroke.points.length; i++) {
+        _drawCtx.lineTo(stroke.points[i].x, stroke.points[i].y);
+      }
+      _drawCtx.stroke();
+    } else if (stroke.outlineEnabled && stroke.points.length === 1) {
+      _drawCtx.strokeStyle = stroke.outlineColor;
+      _drawCtx.lineWidth = stroke.penSize + stroke.outlineSize * 2;
+      _drawCtx.beginPath();
+      _drawCtx.arc(stroke.points[0].x, stroke.points[0].y, 0.5, 0, Math.PI * 2);
+      _drawCtx.stroke();
+    }
+
+    // 메인 펜 패스
+    _drawCtx.strokeStyle = stroke.penColor;
+    _drawCtx.lineWidth = stroke.penSize;
+    if (stroke.points.length > 1) {
+      _drawCtx.beginPath();
+      _drawCtx.moveTo(stroke.points[0].x, stroke.points[0].y);
+      for (var j = 1; j < stroke.points.length; j++) {
+        _drawCtx.lineTo(stroke.points[j].x, stroke.points[j].y);
+      }
+      _drawCtx.stroke();
+    } else {
+      _drawCtx.beginPath();
+      _drawCtx.arc(stroke.points[0].x, stroke.points[0].y, 0.5, 0, Math.PI * 2);
+      _drawCtx.stroke();
+    }
+
+    _drawCtx.restore();
+  });
+}
+
+function finishDrawing() {
+  if (!_drawCanvas || _drawStrokes.length === 0) {
+    cleanupDrawCanvas();
+    return;
+  }
+
+  // 모든 스트로크의 바운딩 박스 계산
+  var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  _drawStrokes.forEach(function(stroke) {
+    var pad = (stroke.penSize + (stroke.outlineEnabled ? stroke.outlineSize * 2 : 0)) / 2 + 2;
+    stroke.points.forEach(function(pt) {
+      if (pt.x - pad < minX) minX = pt.x - pad;
+      if (pt.y - pad < minY) minY = pt.y - pad;
+      if (pt.x + pad > maxX) maxX = pt.x + pad;
+      if (pt.y + pad > maxY) maxY = pt.y + pad;
+    });
+  });
+
+  if (minX >= maxX || minY >= maxY) {
+    cleanupDrawCanvas();
+    return;
+  }
+
+  // 바운딩 박스 정수화
+  minX = Math.floor(minX);
+  minY = Math.floor(minY);
+  maxX = Math.ceil(maxX);
+  maxY = Math.ceil(maxY);
+  var bw = maxX - minX;
+  var bh = maxY - minY;
+
+  // 크롭된 캔버스 생성 (COMPOSITE_PX_PER_TILE 해상도)
+  var scaleUp = COMPOSITE_PX_PER_TILE / CELL_PX; // 2x
+  var cropCanvas = document.createElement('canvas');
+  cropCanvas.width = Math.round(bw * scaleUp);
+  cropCanvas.height = Math.round(bh * scaleUp);
+  var cropCtx = cropCanvas.getContext('2d');
+  cropCtx.scale(scaleUp, scaleUp);
+  cropCtx.translate(-minX, -minY);
+
+  // 스트로크 다시 그리기 (고해상도)
+  _drawStrokes.forEach(function(stroke) {
+    if (stroke.points.length === 0) return;
+    cropCtx.save();
+    cropCtx.globalAlpha = stroke.penOpacity;
+    cropCtx.lineCap = 'round';
+    cropCtx.lineJoin = 'round';
+
+    if (stroke.outlineEnabled && stroke.points.length > 1) {
+      cropCtx.strokeStyle = stroke.outlineColor;
+      cropCtx.lineWidth = stroke.penSize + stroke.outlineSize * 2;
+      cropCtx.beginPath();
+      cropCtx.moveTo(stroke.points[0].x, stroke.points[0].y);
+      for (var i = 1; i < stroke.points.length; i++) {
+        cropCtx.lineTo(stroke.points[i].x, stroke.points[i].y);
+      }
+      cropCtx.stroke();
+    } else if (stroke.outlineEnabled && stroke.points.length === 1) {
+      cropCtx.strokeStyle = stroke.outlineColor;
+      cropCtx.lineWidth = stroke.penSize + stroke.outlineSize * 2;
+      cropCtx.beginPath();
+      cropCtx.arc(stroke.points[0].x, stroke.points[0].y, 0.5, 0, Math.PI * 2);
+      cropCtx.stroke();
+    }
+
+    cropCtx.strokeStyle = stroke.penColor;
+    cropCtx.lineWidth = stroke.penSize;
+    if (stroke.points.length > 1) {
+      cropCtx.beginPath();
+      cropCtx.moveTo(stroke.points[0].x, stroke.points[0].y);
+      for (var j = 1; j < stroke.points.length; j++) {
+        cropCtx.lineTo(stroke.points[j].x, stroke.points[j].y);
+      }
+      cropCtx.stroke();
+    } else {
+      cropCtx.beginPath();
+      cropCtx.arc(stroke.points[0].x, stroke.points[0].y, 0.5, 0, Math.PI * 2);
+      cropCtx.stroke();
+    }
+
+    cropCtx.restore();
+  });
+
+  var dataUrl = cropCanvas.toDataURL('image/png');
+
+  // 맵 좌표(px) → 화면 좌표로 역변환하여 stageObject 호출
+  var origin = getMapOriginOnScreen();
+  var scale = getZoomScale();
+  if (origin) {
+    var screenRect = {
+      x: minX * scale + origin.x,
+      y: minY * scale + origin.y,
+      w: bw * scale,
+      h: bh * scale
+    };
+
+    // pendingImage를 임시로 설정 → stageObject가 사용
+    var prevPending = _state.pendingImage;
+    var prevTextData = _state.pendingTextDataUrl;
+    _state.pendingImage = null;
+    _state.pendingTextDataUrl = dataUrl;
+
+    deselectStaged();
+    stageObject(screenRect);
+
+    _state.pendingImage = prevPending;
+    _state.pendingTextDataUrl = prevTextData;
+  }
+
+  // 캔버스 정리 & 새 캔버스 시작 (연속 그리기 지원)
+  cleanupDrawCanvas();
+  initDrawCanvas();
 }
 
 
@@ -3317,6 +3904,12 @@ function onOverlayMouseDown(e) {
     return;
   }
 
+  // 그리기 도구: 캔버스에 직접 그리기
+  if (_state.currentTool === 'draw') {
+    onDrawMouseDown(e);
+    return;
+  }
+
   _state.placing = true;
   updatePreview();
   _preview.classList.add('bwbr-placement-preview--visible');
@@ -3335,6 +3928,11 @@ function onOverlayMouseMove(e) {
     _altBoxSelect.rectEl.style.top = t + 'px';
     _altBoxSelect.rectEl.style.width = Math.abs(e.clientX - _altBoxSelect.startX) + 'px';
     _altBoxSelect.rectEl.style.height = Math.abs(e.clientY - _altBoxSelect.startY) + 'px';
+    return;
+  }
+  // 그리기 도구: 드래그 중 실시간 렌더
+  if (_isDrawing && _state.currentTool === 'draw') {
+    onDrawMouseMove(e);
     return;
   }
   if (_state.placing) {
@@ -3365,6 +3963,11 @@ function onOverlayMouseUp(e) {
   // Alt 범위 선택 완료
   if (_altBoxSelect.active) {
     finishAltBoxSelect();
+    return;
+  }
+  // 그리기 도구: 스트로크 완료
+  if (_isDrawing && _state.currentTool === 'draw') {
+    onDrawMouseUp(e);
     return;
   }
   if (!_state.placing) return;
