@@ -784,8 +784,7 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 .bwbr-text-toolbar {
   position: fixed;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
   gap: 2px;
   background: #fff;
   border-radius: 8px;
@@ -793,31 +792,31 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   box-shadow: 0 2px 12px rgba(0,0,0,0.18);
   z-index: 108;
   user-select: none;
-  max-width: 520px;
+  width: max-content;
 }
 .bwbr-text-toolbar-row {
   display: flex;
   align-items: center;
   gap: 2px;
-  width: 100%;
 }
-.bwbr-size-input {
-  width: 48px;
-  height: 28px;
+.bwbr-size-select {
+  width: 52px;
+  height: 26px;
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 12px;
-  padding: 0 4px;
+  padding: 0 2px;
   outline: none;
   text-align: center;
   background: #fff;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
 }
-.bwbr-size-input:focus {
-  border-color: #42a5f5;
-}
+.bwbr-size-select:focus { border-color: #42a5f5; }
 .bwbr-stroke-input {
-  width: 36px;
-  height: 24px;
+  width: 34px;
+  height: 26px;
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 11px;
@@ -826,25 +825,12 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   text-align: center;
   background: #fff;
 }
+.bwbr-stroke-input:focus { border-color: #42a5f5; }
 .bwbr-toolbar-label {
   font-size: 10px;
-  color: #999;
-  margin-right: 2px;
+  color: #666;
+  margin: 0 1px;
   white-space: nowrap;
-}
-.bwbr-transparent-btn {
-  font-size: 16px;
-  cursor: pointer;
-  opacity: 0.5;
-  transition: opacity 0.15s;
-  padding: 0 1px;
-}
-.bwbr-transparent-btn:hover {
-  opacity: 1;
-}
-.bwbr-transparent-btn.active {
-  opacity: 1;
-  color: #e53935;
 }
 
 .bwbr-text-toolbar-btn {
@@ -860,22 +846,17 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   justify-content: center;
   font-size: 13px;
   transition: background 0.12s;
+  flex-shrink: 0;
 }
-
-.bwbr-text-toolbar-btn:hover {
-  background: #f0f0f0;
-}
-
-.bwbr-text-toolbar-btn.bwbr-tb-active {
-  background: #e0e7ff;
-  color: #1a56db;
-}
+.bwbr-text-toolbar-btn:hover { background: #f0f0f0; }
+.bwbr-text-toolbar-btn.bwbr-tb-active { background: #e0e7ff; color: #1a56db; }
 
 .bwbr-text-toolbar-sep {
   width: 1px;
   height: 20px;
   background: #ddd;
   margin: 0 3px;
+  flex-shrink: 0;
 }
 
 .bwbr-text-toolbar-color {
@@ -888,12 +869,9 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   justify-content: center;
   cursor: pointer;
   transition: background 0.12s;
+  flex-shrink: 0;
 }
-
-.bwbr-text-toolbar-color:hover {
-  background: #f0f0f0;
-}
-
+.bwbr-text-toolbar-color:hover { background: #f0f0f0; }
 .bwbr-text-toolbar-color input[type=color] {
   position: absolute;
   inset: 0;
@@ -914,10 +892,8 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   outline: none;
   cursor: pointer;
   background: #fff;
-}
-
-.bwbr-font-select {
-  max-width: 150px;
+  flex: 1;
+  min-width: 0;
 }
 
 .bwbr-text-toolbar-confirm {
@@ -925,7 +901,6 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   font-weight: bold;
   font-size: 16px !important;
 }
-
 .bwbr-text-toolbar-cancel {
   color: #e53935 !important;
   font-weight: bold;
@@ -2017,156 +1992,68 @@ function createTextToolbar() {
   var bar = document.createElement('div');
   bar.className = 'bwbr-text-toolbar';
 
-  // ── Row 1: 서식 + 색상 + 크기 + 글꼴 ──
+  // ── Row 1: 정렬 + 폰트 ──
   var row1 = document.createElement('div');
   row1.className = 'bwbr-text-toolbar-row';
 
-  // Bold
-  var btnB = _makeToolbarBtn('B', 'bold', '볼드 (Ctrl+B)');
-  btnB.style.fontWeight = 'bold';
-  row1.appendChild(btnB);
-
-  // Italic
-  var btnI = _makeToolbarBtn('I', 'italic', '이탤릭 (Ctrl+I)');
-  btnI.style.fontStyle = 'italic';
-  row1.appendChild(btnI);
-
-  // Underline
-  var btnU = _makeToolbarBtn('U', 'underline', '밑줄 (Ctrl+U)');
-  btnU.style.textDecoration = 'underline';
-  row1.appendChild(btnU);
-
-  // Strikethrough
-  var btnS = _makeToolbarBtn('S', 'strikethrough', '취소선');
-  btnS.style.textDecoration = 'line-through';
-  row1.appendChild(btnS);
-
-  row1.appendChild(_makeToolbarSep());
-
-  // Font color (우클릭: 투명)
-  var fgWrap = document.createElement('div');
-  fgWrap.className = 'bwbr-text-toolbar-color';
-  _setTooltip(fgWrap, '글자 색상 (우클릭: 투명)');
-  var fgInput = document.createElement('input');
-  fgInput.type = 'color';
-  fgInput.value = '#000000';
-  fgInput.addEventListener('input', function () {
-    document.execCommand('foreColor', false, fgInput.value);
-    _textEditor.focus();
+  // 수평 정렬
+  var alignBtns = [
+    { val: 'left', tip: '왼쪽 정렬' },
+    { val: 'center', tip: '가운데 정렬' },
+    { val: 'right', tip: '오른쪽 정렬' }
+  ];
+  alignBtns.forEach(function(ab) {
+    var btn = document.createElement('button');
+    btn.className = 'bwbr-text-toolbar-btn' + (_textAlign === ab.val ? ' bwbr-tb-active' : '');
+    btn.dataset.alignH = ab.val;
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">' +
+      (ab.val === 'left' ? '<path d="M3 3h18v2H3zm0 4h12v2H3zm0 4h18v2H3zm0 4h12v2H3zm0 4h18v2H3z"/>' :
+       ab.val === 'center' ? '<path d="M3 3h18v2H3zm3 4h12v2H6zm-3 4h18v2H3zm3 4h12v2H6zm-3 4h18v2H3z"/>' :
+       '<path d="M3 3h18v2H3zm6 4h12v2H9zm-6 4h18v2H3zm6 4h12v2H9zm-6 4h18v2H3z"/>') +
+      '</svg>';
+    _setTooltip(btn, ab.tip);
+    btn.addEventListener('mousedown', function(e) { e.preventDefault(); });
+    btn.addEventListener('click', function() {
+      _textAlign = ab.val;
+      if (_textEditor) _textEditor.style.textAlign = ab.val;
+      bar.querySelectorAll('[data-align-h]').forEach(function(b) {
+        b.classList.toggle('bwbr-tb-active', b.dataset.alignH === ab.val);
+      });
+      _textEditor.focus();
+    });
+    row1.appendChild(btn);
   });
-  fgInput.addEventListener('contextmenu', function (ev) {
-    ev.preventDefault();
-    _applyStyleToSelection('color', 'transparent');
-    _textEditor.focus();
-  });
-  var fgLabel = document.createElement('span');
-  fgLabel.textContent = 'A';
-  fgLabel.style.cssText = 'font-weight:bold;pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:14px;';
-  fgWrap.appendChild(fgInput);
-  fgWrap.appendChild(fgLabel);
-  row1.appendChild(fgWrap);
 
-  // Stroke color (윤곽선 색상 — outlined A)
-  var strokeColorWrap = document.createElement('div');
-  strokeColorWrap.className = 'bwbr-text-toolbar-color';
-  _setTooltip(strokeColorWrap, '윤곽선 색상');
-  var strokeColorInput = document.createElement('input');
-  strokeColorInput.type = 'color';
-  strokeColorInput.value = _textStrokeColor;
-  strokeColorInput.addEventListener('input', function () {
-    _textStrokeColor = strokeColorInput.value;
-    _updateStrokePreview();
+  // 수직 정렬
+  var vAlignBtns = [
+    { val: 'top', tip: '상단 정렬', icon: 'T\u2191' },
+    { val: 'middle', tip: '중간 정렬', icon: 'M' },
+    { val: 'bottom', tip: '하단 정렬', icon: 'B\u2193' }
+  ];
+  vAlignBtns.forEach(function(vb) {
+    var btn = document.createElement('button');
+    btn.className = 'bwbr-text-toolbar-btn' + (_textVAlign === vb.val ? ' bwbr-tb-active' : '');
+    btn.dataset.alignV = vb.val;
+    btn.textContent = vb.icon;
+    _setTooltip(btn, vb.tip);
+    btn.style.fontSize = '11px';
+    btn.addEventListener('mousedown', function(e) { e.preventDefault(); });
+    btn.addEventListener('click', function() {
+      _textVAlign = vb.val;
+      _applyVAlignCSS();
+      bar.querySelectorAll('[data-align-v]').forEach(function(b) {
+        b.classList.toggle('bwbr-tb-active', b.dataset.alignV === vb.val);
+      });
+      _textEditor.focus();
+    });
+    row1.appendChild(btn);
   });
-  var strokeColorLabel = document.createElement('span');
-  strokeColorLabel.textContent = 'A';
-  strokeColorLabel.style.cssText = 'font-weight:bold;pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:14px;-webkit-text-stroke:1.5px currentColor;color:transparent;';
-  strokeColorWrap.appendChild(strokeColorInput);
-  strokeColorWrap.appendChild(strokeColorLabel);
-  row1.appendChild(strokeColorWrap);
-
-  // Background color (글자 배경, 우클릭: 투명)
-  var bgWrap = document.createElement('div');
-  bgWrap.className = 'bwbr-text-toolbar-color';
-  _setTooltip(bgWrap, '글자 배경색 (우클릭: 투명)');
-  var bgInput = document.createElement('input');
-  bgInput.type = 'color';
-  bgInput.value = '#ffff00';
-  bgInput.addEventListener('input', function () {
-    document.execCommand('hiliteColor', false, bgInput.value);
-    _textEditor.focus();
-  });
-  bgInput.addEventListener('contextmenu', function (ev) {
-    ev.preventDefault();
-    _applyStyleToSelection('backgroundColor', 'transparent');
-    _textEditor.focus();
-  });
-  var bgLabel = document.createElement('span');
-  bgLabel.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16.56 8.94L7.62 0 6.21 1.41l2.38 2.38-5.15 5.15c-.59.59-.59 1.54 0 2.12l5.5 5.5c.29.29.68.44 1.06.44s.77-.15 1.06-.44l5.5-5.5c.59-.58.59-1.53 0-2.12zM5.21 10L10 5.21 14.79 10H5.21zM19 11.5s-2 2.17-2 3.5c0 1.1.9 2 2 2s2-.9 2-2c0-1.33-2-3.5-2-3.5z"/></svg>';
-  bgLabel.style.cssText = 'pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;';
-  bgWrap.appendChild(bgInput);
-  bgWrap.appendChild(bgLabel);
-  row1.appendChild(bgWrap);
-
-  // Text box background color (우클릭: 투명)
-  var boxBgWrap = document.createElement('div');
-  boxBgWrap.className = 'bwbr-text-toolbar-color';
-  _setTooltip(boxBgWrap, '박스 배경색 (우클릭: 투명)');
-  var boxBgInput = document.createElement('input');
-  boxBgInput.type = 'color';
-  boxBgInput.value = '#ffffff';
-  boxBgInput.addEventListener('input', function () {
-    _textBgColor = boxBgInput.value;
-    if (_textEditorWrap) _textEditorWrap.style.background = boxBgInput.value;
-  });
-  boxBgInput.addEventListener('contextmenu', function (ev) {
-    ev.preventDefault();
-    _textBgColor = '';
-    if (_textEditorWrap) _textEditorWrap.style.background = 'transparent';
-  });
-  var boxBgLabel = document.createElement('span');
-  boxBgLabel.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14z"/></svg>';
-  boxBgLabel.style.cssText = 'pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;';
-  boxBgWrap.appendChild(boxBgInput);
-  boxBgWrap.appendChild(boxBgLabel);
-  row1.appendChild(boxBgWrap);
 
   row1.appendChild(_makeToolbarSep());
-
-  // Font size (datalist 드롭다운 + 직접 입력)
-  var sizeInput = document.createElement('input');
-  sizeInput.type = 'text';
-  sizeInput.className = 'bwbr-size-input';
-  sizeInput.value = '16';
-  sizeInput.setAttribute('list', 'bwbr-font-sizes');
-  _setTooltip(sizeInput, '글꼴 크기');
-  var sizeList = document.createElement('datalist');
-  sizeList.id = 'bwbr-font-sizes';
-  [8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72, 96].forEach(function(s) {
-    var opt = document.createElement('option');
-    opt.value = s;
-    sizeList.appendChild(opt);
-  });
-  sizeInput.addEventListener('change', function () {
-    var v = parseInt(sizeInput.value);
-    if (v && v > 0 && v <= 200) {
-      _applyFontSize(v);
-      sizeInput.value = v;
-    } else {
-      sizeInput.value = '16';
-    }
-    _textEditor.focus();
-  });
-  sizeInput.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') { e.preventDefault(); sizeInput.blur(); }
-    e.stopPropagation();
-  });
-  sizeInput.addEventListener('focus', function() { sizeInput.select(); });
-  row1.appendChild(sizeInput);
-  row1.appendChild(sizeList);
 
   // 글꼴 선택
   var fontSelect = document.createElement('select');
-  fontSelect.className = 'bwbr-text-toolbar-select bwbr-font-select';
+  fontSelect.className = 'bwbr-text-toolbar-select';
   _setTooltip(fontSelect, '글꼴');
   _FONT_LIST.forEach(function(f) {
     var opt = document.createElement('option');
@@ -2225,66 +2112,53 @@ function createTextToolbar() {
 
   bar.appendChild(row1);
 
-  // ── Row 2: 정렬 + 윤곽선 + 확인/취소 ──
+  // ── Row 2: 서식 + 크기 + 색상 + 확인/취소 ──
   var row2 = document.createElement('div');
   row2.className = 'bwbr-text-toolbar-row';
 
-  // 수평 정렬 (좌/가운데/우)
-  var alignBtns = [
-    { val: 'left', icon: '\u2261', tip: '왼쪽 정렬' },
-    { val: 'center', icon: '\u2263', tip: '가운데 정렬' },
-    { val: 'right', icon: '\u2262', tip: '오른쪽 정렬' }
-  ];
-  alignBtns.forEach(function(ab) {
-    var btn = document.createElement('button');
-    btn.className = 'bwbr-text-toolbar-btn' + (_textAlign === ab.val ? ' bwbr-tb-active' : '');
-    btn.dataset.alignH = ab.val;
-    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">' +
-      (ab.val === 'left' ? '<path d="M3 3h18v2H3zm0 4h12v2H3zm0 4h18v2H3zm0 4h12v2H3zm0 4h18v2H3z"/>' :
-       ab.val === 'center' ? '<path d="M3 3h18v2H3zm3 4h12v2H6zm-3 4h18v2H3zm3 4h12v2H6zm-3 4h18v2H3z"/>' :
-       '<path d="M3 3h18v2H3zm6 4h12v2H9zm-6 4h18v2H3zm6 4h12v2H9zm-6 4h18v2H3z"/>') +
-      '</svg>';
-    _setTooltip(btn, ab.tip);
-    btn.addEventListener('mousedown', function(e) { e.preventDefault(); });
-    btn.addEventListener('click', function() {
-      _textAlign = ab.val;
-      if (_textEditor) _textEditor.style.textAlign = ab.val;
-      bar.querySelectorAll('[data-align-h]').forEach(function(b) {
-        b.classList.toggle('bwbr-tb-active', b.dataset.alignH === ab.val);
-      });
-      _textEditor.focus();
-    });
-    row2.appendChild(btn);
-  });
+  // Bold
+  var btnB = _makeToolbarBtn('B', 'bold', '볼드 (Ctrl+B)');
+  btnB.style.fontWeight = 'bold';
+  row2.appendChild(btnB);
 
-  // 수직 정렬 (상/중/하)
-  var vAlignBtns = [
-    { val: 'top', tip: '상단 정렬', icon: 'T\u2191' },
-    { val: 'middle', tip: '중간 정렬', icon: 'M' },
-    { val: 'bottom', tip: '하단 정렬', icon: 'B\u2193' }
-  ];
-  vAlignBtns.forEach(function(vb) {
-    var btn = document.createElement('button');
-    btn.className = 'bwbr-text-toolbar-btn' + (_textVAlign === vb.val ? ' bwbr-tb-active' : '');
-    btn.dataset.alignV = vb.val;
-    btn.textContent = vb.icon;
-    _setTooltip(btn, vb.tip);
-    btn.style.fontSize = '11px';
-    btn.addEventListener('mousedown', function(e) { e.preventDefault(); });
-    btn.addEventListener('click', function() {
-      _textVAlign = vb.val;
-      _applyVAlignCSS();
-      bar.querySelectorAll('[data-align-v]').forEach(function(b) {
-        b.classList.toggle('bwbr-tb-active', b.dataset.alignV === vb.val);
-      });
-      _textEditor.focus();
-    });
-    row2.appendChild(btn);
-  });
+  // Italic
+  var btnI = _makeToolbarBtn('I', 'italic', '이탤릭 (Ctrl+I)');
+  btnI.style.fontStyle = 'italic';
+  row2.appendChild(btnI);
+
+  // Underline
+  var btnU = _makeToolbarBtn('U', 'underline', '밑줄 (Ctrl+U)');
+  btnU.style.textDecoration = 'underline';
+  row2.appendChild(btnU);
+
+  // Strikethrough
+  var btnS = _makeToolbarBtn('S', 'strikethrough', '취소선');
+  btnS.style.textDecoration = 'line-through';
+  row2.appendChild(btnS);
 
   row2.appendChild(_makeToolbarSep());
 
-  // 윤곽선 두께
+  // Font size (select dropdown — 직접 편집도 가능)
+  var sizeSelect = document.createElement('select');
+  sizeSelect.className = 'bwbr-size-select';
+  _setTooltip(sizeSelect, '글꼴 크기');
+  [8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72, 96].forEach(function(s) {
+    var opt = document.createElement('option');
+    opt.value = s;
+    opt.textContent = s;
+    if (s === 16) opt.selected = true;
+    sizeSelect.appendChild(opt);
+  });
+  sizeSelect.addEventListener('change', function() {
+    var v = parseInt(sizeSelect.value);
+    if (v && v > 0) {
+      _applyFontSize(v);
+    }
+    _textEditor.focus();
+  });
+  row2.appendChild(sizeSelect);
+
+  // 윤곽 두께
   var strokeLabel = document.createElement('span');
   strokeLabel.className = 'bwbr-toolbar-label';
   strokeLabel.textContent = '윤곽';
@@ -2308,7 +2182,98 @@ function createTextToolbar() {
   strokeWidthInput.addEventListener('focus', function() { strokeWidthInput.select(); });
   row2.appendChild(strokeWidthInput);
 
-  // Confirm
+  row2.appendChild(_makeToolbarSep());
+
+  // 글자 색상 (우클릭: 투명)
+  var fgWrap = document.createElement('div');
+  fgWrap.className = 'bwbr-text-toolbar-color';
+  _setTooltip(fgWrap, '글자 색상 (우클릭: 투명)');
+  var fgInput = document.createElement('input');
+  fgInput.type = 'color';
+  fgInput.value = '#000000';
+  fgInput.addEventListener('input', function () {
+    _applyStyleToSelection('color', fgInput.value);
+    _textEditor.focus();
+  });
+  fgInput.addEventListener('contextmenu', function (ev) {
+    ev.preventDefault();
+    _applyStyleToSelection('color', 'transparent');
+    _textEditor.focus();
+  });
+  var fgLabel = document.createElement('span');
+  fgLabel.textContent = 'A';
+  fgLabel.style.cssText = 'font-weight:bold;pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:14px;';
+  fgWrap.appendChild(fgInput);
+  fgWrap.appendChild(fgLabel);
+  row2.appendChild(fgWrap);
+
+  // 윤곽선 색상 (outlined A)
+  var strokeColorWrap = document.createElement('div');
+  strokeColorWrap.className = 'bwbr-text-toolbar-color';
+  _setTooltip(strokeColorWrap, '윤곽선 색상');
+  var strokeColorInput = document.createElement('input');
+  strokeColorInput.type = 'color';
+  strokeColorInput.value = _textStrokeColor;
+  strokeColorInput.addEventListener('input', function () {
+    _textStrokeColor = strokeColorInput.value;
+    _updateStrokePreview();
+  });
+  var strokeColorLabel = document.createElement('span');
+  strokeColorLabel.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><text x="4" y="18" font-size="18" font-weight="bold" fill="none" stroke="currentColor" stroke-width="2">A</text></svg>';
+  strokeColorLabel.style.cssText = 'pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;';
+  strokeColorWrap.appendChild(strokeColorInput);
+  strokeColorWrap.appendChild(strokeColorLabel);
+  row2.appendChild(strokeColorWrap);
+
+  // 글자 배경색 (우클릭: 투명)
+  var bgWrap = document.createElement('div');
+  bgWrap.className = 'bwbr-text-toolbar-color';
+  _setTooltip(bgWrap, '글자 배경색 (우클릭: 투명)');
+  var bgInput = document.createElement('input');
+  bgInput.type = 'color';
+  bgInput.value = '#ffff00';
+  bgInput.addEventListener('input', function () {
+    _applyStyleToSelection('backgroundColor', bgInput.value);
+    _textEditor.focus();
+  });
+  bgInput.addEventListener('contextmenu', function (ev) {
+    ev.preventDefault();
+    _applyStyleToSelection('backgroundColor', 'transparent');
+    _textEditor.focus();
+  });
+  var bgLabel = document.createElement('span');
+  bgLabel.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16.56 8.94L7.62 0 6.21 1.41l2.38 2.38-5.15 5.15c-.59.59-.59 1.54 0 2.12l5.5 5.5c.29.29.68.44 1.06.44s.77-.15 1.06-.44l5.5-5.5c.59-.58.59-1.53 0-2.12zM5.21 10L10 5.21 14.79 10H5.21zM19 11.5s-2 2.17-2 3.5c0 1.1.9 2 2 2s2-.9 2-2c0-1.33-2-3.5-2-3.5z"/></svg>';
+  bgLabel.style.cssText = 'pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;';
+  bgWrap.appendChild(bgInput);
+  bgWrap.appendChild(bgLabel);
+  row2.appendChild(bgWrap);
+
+  // 박스 배경색 (우클릭: 투명)
+  var boxBgWrap = document.createElement('div');
+  boxBgWrap.className = 'bwbr-text-toolbar-color';
+  _setTooltip(boxBgWrap, '박스 배경색 (우클릭: 투명)');
+  var boxBgInput = document.createElement('input');
+  boxBgInput.type = 'color';
+  boxBgInput.value = '#ffffff';
+  boxBgInput.addEventListener('input', function () {
+    _textBgColor = boxBgInput.value;
+    if (_textEditorWrap) _textEditorWrap.style.background = boxBgInput.value;
+  });
+  boxBgInput.addEventListener('contextmenu', function (ev) {
+    ev.preventDefault();
+    _textBgColor = '';
+    if (_textEditorWrap) _textEditorWrap.style.background = 'transparent';
+  });
+  var boxBgLabel = document.createElement('span');
+  boxBgLabel.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14z"/></svg>';
+  boxBgLabel.style.cssText = 'pointer-events:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;';
+  boxBgWrap.appendChild(boxBgInput);
+  boxBgWrap.appendChild(boxBgLabel);
+  row2.appendChild(boxBgWrap);
+
+  row2.appendChild(_makeToolbarSep());
+
+  // 확인
   var btnOk = document.createElement('button');
   btnOk.className = 'bwbr-text-toolbar-btn bwbr-text-toolbar-confirm';
   btnOk.textContent = '\u2713';
@@ -2317,7 +2282,7 @@ function createTextToolbar() {
   btnOk.addEventListener('click', function () { finishTextEditing(true); });
   row2.appendChild(btnOk);
 
-  // Cancel
+  // 취소
   var btnX = document.createElement('button');
   btnX.className = 'bwbr-text-toolbar-btn bwbr-text-toolbar-cancel';
   btnX.textContent = '\u2715';
