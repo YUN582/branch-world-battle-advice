@@ -2047,9 +2047,6 @@ function initDrawCanvas() {
   _drawLastZoom = getZoomScale();
   _drawLastOrigin = getMapOriginOnScreen();
   _drawZoomWatchId = requestAnimationFrame(_drawZoomWatch);
-
-  // 완료/취소 바
-  _showDrawFinishBar();
 }
 
 // 줌/패닝 변경 감시 → 스트로크 재렌더
@@ -2138,6 +2135,10 @@ function _mapPxToScreen(mx, my) {
 
 function onDrawMouseDown(e) {
   if (!_drawCanvas || !_drawCtx) return;
+  // 첫 스트로크 시작 시 툴바 표시
+  if (_drawStrokes.length === 0 && _drawPoints.length === 0 && !_drawFinishBar) {
+    _showDrawFinishBar();
+  }
   _isDrawing = true;
   var mapPt = _screenToMapPx(e.clientX, e.clientY);
   if (!mapPt) return;
