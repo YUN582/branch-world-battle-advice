@@ -1676,18 +1676,13 @@ var _textFontFamily = 'sans-serif'; // 글꼴
 var _reopenedObj = null;   // 재편집 시 원본 객체 (ESC로 복원용)
 var _tbPosRaf = null;      // 툴바 위치 추적 rAF
 var _loadedWebFonts = {};  // 이미 로드된 웹 폰트 캐시
+var _localSystemFonts = null; // queryLocalFonts 결과 캐시
 
-// 폰트 목록: { label, value, type: 'local'|'web', gfName? }
+// 폰트 목록: { label, value, type: 'local'|'web'|'system', gfName? }
 var _BUILTIN_FONTS = [
   { label: '기본 (sans-serif)', value: 'sans-serif', type: 'local' },
   { label: 'serif', value: 'serif', type: 'local' },
   { label: 'monospace', value: 'monospace', type: 'local' },
-  { label: 'Arial', value: 'Arial, sans-serif', type: 'local' },
-  { label: 'Georgia', value: 'Georgia, serif', type: 'local' },
-  { label: 'Times New Roman', value: '"Times New Roman", serif', type: 'local' },
-  { label: 'Courier New', value: '"Courier New", monospace', type: 'local' },
-  { label: 'Impact', value: 'Impact, sans-serif', type: 'local' },
-  { label: 'Comic Sans MS', value: '"Comic Sans MS", cursive', type: 'local' },
   { label: '─ 웹 폰트 (Google) ─', value: '__sep__', type: 'sep' },
   { label: 'Noto Sans KR', value: '"Noto Sans KR", sans-serif', type: 'web', gfName: 'Noto+Sans+KR' },
   { label: 'Noto Serif KR', value: '"Noto Serif KR", serif', type: 'web', gfName: 'Noto+Serif+KR' },
@@ -1726,8 +1721,16 @@ function _saveCustomFonts(arr) {
 function _buildFontList() {
   var custom = _loadCustomFonts();
   var list = _BUILTIN_FONTS.slice();
+  // 시스템 로컬 폰트
+  if (_localSystemFonts && _localSystemFonts.length > 0) {
+    list.push({ label: '─ 내 컴퓨터 폰트 ─', value: '__sep_sys__', type: 'sep' });
+    _localSystemFonts.forEach(function(name) {
+      list.push({ label: name, value: '"' + name + '"', type: 'system' });
+    });
+  }
+  // 사용자 추가 웹 폰트
   if (custom.length > 0) {
-    list.push({ label: '─ 사용자 폰트 ─', value: '__sep2__', type: 'sep' });
+    list.push({ label: '─ 사용자 웹 폰트 ─', value: '__sep2__', type: 'sep' });
     custom.forEach(function(c) { list.push(c); });
   }
   return list;
@@ -1750,12 +1753,45 @@ function _rebuildFontSelect(sel) {
     }
     sel.appendChild(opt);
   });
-  // "폰트 추가" 옵션
+  // 로컬 폰트 불러오기
+  var loadLocalOpt = document.createElement('option');
+  loadLocalOpt.value = '__load_local__';
+  loadLocalOpt.textContent = '📁 내 컴퓨터 폰트 불러오기...';
+  loadLocalOpt.style.color = '#ff9800';
+  sel.appendChild(loadLocalOpt);
+  // "웹 폰트 추가" 옵션
   var addOpt = document.createElement('option');
   addOpt.value = '__add_custom__';
   addOpt.textContent = '+ 웹 폰트 추가...';
   addOpt.style.color = '#42a5f5';
   sel.appendChild(addOpt);
+}
+
+function _loadLocalSystemFonts(cb) {
+  if (!window.queryLocalFonts) {
+    alert('이 브라우저에서 로컬 폰트 접근을 지원하지 않습니다.');
+    cb(null); return;
+  }
+  window.queryLocalFonts().then(function(fonts) {
+    // family 이름 중복 제거 (같은 폰트의 Bold/Italic 등 변형 제거)
+    var seen = {};
+    var families = [];
+    fonts.forEach(function(f) {
+      if (!seen[f.family]) {
+        seen[f.family] = true;
+        families.push(f.family);
+      }
+    });
+    families.sort(function(a, b) { return a.localeCompare(b); });
+    _localSystemFonts = families;
+
+    // 시스템 폰트를 _FONT_LIST에 추가
+    _FONT_LIST = _buildFontList();
+    cb(families);
+  }).catch(function(err) {
+    // 사용자가 권한 거부
+    cb(null);
+  });
 }
 
 function _promptAddCustomFont(cb) {
@@ -1971,6 +2007,11 @@ function createTextToolbar() {
     fontSelect.appendChild(opt);
   });
   // "폰트 추가" 옵션
+  var loadLocalOpt = document.createElement('option');
+  loadLocalOpt.value = '__load_local__';
+  loadLocalOpt.textContent = '\uD83D\uDCC1 내 컴퓨터 폰트 불러오기...';
+  loadLocalOpt.style.color = '#ff9800';
+  fontSelect.appendChild(loadLocalOpt);
   var addOpt = document.createElement('option');
   addOpt.value = '__add_custom__';
   addOpt.textContent = '+ 웹 폰트 추가...';
@@ -1978,6 +2019,15 @@ function createTextToolbar() {
   fontSelect.appendChild(addOpt);
   fontSelect.addEventListener('change', function() {
     var val = fontSelect.value;
+    if (val === '__load_local__') {
+      fontSelect.value = _textFontFamily;
+      _loadLocalSystemFonts(function(families) {
+        if (!families) return;
+        _rebuildFontSelect(fontSelect);
+        _textEditor.focus();
+      });
+      return;
+    }
     if (val === '__add_custom__') {
       fontSelect.value = _textFontFamily;
       _promptAddCustomFont(function(newEntry) {
@@ -2171,10 +2221,9 @@ function finishTextEditing(confirm) {
   if (confirm && _textEditor && _textEditor.textContent.trim() && _textMapCoords) {
     var mapCoords = _textMapCoords;
 
-    // 에디터 높이가 입력으로 변경됐을 수 있으므로 현재 높이로 mapCoords 갱신
-    // 에디터는 zoom container 내부 → scrollHeight가 이미 언스케일드 px
-    var actualH = _textEditor.scrollHeight;
-    mapCoords.height = Math.max(1, Math.ceil(actualH / CELL_PX));
+    // 에디터 높이: 드래그로 지정한 원래 높이를 유지, 텍스트가 넘치면 확장
+    var contentH = _textEditor.scrollHeight;
+    mapCoords.height = Math.max(mapCoords.height, Math.ceil(contentH / CELL_PX));
 
     // 폰트 로드 완료 대기 후 캔버스 렌더링
     // async 전에 필요한 값을 캡처
