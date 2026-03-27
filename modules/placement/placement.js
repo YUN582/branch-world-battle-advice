@@ -1546,7 +1546,7 @@ function showPlacementHelp() {
     'position:fixed;top:140px;' +
     'left:' + paperLeft + 'px;' +
     'transform:translateX(0);' +
-    'z-index:10;width:220px;' +
+    'z-index:10;width:250px;' +
     'background:rgba(255,255,255,0.96);color:#333;' +
     'border-radius:8px 0 0 8px;' +
     'box-shadow:-2px 0 16px rgba(0,0,0,0.15);' +
@@ -1622,7 +1622,7 @@ function expandPlacementHelp() {
   if (!_placementHelp) return;
   var content = _placementHelp.querySelector('#bwbr-place-help-content');
   var tab = _placementHelp.querySelector('#bwbr-place-help-tab');
-  _placementHelp.style.width = '220px';
+  _placementHelp.style.width = '250px';
   _placementHelp.style.opacity = '1';
   _placementHelp.style.cursor = 'default';
   if (tab) { tab.style.opacity = '0'; tab.style.pointerEvents = 'none'; }
