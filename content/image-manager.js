@@ -133,37 +133,62 @@
     return out;
   }
 
-  /** 이미지 URL → 파일 _id 매핑 (CDN URL ↔ Firestore URL 차이 허용) */
+  /* ── 해시 인덱스 (O(1) URL→fileId 매핑) ──────────── */
+  let _hashToFileId = new Map();   // hash → fileId
+  let _urlToFileIdCache = new Map(); // 전체 URL → fileId
+
+  function buildHashIndex() {
+    _hashToFileId.clear();
+    _urlToFileIdCache.clear();
+    for (const f of _fileCache) {
+      if (f.url) _urlToFileIdCache.set(f.url, f._id);
+      const h = extractUrlHash(f.url);
+      if (h) _hashToFileId.set(h, f._id);
+    }
+  }
+
+  /** 이미지 URL → 파일 _id 매핑 (해시 인덱스 사용, O(1)) */
   function urlToFileId(url) {
     if (!url) return null;
-    // 정확한 매칭
-    for (const f of _fileCache) {
-      if (f.url === url) return f._id;
-    }
-    // CDN URL과 Firestore URL의 도메인이 다를 수 있으므로 hash 부분 비교
-    // CDN: https://h.turbo.ccfolia-cdn.net/users/{uid}/files/{hash}
-    // Firestore: https://firebasestorage.googleapis.com/.../{hash}?...
-    const urlHash = extractUrlHash(url);
-    if (urlHash) {
-      for (const f of _fileCache) {
-        if (f.url && f.url.includes(urlHash)) return f._id;
-      }
-    }
+    // 정확한 URL 매칭
+    if (_urlToFileIdCache.has(url)) return _urlToFileIdCache.get(url);
+    // 해시 매칭 (CDN ↔ Firestore 도메인 차이 허용)
+    const h = extractUrlHash(url);
+    if (h && _hashToFileId.has(h)) return _hashToFileId.get(h);
     return null;
   }
 
   /** URL에서 파일 해시 추출 (%2F 인코딩 허용) */
   function extractUrlHash(url) {
     try {
-      // URL 디코딩 후 검색 (CDN은 %2F로 인코딩)
       const decoded = decodeURIComponent(url);
       const match = decoded.match(/\/files\/([a-f0-9]+)/);
       if (match) return match[1];
-      // fallback: 긴 hex 문자열 추출
       const fsMatch = decoded.match(/([a-f0-9]{20,})/);
       if (fsMatch) return fsMatch[1];
     } catch {}
     return null;
+  }
+
+  /** 이벤트 타겟에서 이미지 래퍼를 찾음 (data attr 의존 없음) */
+  function findImageWrapper(target, picker) {
+    // img 자체이거나 img를 포함하는 래퍼
+    let img = null;
+    if (target.tagName === 'IMG') img = target;
+    else {
+      img = target.closest?.('img');
+      if (!img) {
+        // target이 래퍼인 경우
+        const childImg = target.querySelector?.('img');
+        if (childImg?.src?.startsWith('https://')) img = childImg;
+      }
+    }
+    if (!img?.src?.startsWith('https://')) return null;
+    // toolbar/tab/button 이미지 제외
+    if (img.closest('button, [role="tab"], header, .MuiAppBar-root, .MuiToolbar-root')) return null;
+    if (img.naturalWidth > 0 && img.naturalWidth < 40) return null;
+    const wrapper = img.parentElement;
+    return (wrapper && picker.contains(wrapper)) ? wrapper : null;
   }
 
   /** 네이티브 "선택 삭제" 모드 여부 */
@@ -217,6 +242,7 @@
         }
       );
       _fileCache = result?.files || [];
+      buildHashIndex();
       _currentDir = dir;
       _currentRoomId = roomId || null;
 
@@ -238,6 +264,7 @@
             );
             if (retry?.files?.length > 0 && _currentDir === dir) {
               _fileCache = retry.files;
+              buildHashIndex();
               console.log(TAG, `재시도 캐시: ${_fileCache.length}개`);
             }
           } catch {}
@@ -278,9 +305,18 @@
     picker.dataset.bwbrDelegation = '1';
     console.log(TAG, '이벤트 위임 설정');
 
+    // ── mousedown (capture) — just-in-time draggable 설정 ──
+    picker.addEventListener('mousedown', e => {
+      const wrapper = findImageWrapper(e.target, picker);
+      if (wrapper) {
+        wrapper.draggable = true;
+        wrapper.style.cursor = 'grab';
+      }
+    }, true);
+
     // ── dragstart (capture) ──────────────────────────
     picker.addEventListener('dragstart', e => {
-      const wrapper = e.target.closest('[data-bwbr-drag="1"]');
+      const wrapper = findImageWrapper(e.target, picker);
       if (!wrapper) return;
       const img = wrapper.querySelector('img');
       if (!img) return;
@@ -318,7 +354,7 @@
 
     // ── dragend (capture) ────────────────────────────
     picker.addEventListener('dragend', e => {
-      const wrapper = e.target.closest('[data-bwbr-drag="1"]');
+      const wrapper = findImageWrapper(e.target, picker);
       if (wrapper) wrapper.style.opacity = '1';
       clearDropIndicators(picker);
     }, true);
@@ -340,7 +376,7 @@
       }
 
       // 이미지 래퍼 위 인디케이터
-      const wrapper = e.target.closest('[data-bwbr-drag="1"]');
+      const wrapper = findImageWrapper(e.target, picker);
       if (wrapper) {
         showGridDropIndicator(wrapper, e);
         return;
@@ -351,7 +387,7 @@
     picker.addEventListener('dragleave', e => {
       const tab = e.target.closest('[role="tab"]');
       if (tab) { tab.style.borderBottom = ''; return; }
-      const wrapper = e.target.closest('[data-bwbr-drag="1"]');
+      const wrapper = findImageWrapper(e.target, picker);
       if (wrapper) { wrapper.style.boxShadow = ''; }
     }, true);
 
@@ -370,7 +406,7 @@
       }
 
       // 이미지 래퍼에 드롭 (그리드 정렬)
-      const wrapper = e.target.closest('[data-bwbr-drag="1"]');
+      const wrapper = findImageWrapper(e.target, picker);
       if (wrapper) {
         clearDropIndicators(picker);
         const img = wrapper.querySelector('img');
@@ -419,9 +455,13 @@
 
       if (result?.success) {
         console.log(TAG, `✅ ${result.movedCount}개 이동 완료`);
-        // 옵저버 억제 해제 후 탭 클릭 (React re-render 허용)
-        setTimeout(() => { _suppressObserver = false; }, 500);
+        // 옵저버 억제 해제 후 탭 클릭 + draggable 재설정
         tab.click();
+        setTimeout(() => {
+          _suppressObserver = false;
+          const p = getPickerDialog();
+          if (p) setupDraggableImages(p);
+        }, 500);
       } else {
         console.error(TAG, '이동 실패:', result?.error);
         _suppressObserver = false;
@@ -448,9 +488,11 @@
   }
 
   function clearDropIndicators(picker) {
-    picker.querySelectorAll('[data-bwbr-drag="1"]').forEach(w => {
-      w.style.boxShadow = '';
-    });
+    // 모든 이미지 래퍼의 boxShadow 초기화 (data attr 의존 않음)
+    for (const img of getPickerImages(picker)) {
+      const w = img.parentElement;
+      if (w) w.style.boxShadow = '';
+    }
     clearTabHighlights(picker);
   }
 
@@ -512,8 +554,13 @@
         reorderDOM(picker, remaining);
         // 캐시 갱신
         _fileCache = remaining.map((f, i) => ({...f, createdAt: sortedTimes[i]}));
-        // 옵저버 억제를 2초간 유지 (Firestore → Redux → React re-render 완료까지)
-        setTimeout(() => { _suppressObserver = false; }, 2000);
+        buildHashIndex();
+        // 옵저버 억제를 1.5초간 유지 후 draggable 재설정
+        setTimeout(() => {
+          _suppressObserver = false;
+          const p = getPickerDialog();
+          if (p) setupDraggableImages(p);
+        }, 1500);
       } else {
         console.error(TAG, '순서 변경 실패:', result?.error);
         _suppressObserver = false;
@@ -687,19 +734,22 @@
     if (_pickerObs) _pickerObs.disconnect();
     let _debounceTimer = null;
     _pickerObs = new MutationObserver(() => {
-      if (_suppressObserver) return; // 자체 쓰기 중 무시
       if (_debounceTimer) clearTimeout(_debounceTimer);
       _debounceTimer = setTimeout(async () => {
-        if (_suppressObserver) return;
         const p = getPickerDialog();
         if (!p) return;
+
+        // 항상 draggable 재설정 (React re-render 후에도)
+        setupDraggableImages(p);
+
+        // 자체 쓰기 중이면 캐시 갱신만 스킵
+        if (_suppressObserver) return;
 
         const newGroup = getCurrentGroup(p);
         if (newGroup === 'unsplash') return;
 
         const newDir = getCurrentDir(p);
         const newIsRoom = newGroup === 'room';
-        const roomId = newIsRoom ? getRoomIdFromUrl() : null;
 
         if (newDir !== _currentDir || newIsRoom !== _isGroupRoom) {
           _isGroupRoom = newIsRoom;
@@ -707,9 +757,6 @@
           _lastClickedIdx = -1;
           console.log(TAG, `탭 전환: group=${newGroup}, dir=${newDir}, 캐시 ${_fileCache.length}개`);
         }
-
-        // 새 이미지에 draggable 속성만 추가 (이벤트 위임은 이미 설정됨)
-        setupDraggableImages(p);
       }, 150);
     });
     _pickerObs.observe(picker, { childList: true, subtree: true });
@@ -718,6 +765,8 @@
   function cleanupPicker() {
     if (_pickerObs) { _pickerObs.disconnect(); _pickerObs = null; }
     _fileCache = [];
+    _hashToFileId.clear();
+    _urlToFileIdCache.clear();
     _currentDir = null;
     _dragFileIds = [];
     _lastClickedIdx = -1;
