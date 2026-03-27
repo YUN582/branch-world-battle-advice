@@ -314,15 +314,13 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   display: flex;
   flex-direction: column;
   gap: 6px;
-  align-items: center;
 }
 
 .bwbr-place-source-btn {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 8px;
-  padding: 8px 16px;
+  padding: 8px 10px;
   border: 1px solid #ddd;
   border-radius: 8px;
   background: #fafafa;
@@ -2098,8 +2096,6 @@ function createDrawSettingsMenu() {
     _openColorPopup(colorBtn, _drawSettings.penColor, false, false, function(hex) {
       _drawSettings.penColor = hex;
       colorBtn.style.background = hex;
-      _pushColorHistory(hex);
-      _updateColorHistoryUI();
     });
   });
   colorSizeRow.appendChild(colorBtn);
@@ -2384,8 +2380,11 @@ function _showDrawFinishBar() {
 
   var cancelBtn = document.createElement('button');
   cancelBtn.className = 'bwbr-place-confirm-bar-btn bwbr-place-cancel-btn';
-  cancelBtn.textContent = '취소';
-  cancelBtn.addEventListener('click', function() { cleanupDrawCanvas(); });
+  cancelBtn.textContent = '🗑 모두 지우기';
+  cancelBtn.addEventListener('click', function() {
+    _drawStrokes = [];
+    _redrawAllStrokes();
+  });
 
   var confirmBtn = document.createElement('button');
   confirmBtn.className = 'bwbr-place-confirm-bar-btn bwbr-place-confirm-btn';
@@ -2457,14 +2456,26 @@ function onDrawMouseMove(e) {
   var mapPt = _screenToMapPx(e.clientX, e.clientY);
   if (!mapPt) return;
   if (e.shiftKey && _drawPoints.length > 0) {
-    // Shift: 직선 모드 — 시작점에서 45° 단위 스냅
+    // Shift: 직선 모드 — 시작점에서 45° 단위 스냅, 보간점 생성 (떨림/굵기 변화 적용)
     var start = _drawPoints[0];
     var dx = mapPt.x - start.x;
     var dy = mapPt.y - start.y;
     var angle = Math.atan2(dy, dx);
     var len = Math.sqrt(dx * dx + dy * dy);
     var snapped = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
-    _drawPoints = [start, { x: start.x + Math.cos(snapped) * len, y: start.y + Math.sin(snapped) * len }];
+    var endPt = { x: start.x + Math.cos(snapped) * len, y: start.y + Math.sin(snapped) * len };
+    // 보간점 생성 (3px 간격)
+    var interp = [start];
+    var step = 3;
+    if (len > step) {
+      var cnt = Math.ceil(len / step);
+      for (var si = 1; si < cnt; si++) {
+        var t = si / cnt;
+        interp.push({ x: start.x + (endPt.x - start.x) * t, y: start.y + (endPt.y - start.y) * t });
+      }
+    }
+    interp.push(endPt);
+    _drawPoints = interp;
   } else {
     _drawPoints.push(mapPt);
   }
@@ -2630,17 +2641,9 @@ function _redrawAllStrokes() {
   }
   if (allStrokes.length === 0) return;
 
-  // 일반 스트로크 / 지우개 분리
-  var normalStrokes = [];
-  var eraserStrokes = [];
-  allStrokes.forEach(function(s) {
-    if (s.isEraser) eraserStrokes.push(s);
-    else normalStrokes.push(s);
-  });
-
-  var penAlpha = normalStrokes.length > 0 ? normalStrokes[0].penOpacity : 1;
-  var outAlpha = normalStrokes.length > 0 ? (normalStrokes[0].outlineOpacity != null ? normalStrokes[0].outlineOpacity : penAlpha) : 1;
-  var hasOutlines = normalStrokes.some(function(s) { return s.outlineEnabled; });
+  var penAlpha = allStrokes[0].penOpacity != null ? allStrokes[0].penOpacity : 1;
+  var outAlpha = allStrokes[0].outlineOpacity != null ? allStrokes[0].outlineOpacity : penAlpha;
+  var hasOutlines = allStrokes.some(function(s) { return s.outlineEnabled && !s.isEraser; });
   var needsSeparate = hasOutlines && Math.abs(outAlpha - penAlpha) > 0.01;
 
   // 맵→화면 좌표 변환 + 지터 적용 헬퍼
@@ -2653,7 +2656,7 @@ function _redrawAllStrokes() {
   }
 
   if (needsSeparate) {
-    // 윤곽선/펜 알파가 다를 때: 2개 임시 캔버스
+    // 윤곽선/펜 알파가 다를 때: 2개 임시 캔버스 (시간순 처리)
     var tmpOut = document.createElement('canvas');
     tmpOut.width = _drawCanvas.width; tmpOut.height = _drawCanvas.height;
     var tcO = tmpOut.getContext('2d');
@@ -2664,25 +2667,22 @@ function _redrawAllStrokes() {
     var tcP = tmpPen.getContext('2d');
     tcP.lineCap = 'round'; tcP.lineJoin = 'round';
 
-    normalStrokes.forEach(function(stroke) {
+    allStrokes.forEach(function(stroke) {
       if (stroke.points.length === 0) return;
       var pts = toScreen(stroke);
-      if (stroke.outlineEnabled) {
-        _renderStrokePass(tcO, pts, stroke, (stroke.penSize + stroke.outlineSize * 2) * scale, 'outline');
+      if (stroke.isEraser) {
+        tcO.globalCompositeOperation = 'destination-out';
+        _renderStrokePass(tcO, pts, stroke, stroke.penSize * scale, 'pen');
+        tcO.globalCompositeOperation = 'source-over';
+        tcP.globalCompositeOperation = 'destination-out';
+        _renderStrokePass(tcP, pts, stroke, stroke.penSize * scale, 'pen');
+        tcP.globalCompositeOperation = 'source-over';
+      } else {
+        if (stroke.outlineEnabled) {
+          _renderStrokePass(tcO, pts, stroke, (stroke.penSize + stroke.outlineSize * 2) * scale, 'outline');
+        }
+        _renderStrokePass(tcP, pts, stroke, stroke.penSize * scale, 'pen');
       }
-      _renderStrokePass(tcP, pts, stroke, stroke.penSize * scale, 'pen');
-    });
-
-    // 지우개 적용
-    eraserStrokes.forEach(function(stroke) {
-      if (stroke.points.length === 0) return;
-      var pts = toScreen(stroke);
-      tcO.globalCompositeOperation = 'destination-out';
-      _renderStrokePass(tcO, pts, stroke, stroke.penSize * scale, 'pen');
-      tcO.globalCompositeOperation = 'source-over';
-      tcP.globalCompositeOperation = 'destination-out';
-      _renderStrokePass(tcP, pts, stroke, stroke.penSize * scale, 'pen');
-      tcP.globalCompositeOperation = 'source-over';
     });
 
     _drawCtx.save();
@@ -2692,7 +2692,7 @@ function _redrawAllStrokes() {
     _drawCtx.drawImage(tmpPen, 0, 0);
     _drawCtx.restore();
   } else {
-    // 단일 임시 캔버스 (빠른 경로)
+    // 단일 임시 캔버스 — 시간순 처리: 윤곽선→펜 2패스를 청크 단위로
     var tmp = document.createElement('canvas');
     tmp.width = _drawCanvas.width;
     tmp.height = _drawCanvas.height;
@@ -2700,28 +2700,36 @@ function _redrawAllStrokes() {
     tc.lineCap = 'round';
     tc.lineJoin = 'round';
 
-    // 패스 1: 모든 윤곽선
-    normalStrokes.forEach(function(stroke) {
-      if (!stroke.outlineEnabled || stroke.points.length === 0) return;
-      var pts = toScreen(stroke);
-      _renderStrokePass(tc, pts, stroke, (stroke.penSize + stroke.outlineSize * 2) * scale, 'outline');
-    });
+    // 청크: 연속된 일반 스트로크를 모아서 2패스 렌더, 지우개는 즉시 적용
+    var normalChunk = [];
+    function flushChunk() {
+      if (normalChunk.length === 0) return;
+      // 패스 1: 윤곽선
+      normalChunk.forEach(function(stroke) {
+        if (!stroke.outlineEnabled || stroke.pts.length === 0) return;
+        _renderStrokePass(tc, stroke.pts, stroke.stroke, (stroke.stroke.penSize + stroke.stroke.outlineSize * 2) * scale, 'outline');
+      });
+      // 패스 2: 펜
+      normalChunk.forEach(function(stroke) {
+        if (stroke.pts.length === 0) return;
+        _renderStrokePass(tc, stroke.pts, stroke.stroke, stroke.stroke.penSize * scale, 'pen');
+      });
+      normalChunk = [];
+    }
 
-    // 패스 2: 모든 펜
-    normalStrokes.forEach(function(stroke) {
+    allStrokes.forEach(function(stroke) {
       if (stroke.points.length === 0) return;
       var pts = toScreen(stroke);
-      _renderStrokePass(tc, pts, stroke, stroke.penSize * scale, 'pen');
+      if (stroke.isEraser) {
+        flushChunk();
+        tc.globalCompositeOperation = 'destination-out';
+        _renderStrokePass(tc, pts, stroke, stroke.penSize * scale, 'pen');
+        tc.globalCompositeOperation = 'source-over';
+      } else {
+        normalChunk.push({ pts: pts, stroke: stroke, outlineEnabled: stroke.outlineEnabled });
+      }
     });
-
-    // 패스 3: 지우개
-    eraserStrokes.forEach(function(stroke) {
-      if (stroke.points.length === 0) return;
-      var pts = toScreen(stroke);
-      tc.globalCompositeOperation = 'destination-out';
-      _renderStrokePass(tc, pts, stroke, stroke.penSize * scale, 'pen');
-      tc.globalCompositeOperation = 'source-over';
-    });
+    flushChunk();
 
     _drawCtx.save();
     _drawCtx.globalAlpha = penAlpha;
@@ -2920,20 +2928,13 @@ function finishDrawing() {
 }
 
 // 스트로크를 지정된 캔버스 컨텍스트에 렌더링 (재사용 가능)
-// 2패스: 전체 윤곽선 → 전체 펜 → 지우개, 임시 캔버스로 알파 합성
+// 시간순 처리: 연속 일반 스트로크를 2패스 렌더 → 지우개 즉시 적용 → 반복
 function _renderStrokesToCtx(ctx, strokes) {
   if (strokes.length === 0) return;
 
-  var normalStrokes = [];
-  var eraserStrokes = [];
-  strokes.forEach(function(s) {
-    if (s.isEraser) eraserStrokes.push(s);
-    else normalStrokes.push(s);
-  });
-
-  var penAlpha = normalStrokes.length > 0 ? normalStrokes[0].penOpacity : 1;
-  var outAlpha = normalStrokes.length > 0 ? (normalStrokes[0].outlineOpacity != null ? normalStrokes[0].outlineOpacity : penAlpha) : 1;
-  var hasOutlines = normalStrokes.some(function(s) { return s.outlineEnabled; });
+  var penAlpha = strokes[0].penOpacity != null ? strokes[0].penOpacity : 1;
+  var outAlpha = strokes[0].outlineOpacity != null ? strokes[0].outlineOpacity : penAlpha;
+  var hasOutlines = strokes.some(function(s) { return s.outlineEnabled && !s.isEraser; });
   var needsSeparate = hasOutlines && Math.abs(outAlpha - penAlpha) > 0.01;
 
   function prepPts(stroke) {
@@ -2943,7 +2944,6 @@ function _renderStrokesToCtx(ctx, strokes) {
   }
 
   if (needsSeparate) {
-    // 윤곽선/펜 알파 분리 — 2개 임시 캔버스
     var tmpOut = document.createElement('canvas');
     tmpOut.width = ctx.canvas.width; tmpOut.height = ctx.canvas.height;
     var tcO = tmpOut.getContext('2d');
@@ -2956,24 +2956,22 @@ function _renderStrokesToCtx(ctx, strokes) {
     tcP.setTransform(ctx.getTransform());
     tcP.lineCap = 'round'; tcP.lineJoin = 'round';
 
-    normalStrokes.forEach(function(stroke) {
+    strokes.forEach(function(stroke) {
       if (stroke.points.length === 0) return;
       var pts = prepPts(stroke);
-      if (stroke.outlineEnabled) {
-        _renderStrokePass(tcO, pts, stroke, stroke.penSize + stroke.outlineSize * 2, 'outline');
+      if (stroke.isEraser) {
+        tcO.globalCompositeOperation = 'destination-out';
+        _renderStrokePass(tcO, pts, stroke, stroke.penSize, 'pen');
+        tcO.globalCompositeOperation = 'source-over';
+        tcP.globalCompositeOperation = 'destination-out';
+        _renderStrokePass(tcP, pts, stroke, stroke.penSize, 'pen');
+        tcP.globalCompositeOperation = 'source-over';
+      } else {
+        if (stroke.outlineEnabled) {
+          _renderStrokePass(tcO, pts, stroke, stroke.penSize + stroke.outlineSize * 2, 'outline');
+        }
+        _renderStrokePass(tcP, pts, stroke, stroke.penSize, 'pen');
       }
-      _renderStrokePass(tcP, pts, stroke, stroke.penSize, 'pen');
-    });
-
-    eraserStrokes.forEach(function(stroke) {
-      if (stroke.points.length === 0) return;
-      var pts = prepPts(stroke);
-      tcO.globalCompositeOperation = 'destination-out';
-      _renderStrokePass(tcO, pts, stroke, stroke.penSize, 'pen');
-      tcO.globalCompositeOperation = 'source-over';
-      tcP.globalCompositeOperation = 'destination-out';
-      _renderStrokePass(tcP, pts, stroke, stroke.penSize, 'pen');
-      tcP.globalCompositeOperation = 'source-over';
     });
 
     ctx.save();
@@ -2992,28 +2990,33 @@ function _renderStrokesToCtx(ctx, strokes) {
     tc.lineCap = 'round';
     tc.lineJoin = 'round';
 
-    // 패스 1: 모든 윤곽선
-    normalStrokes.forEach(function(stroke) {
-      if (!stroke.outlineEnabled || stroke.points.length === 0) return;
-      var pts = prepPts(stroke);
-      _renderStrokePass(tc, pts, stroke, stroke.penSize + stroke.outlineSize * 2, 'outline');
-    });
+    var normalChunk = [];
+    function flushChunk() {
+      if (normalChunk.length === 0) return;
+      normalChunk.forEach(function(item) {
+        if (!item.stroke.outlineEnabled || item.pts.length === 0) return;
+        _renderStrokePass(tc, item.pts, item.stroke, item.stroke.penSize + item.stroke.outlineSize * 2, 'outline');
+      });
+      normalChunk.forEach(function(item) {
+        if (item.pts.length === 0) return;
+        _renderStrokePass(tc, item.pts, item.stroke, item.stroke.penSize, 'pen');
+      });
+      normalChunk = [];
+    }
 
-    // 패스 2: 모든 펜
-    normalStrokes.forEach(function(stroke) {
+    strokes.forEach(function(stroke) {
       if (stroke.points.length === 0) return;
       var pts = prepPts(stroke);
-      _renderStrokePass(tc, pts, stroke, stroke.penSize, 'pen');
+      if (stroke.isEraser) {
+        flushChunk();
+        tc.globalCompositeOperation = 'destination-out';
+        _renderStrokePass(tc, pts, stroke, stroke.penSize, 'pen');
+        tc.globalCompositeOperation = 'source-over';
+      } else {
+        normalChunk.push({ pts: pts, stroke: stroke });
+      }
     });
-
-    // 패스 3: 지우개
-    eraserStrokes.forEach(function(stroke) {
-      if (stroke.points.length === 0) return;
-      var pts = prepPts(stroke);
-      tc.globalCompositeOperation = 'destination-out';
-      _renderStrokePass(tc, pts, stroke, stroke.penSize, 'pen');
-      tc.globalCompositeOperation = 'source-over';
-    });
+    flushChunk();
 
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
