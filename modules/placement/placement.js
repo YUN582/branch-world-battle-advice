@@ -2216,13 +2216,36 @@ function _redrawAllStrokes() {
   if (allStrokes.length === 0) return;
 
   // 임시 캔버스에 모든 스트로크를 불투명(alpha=1)으로 렌더 → 겹침 방지
+  // 2패스: 전체 윤곽선 먼저 → 전체 펜 나중에 (윤곽선이 펜 위에 그려지는 문제 방지)
   var tmp = document.createElement('canvas');
   tmp.width = _drawCanvas.width;
   tmp.height = _drawCanvas.height;
   var tc = tmp.getContext('2d');
+  tc.lineCap = 'round';
+  tc.lineJoin = 'round';
 
+  // 패스 1: 모든 윤곽선
   allStrokes.forEach(function(stroke) {
-    _renderOneStrokeToScreen(tc, stroke, origin, scale, true);
+    if (!stroke.outlineEnabled || stroke.points.length === 0) return;
+    var pts = stroke.points.map(function(p) {
+      return { x: p.x * scale + origin.x, y: p.y * scale + origin.y };
+    });
+    tc.strokeStyle = stroke.outlineColor;
+    tc.lineWidth = (stroke.penSize + stroke.outlineSize * 2) * scale;
+    _drawSmoothPath(tc, pts);
+    tc.stroke();
+  });
+
+  // 패스 2: 모든 펜
+  allStrokes.forEach(function(stroke) {
+    if (stroke.points.length === 0) return;
+    var pts = stroke.points.map(function(p) {
+      return { x: p.x * scale + origin.x, y: p.y * scale + origin.y };
+    });
+    tc.strokeStyle = stroke.penColor;
+    tc.lineWidth = stroke.penSize * scale;
+    _drawSmoothPath(tc, pts);
+    tc.stroke();
   });
 
   // 공통 알파로 한 번에 합성
@@ -2397,40 +2420,37 @@ function finishDrawing() {
 }
 
 // 스트로크를 지정된 캔버스 컨텍스트에 렌더링 (재사용 가능)
-// 모든 스트로크를 불투명으로 렌더한 뒤 공통 알파로 한 번에 합성 (스트로크 간 겹침 방지)
+// 2패스: 전체 윤곽선 → 전체 펜, 임시 캔버스로 공통 알파 합성
 function _renderStrokesToCtx(ctx, strokes) {
   if (strokes.length === 0) return;
   var alpha = strokes[0].penOpacity;
 
-  // 임시 캔버스에 불투명으로 렌더
   var tmp = document.createElement('canvas');
   tmp.width = ctx.canvas.width;
   tmp.height = ctx.canvas.height;
   var tc = tmp.getContext('2d');
   tc.setTransform(ctx.getTransform());
+  tc.lineCap = 'round';
+  tc.lineJoin = 'round';
 
+  // 패스 1: 모든 윤곽선
   strokes.forEach(function(stroke) {
-    if (stroke.points.length === 0) return;
-    var outW = stroke.penSize + stroke.outlineSize * 2;
-    var penW = stroke.penSize;
-
-    tc.lineCap = 'round';
-    tc.lineJoin = 'round';
-
-    if (stroke.outlineEnabled) {
-      tc.strokeStyle = stroke.outlineColor;
-      tc.lineWidth = outW;
-      _drawSmoothPath(tc, stroke.points);
-      tc.stroke();
-    }
-
-    tc.strokeStyle = stroke.penColor;
-    tc.lineWidth = penW;
+    if (!stroke.outlineEnabled || stroke.points.length === 0) return;
+    tc.strokeStyle = stroke.outlineColor;
+    tc.lineWidth = stroke.penSize + stroke.outlineSize * 2;
     _drawSmoothPath(tc, stroke.points);
     tc.stroke();
   });
 
-  // 공통 알파로 합성
+  // 패스 2: 모든 펜
+  strokes.forEach(function(stroke) {
+    if (stroke.points.length === 0) return;
+    tc.strokeStyle = stroke.penColor;
+    tc.lineWidth = stroke.penSize;
+    _drawSmoothPath(tc, stroke.points);
+    tc.stroke();
+  });
+
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = alpha;
