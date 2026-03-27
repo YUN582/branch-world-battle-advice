@@ -6360,17 +6360,17 @@ function setupKeyboard() {
     // I / T / D: 편집 모드 서브 도구 (어떤 모드에서든 편집 모드로 전환)
     if (e.key === 'i' || e.key === 'I') {
       e.preventDefault();
-      if (_state.mode !== 'edit') activateMode('edit');
+      if (_state.mode !== 'edit') activateMode('edit', true);
       setSubTool('image'); return;
     }
     if (e.key === 't' || e.key === 'T') {
       e.preventDefault();
-      if (_state.mode !== 'edit') activateMode('edit');
+      if (_state.mode !== 'edit') activateMode('edit', true);
       setSubTool('text'); return;
     }
     if (e.key === 'd' || e.key === 'D') {
       e.preventDefault();
-      if (_state.mode !== 'edit') activateMode('edit');
+      if (_state.mode !== 'edit') activateMode('edit', true);
       setSubTool('draw'); return;
     }
 
