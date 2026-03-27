@@ -225,163 +225,177 @@
   }
 
   /* ══════════════════════════════════════════════════════
-   *  드래그 앤 드롭: 이미지 → 탭 이동 & 그리드 정렬
+   *  드래그 앤 드롭: 이벤트 위임 방식 (React re-render 안전)
    * ══════════════════════════════════════════════════════ */
 
-  /** 이미지 아이템에 draggable 속성 + 이벤트 추가 */
+  /** 이미지 아이템에 draggable 속성 + dragstart/dragend 추가 */
   function setupDraggableImages(picker) {
     const images = getPickerImages(picker);
-    console.log(TAG, `이미지 ${images.length}개 드래그 설정`);
 
-    // URL 매핑 디버그 (첫 설정 시)
-    if (images.length > 0 && _fileCache.length > 0) {
-      const firstImg = images[0];
-      const fid = urlToFileId(firstImg.src);
-      console.log(TAG, `URL매핑 테스트:`, {
-        imgSrc: firstImg.src.substring(0, 80),
-        cacheUrl0: _fileCache[0]?.url?.substring(0, 80),
-        matched: fid ? '✅' : '❌ 불일치'
-      });
-    }
-
+    let newCount = 0;
     images.forEach((img, idx) => {
       const wrapper = img.parentElement;
       if (!wrapper || wrapper.dataset.bwbrDrag === '1') return;
       wrapper.dataset.bwbrDrag = '1';
-
       wrapper.draggable = true;
       wrapper.style.cursor = 'grab';
+      newCount++;
+    });
 
-      wrapper.addEventListener('dragstart', e => {
-        if (isNativeDeleteMode(picker)) {
-          // 삭제 모드에서도 드래그 허용 — 선택된 파일들을 이동
-          const selectedIds = getNativeSelectedIds(picker);
-          const thisId = urlToFileId(img.src);
+    if (newCount > 0) {
+      console.log(TAG, `이미지 ${newCount}개 draggable 설정 (전체 ${images.length}개)`);
+    }
+  }
 
-          if (selectedIds.length > 0) {
-            // 현재 드래그 대상이 선택 목록에 있으면 전체, 아니면 단일
-            _dragFileIds = selectedIds.includes(thisId) ? selectedIds : (thisId ? [thisId] : []);
-          } else {
-            _dragFileIds = thisId ? [thisId] : [];
-          }
+  /** 피커에 이벤트 위임 핸들러 등록 (1회) */
+  function setupPickerDelegation(picker) {
+    if (picker.dataset.bwbrDelegation === '1') return;
+    picker.dataset.bwbrDelegation = '1';
+    console.log(TAG, '이벤트 위임 설정');
+
+    // ── dragstart (capture) ──────────────────────────
+    picker.addEventListener('dragstart', e => {
+      const wrapper = e.target.closest('[data-bwbr-drag="1"]');
+      if (!wrapper) return;
+      const img = wrapper.querySelector('img');
+      if (!img) return;
+
+      if (isNativeDeleteMode(picker)) {
+        const selectedIds = getNativeSelectedIds(picker);
+        const thisId = urlToFileId(img.src);
+        if (selectedIds.length > 0) {
+          _dragFileIds = selectedIds.includes(thisId) ? selectedIds : (thisId ? [thisId] : []);
         } else {
-          const thisId = urlToFileId(img.src);
           _dragFileIds = thisId ? [thisId] : [];
         }
+      } else {
+        const thisId = urlToFileId(img.src);
+        _dragFileIds = thisId ? [thisId] : [];
+      }
 
-        if (_dragFileIds.length === 0) {
-          e.preventDefault();
-          return;
-        }
+      if (_dragFileIds.length === 0) {
+        e.preventDefault();
+        return;
+      }
 
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', _dragFileIds.join(','));
+      console.log(TAG, `dragstart: ${_dragFileIds.length}개 파일`);
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', _dragFileIds.join(','));
+      wrapper.style.opacity = '0.4';
 
-        // 드래그 고스트
-        wrapper.style.opacity = '0.4';
+      if (_dragFileIds.length > 1) {
+        const badge = createDragBadge(_dragFileIds.length);
+        document.body.appendChild(badge);
+        e.dataTransfer.setDragImage(badge, 20, 20);
+        setTimeout(() => badge.remove(), 0);
+      }
+    }, true);
 
-        // 복수 드래그 배지
-        if (_dragFileIds.length > 1) {
-          const badge = createDragBadge(_dragFileIds.length);
-          document.body.appendChild(badge);
-          e.dataTransfer.setDragImage(badge, 20, 20);
-          setTimeout(() => badge.remove(), 0);
-        }
-      });
+    // ── dragend (capture) ────────────────────────────
+    picker.addEventListener('dragend', e => {
+      const wrapper = e.target.closest('[data-bwbr-drag="1"]');
+      if (wrapper) wrapper.style.opacity = '1';
+      clearDropIndicators(picker);
+    }, true);
 
-      wrapper.addEventListener('dragend', () => {
-        wrapper.style.opacity = '1';
-        clearDropIndicators(picker);
-      });
+    // ── dragover (전체 허용) ─────────────────────────
+    picker.addEventListener('dragover', e => {
+      // 탭 위
+      const tab = e.target.closest('[role="tab"]');
+      if (tab) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        clearTabHighlights(picker);
+        tab.style.borderBottom = '3px solid #2196F3';
+        tab.style.transition = 'border-bottom 0.15s';
+        return;
+      }
 
-      // 그리드 내 정렬: dragover + drop
-      wrapper.addEventListener('dragover', e => {
+      // 이미지 래퍼 위
+      const wrapper = e.target.closest('[data-bwbr-drag="1"]');
+      if (wrapper) {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
         showGridDropIndicator(wrapper, e);
-      });
+        return;
+      }
+    });
 
-      wrapper.addEventListener('dragleave', () => {
-        wrapper.style.boxShadow = '';
-      });
+    // ── dragleave ────────────────────────────────────
+    picker.addEventListener('dragleave', e => {
+      const tab = e.target.closest('[role="tab"]');
+      if (tab) { tab.style.borderBottom = ''; return; }
+      const wrapper = e.target.closest('[data-bwbr-drag="1"]');
+      if (wrapper) { wrapper.style.boxShadow = ''; }
+    });
 
-      wrapper.addEventListener('drop', async e => {
+    // ── drop ─────────────────────────────────────────
+    picker.addEventListener('drop', async e => {
+      // 탭에 드롭
+      const tab = e.target.closest('[role="tab"]');
+      if (tab) {
         e.preventDefault();
         e.stopPropagation();
         clearDropIndicators(picker);
+        await handleTabDrop(picker, tab);
+        return;
+      }
 
+      // 이미지 래퍼에 드롭 (그리드 정렬)
+      const wrapper = e.target.closest('[data-bwbr-drag="1"]');
+      if (wrapper) {
+        e.preventDefault();
+        e.stopPropagation();
+        clearDropIndicators(picker);
+        const img = wrapper.querySelector('img');
+        if (!img) return;
         const targetId = urlToFileId(img.src);
         if (!targetId || _dragFileIds.length === 0) return;
         if (_dragFileIds.length === 1 && _dragFileIds[0] === targetId) return;
-
-        await handleGridReorder(picker, _dragFileIds, targetId, e);
-      });
+        await handleGridReorder(picker, _dragFileIds, targetId, wrapper, e);
+        return;
+      }
     });
   }
 
-  /** 카테고리 탭에 드롭 타겟 이벤트 추가 */
-  function setupTabDropTargets(picker) {
-    const tabs = getCategoryTabs(picker);
+  /** 탭 드롭 처리 */
+  async function handleTabDrop(picker, tab) {
+    const tabText = tab.textContent.trim();
+    const targetDir = TAB_DIR_MAP[tabText];
+    if (!targetDir) {
+      console.warn(TAG, '알 수 없는 탭:', tabText);
+      return;
+    }
+    if (targetDir === _currentDir) {
+      console.log(TAG, '같은 탭 드롭 무시');
+      return;
+    }
+    if (_dragFileIds.length === 0) return;
 
-    tabs.forEach(tab => {
-      if (tab.dataset.bwbrDropTarget === '1') return;
-      tab.dataset.bwbrDropTarget = '1';
+    console.log(TAG, `${_dragFileIds.length}개 파일 → ${tabText}(${targetDir}) 이동`);
 
-      tab.addEventListener('dragover', e => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        tab.style.borderBottom = '3px solid #2196F3';
-        tab.style.transition = 'border-bottom 0.15s';
-      });
-
-      tab.addEventListener('dragleave', () => {
-        tab.style.borderBottom = '';
-      });
-
-      tab.addEventListener('drop', async e => {
-        e.preventDefault();
-        e.stopPropagation();
-        tab.style.borderBottom = '';
-
-        const tabText = tab.textContent.trim();
-        const targetDir = TAB_DIR_MAP[tabText];
-        if (!targetDir) {
-          console.warn(TAG, '알 수 없는 탭:', tabText);
-          return;
+    try {
+      const result = await BWBR_Bridge.request(
+        'bwbr-move-files-dir', 'bwbr-move-files-dir-result',
+        { fileIds: _dragFileIds, targetDir },
+        {
+          sendAttr: 'data-bwbr-move-files-dir',
+          recvAttr: 'data-bwbr-move-files-dir-result',
+          timeout: 10000,
+          on: document,
+          emit: document
         }
+      );
 
-        // 같은 탭이면 무시
-        if (targetDir === _currentDir) return;
-
-        if (_dragFileIds.length === 0) return;
-
-        console.log(TAG, `${_dragFileIds.length}개 파일 → ${tabText}(${targetDir}) 이동`);
-
-        try {
-          const result = await BWBR_Bridge.request(
-            'bwbr-move-files-dir', 'bwbr-move-files-dir-result',
-            { fileIds: _dragFileIds, targetDir },
-            {
-              sendAttr: 'data-bwbr-move-files-dir',
-              recvAttr: 'data-bwbr-move-files-dir-result',
-              timeout: 10000,
-              on: document,
-              emit: document
-            }
-          );
-
-          if (result?.success) {
-            console.log(TAG, `✅ ${result.movedCount}개 이동 완료`);
-            // 대상 탭 클릭 (전환)
-            tab.click();
-          } else {
-            console.error(TAG, '이동 실패:', result?.error);
-          }
-        } catch (err) {
-          console.error(TAG, '이동 요청 실패:', err);
-        }
-      });
-    });
+      if (result?.success) {
+        console.log(TAG, `✅ ${result.movedCount}개 이동 완료`);
+        tab.click();
+      } else {
+        console.error(TAG, '이동 실패:', result?.error);
+      }
+    } catch (err) {
+      console.error(TAG, '이동 요청 실패:', err);
+    }
   }
 
   /* ── 그리드 내 순서 변경 ──────────────────────────── */
@@ -395,17 +409,18 @@
       : 'inset -3px 0 0 0 #2196F3';
   }
 
-  function clearDropIndicators(picker) {
-    const images = getPickerImages(picker);
-    images.forEach(img => {
-      const w = img.parentElement;
-      if (w) w.style.boxShadow = '';
-    });
-    // 탭 보더도 정리
+  function clearTabHighlights(picker) {
     getCategoryTabs(picker).forEach(t => { t.style.borderBottom = ''; });
   }
 
-  async function handleGridReorder(picker, dragIds, targetId, e) {
+  function clearDropIndicators(picker) {
+    picker.querySelectorAll('[data-bwbr-drag="1"]').forEach(w => {
+      w.style.boxShadow = '';
+    });
+    clearTabHighlights(picker);
+  }
+
+  async function handleGridReorder(picker, dragIds, targetId, targetWrapper, e) {
     // 현재 파일 목록에서 순서 재계산
     const ordered = [..._fileCache];
 
@@ -418,8 +433,7 @@
     if (targetIdx === -1) return;
 
     // 드롭 위치 (타겟의 왼쪽/오른쪽)
-    const wrapper = e.currentTarget;
-    const rect = wrapper.getBoundingClientRect();
+    const rect = targetWrapper.getBoundingClientRect();
     const isLeft = (e.clientX - rect.left) < rect.width / 2;
     const insertIdx = isLeft ? targetIdx : targetIdx + 1;
 
@@ -474,9 +488,11 @@
   /** DOM 즉시 재배치 (React re-render 전 임시) */
   function reorderDOM(picker, orderedFiles) {
     const images = getPickerImages(picker);
-    const urlToWrapper = new Map();
+    // hash → wrapper 매핑 (CDN URL과 Firestore URL 도메인 차이 허용)
+    const hashToWrapper = new Map();
     images.forEach(img => {
-      urlToWrapper.set(img.src, img.parentElement);
+      const h = extractUrlHash(img.src);
+      if (h) hashToWrapper.set(h, img.parentElement);
     });
 
     // 이미지 그리드 컨테이너 찾기
@@ -487,7 +503,8 @@
 
     // 순서대로 재배치
     orderedFiles.forEach(f => {
-      const wrapper = urlToWrapper.get(f.url);
+      const h = extractUrlHash(f.url);
+      const wrapper = h ? hashToWrapper.get(h) : null;
       if (wrapper && wrapper.parentElement === grid) {
         grid.appendChild(wrapper);
       }
@@ -622,32 +639,37 @@
     await refreshFileCache(dir, roomId);
     console.log(TAG, `파일 캐시: ${_fileCache.length}개 (dir=${dir}, roomId=${roomId})`);
 
-    // 드래그 및 드롭 설정
+    // 이벤트 위임 (1회) + draggable 속성
+    setupPickerDelegation(picker);
     setupDraggableImages(picker);
-    setupTabDropTargets(picker);
     setupCtrlShiftClick(picker);
 
-    // 탭 전환 / 이미지 로드 시 재설정
+    // 탭 전환 / 이미지 로드 시 재설정 (디바운스)
     if (_pickerObs) _pickerObs.disconnect();
-    _pickerObs = new MutationObserver(async () => {
-      const p = getPickerDialog();
-      if (!p) return;
+    let _debounceTimer = null;
+    _pickerObs = new MutationObserver(() => {
+      if (_debounceTimer) clearTimeout(_debounceTimer);
+      _debounceTimer = setTimeout(async () => {
+        const p = getPickerDialog();
+        if (!p) return;
 
-      const newGroup = getCurrentGroup(p);
-      if (newGroup === 'unsplash') return;
+        const newGroup = getCurrentGroup(p);
+        if (newGroup === 'unsplash') return;
 
-      const newDir = getCurrentDir(p);
-      const newIsRoom = newGroup === 'room';
-      const roomId = newIsRoom ? getRoomIdFromUrl() : null;
+        const newDir = getCurrentDir(p);
+        const newIsRoom = newGroup === 'room';
+        const roomId = newIsRoom ? getRoomIdFromUrl() : null;
 
-      if (newDir !== _currentDir || newIsRoom !== _isGroupRoom) {
-        _isGroupRoom = newIsRoom;
-        await refreshFileCache(newDir, roomId);
-        _lastClickedIdx = -1;
-      }
+        if (newDir !== _currentDir || newIsRoom !== _isGroupRoom) {
+          _isGroupRoom = newIsRoom;
+          await refreshFileCache(newDir, roomId);
+          _lastClickedIdx = -1;
+          console.log(TAG, `탭 전환: dir=${newDir}, 캐시 ${_fileCache.length}개`);
+        }
 
-      setupDraggableImages(p);
-      setupTabDropTargets(p);
+        // 새 이미지에 draggable 속성만 추가 (이벤트 위임은 이미 설정됨)
+        setupDraggableImages(p);
+      }, 150);
     });
     _pickerObs.observe(picker, { childList: true, subtree: true });
   }
