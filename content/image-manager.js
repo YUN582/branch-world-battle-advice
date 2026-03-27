@@ -593,7 +593,34 @@
 
       if (result?.success) {
         console.log(TAG, `✅ ${result.count}개 순서 변경 완료`);
-        // 캐시만 갱신 (DOM 재배치는 React가 Firestore sync 후 알아서 처리)
+
+        // ── 드래그 항목만 DOM 이동 (전체 리렌더 아님) ──
+        try {
+          const grid = targetWrapper.parentElement;
+          if (grid) {
+            // 드래그 해시 → wrapper 매핑
+            const dragWrappers = [];
+            for (const img of getPickerImages(picker)) {
+              const h = extractUrlHash(img.src);
+              if (h && dragIds.some(id => _hashToFileId.get(h) === id || id === _hashToFileId.get(h))) {
+                dragWrappers.push(img.parentElement);
+              }
+            }
+            // 삽입 위치: 타겟 래퍼 앞 또는 뒤
+            for (const dw of dragWrappers) {
+              if (dw === targetWrapper) continue;
+              if (isLeft) {
+                grid.insertBefore(dw, targetWrapper);
+              } else {
+                grid.insertBefore(dw, targetWrapper.nextSibling);
+              }
+            }
+          }
+        } catch (domErr) {
+          console.warn(TAG, 'DOM 이동 실패 (무시):', domErr);
+        }
+
+        // 캐시 갱신
         for (const entry of changedEntries) {
           const f = _fileCache.find(c => c._id === entry.id);
           if (f) f.createdAt = entry.createdAt;
