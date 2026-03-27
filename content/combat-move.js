@@ -1046,6 +1046,15 @@
 
     paper.appendChild(_helpPanel);
 
+    // 클릭으로 접기/펼치기
+    _helpPanel.addEventListener('click', function () {
+      if (_helpPanel.style.width === '28px') {
+        _expandHelpPanel();
+      } else {
+        _collapseHelpPanel();
+      }
+    });
+
     // 슬라이드 인: 오른쪽에서 왼쪽으로 자연스럽게 나오기
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
@@ -1076,11 +1085,11 @@
     var tab = _helpPanel.querySelector('#bwbr-help-tab');
     _helpPanel.style.width = '220px';
     _helpPanel.style.opacity = '1';
-    _helpPanel.style.cursor = 'default';
+    _helpPanel.style.cursor = 'pointer';
     if (tab) tab.style.opacity = '0';
     // width 전환 후 content 페이드인
     if (content) {
-      setTimeout(function () { content.style.opacity = '1'; }, 150);
+      content.style.opacity = '1';
     }
   }
 

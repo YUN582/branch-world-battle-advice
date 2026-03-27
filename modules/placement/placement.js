@@ -1604,7 +1604,7 @@ function showPlacementHelp() {
   });
 
   // 3초 후 자동 접기
-  setTimeout(function () { collapsePlacementHelp(); }, 3000);
+  // setTimeout(function () { collapsePlacementHelp(); }, 3000); // 사용자 요청으로 툴팁 자동 닫힘 제거
 }
 
 function collapsePlacementHelp() {
@@ -1627,7 +1627,7 @@ function expandPlacementHelp() {
   _placementHelp.style.cursor = 'default';
   if (tab) { tab.style.opacity = '0'; tab.style.pointerEvents = 'none'; }
   if (content) {
-    setTimeout(function () { content.style.opacity = '1'; }, 150);
+    content.style.opacity = '1';
   }
 }
 
