@@ -298,10 +298,11 @@
       clearDropIndicators(picker);
     }, true);
 
-    // ── dragover (항상 preventDefault — 드롭 허용) ──
+    // ── dragover (capture — MUI 이벤트 가로채기 방지) ──
     picker.addEventListener('dragover', e => {
       if (_dragFileIds.length === 0) return;
       e.preventDefault();
+      e.stopPropagation();
       e.dataTransfer.dropEffect = 'move';
 
       // 탭 위 하이라이트
@@ -319,17 +320,17 @@
         showGridDropIndicator(wrapper, e);
         return;
       }
-    });
+    }, true);
 
-    // ── dragleave ────────────────────────────────────
+    // ── dragleave (capture) ──────────────────────────
     picker.addEventListener('dragleave', e => {
       const tab = e.target.closest('[role="tab"]');
       if (tab) { tab.style.borderBottom = ''; return; }
       const wrapper = e.target.closest('[data-bwbr-drag="1"]');
       if (wrapper) { wrapper.style.boxShadow = ''; }
-    });
+    }, true);
 
-    // ── drop ─────────────────────────────────────────
+    // ── drop (capture — MUI 이벤트 가로채기 방지) ──────────
     picker.addEventListener('drop', async e => {
       e.preventDefault();
       e.stopPropagation();
@@ -358,7 +359,7 @@
 
       console.log(TAG, 'drop 대상 미매칭 — tab/wrapper 아님');
       clearDropIndicators(picker);
-    });
+    }, true);
   }
 
   /** 탭 드롭 처리 */
