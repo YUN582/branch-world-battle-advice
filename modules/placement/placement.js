@@ -249,12 +249,13 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 
 .bwbr-place-type-toggle button {
   flex: 1;
-  padding: 4px 0;
+  padding: 6px 16px;
   border: none;
   background: #fafafa;
   font-size: 12px;
   cursor: pointer;
   color: #666;
+  white-space: nowrap;
   transition: background 0.15s, color 0.15s;
 }
 
@@ -676,11 +677,11 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   border-radius: 14px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.22);
   padding: 20px 24px;
-  width: 360px;
+  width: 400px;
   max-width: 90vw;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   transform: translateY(12px);
   transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -694,12 +695,15 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   font-weight: 600;
   color: #222;
   margin: 0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #eee;
 }
 
 .bwbr-place-confirm-dialog-row {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .bwbr-place-confirm-dialog-row .bwbr-place-field {
@@ -1679,22 +1683,15 @@ function createToolbar() {
   _settingsPanel = createSettingsPanel();
   _toolbar.appendChild(_settingsPanel);
 
-  // 모드 버튼 (column-reverse: 배열 첫번째=맨 아래, 마지막=맨 위)
-  var modes = [
-    { id: 'select', label: '선택 (V)', icon: MODE_ICONS.select },
-    { id: 'edit', label: '편집', icon: MODE_ICONS.edit }
-  ];
-
-  modes.forEach(function (mode) {
-    var btn = document.createElement('button');
-    btn.className = 'bwbr-place-tool-btn';
-    btn.innerHTML =
-      '<svg viewBox="0 0 24 24">' + mode.icon + '</svg>' +
-      '<span class="bwbr-place-tooltip">' + mode.label + '</span>';
-    btn.addEventListener('click', function () { activateMode(mode.id); });
-    _toolbar.appendChild(btn);
-    _modeButtons[mode.id] = btn;
-  });
+  // 선택 모드 버튼
+  var selectBtn = document.createElement('button');
+  selectBtn.className = 'bwbr-place-tool-btn';
+  selectBtn.innerHTML =
+    '<svg viewBox="0 0 24 24">' + MODE_ICONS.select + '</svg>' +
+    '<span class="bwbr-place-tooltip">선택 (V)</span>';
+  selectBtn.addEventListener('click', function () { activateMode('select'); });
+  _toolbar.appendChild(selectBtn);
+  _modeButtons['select'] = selectBtn;
 
   // 구분선
   var sep = document.createElement('div');
@@ -5316,11 +5313,10 @@ function createConfirmDialog() {
   typeRow.className = 'bwbr-place-confirm-dialog-row';
   var typeLabel = document.createElement('span');
   typeLabel.textContent = '타입';
-  typeLabel.style.fontSize = '13px';
-  typeLabel.style.color = '#333';
-  typeLabel.style.flexShrink = '0';
+  typeLabel.style.cssText = 'font-size:13px;color:#555;flex-shrink:0;min-width:44px';
   var typeToggle = document.createElement('div');
   typeToggle.className = 'bwbr-place-type-toggle';
+  typeToggle.style.minWidth = '120px';
   var btnMarker = document.createElement('button');
   btnMarker.textContent = '마커';
   btnMarker.className = 'active';
@@ -5348,9 +5344,7 @@ function createConfirmDialog() {
 
   var zLabel = document.createElement('span');
   zLabel.textContent = '우선도';
-  zLabel.style.fontSize = '13px';
-  zLabel.style.color = '#333';
-  zLabel.style.flexShrink = '0';
+  zLabel.style.cssText = 'font-size:13px;color:#555;flex-shrink:0;min-width:44px';
   var zInput = document.createElement('input');
   zInput.type = 'number';
   zInput.value = '150';
@@ -5404,8 +5398,7 @@ function createConfirmDialog() {
   // 패널 메모 (크게)
   var memoLabel = document.createElement('span');
   memoLabel.textContent = '패널 메모';
-  memoLabel.style.fontSize = '13px';
-  memoLabel.style.color = '#333';
+  memoLabel.style.cssText = 'font-size:13px;color:#555';
   dialog.appendChild(memoLabel);
   var memoInput = document.createElement('textarea');
   memoInput.placeholder = '메모 입력...';
