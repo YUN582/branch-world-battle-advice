@@ -1451,7 +1451,7 @@ function activateMode(mode) {
     if (_state.currentTool) _state.lastTool = _state.currentTool;
     _state.currentTool = null;
     Object.keys(_subToolButtons).forEach(function(k) {
-      _subToolButtons[k].classList.remove('bwbr-place-subtool-btn--active');
+      _subToolButtons[k].classList.remove('bwbr-place-tool-btn--active');
     });
     // 선택 모드: 설정 패널 닫기
     _settingsPanel.classList.remove('bwbr-place-settings--open');
@@ -1478,7 +1478,7 @@ function deactivateMode() {
   _state.currentTool = null;
   _state.placing = false;
   Object.keys(_subToolButtons).forEach(function(k) {
-    _subToolButtons[k].classList.remove('bwbr-place-subtool-btn--active');
+    _subToolButtons[k].classList.remove('bwbr-place-tool-btn--active');
   });
   _overlay.classList.remove('bwbr-placement-overlay--active');
   _preview.classList.remove('bwbr-placement-preview--visible');
@@ -1490,7 +1490,7 @@ function deactivateMode() {
 
 function setSubTool(toolId) {
   Object.keys(_subToolButtons).forEach(function(k) {
-    _subToolButtons[k].classList.remove('bwbr-place-subtool-btn--active');
+    _subToolButtons[k].classList.remove('bwbr-place-tool-btn--active');
   });
 
   if (_state.currentTool === toolId) {
@@ -1510,7 +1510,7 @@ function setSubTool(toolId) {
   }
 
   _state.currentTool = toolId;
-  _subToolButtons[toolId].classList.add('bwbr-place-subtool-btn--active');
+  _subToolButtons[toolId].classList.add('bwbr-place-tool-btn--active');
 
   if (toolId === 'image') {
     if (_imageSourceMenu) _imageSourceMenu.style.display = '';
@@ -1565,6 +1565,32 @@ function createToolbar() {
     _modeButtons[mode.id] = btn;
   });
 
+  // 구분선
+  var sep = document.createElement('div');
+  sep.className = 'bwbr-place-toolbar-sep';
+  _toolbar.appendChild(sep);
+
+  // 서브 도구 버튼 (개별 48x48 버튼)
+  var tools = [
+    { id: 'image', label: '이미지 (I)', icon: TOOL_ICONS.image },
+    { id: 'text',  label: '텍스트 (T)', icon: TOOL_ICONS.text },
+    { id: 'draw',  label: '그리기 (D)', icon: TOOL_ICONS.draw }
+  ];
+
+  tools.forEach(function (tool) {
+    var btn = document.createElement('button');
+    btn.className = 'bwbr-place-tool-btn';
+    btn.innerHTML =
+      '<svg viewBox="0 0 24 24">' + tool.icon + '</svg>' +
+      '<span class="bwbr-place-tooltip">' + tool.label + '</span>';
+    btn.addEventListener('click', function () {
+      if (_state.mode !== 'edit') activateMode('edit');
+      setSubTool(tool.id);
+    });
+    _toolbar.appendChild(btn);
+    _subToolButtons[tool.id] = btn;
+  });
+
   document.body.appendChild(_toolbar);
 }
 
@@ -1596,10 +1622,6 @@ function createSubToolRow() {
 function createSettingsPanel() {
   var panel = document.createElement('div');
   panel.className = 'bwbr-place-settings';
-
-  // 서브 도구 선택 행
-  _subToolRow = createSubToolRow();
-  panel.appendChild(_subToolRow);
 
   // 이미지 소스 메뉴 (이미지 도구용)
   _imageSourceMenu = createImageSourceMenu();
