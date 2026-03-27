@@ -524,12 +524,12 @@
   }
 
   async function handleGridReorder(picker, dragIds, targetId, targetWrapper, e) {
-    // 현재 파일 목록에서 순서 재계산
-    const ordered = [..._fileCache];
+    const ordered = [..._fileCache]; // createdAt ASC 정렬된 상태
 
-    // 드래그된 파일들 추출
+    // 드래그된 파일들과 나머지 분리
     const dragItems = ordered.filter(f => dragIds.includes(f._id));
     const remaining = ordered.filter(f => !dragIds.includes(f._id));
+    if (dragItems.length === 0) return;
 
     // 타겟 위치 찾기
     const targetIdx = remaining.findIndex(f => f._id === targetId);
@@ -540,26 +540,42 @@
     const isLeft = (e.clientX - rect.left) < rect.width / 2;
     const insertIdx = isLeft ? targetIdx : targetIdx + 1;
 
-    // 새 순서 조립
-    remaining.splice(insertIdx, 0, ...dragItems);
+    // ── 최소 변경 알고리즘: 드래그 항목의 createdAt만 이웃 사이 값으로 설정 ──
+    const n = dragItems.length;
+    const prevTime = insertIdx > 0 ? remaining[insertIdx - 1].createdAt : null;
+    const nextTime = insertIdx < remaining.length ? remaining[insertIdx].createdAt : null;
 
-    // createdAt 값 재배치 — 기존 정렬된 createdAt 값을 유지하되 순서만 바꿈
-    const sortedTimes = ordered.map(f => f.createdAt).sort((a, b) => a - b);
+    let newTimes;
+    if (prevTime == null && nextTime == null) return;
+    if (prevTime == null) {
+      // 맨 앞에 삽입
+      newTimes = dragItems.map((_, i) => nextTime - (n - i) * 1000);
+    } else if (nextTime == null) {
+      // 맨 뒤에 삽입
+      newTimes = dragItems.map((_, i) => prevTime + (i + 1) * 1000);
+    } else {
+      const gap = nextTime - prevTime;
+      const step = gap / (n + 1);
+      if (step >= 1) {
+        // 충분한 간격 — 균등 분배
+        newTimes = dragItems.map((_, i) => Math.round(prevTime + step * (i + 1)));
+      } else {
+        // 간격 부족 — 이전 항목 기준으로 뒤에 배치
+        newTimes = dragItems.map((_, i) => prevTime + (i + 1));
+      }
+    }
 
-    const orderedEntries = remaining.map((f, i) => ({
-      id: f._id,
-      createdAt: sortedTimes[i]
-    }));
-
-    // 변경된 항목만 전송
-    const changedEntries = orderedEntries.filter(entry => {
-      const orig = _fileCache.find(f => f._id === entry.id);
-      return orig && orig.createdAt !== entry.createdAt;
+    // 실제 변경된 항목만 전송
+    const changedEntries = [];
+    dragItems.forEach((f, i) => {
+      if (f.createdAt !== newTimes[i]) {
+        changedEntries.push({ id: f._id, createdAt: newTimes[i] });
+      }
     });
 
     if (changedEntries.length === 0) return;
 
-    console.log(TAG, `순서 변경: ${changedEntries.length}개 파일 createdAt 재배치`);
+    console.log(TAG, `순서 변경: ${changedEntries.length}개 파일만 createdAt 변경`);
 
     _suppressObserver = true;
     try {
@@ -577,17 +593,19 @@
 
       if (result?.success) {
         console.log(TAG, `✅ ${result.count}개 순서 변경 완료`);
-        // DOM 즉시 재배치 (Firestore sync 전에)
-        reorderDOM(picker, remaining);
-        // 캐시 갱신
-        _fileCache = remaining.map((f, i) => ({...f, createdAt: sortedTimes[i]}));
+        // 캐시만 갱신 (DOM 재배치는 React가 Firestore sync 후 알아서 처리)
+        for (const entry of changedEntries) {
+          const f = _fileCache.find(c => c._id === entry.id);
+          if (f) f.createdAt = entry.createdAt;
+        }
+        _fileCache.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
         buildHashIndex();
-        // 옵저버 억제를 1.5초간 유지 후 draggable 재설정
+        // 짧은 억제 (변경 1-few건이라 빠름)
         setTimeout(() => {
           _suppressObserver = false;
           const p = getPickerDialog();
           if (p) setupDraggableImages(p);
-        }, 1500);
+        }, 800);
       } else {
         console.error(TAG, '순서 변경 실패:', result?.error);
         _suppressObserver = false;
@@ -596,32 +614,6 @@
       console.error(TAG, '순서 변경 요청 실패:', err);
       _suppressObserver = false;
     }
-  }
-
-  /** DOM 즉시 재배치 (React re-render 전 임시) */
-  function reorderDOM(picker, orderedFiles) {
-    const images = getPickerImages(picker);
-    // hash → wrapper 매핑 (CDN URL과 Firestore URL 도메인 차이 허용)
-    const hashToWrapper = new Map();
-    images.forEach(img => {
-      const h = extractUrlHash(img.src);
-      if (h) hashToWrapper.set(h, img.parentElement);
-    });
-
-    // 이미지 그리드 컨테이너 찾기
-    const firstWrapper = images[0]?.parentElement;
-    if (!firstWrapper) return;
-    const grid = firstWrapper.parentElement;
-    if (!grid) return;
-
-    // 순서대로 재배치
-    orderedFiles.forEach(f => {
-      const h = extractUrlHash(f.url);
-      const wrapper = h ? hashToWrapper.get(h) : null;
-      if (wrapper && wrapper.parentElement === grid) {
-        grid.appendChild(wrapper);
-      }
-    });
   }
 
   /* ══════════════════════════════════════════════════════
