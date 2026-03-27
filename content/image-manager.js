@@ -298,24 +298,24 @@
       clearDropIndicators(picker);
     }, true);
 
-    // ── dragover (전체 허용) ─────────────────────────
+    // ── dragover (항상 preventDefault — 드롭 허용) ──
     picker.addEventListener('dragover', e => {
-      // 탭 위
+      if (_dragFileIds.length === 0) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+
+      // 탭 위 하이라이트
       const tab = e.target.closest('[role="tab"]');
       if (tab) {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
         clearTabHighlights(picker);
         tab.style.borderBottom = '3px solid #2196F3';
         tab.style.transition = 'border-bottom 0.15s';
         return;
       }
 
-      // 이미지 래퍼 위
+      // 이미지 래퍼 위 인디케이터
       const wrapper = e.target.closest('[data-bwbr-drag="1"]');
       if (wrapper) {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
         showGridDropIndicator(wrapper, e);
         return;
       }
@@ -331,11 +331,13 @@
 
     // ── drop ─────────────────────────────────────────
     picker.addEventListener('drop', async e => {
+      e.preventDefault();
+      e.stopPropagation();
+      console.log(TAG, 'drop:', e.target.tagName, e.target.className?.substring?.(0, 60));
+
       // 탭에 드롭
       const tab = e.target.closest('[role="tab"]');
       if (tab) {
-        e.preventDefault();
-        e.stopPropagation();
         clearDropIndicators(picker);
         await handleTabDrop(picker, tab);
         return;
@@ -344,8 +346,6 @@
       // 이미지 래퍼에 드롭 (그리드 정렬)
       const wrapper = e.target.closest('[data-bwbr-drag="1"]');
       if (wrapper) {
-        e.preventDefault();
-        e.stopPropagation();
         clearDropIndicators(picker);
         const img = wrapper.querySelector('img');
         if (!img) return;
@@ -355,6 +355,9 @@
         await handleGridReorder(picker, _dragFileIds, targetId, wrapper, e);
         return;
       }
+
+      console.log(TAG, 'drop 대상 미매칭 — tab/wrapper 아님');
+      clearDropIndicators(picker);
     });
   }
 
