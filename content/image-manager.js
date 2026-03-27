@@ -172,14 +172,13 @@
     return ids;
   }
 
-  /** URL에서 파일 해시 추출 (%2F 인코딩 허용) */
+  /** URL에서 파일 ID/해시 추출 (%2F 인코딩 허용, hex + 영숫자 Firestore ID 모두 지원) */
   function extractUrlHash(url) {
     try {
       const decoded = decodeURIComponent(url);
-      const match = decoded.match(/\/files\/([a-f0-9]+)/);
+      // /files/{id} 패턴 — hex 해시 또는 Firestore 문서 ID (영숫자)
+      const match = decoded.match(/\/files\/([a-zA-Z0-9_-]+)/);
       if (match) return match[1];
-      const fsMatch = decoded.match(/([a-f0-9]{20,})/);
-      if (fsMatch) return fsMatch[1];
     } catch {}
     return null;
   }
