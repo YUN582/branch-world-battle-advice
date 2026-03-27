@@ -1642,7 +1642,7 @@ function hidePlacementHelp() {
 
 // ── 모드 전환 (선택 / 추가) ─────────────────────────────────────
 
-function activateMode(mode) {
+function activateMode(mode, skipToolRestore) {
   if (mode !== 'edit' && mode !== 'select') return;
 
   // 같은 모드 → 무시
@@ -1673,8 +1673,8 @@ function activateMode(mode) {
     if (_drawSettingsMenu) _drawSettingsMenu.style.display = 'none';
     cleanupDrawCanvas();
   } else if (mode === 'edit') {
-    // 편집 모드: 이전 도구가 있을 때만 설정 패널 열기
-    if (_state.lastTool) {
+    // 편집 모드: 이전 도구가 있을 때만 설정 패널 열기 (skipToolRestore면 호출자가 직접 설정)
+    if (!skipToolRestore && _state.lastTool) {
       _settingsPanel.classList.add('bwbr-place-settings--open');
       setSubTool(_state.lastTool);
     }
@@ -1791,7 +1791,7 @@ function createToolbar() {
       '<svg viewBox="0 0 24 24">' + tool.icon + '</svg>' +
       '<span class="bwbr-place-tooltip">' + tool.label + '</span>';
     btn.addEventListener('click', function () {
-      if (_state.mode !== 'edit') activateMode('edit');
+      if (_state.mode !== 'edit') activateMode('edit', true);
       setSubTool(tool.id);
     });
     _toolbar.appendChild(btn);
