@@ -36,7 +36,7 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   z-index: 104;
   display: flex;
   flex-direction: column-reverse;
-  gap: 4px;
+  gap: 8px;
   transform: translateX(-80px);
   opacity: 0;
   transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
@@ -48,6 +48,14 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   transform: translateX(0);
   opacity: 1;
   pointer-events: auto;
+}
+
+.bwbr-place-toolbar-sep {
+  width: 48px;
+  height: 1px;
+  background: rgba(0,0,0,0.12);
+  margin: 4px 0;
+  flex-shrink: 0;
 }
 
 /* ── 도구 버튼 ─────────────────────────────────── */
@@ -645,6 +653,126 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   background: #2196f3;
 }
 
+/* ── 확인 설정 다이얼로그 ──────────────────────── */
+
+.bwbr-place-confirm-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200000;
+  background: rgba(0,0,0,0.4);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.bwbr-place-confirm-dialog-overlay--open {
+  opacity: 1;
+}
+
+.bwbr-place-confirm-dialog {
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.22);
+  padding: 20px 24px;
+  width: 360px;
+  max-width: 90vw;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transform: translateY(12px);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.bwbr-place-confirm-dialog-overlay--open .bwbr-place-confirm-dialog {
+  transform: translateY(0);
+}
+
+.bwbr-place-confirm-dialog-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #222;
+  margin: 0;
+}
+
+.bwbr-place-confirm-dialog-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bwbr-place-confirm-dialog-row .bwbr-place-field {
+  flex: 0 0 auto;
+}
+
+.bwbr-place-confirm-dialog-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #333;
+  white-space: nowrap;
+}
+
+.bwbr-place-confirm-dialog textarea {
+  width: 100%;
+  min-height: 80px;
+  max-height: 200px;
+  padding: 8px 10px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 13px;
+  background: #fafafa;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.bwbr-place-confirm-dialog input[type="number"] {
+  width: 60px;
+  padding: 4px 6px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 13px;
+  background: #fafafa;
+  text-align: center;
+}
+
+.bwbr-place-confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.bwbr-place-confirm-dialog-actions button {
+  padding: 7px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.bwbr-place-confirm-dialog-actions .bwbr-dlg-cancel {
+  background: #f5f5f5;
+  color: #666;
+}
+
+.bwbr-place-confirm-dialog-actions .bwbr-dlg-cancel:hover {
+  background: #eee;
+}
+
+.bwbr-place-confirm-dialog-actions .bwbr-dlg-ok {
+  background: #42a5f5;
+  color: #fff;
+}
+
+.bwbr-place-confirm-dialog-actions .bwbr-dlg-ok:hover {
+  background: #2196f3;
+}
+
 /* ── 회전 표시 ─────────────────────────────────── */
 
 .bwbr-placement-angle-indicator {
@@ -1229,6 +1357,8 @@ var _imageGrid = null;
 var _textSettingsMenu = null;
 var _confirmBar = null;
 var _stagedCountEl = null;
+var _confirmDialogOverlay = null;
+var _confirmDialogEls = {};
 
 
 // ── 초기화 ──────────────────────────────────────────────────────
@@ -1237,6 +1367,7 @@ function init() {
   createToolbar();
   createOverlay();
   createConfirmBar();
+  createConfirmDialog();
   createAlignBar();
   registerFabButton();
   setupMiddleClickPanning();  // 미들클릭 핸들러 먼저 (capture phase 우선순위)
@@ -1551,7 +1682,7 @@ function createToolbar() {
   // 모드 버튼 (column-reverse: 배열 첫번째=맨 아래, 마지막=맨 위)
   var modes = [
     { id: 'select', label: '선택 (V)', icon: MODE_ICONS.select },
-    { id: 'edit', label: '편집 (A)', icon: MODE_ICONS.edit }
+    { id: 'edit', label: '편집', icon: MODE_ICONS.edit }
   ];
 
   modes.forEach(function (mode) {
@@ -1634,71 +1765,6 @@ function createSettingsPanel() {
   // 그리기 설정 메뉴 (그리기 도구용)
   _drawSettingsMenu = createDrawSettingsMenu();
   panel.appendChild(_drawSettingsMenu);
-
-  // 타입 토글
-  var typeField = createField('타입');
-  var typeToggle = document.createElement('div');
-  typeToggle.className = 'bwbr-place-type-toggle';
-  var btnMarker = document.createElement('button');
-  btnMarker.textContent = '마커';
-  btnMarker.className = 'active';
-  var btnScreen = document.createElement('button');
-  btnScreen.textContent = '스크린';
-  btnMarker.addEventListener('click', function () {
-    _state.panelSettings.type = 'plane';
-    btnMarker.className = 'active';
-    btnScreen.className = '';
-  });
-  btnScreen.addEventListener('click', function () {
-    _state.panelSettings.type = 'object';
-    btnScreen.className = 'active';
-    btnMarker.className = '';
-  });
-  typeToggle.appendChild(btnMarker);
-  typeToggle.appendChild(btnScreen);
-  typeField.appendChild(typeToggle);
-  panel.appendChild(typeField);
-  _settingsEls.typePlaneBtn = btnMarker;
-  _settingsEls.typeObjectBtn = btnScreen;
-
-  // 겹침 우선도
-  var zField = createField('겹침 우선도');
-  var zInput = document.createElement('input');
-  zInput.type = 'number';
-  zInput.value = '150';
-  zInput.min = '0';
-  zInput.max = '9999';
-  zInput.addEventListener('input', function () {
-    _state.panelSettings.z = parseInt(zInput.value, 10) || 150;
-  });
-  zField.appendChild(zInput);
-  panel.appendChild(zField);
-  _settingsEls.zInput = zInput;
-
-  // 메모
-  var memoField = createField('패널 메모');
-  var memoInput = document.createElement('textarea');
-  memoInput.placeholder = '메모 입력...';
-  memoInput.addEventListener('input', function () {
-    _state.panelSettings.memo = memoInput.value;
-  });
-  memoField.appendChild(memoInput);
-  panel.appendChild(memoField);
-  _settingsEls.memoInput = memoInput;
-
-  // 위치 고정
-  var lockedField = createToggleField('위치 고정', false, function (val) {
-    _state.panelSettings.locked = val;
-  });
-  panel.appendChild(lockedField);
-  _settingsEls.lockedInput = lockedField.querySelector('input[type="checkbox"]');
-
-  // 사이즈 고정
-  var freezedField = createToggleField('사이즈 고정', false, function (val) {
-    _state.panelSettings.freezed = val;
-  });
-  panel.appendChild(freezedField);
-  _settingsEls.freezedInput = freezedField.querySelector('input[type="checkbox"]');
 
   return panel;
 }
@@ -4875,6 +4941,7 @@ function setupSelectModeHandlers() {
     if (e.target.closest('.bwbr-place-align-bar')) return;
     if (e.target.closest('.bwbr-text-toolbar')) return;
     if (e.target.closest('.bwbr-text-editor-wrap')) return;
+    if (e.target.closest('.bwbr-place-confirm-dialog-overlay')) return;
     if (e.target.closest('.bwbr-color-popup')) return;
 
     // 선택 모드: 드래그 = 범위 선택
@@ -4912,6 +4979,7 @@ function setupSelectModeHandlers() {
     if (e.target.closest('.bwbr-placement-toolbar') ||
         e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar') ||
         e.target.closest('.bwbr-text-toolbar') || e.target.closest('.bwbr-placement-overlay') ||
+        e.target.closest('.bwbr-place-confirm-dialog-overlay') ||
         e.target.closest('.bwbr-color-popup') || e.target.closest('.bwbr-text-editor-wrap')) return;
     // 스테이징 아이템 dblclick은 통과 (텍스트 편집기 열기)
     if (e.target.closest('.bwbr-staged-item')) return;
@@ -4927,6 +4995,7 @@ function setupSelectModeHandlers() {
         e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar') ||
         e.target.closest('.bwbr-text-toolbar') ||
         e.target.closest('.bwbr-text-editor-wrap') ||
+        e.target.closest('.bwbr-place-confirm-dialog-overlay') ||
         e.target.closest('.bwbr-color-popup')) return;
 
     // 편집 모드: 항상 좌클릭 패닝 차단
@@ -4947,6 +5016,7 @@ function setupSelectModeHandlers() {
         e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar') ||
         e.target.closest('.bwbr-text-toolbar') ||
         e.target.closest('.bwbr-placement-overlay') ||
+        e.target.closest('.bwbr-place-confirm-dialog-overlay') ||
         e.target.closest('.bwbr-color-popup')) return; // 오버레이/컬러팝업 클릭은 통과
 
     // 리사이즈 핸들 클릭: 핸들 자체 mousedown이 처리하도록 통과
@@ -5205,7 +5275,7 @@ function createConfirmBar() {
   var confirmBtn = document.createElement('button');
   confirmBtn.className = 'bwbr-place-confirm-bar-btn bwbr-place-confirm-btn';
   confirmBtn.textContent = '✓ 확인';
-  confirmBtn.addEventListener('click', compositeAndCommit);
+  confirmBtn.addEventListener('click', showConfirmDialog);
 
   _confirmBar.appendChild(cancelBtn);
   _confirmBar.appendChild(_stagedCountEl);
@@ -5222,6 +5292,193 @@ function updateConfirmBar() {
     _confirmBar.style.left = _getFieldCenter() + 'px';
   } else {
     _confirmBar.classList.remove('bwbr-place-confirm-bar--visible');
+  }
+}
+
+
+// ── 확인 설정 다이얼로그 ────────────────────────────────────────
+
+function createConfirmDialog() {
+  _confirmDialogOverlay = document.createElement('div');
+  _confirmDialogOverlay.className = 'bwbr-place-confirm-dialog-overlay';
+
+  var dialog = document.createElement('div');
+  dialog.className = 'bwbr-place-confirm-dialog';
+
+  // 제목
+  var title = document.createElement('div');
+  title.className = 'bwbr-place-confirm-dialog-title';
+  title.textContent = '패널 설정';
+  dialog.appendChild(title);
+
+  // 타입 토글
+  var typeRow = document.createElement('div');
+  typeRow.className = 'bwbr-place-confirm-dialog-row';
+  var typeLabel = document.createElement('span');
+  typeLabel.textContent = '타입';
+  typeLabel.style.fontSize = '13px';
+  typeLabel.style.color = '#333';
+  typeLabel.style.flexShrink = '0';
+  var typeToggle = document.createElement('div');
+  typeToggle.className = 'bwbr-place-type-toggle';
+  var btnMarker = document.createElement('button');
+  btnMarker.textContent = '마커';
+  btnMarker.className = 'active';
+  var btnScreen = document.createElement('button');
+  btnScreen.textContent = '스크린';
+  btnMarker.addEventListener('click', function () {
+    btnMarker.className = 'active';
+    btnScreen.className = '';
+  });
+  btnScreen.addEventListener('click', function () {
+    btnScreen.className = 'active';
+    btnMarker.className = '';
+  });
+  typeToggle.appendChild(btnMarker);
+  typeToggle.appendChild(btnScreen);
+  typeRow.appendChild(typeLabel);
+  typeRow.appendChild(typeToggle);
+  dialog.appendChild(typeRow);
+  _confirmDialogEls.typePlaneBtn = btnMarker;
+  _confirmDialogEls.typeObjectBtn = btnScreen;
+
+  // 겹침 우선도 + 위치 고정 + 사이즈 고정 (한 줄)
+  var optRow = document.createElement('div');
+  optRow.className = 'bwbr-place-confirm-dialog-row';
+
+  var zLabel = document.createElement('span');
+  zLabel.textContent = '우선도';
+  zLabel.style.fontSize = '13px';
+  zLabel.style.color = '#333';
+  zLabel.style.flexShrink = '0';
+  var zInput = document.createElement('input');
+  zInput.type = 'number';
+  zInput.value = '150';
+  zInput.min = '0';
+  zInput.max = '9999';
+  optRow.appendChild(zLabel);
+  optRow.appendChild(zInput);
+  _confirmDialogEls.zInput = zInput;
+
+  // 간격
+  var spacer = document.createElement('div');
+  spacer.style.flex = '1';
+  optRow.appendChild(spacer);
+
+  // 위치 고정
+  var lockedLabel = document.createElement('label');
+  var lockedSpan = document.createElement('span');
+  lockedSpan.textContent = '위치 고정';
+  var lockedToggle = document.createElement('div');
+  lockedToggle.className = 'bwbr-place-toggle';
+  var lockedInput = document.createElement('input');
+  lockedInput.type = 'checkbox';
+  var lockedSlider = document.createElement('span');
+  lockedSlider.className = 'bwbr-place-slider';
+  lockedToggle.appendChild(lockedInput);
+  lockedToggle.appendChild(lockedSlider);
+  lockedLabel.appendChild(lockedSpan);
+  lockedLabel.appendChild(lockedToggle);
+  optRow.appendChild(lockedLabel);
+  _confirmDialogEls.lockedInput = lockedInput;
+
+  // 사이즈 고정
+  var freezedLabel = document.createElement('label');
+  var freezedSpan = document.createElement('span');
+  freezedSpan.textContent = '사이즈 고정';
+  var freezedToggle = document.createElement('div');
+  freezedToggle.className = 'bwbr-place-toggle';
+  var freezedInput = document.createElement('input');
+  freezedInput.type = 'checkbox';
+  var freezedSlider = document.createElement('span');
+  freezedSlider.className = 'bwbr-place-slider';
+  freezedToggle.appendChild(freezedInput);
+  freezedToggle.appendChild(freezedSlider);
+  freezedLabel.appendChild(freezedSpan);
+  freezedLabel.appendChild(freezedToggle);
+  optRow.appendChild(freezedLabel);
+  _confirmDialogEls.freezedInput = freezedInput;
+
+  dialog.appendChild(optRow);
+
+  // 패널 메모 (크게)
+  var memoLabel = document.createElement('span');
+  memoLabel.textContent = '패널 메모';
+  memoLabel.style.fontSize = '13px';
+  memoLabel.style.color = '#333';
+  dialog.appendChild(memoLabel);
+  var memoInput = document.createElement('textarea');
+  memoInput.placeholder = '메모 입력...';
+  dialog.appendChild(memoInput);
+  _confirmDialogEls.memoInput = memoInput;
+
+  // 액션 버튼
+  var actions = document.createElement('div');
+  actions.className = 'bwbr-place-confirm-dialog-actions';
+  var cancelBtn = document.createElement('button');
+  cancelBtn.className = 'bwbr-dlg-cancel';
+  cancelBtn.textContent = '취소';
+  cancelBtn.addEventListener('click', hideConfirmDialog);
+  var okBtn = document.createElement('button');
+  okBtn.className = 'bwbr-dlg-ok';
+  okBtn.textContent = '확인';
+  okBtn.addEventListener('click', function () {
+    readSettingsFromDialog();
+    hideConfirmDialog();
+    compositeAndCommit();
+  });
+  actions.appendChild(cancelBtn);
+  actions.appendChild(okBtn);
+  dialog.appendChild(actions);
+
+  _confirmDialogOverlay.appendChild(dialog);
+  _confirmDialogOverlay.addEventListener('click', function (e) {
+    if (e.target === _confirmDialogOverlay) hideConfirmDialog();
+  });
+  document.body.appendChild(_confirmDialogOverlay);
+}
+
+function showConfirmDialog() {
+  if (_state.stagedObjects.length === 0) return;
+  // 다이얼로그 필드에 현재 설정 반영
+  var s = _state.panelSettings;
+  if (_confirmDialogEls.typePlaneBtn) {
+    _confirmDialogEls.typePlaneBtn.className = s.type === 'plane' ? 'active' : '';
+    _confirmDialogEls.typeObjectBtn.className = s.type === 'object' ? 'active' : '';
+  }
+  if (_confirmDialogEls.zInput) _confirmDialogEls.zInput.value = s.z;
+  if (_confirmDialogEls.memoInput) _confirmDialogEls.memoInput.value = s.memo || '';
+  if (_confirmDialogEls.lockedInput) _confirmDialogEls.lockedInput.checked = !!s.locked;
+  if (_confirmDialogEls.freezedInput) _confirmDialogEls.freezedInput.checked = !!s.freezed;
+
+  _confirmDialogOverlay.style.display = 'flex';
+  // force reflow for animation
+  _confirmDialogOverlay.offsetHeight;
+  _confirmDialogOverlay.classList.add('bwbr-place-confirm-dialog-overlay--open');
+}
+
+function hideConfirmDialog() {
+  _confirmDialogOverlay.classList.remove('bwbr-place-confirm-dialog-overlay--open');
+  setTimeout(function () {
+    _confirmDialogOverlay.style.display = 'none';
+  }, 200);
+}
+
+function readSettingsFromDialog() {
+  if (_confirmDialogEls.typePlaneBtn) {
+    _state.panelSettings.type = _confirmDialogEls.typePlaneBtn.classList.contains('active') ? 'plane' : 'object';
+  }
+  if (_confirmDialogEls.zInput) {
+    _state.panelSettings.z = parseInt(_confirmDialogEls.zInput.value, 10) || 150;
+  }
+  if (_confirmDialogEls.memoInput) {
+    _state.panelSettings.memo = _confirmDialogEls.memoInput.value || '';
+  }
+  if (_confirmDialogEls.lockedInput) {
+    _state.panelSettings.locked = !!_confirmDialogEls.lockedInput.checked;
+  }
+  if (_confirmDialogEls.freezedInput) {
+    _state.panelSettings.freezed = !!_confirmDialogEls.freezedInput.checked;
   }
 }
 
@@ -5616,13 +5873,6 @@ function setupKeyboard() {
     if (e.key === 'v' || e.key === 'V') {
       e.preventDefault();
       activateMode('select');
-      return;
-    }
-
-    // A: 편집 모드 토글
-    if (e.key === 'a' || e.key === 'A') {
-      e.preventDefault();
-      activateMode('edit');
       return;
     }
 
