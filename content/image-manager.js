@@ -118,16 +118,19 @@
     return 'room';
   }
 
+  /** 제외할 이미지인지 판단 (toolbar/tab/header 내부, 아이콘) */
+  function isExcludedImage(img) {
+    if (img.closest('.MuiToolbar-root, .MuiAppBar-root, header, [role="tablist"]')) return true;
+    if (img.naturalWidth > 0 && img.naturalWidth < 40) return true;
+    return false;
+  }
+
   /** 피커 내 이미지 요소 목록 (유효한 것만) */
   function getPickerImages(picker) {
     const out = [];
     for (const img of picker.querySelectorAll('img')) {
       if (!img.src || !img.src.startsWith('https://')) continue;
-      // toolbar/header/tab 안의 이미지 제외 (대문자 HEADER 태그)
-      if (img.closest('button') || img.closest('[role="tab"]')) continue;
-      const header = img.closest('header, .MuiAppBar-root, .MuiToolbar-root');
-      if (header) continue;
-      if (img.naturalWidth > 0 && img.naturalWidth < 40) continue;
+      if (isExcludedImage(img)) continue;
       out.push(img);
     }
     return out;
@@ -170,25 +173,25 @@
     return null;
   }
 
-  /** 이벤트 타겟에서 이미지 래퍼를 찾음 (data attr 의존 없음) */
+  /** 이벤트 타겟에서 이미지 래퍼를 찾음 — DOM 상위 탐색 */
   function findImageWrapper(target, picker) {
-    // img 자체이거나 img를 포함하는 래퍼
-    let img = null;
-    if (target.tagName === 'IMG') img = target;
-    else {
-      img = target.closest?.('img');
-      if (!img) {
-        // target이 래퍼인 경우
-        const childImg = target.querySelector?.('img');
-        if (childImg?.src?.startsWith('https://')) img = childImg;
+    let el = target;
+    while (el && el !== picker) {
+      // 이 요소가 img 자체이면 부모가 래퍼
+      if (el.tagName === 'IMG' && el.src?.startsWith('https://')) {
+        if (isExcludedImage(el)) return null;
+        const wrapper = el.parentElement;
+        return (wrapper && picker.contains(wrapper)) ? wrapper : null;
       }
+      // 이 요소가 직접 img를 자식으로 가지면 이 요소가 래퍼
+      const childImg = el.querySelector(':scope > img');
+      if (childImg?.src?.startsWith('https://')) {
+        if (isExcludedImage(childImg)) return null;
+        return el;
+      }
+      el = el.parentElement;
     }
-    if (!img?.src?.startsWith('https://')) return null;
-    // toolbar/tab/button 이미지 제외
-    if (img.closest('button, [role="tab"], header, .MuiAppBar-root, .MuiToolbar-root')) return null;
-    if (img.naturalWidth > 0 && img.naturalWidth < 40) return null;
-    const wrapper = img.parentElement;
-    return (wrapper && picker.contains(wrapper)) ? wrapper : null;
+    return null;
   }
 
   /** 네이티브 "선택 삭제" 모드 여부 */
