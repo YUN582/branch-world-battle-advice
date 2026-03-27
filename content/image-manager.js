@@ -151,15 +151,15 @@
     return null;
   }
 
-  /** URL에서 파일 해시/경로 끝부분 추출 */
+  /** URL에서 파일 해시 추출 (%2F 인코딩 허용) */
   function extractUrlHash(url) {
     try {
-      const u = new URL(url);
-      // ccfolia-cdn: /users/{uid}/files/{hash}
-      const match = u.pathname.match(/\/files\/([a-f0-9]+)/);
+      // URL 디코딩 후 검색 (CDN은 %2F로 인코딩)
+      const decoded = decodeURIComponent(url);
+      const match = decoded.match(/\/files\/([a-f0-9]+)/);
       if (match) return match[1];
-      // firebasestorage: path 인코딩된 경로
-      const fsMatch = u.pathname.match(/([a-f0-9]{20,})/);
+      // fallback: 긴 hex 문자열 추출
+      const fsMatch = decoded.match(/([a-f0-9]{20,})/);
       if (fsMatch) return fsMatch[1];
     } catch {}
     return null;
@@ -666,9 +666,9 @@
 
         if (newDir !== _currentDir || newIsRoom !== _isGroupRoom) {
           _isGroupRoom = newIsRoom;
-          await refreshFileCache(newDir, roomId);
+          await refreshFileCache(newDir, newIsRoom ? getRoomIdFromUrl() : null);
           _lastClickedIdx = -1;
-          console.log(TAG, `탭 전환: dir=${newDir}, 캐시 ${_fileCache.length}개`);
+          console.log(TAG, `탭 전환: group=${newGroup}, dir=${newDir}, 캐시 ${_fileCache.length}개`);
         }
 
         // 새 이미지에 draggable 속성만 추가 (이벤트 위임은 이미 설정됨)
