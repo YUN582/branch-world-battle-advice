@@ -36,7 +36,7 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   z-index: 104;
   display: flex;
   flex-direction: column-reverse;
-  gap: 8px;
+  gap: 4px;
   transform: translateX(-80px);
   opacity: 0;
   transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
@@ -54,7 +54,7 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   width: 48px;
   height: 1px;
   background: rgba(0,0,0,0.12);
-  margin: 4px 0;
+  margin: 2px 0;
   flex-shrink: 0;
 }
 
@@ -314,9 +314,6 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #eee;
-  margin-bottom: 4px;
 }
 
 .bwbr-place-source-btn {
@@ -886,8 +883,6 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   flex-direction: column;
   gap: 6px;
   padding: 4px 0;
-  border-bottom: 1px solid #eee;
-  margin-bottom: 4px;
 }
 
 .bwbr-draw-range-row {
@@ -1302,9 +1297,11 @@ var _drawSettings = {
   penSize: 4,             // 펜 굵기 (px)
   penColor: '#ffffff',    // 펜 색상
   penOpacity: 1.0,        // 펜 투명도 (0~1)
+  sketchJitter: 0,        // 연필 떨림 (0=부드러움, 1~10=자글자글)
   outlineEnabled: false,  // 윤곽선 활성
   outlineSize: 2,         // 윤곽선 두께 (px)
-  outlineColor: '#000000' // 윤곽선 색상
+  outlineColor: '#000000',// 윤곽선 색상
+  outlineDash: 'solid'    // 윤곽선 스타일: solid / dashed / dotted
 };
 
 var _drawCanvas = null;    // 그리기 캔버스 (zoom container 내)
@@ -1358,6 +1355,7 @@ var _subToolRow = null;
 var _subToolButtons = {};
 var _imageSourceMenu = null;
 var _imageGrid = null;
+var _imageGridSep = null;
 var _textSettingsMenu = null;
 var _confirmBar = null;
 var _stagedCountEl = null;
@@ -1595,10 +1593,9 @@ function activateMode(mode) {
     if (_drawSettingsMenu) _drawSettingsMenu.style.display = 'none';
     cleanupDrawCanvas();
   } else if (mode === 'edit') {
-    // 편집 모드: 설정 패널 열기
-    _settingsPanel.classList.add('bwbr-place-settings--open');
-    // 이전 도구 복원
+    // 편집 모드: 이전 도구가 있을 때만 설정 패널 열기
     if (_state.lastTool) {
+      _settingsPanel.classList.add('bwbr-place-settings--open');
       setSubTool(_state.lastTool);
     }
   }
@@ -1631,6 +1628,7 @@ function setSubTool(toolId) {
   if (_state.currentTool === toolId) {
     _state.currentTool = null;
     _overlay.classList.remove('bwbr-placement-overlay--active');
+    _settingsPanel.classList.remove('bwbr-place-settings--open');
     if (_imageSourceMenu) _imageSourceMenu.style.display = 'none';
     if (_textSettingsMenu) _textSettingsMenu.style.display = 'none';
     if (_drawSettingsMenu) _drawSettingsMenu.style.display = 'none';
@@ -1646,6 +1644,7 @@ function setSubTool(toolId) {
 
   _state.currentTool = toolId;
   _subToolButtons[toolId].classList.add('bwbr-place-tool-btn--active');
+  _settingsPanel.classList.add('bwbr-place-settings--open');
 
   if (toolId === 'image') {
     if (_imageSourceMenu) _imageSourceMenu.style.display = '';
@@ -1774,6 +1773,16 @@ function createImageSourceMenu() {
   menu.className = 'bwbr-place-source-menu';
   menu.style.display = 'none';
 
+  // 등록된 이미지 그리드 (상단)
+  _imageGrid = document.createElement('div');
+  _imageGrid.className = 'bwbr-place-image-grid';
+  menu.appendChild(_imageGrid);
+
+  // 구분선 (이미지가 있을 때만 표시 — renderImageGrid에서 토글)
+  _imageGridSep = document.createElement('div');
+  _imageGridSep.style.cssText = 'height:1px;background:#eee;display:none';
+  menu.appendChild(_imageGridSep);
+
   var localBtn = document.createElement('button');
   localBtn.className = 'bwbr-place-source-btn';
   localBtn.textContent = '📁 로컬 이미지';
@@ -1785,11 +1794,6 @@ function createImageSourceMenu() {
   ccoBtn.textContent = '🎲 코코포리아 이미지';
   ccoBtn.addEventListener('click', openCcofoliaImagePicker);
   menu.appendChild(ccoBtn);
-
-  // 등록된 이미지 그리드
-  _imageGrid = document.createElement('div');
-  _imageGrid.className = 'bwbr-place-image-grid';
-  menu.appendChild(_imageGrid);
 
   return menu;
 }
@@ -1828,6 +1832,10 @@ function renderImageGrid() {
 
     _imageGrid.appendChild(thumb);
   });
+  // 이미지가 있으면 구분선 표시
+  if (_imageGridSep) {
+    _imageGridSep.style.display = _state.registeredImages.length > 0 ? '' : 'none';
+  }
 }
 
 function selectRegisteredImage(id) {
@@ -2053,11 +2061,34 @@ function createDrawSettingsMenu() {
   opacityField.appendChild(opacityRow);
   menu.appendChild(opacityField);
 
+  // 스케치 떨림
+  var jitterField = createField('스케치 떨림');
+  var jitterRow = document.createElement('div');
+  jitterRow.className = 'bwbr-draw-range-row';
+  var jitterSlider = document.createElement('input');
+  jitterSlider.type = 'range';
+  jitterSlider.min = '0';
+  jitterSlider.max = '10';
+  jitterSlider.value = String(_drawSettings.sketchJitter);
+  jitterSlider.className = 'bwbr-draw-slider';
+  var jitterVal = document.createElement('span');
+  jitterVal.className = 'bwbr-draw-range-val';
+  jitterVal.textContent = _drawSettings.sketchJitter === 0 ? '없음' : String(_drawSettings.sketchJitter);
+  jitterSlider.addEventListener('input', function() {
+    _drawSettings.sketchJitter = parseInt(jitterSlider.value, 10);
+    jitterVal.textContent = _drawSettings.sketchJitter === 0 ? '없음' : String(_drawSettings.sketchJitter);
+  });
+  jitterRow.appendChild(jitterSlider);
+  jitterRow.appendChild(jitterVal);
+  jitterField.appendChild(jitterRow);
+  menu.appendChild(jitterField);
+
   // 윤곽선 토글
   var outlineToggle = createToggleField('윤곽선', _drawSettings.outlineEnabled, function(val) {
     _drawSettings.outlineEnabled = val;
     outlineSizeField.style.display = val ? '' : 'none';
     outlineColorField.style.display = val ? '' : 'none';
+    outlineDashField.style.display = val ? '' : 'none';
   });
   menu.appendChild(outlineToggle);
 
@@ -2098,6 +2129,40 @@ function createDrawSettingsMenu() {
   });
   outlineColorField.appendChild(outlineColorBtn);
   menu.appendChild(outlineColorField);
+
+  // 윤곽선 스타일
+  var outlineDashField = createField('윤곽선 스타일');
+  outlineDashField.style.display = _drawSettings.outlineEnabled ? '' : 'none';
+  var dashRow = document.createElement('div');
+  dashRow.style.cssText = 'display:flex;gap:4px;';
+  var dashOptions = [
+    { value: 'solid', label: '실선' },
+    { value: 'dashed', label: '점선' },
+    { value: 'dotted', label: '도트' }
+  ];
+  var _dashButtons = [];
+  dashOptions.forEach(function(opt) {
+    var btn = document.createElement('button');
+    btn.className = 'bwbr-draw-color-btn';
+    btn.style.cssText = 'width:auto;height:28px;padding:4px 10px;font-size:11px;border-radius:4px;cursor:pointer;border:1px solid ' +
+      (_drawSettings.outlineDash === opt.value ? '#90caf9' : '#555') + ';' +
+      'background:' + (_drawSettings.outlineDash === opt.value ? '#1a3a5c' : '#2a2a2a') + ';' +
+      'color:' + (_drawSettings.outlineDash === opt.value ? '#90caf9' : '#aaa') + ';';
+    btn.textContent = opt.label;
+    btn.addEventListener('click', function() {
+      _drawSettings.outlineDash = opt.value;
+      _dashButtons.forEach(function(b, i) {
+        var active = dashOptions[i].value === opt.value;
+        b.style.borderColor = active ? '#90caf9' : '#555';
+        b.style.background = active ? '#1a3a5c' : '#2a2a2a';
+        b.style.color = active ? '#90caf9' : '#aaa';
+      });
+    });
+    _dashButtons.push(btn);
+    dashRow.appendChild(btn);
+  });
+  outlineDashField.appendChild(dashRow);
+  menu.appendChild(outlineDashField);
 
   // 안내 문구
   var notice = document.createElement('div');
@@ -2235,9 +2300,11 @@ function onDrawMouseDown(e) {
     penSize: mapPenSize,
     penColor: _drawSettings.penColor,
     penOpacity: _drawSettings.penOpacity,
+    sketchJitter: _drawSettings.sketchJitter,
     outlineEnabled: _drawSettings.outlineEnabled,
     outlineSize: mapOutlineSize,
-    outlineColor: _drawSettings.outlineColor
+    outlineColor: _drawSettings.outlineColor,
+    outlineDash: _drawSettings.outlineDash
   };
   _drawPoints = [mapPt];
   _redrawAllStrokes(); // 이전 스트로크 + 현재 점 렌더
@@ -2264,7 +2331,9 @@ function onDrawMouseUp(e) {
       penOpacity: _drawCurrentStrokeSettings.penOpacity,
       outlineEnabled: _drawCurrentStrokeSettings.outlineEnabled,
       outlineSize: _drawCurrentStrokeSettings.outlineSize,
-      outlineColor: _drawCurrentStrokeSettings.outlineColor
+      outlineColor: _drawCurrentStrokeSettings.outlineColor,
+      sketchJitter: _drawCurrentStrokeSettings.sketchJitter,
+      outlineDash: _drawCurrentStrokeSettings.outlineDash
     });
   }
   _drawPoints = [];
@@ -2295,7 +2364,9 @@ function _redrawAllStrokes() {
       penOpacity: _drawCurrentStrokeSettings.penOpacity,
       outlineEnabled: _drawCurrentStrokeSettings.outlineEnabled,
       outlineSize: _drawCurrentStrokeSettings.outlineSize,
-      outlineColor: _drawCurrentStrokeSettings.outlineColor
+      outlineColor: _drawCurrentStrokeSettings.outlineColor,
+      sketchJitter: _drawCurrentStrokeSettings.sketchJitter,
+      outlineDash: _drawCurrentStrokeSettings.outlineDash
     });
   }
   if (allStrokes.length === 0) return;
@@ -2315,10 +2386,13 @@ function _redrawAllStrokes() {
     var pts = stroke.points.map(function(p) {
       return { x: p.x * scale + origin.x, y: p.y * scale + origin.y };
     });
+    if (stroke.sketchJitter) pts = _applyJitter(pts, stroke.sketchJitter * scale);
     tc.strokeStyle = stroke.outlineColor;
     tc.lineWidth = (stroke.penSize + stroke.outlineSize * 2) * scale;
+    _setDashPattern(tc, stroke.outlineDash, tc.lineWidth);
     _drawSmoothPath(tc, pts);
     tc.stroke();
+    tc.setLineDash([]);
   });
 
   // 패스 2: 모든 펜
@@ -2327,8 +2401,10 @@ function _redrawAllStrokes() {
     var pts = stroke.points.map(function(p) {
       return { x: p.x * scale + origin.x, y: p.y * scale + origin.y };
     });
+    if (stroke.sketchJitter) pts = _applyJitter(pts, stroke.sketchJitter * scale);
     tc.strokeStyle = stroke.penColor;
     tc.lineWidth = stroke.penSize * scale;
+    tc.setLineDash([]);
     _drawSmoothPath(tc, pts);
     tc.stroke();
   });
@@ -2339,6 +2415,44 @@ function _redrawAllStrokes() {
   _drawCtx.globalAlpha = alpha;
   _drawCtx.drawImage(tmp, 0, 0);
   _drawCtx.restore();
+}
+
+// 스케치 떨림 적용 (결정적 시드 기반, 재그리기 시 동일 결과)
+function _applyJitter(pts, amount) {
+  if (!amount || amount <= 0 || pts.length < 2) return pts;
+  var result = [];
+  // 첫/끝 점은 고정
+  result.push(pts[0]);
+  for (var i = 1; i < pts.length - 1; i++) {
+    var prev = pts[i - 1];
+    var next = pts[i + 1];
+    // 경로 방향에 수직인 벡터
+    var dx = next.x - prev.x;
+    var dy = next.y - prev.y;
+    var len = Math.sqrt(dx * dx + dy * dy) || 1;
+    var nx = -dy / len;
+    var ny = dx / len;
+    // 결정적 의사 난수 (점 인덱스 + 좌표 기반)
+    var seed = (i * 9301 + Math.round(pts[i].x * 100) * 49297 + Math.round(pts[i].y * 100) * 233) % 65521;
+    var rand = ((seed / 65521) - 0.5) * 2; // -1 ~ 1
+    var displacement = rand * amount;
+    result.push({ x: pts[i].x + nx * displacement, y: pts[i].y + ny * displacement });
+  }
+  if (pts.length > 1) result.push(pts[pts.length - 1]);
+  return result;
+}
+
+// dash 패턴 설정
+function _setDashPattern(ctx, dashType, lineWidth) {
+  if (!dashType || dashType === 'solid') {
+    ctx.setLineDash([]);
+  } else if (dashType === 'dashed') {
+    var d = Math.max(4, lineWidth * 2);
+    ctx.setLineDash([d, d * 0.75]);
+  } else if (dashType === 'dotted') {
+    var dot = Math.max(1, lineWidth * 0.5);
+    ctx.setLineDash([dot, dot * 2]);
+  }
 }
 
 // 부드러운 경로 그리기 (2차 베지어 곡선 보간)
@@ -2371,6 +2485,7 @@ function _renderOneStrokeToScreen(ctx, stroke, origin, scale, forceOpaque) {
   var pts = stroke.points.map(function(p) {
     return { x: p.x * scale + origin.x, y: p.y * scale + origin.y };
   });
+  if (stroke.sketchJitter) pts = _applyJitter(pts, stroke.sketchJitter * scale);
 
   var outW = (stroke.penSize + stroke.outlineSize * 2) * scale;
   var penW = stroke.penSize * scale;
@@ -2387,8 +2502,10 @@ function _renderOneStrokeToScreen(ctx, stroke, origin, scale, forceOpaque) {
 
     tc.strokeStyle = stroke.outlineColor;
     tc.lineWidth = outW;
+    _setDashPattern(tc, stroke.outlineDash, outW);
     _drawSmoothPath(tc, pts);
     tc.stroke();
+    tc.setLineDash([]);
 
     tc.strokeStyle = stroke.penColor;
     tc.lineWidth = penW;
@@ -2410,8 +2527,10 @@ function _renderOneStrokeToScreen(ctx, stroke, origin, scale, forceOpaque) {
   if (stroke.outlineEnabled) {
     ctx.strokeStyle = stroke.outlineColor;
     ctx.lineWidth = outW;
+    _setDashPattern(ctx, stroke.outlineDash, outW);
     _drawSmoothPath(ctx, pts);
     ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   ctx.strokeStyle = stroke.penColor;
@@ -2521,18 +2640,25 @@ function _renderStrokesToCtx(ctx, strokes) {
   // 패스 1: 모든 윤곽선
   strokes.forEach(function(stroke) {
     if (!stroke.outlineEnabled || stroke.points.length === 0) return;
+    var pts = stroke.points;
+    if (stroke.sketchJitter) pts = _applyJitter(pts, stroke.sketchJitter);
     tc.strokeStyle = stroke.outlineColor;
     tc.lineWidth = stroke.penSize + stroke.outlineSize * 2;
-    _drawSmoothPath(tc, stroke.points);
+    _setDashPattern(tc, stroke.outlineDash, tc.lineWidth);
+    _drawSmoothPath(tc, pts);
     tc.stroke();
+    tc.setLineDash([]);
   });
 
   // 패스 2: 모든 펜
   strokes.forEach(function(stroke) {
     if (stroke.points.length === 0) return;
+    var pts = stroke.points;
+    if (stroke.sketchJitter) pts = _applyJitter(pts, stroke.sketchJitter);
     tc.strokeStyle = stroke.penColor;
     tc.lineWidth = stroke.penSize;
-    _drawSmoothPath(tc, stroke.points);
+    tc.setLineDash([]);
+    _drawSmoothPath(tc, pts);
     tc.stroke();
   });
 
