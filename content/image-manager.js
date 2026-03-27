@@ -42,6 +42,7 @@
   let _dragFileIds = [];            // 드래그 중인 파일 ID 목록
   let _lastClickedIdx = -1;        // Shift 클릭용 마지막 클릭 인덱스
   let _isGroupRoom = true;         // ROOM 탭인지 ALL인지
+  let _suppressObserver = false;    // 자체 쓰기 중 옵저버 억제
 
   /* ══════════════════════════════════════════════════════
    *  DOM 헬퍼
@@ -218,6 +219,30 @@
       _fileCache = result?.files || [];
       _currentDir = dir;
       _currentRoomId = roomId || null;
+
+      // Redux lazy load — 결과 0이면 1초 후 재시도 (최대 1회)
+      if (_fileCache.length === 0) {
+        setTimeout(async () => {
+          if (_currentDir !== dir) return; // 이미 다른 탭으로 전환
+          try {
+            const retry = await BWBR_Bridge.request(
+              'bwbr-get-user-files', 'bwbr-user-files-data',
+              payload,
+              {
+                sendAttr: 'data-bwbr-get-user-files',
+                recvAttr: 'data-bwbr-user-files-data',
+                timeout: 5000,
+                on: document,
+                emit: document
+              }
+            );
+            if (retry?.files?.length > 0 && _currentDir === dir) {
+              _fileCache = retry.files;
+              console.log(TAG, `재시도 캐시: ${_fileCache.length}개`);
+            }
+          } catch {}
+        }, 1000);
+      }
     } catch (err) {
       console.error(TAG, '파일 캐시 로드 실패:', err);
       _fileCache = [];
@@ -378,6 +403,7 @@
 
     console.log(TAG, `${_dragFileIds.length}개 파일 → ${tabText}(${targetDir}) 이동`);
 
+    _suppressObserver = true;
     try {
       const result = await BWBR_Bridge.request(
         'bwbr-move-files-dir', 'bwbr-move-files-dir-result',
@@ -393,12 +419,16 @@
 
       if (result?.success) {
         console.log(TAG, `✅ ${result.movedCount}개 이동 완료`);
+        // 옵저버 억제 해제 후 탭 클릭 (React re-render 허용)
+        setTimeout(() => { _suppressObserver = false; }, 500);
         tab.click();
       } else {
         console.error(TAG, '이동 실패:', result?.error);
+        _suppressObserver = false;
       }
     } catch (err) {
       console.error(TAG, '이동 요청 실패:', err);
+      _suppressObserver = false;
     }
   }
 
@@ -462,6 +492,7 @@
 
     console.log(TAG, `순서 변경: ${changedEntries.length}개 파일 createdAt 재배치`);
 
+    _suppressObserver = true;
     try {
       const result = await BWBR_Bridge.request(
         'bwbr-reorder-files', 'bwbr-reorder-files-result',
@@ -481,11 +512,15 @@
         reorderDOM(picker, remaining);
         // 캐시 갱신
         _fileCache = remaining.map((f, i) => ({...f, createdAt: sortedTimes[i]}));
+        // 옵저버 억제를 2초간 유지 (Firestore → Redux → React re-render 완료까지)
+        setTimeout(() => { _suppressObserver = false; }, 2000);
       } else {
         console.error(TAG, '순서 변경 실패:', result?.error);
+        _suppressObserver = false;
       }
     } catch (err) {
       console.error(TAG, '순서 변경 요청 실패:', err);
+      _suppressObserver = false;
     }
   }
 
@@ -652,8 +687,10 @@
     if (_pickerObs) _pickerObs.disconnect();
     let _debounceTimer = null;
     _pickerObs = new MutationObserver(() => {
+      if (_suppressObserver) return; // 자체 쓰기 중 무시
       if (_debounceTimer) clearTimeout(_debounceTimer);
       _debounceTimer = setTimeout(async () => {
+        if (_suppressObserver) return;
         const p = getPickerDialog();
         if (!p) return;
 

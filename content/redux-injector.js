@@ -6006,6 +6006,9 @@
 
       let files = uf.ids.map(id => uf.entities[id]).filter(Boolean);
 
+      // archived(삭제된) 파일 제외 — ccfolia는 삭제 시 archived=true만 세팅
+      files = files.filter(f => !f.archived);
+
       if (opts.dir) files = files.filter(f => f.dir === opts.dir);
       if (opts.roomId) files = files.filter(f => f.roomId === opts.roomId);
 
