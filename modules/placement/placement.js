@@ -4601,6 +4601,16 @@ function onOverlayMouseMove(e) {
   if (_state.placing) {
     _state.drag.currentX = e.clientX;
     _state.drag.currentY = e.clientY;
+
+    // Shift: 정사각형 제약 (이미지 배치 드래그)
+    if (e.shiftKey && _state.currentTool === 'image') {
+      var dw = Math.abs(_state.drag.currentX - _state.drag.startX);
+      var dh = Math.abs(_state.drag.currentY - _state.drag.startY);
+      var side = Math.max(dw, dh);
+      _state.drag.currentX = _state.drag.startX + (_state.drag.currentX >= _state.drag.startX ? side : -side);
+      _state.drag.currentY = _state.drag.startY + (_state.drag.currentY >= _state.drag.startY ? side : -side);
+    }
+
     updatePreview();
     return;
   }
@@ -5103,7 +5113,7 @@ function _updateResizeHandles() {
   HANDLE_DIRS.forEach(function(dir) {
     var h = document.createElement('div');
     h.className = 'bwbr-resize-handle bwbr-resize-handle--' + dir;
-    _setTooltip(h, '크기 조절 (Alt: 양쪽)');
+    _setTooltip(h, '크기 조절 (Shift: 비율 유지 / Alt: 양쪽)');
     h.addEventListener('mousedown', function(ev) {
       ev.stopPropagation();
       ev.preventDefault();
@@ -5125,7 +5135,8 @@ function _startResize(objId, dir, e) {
     origX: obj.mapCoords.x,
     origY: obj.mapCoords.y,
     origW: obj.mapCoords.width,
-    origH: obj.mapCoords.height
+    origH: obj.mapCoords.height,
+    aspect: obj.mapCoords.width / (obj.mapCoords.height || 1)
   };
 
   function onMove(ev) {
@@ -5142,6 +5153,29 @@ function _startResize(objId, dir, e) {
     if (d.indexOf('e') >= 0) { nw += dx; if (alt) { nx -= dx; nw += dx; } }
     if (d.indexOf('n') >= 0) { ny += dy; nh -= dy; if (alt) { nh -= dy; } }
     if (d.indexOf('s') >= 0) { nh += dy; if (alt) { ny -= dy; nh += dy; } }
+
+    // Shift: 비율 유지 리사이즈 (코너 핸들만)
+    if (ev.shiftKey && _resizeDrag.aspect > 0) {
+      var isCorner = d.length === 2; // 'nw','ne','sw','se'
+      var isHoriz = d === 'e' || d === 'w';
+      var isVert = d === 'n' || d === 's';
+      if (isCorner) {
+        // 더 큰 변화량 기준으로 비율 맞춤
+        var dw = nw - _resizeDrag.origW;
+        var dh = nh - _resizeDrag.origH;
+        if (Math.abs(dw) / _resizeDrag.aspect >= Math.abs(dh)) {
+          nh = Math.max(1, Math.round(nw / _resizeDrag.aspect));
+          if (d.indexOf('n') >= 0) ny = _resizeDrag.origY + _resizeDrag.origH - nh;
+        } else {
+          nw = Math.max(1, Math.round(nh * _resizeDrag.aspect));
+          if (d.indexOf('w') >= 0) nx = _resizeDrag.origX + _resizeDrag.origW - nw;
+        }
+      } else if (isHoriz) {
+        nh = Math.max(1, Math.round(nw / _resizeDrag.aspect));
+      } else if (isVert) {
+        nw = Math.max(1, Math.round(nh * _resizeDrag.aspect));
+      }
+    }
 
     if (nw < 1) { nw = 1; nx = _resizeDrag.origX + _resizeDrag.origW - 1; }
     if (nh < 1) { nh = 1; ny = _resizeDrag.origY + _resizeDrag.origH - 1; }
