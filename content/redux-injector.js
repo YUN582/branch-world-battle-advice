@@ -5882,6 +5882,9 @@
    *  이미지 매니저 — 파일 카테고리 이동 / 순서 변경 / 파일 목록 조회
    * ══════════════════════════════════════════════════════════ */
 
+  // Firestore 쓰기 후 Redux가 바로 반영되지 않으므로 로컬 오버라이드로 보정
+  const _fileOverrides = new Map(); // fileId → { dir?, createdAt?, updatedAt? }
+
   /**
    * bwbr-move-files-dir — 파일들의 카테고리(dir) 일괄 변경
    * payload: { fileIds: string[], targetDir: string }
