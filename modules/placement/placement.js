@@ -384,7 +384,6 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 6px;
 }
 
 .bwbr-place-image-thumb {
@@ -881,8 +880,63 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
 .bwbr-place-draw-menu {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 4px 0;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.bwbr-draw-compact-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bwbr-draw-slider-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.bwbr-draw-slider-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: #888;
+  font-weight: 500;
+}
+
+.bwbr-draw-slider-header span:last-child {
+  color: #555;
+  font-weight: 600;
+  min-width: 32px;
+  text-align: right;
+}
+
+.bwbr-draw-color-swatch {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid #ccc;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.bwbr-draw-color-swatch:hover {
+  border-color: #999;
+  box-shadow: 0 0 0 3px rgba(66,165,245,0.2);
+}
+.bwbr-draw-color-swatch--sm {
+  width: 24px;
+  height: 24px;
+}
+
+.bwbr-draw-section-sep {
+  height: 1px;
+  background: #e0e0e0;
+  margin: 2px 0;
 }
 
 .bwbr-draw-range-row {
@@ -1300,8 +1354,7 @@ var _drawSettings = {
   sketchJitter: 0,        // 연필 떨림 (0=부드러움, 1~10=자글자글)
   outlineEnabled: false,  // 윤곽선 활성
   outlineSize: 2,         // 윤곽선 두께 (px)
-  outlineColor: '#000000',// 윤곽선 색상
-  outlineDash: 'solid'    // 윤곽선 스타일: solid / dashed / dotted
+  outlineColor: '#000000' // 윤곽선 색상
 };
 
 var _drawCanvas = null;    // 그리기 캔버스 (zoom container 내)
@@ -1832,9 +1885,11 @@ function renderImageGrid() {
 
     _imageGrid.appendChild(thumb);
   });
-  // 이미지가 있으면 구분선 표시
+  // 이미지가 있으면 구분선+그리드 표시
+  var hasImages = _state.registeredImages.length > 0;
+  _imageGrid.style.display = hasImages ? '' : 'none';
   if (_imageGridSep) {
-    _imageGridSep.style.display = _state.registeredImages.length > 0 ? '' : 'none';
+    _imageGridSep.style.display = hasImages ? '' : 'none';
   }
 }
 
@@ -2003,32 +2058,12 @@ function createDrawSettingsMenu() {
   menu.className = 'bwbr-place-draw-menu';
   menu.style.display = 'none';
 
-  // 펜 굵기
-  var sizeField = createField('펜 굵기');
-  var sizeRow = document.createElement('div');
-  sizeRow.className = 'bwbr-draw-range-row';
-  var sizeSlider = document.createElement('input');
-  sizeSlider.type = 'range';
-  sizeSlider.min = '1';
-  sizeSlider.max = '40';
-  sizeSlider.value = String(_drawSettings.penSize);
-  sizeSlider.className = 'bwbr-draw-slider';
-  var sizeVal = document.createElement('span');
-  sizeVal.className = 'bwbr-draw-range-val';
-  sizeVal.textContent = _drawSettings.penSize + 'px';
-  sizeSlider.addEventListener('input', function() {
-    _drawSettings.penSize = parseInt(sizeSlider.value, 10);
-    sizeVal.textContent = _drawSettings.penSize + 'px';
-  });
-  sizeRow.appendChild(sizeSlider);
-  sizeRow.appendChild(sizeVal);
-  sizeField.appendChild(sizeRow);
-  menu.appendChild(sizeField);
+  // ── 색상 + 굵기 (한 줄) ──
+  var colorSizeRow = document.createElement('div');
+  colorSizeRow.className = 'bwbr-draw-compact-row';
 
-  // 펜 색상
-  var colorField = createField('펜 색상');
   var colorBtn = document.createElement('button');
-  colorBtn.className = 'bwbr-draw-color-btn';
+  colorBtn.className = 'bwbr-draw-color-swatch';
   colorBtn.style.background = _drawSettings.penColor;
   colorBtn.addEventListener('click', function() {
     _openColorPopup(colorBtn, _drawSettings.penColor, false, false, function(hex) {
@@ -2036,90 +2071,104 @@ function createDrawSettingsMenu() {
       colorBtn.style.background = hex;
     });
   });
-  colorField.appendChild(colorBtn);
-  menu.appendChild(colorField);
+  colorSizeRow.appendChild(colorBtn);
 
-  // 펜 투명도
-  var opacityField = createField('투명도');
-  var opacityRow = document.createElement('div');
-  opacityRow.className = 'bwbr-draw-range-row';
+  var sizeGroup = document.createElement('div');
+  sizeGroup.className = 'bwbr-draw-slider-group';
+  var sizeHeader = document.createElement('div');
+  sizeHeader.className = 'bwbr-draw-slider-header';
+  var sizeLabel = document.createElement('span');
+  sizeLabel.textContent = '굵기';
+  var sizeVal = document.createElement('span');
+  sizeVal.textContent = _drawSettings.penSize + 'px';
+  sizeHeader.appendChild(sizeLabel);
+  sizeHeader.appendChild(sizeVal);
+  var sizeSlider = document.createElement('input');
+  sizeSlider.type = 'range';
+  sizeSlider.min = '1';
+  sizeSlider.max = '40';
+  sizeSlider.value = String(_drawSettings.penSize);
+  sizeSlider.className = 'bwbr-draw-slider';
+  sizeSlider.addEventListener('input', function() {
+    _drawSettings.penSize = parseInt(sizeSlider.value, 10);
+    sizeVal.textContent = _drawSettings.penSize + 'px';
+  });
+  sizeGroup.appendChild(sizeHeader);
+  sizeGroup.appendChild(sizeSlider);
+  colorSizeRow.appendChild(sizeGroup);
+  menu.appendChild(colorSizeRow);
+
+  // ── 투명도 ──
+  var opacityGroup = document.createElement('div');
+  opacityGroup.className = 'bwbr-draw-slider-group';
+  var opacityHeader = document.createElement('div');
+  opacityHeader.className = 'bwbr-draw-slider-header';
+  var opacityLabel = document.createElement('span');
+  opacityLabel.textContent = '투명도';
+  var opacityVal = document.createElement('span');
+  opacityVal.textContent = Math.round(_drawSettings.penOpacity * 100) + '%';
+  opacityHeader.appendChild(opacityLabel);
+  opacityHeader.appendChild(opacityVal);
   var opacitySlider = document.createElement('input');
   opacitySlider.type = 'range';
   opacitySlider.min = '5';
   opacitySlider.max = '100';
   opacitySlider.value = String(Math.round(_drawSettings.penOpacity * 100));
   opacitySlider.className = 'bwbr-draw-slider';
-  var opacityVal = document.createElement('span');
-  opacityVal.className = 'bwbr-draw-range-val';
-  opacityVal.textContent = Math.round(_drawSettings.penOpacity * 100) + '%';
   opacitySlider.addEventListener('input', function() {
     _drawSettings.penOpacity = parseInt(opacitySlider.value, 10) / 100;
     opacityVal.textContent = opacitySlider.value + '%';
   });
-  opacityRow.appendChild(opacitySlider);
-  opacityRow.appendChild(opacityVal);
-  opacityField.appendChild(opacityRow);
-  menu.appendChild(opacityField);
+  opacityGroup.appendChild(opacityHeader);
+  opacityGroup.appendChild(opacitySlider);
+  menu.appendChild(opacityGroup);
 
-  // 스케치 떨림
-  var jitterField = createField('스케치 떨림');
-  var jitterRow = document.createElement('div');
-  jitterRow.className = 'bwbr-draw-range-row';
+  // ── 떨림 ──
+  var jitterGroup = document.createElement('div');
+  jitterGroup.className = 'bwbr-draw-slider-group';
+  var jitterHeader = document.createElement('div');
+  jitterHeader.className = 'bwbr-draw-slider-header';
+  var jitterLabel = document.createElement('span');
+  jitterLabel.textContent = '떨림';
+  var jitterVal = document.createElement('span');
+  jitterVal.textContent = _drawSettings.sketchJitter === 0 ? '없음' : String(_drawSettings.sketchJitter);
+  jitterHeader.appendChild(jitterLabel);
+  jitterHeader.appendChild(jitterVal);
   var jitterSlider = document.createElement('input');
   jitterSlider.type = 'range';
   jitterSlider.min = '0';
   jitterSlider.max = '10';
   jitterSlider.value = String(_drawSettings.sketchJitter);
   jitterSlider.className = 'bwbr-draw-slider';
-  var jitterVal = document.createElement('span');
-  jitterVal.className = 'bwbr-draw-range-val';
-  jitterVal.textContent = _drawSettings.sketchJitter === 0 ? '없음' : String(_drawSettings.sketchJitter);
   jitterSlider.addEventListener('input', function() {
     _drawSettings.sketchJitter = parseInt(jitterSlider.value, 10);
     jitterVal.textContent = _drawSettings.sketchJitter === 0 ? '없음' : String(_drawSettings.sketchJitter);
   });
-  jitterRow.appendChild(jitterSlider);
-  jitterRow.appendChild(jitterVal);
-  jitterField.appendChild(jitterRow);
-  menu.appendChild(jitterField);
+  jitterGroup.appendChild(jitterHeader);
+  jitterGroup.appendChild(jitterSlider);
+  menu.appendChild(jitterGroup);
 
-  // 윤곽선 토글
+  // ── 구분선 ──
+  var sep = document.createElement('div');
+  sep.className = 'bwbr-draw-section-sep';
+  menu.appendChild(sep);
+
+  // ── 윤곽선 토글 ──
+  var outlineWrap = document.createElement('div');
+  outlineWrap.style.cssText = 'display:flex;flex-direction:column;gap:8px;';
+
   var outlineToggle = createToggleField('윤곽선', _drawSettings.outlineEnabled, function(val) {
     _drawSettings.outlineEnabled = val;
-    outlineSizeField.style.display = val ? '' : 'none';
-    outlineColorField.style.display = val ? '' : 'none';
-    outlineDashField.style.display = val ? '' : 'none';
+    outlineBody.style.display = val ? '' : 'none';
   });
-  menu.appendChild(outlineToggle);
+  outlineWrap.appendChild(outlineToggle);
 
-  // 윤곽선 굵기
-  var outlineSizeField = createField('윤곽선 굵기');
-  outlineSizeField.style.display = _drawSettings.outlineEnabled ? '' : 'none';
-  var outlineSizeRow = document.createElement('div');
-  outlineSizeRow.className = 'bwbr-draw-range-row';
-  var outlineSizeSlider = document.createElement('input');
-  outlineSizeSlider.type = 'range';
-  outlineSizeSlider.min = '1';
-  outlineSizeSlider.max = '20';
-  outlineSizeSlider.value = String(_drawSettings.outlineSize);
-  outlineSizeSlider.className = 'bwbr-draw-slider';
-  var outlineSizeVal = document.createElement('span');
-  outlineSizeVal.className = 'bwbr-draw-range-val';
-  outlineSizeVal.textContent = _drawSettings.outlineSize + 'px';
-  outlineSizeSlider.addEventListener('input', function() {
-    _drawSettings.outlineSize = parseInt(outlineSizeSlider.value, 10);
-    outlineSizeVal.textContent = _drawSettings.outlineSize + 'px';
-  });
-  outlineSizeRow.appendChild(outlineSizeSlider);
-  outlineSizeRow.appendChild(outlineSizeVal);
-  outlineSizeField.appendChild(outlineSizeRow);
-  menu.appendChild(outlineSizeField);
+  // ── 윤곽선 세부 (색상 + 굵기) ──
+  var outlineBody = document.createElement('div');
+  outlineBody.style.cssText = 'display:' + (_drawSettings.outlineEnabled ? 'flex' : 'none') + ';align-items:center;gap:10px;';
 
-  // 윤곽선 색상
-  var outlineColorField = createField('윤곽선 색상');
-  outlineColorField.style.display = _drawSettings.outlineEnabled ? '' : 'none';
   var outlineColorBtn = document.createElement('button');
-  outlineColorBtn.className = 'bwbr-draw-color-btn';
+  outlineColorBtn.className = 'bwbr-draw-color-swatch bwbr-draw-color-swatch--sm';
   outlineColorBtn.style.background = _drawSettings.outlineColor;
   outlineColorBtn.addEventListener('click', function() {
     _openColorPopup(outlineColorBtn, _drawSettings.outlineColor, false, false, function(hex) {
@@ -2127,47 +2176,39 @@ function createDrawSettingsMenu() {
       outlineColorBtn.style.background = hex;
     });
   });
-  outlineColorField.appendChild(outlineColorBtn);
-  menu.appendChild(outlineColorField);
+  outlineBody.appendChild(outlineColorBtn);
 
-  // 윤곽선 스타일
-  var outlineDashField = createField('윤곽선 스타일');
-  outlineDashField.style.display = _drawSettings.outlineEnabled ? '' : 'none';
-  var dashRow = document.createElement('div');
-  dashRow.style.cssText = 'display:flex;gap:4px;';
-  var dashOptions = [
-    { value: 'solid', label: '실선' },
-    { value: 'dashed', label: '점선' },
-    { value: 'dotted', label: '도트' }
-  ];
-  var _dashButtons = [];
-  dashOptions.forEach(function(opt) {
-    var btn = document.createElement('button');
-    btn.className = 'bwbr-draw-color-btn';
-    btn.style.cssText = 'width:auto;height:28px;padding:4px 10px;font-size:11px;border-radius:4px;cursor:pointer;border:1px solid ' +
-      (_drawSettings.outlineDash === opt.value ? '#90caf9' : '#555') + ';' +
-      'background:' + (_drawSettings.outlineDash === opt.value ? '#1a3a5c' : '#2a2a2a') + ';' +
-      'color:' + (_drawSettings.outlineDash === opt.value ? '#90caf9' : '#aaa') + ';';
-    btn.textContent = opt.label;
-    btn.addEventListener('click', function() {
-      _drawSettings.outlineDash = opt.value;
-      _dashButtons.forEach(function(b, i) {
-        var active = dashOptions[i].value === opt.value;
-        b.style.borderColor = active ? '#90caf9' : '#555';
-        b.style.background = active ? '#1a3a5c' : '#2a2a2a';
-        b.style.color = active ? '#90caf9' : '#aaa';
-      });
-    });
-    _dashButtons.push(btn);
-    dashRow.appendChild(btn);
+  var outlineSizeGroup = document.createElement('div');
+  outlineSizeGroup.className = 'bwbr-draw-slider-group';
+  var outlineSizeHeader = document.createElement('div');
+  outlineSizeHeader.className = 'bwbr-draw-slider-header';
+  var outlineSizeLabel = document.createElement('span');
+  outlineSizeLabel.textContent = '굵기';
+  var outlineSizeVal = document.createElement('span');
+  outlineSizeVal.textContent = _drawSettings.outlineSize + 'px';
+  outlineSizeHeader.appendChild(outlineSizeLabel);
+  outlineSizeHeader.appendChild(outlineSizeVal);
+  var outlineSizeSlider = document.createElement('input');
+  outlineSizeSlider.type = 'range';
+  outlineSizeSlider.min = '1';
+  outlineSizeSlider.max = '20';
+  outlineSizeSlider.value = String(_drawSettings.outlineSize);
+  outlineSizeSlider.className = 'bwbr-draw-slider';
+  outlineSizeSlider.addEventListener('input', function() {
+    _drawSettings.outlineSize = parseInt(outlineSizeSlider.value, 10);
+    outlineSizeVal.textContent = _drawSettings.outlineSize + 'px';
   });
-  outlineDashField.appendChild(dashRow);
-  menu.appendChild(outlineDashField);
+  outlineSizeGroup.appendChild(outlineSizeHeader);
+  outlineSizeGroup.appendChild(outlineSizeSlider);
+  outlineBody.appendChild(outlineSizeGroup);
 
-  // 안내 문구
+  outlineWrap.appendChild(outlineBody);
+  menu.appendChild(outlineWrap);
+
+  // ── 안내 문구 ──
   var notice = document.createElement('div');
-  notice.style.cssText = 'text-align:center;padding:8px 4px;color:#888;font-size:11px;line-height:1.5;';
-  notice.innerHTML = '오버레이에서 자유롭게 그리세요.<br>그리기가 끝나면 <b>완료</b> 버튼을 누르세요.';
+  notice.style.cssText = 'text-align:center;padding:6px 4px 2px;color:#999;font-size:10px;line-height:1.5;';
+  notice.innerHTML = '오버레이에서 자유롭게 그리세요.<br>완료 버튼으로 확정합니다.';
   menu.appendChild(notice);
 
   return menu;
@@ -2303,8 +2344,7 @@ function onDrawMouseDown(e) {
     sketchJitter: _drawSettings.sketchJitter,
     outlineEnabled: _drawSettings.outlineEnabled,
     outlineSize: mapOutlineSize,
-    outlineColor: _drawSettings.outlineColor,
-    outlineDash: _drawSettings.outlineDash
+    outlineColor: _drawSettings.outlineColor
   };
   _drawPoints = [mapPt];
   _redrawAllStrokes(); // 이전 스트로크 + 현재 점 렌더
@@ -2332,8 +2372,7 @@ function onDrawMouseUp(e) {
       outlineEnabled: _drawCurrentStrokeSettings.outlineEnabled,
       outlineSize: _drawCurrentStrokeSettings.outlineSize,
       outlineColor: _drawCurrentStrokeSettings.outlineColor,
-      sketchJitter: _drawCurrentStrokeSettings.sketchJitter,
-      outlineDash: _drawCurrentStrokeSettings.outlineDash
+      sketchJitter: _drawCurrentStrokeSettings.sketchJitter
     });
   }
   _drawPoints = [];
@@ -2365,8 +2404,7 @@ function _redrawAllStrokes() {
       outlineEnabled: _drawCurrentStrokeSettings.outlineEnabled,
       outlineSize: _drawCurrentStrokeSettings.outlineSize,
       outlineColor: _drawCurrentStrokeSettings.outlineColor,
-      sketchJitter: _drawCurrentStrokeSettings.sketchJitter,
-      outlineDash: _drawCurrentStrokeSettings.outlineDash
+      sketchJitter: _drawCurrentStrokeSettings.sketchJitter
     });
   }
   if (allStrokes.length === 0) return;
@@ -2389,10 +2427,8 @@ function _redrawAllStrokes() {
     if (stroke.sketchJitter) pts = _applyJitter(pts, stroke.sketchJitter * scale);
     tc.strokeStyle = stroke.outlineColor;
     tc.lineWidth = (stroke.penSize + stroke.outlineSize * 2) * scale;
-    _setDashPattern(tc, stroke.outlineDash, tc.lineWidth);
     _drawSmoothPath(tc, pts);
     tc.stroke();
-    tc.setLineDash([]);
   });
 
   // 패스 2: 모든 펜
@@ -2404,7 +2440,6 @@ function _redrawAllStrokes() {
     if (stroke.sketchJitter) pts = _applyJitter(pts, stroke.sketchJitter * scale);
     tc.strokeStyle = stroke.penColor;
     tc.lineWidth = stroke.penSize * scale;
-    tc.setLineDash([]);
     _drawSmoothPath(tc, pts);
     tc.stroke();
   });
@@ -2440,19 +2475,6 @@ function _applyJitter(pts, amount) {
   }
   if (pts.length > 1) result.push(pts[pts.length - 1]);
   return result;
-}
-
-// dash 패턴 설정
-function _setDashPattern(ctx, dashType, lineWidth) {
-  if (!dashType || dashType === 'solid') {
-    ctx.setLineDash([]);
-  } else if (dashType === 'dashed') {
-    var d = Math.max(4, lineWidth * 2);
-    ctx.setLineDash([d, d * 0.75]);
-  } else if (dashType === 'dotted') {
-    var dot = Math.max(1, lineWidth * 0.5);
-    ctx.setLineDash([dot, dot * 2]);
-  }
 }
 
 // 부드러운 경로 그리기 (2차 베지어 곡선 보간)
@@ -2502,10 +2524,8 @@ function _renderOneStrokeToScreen(ctx, stroke, origin, scale, forceOpaque) {
 
     tc.strokeStyle = stroke.outlineColor;
     tc.lineWidth = outW;
-    _setDashPattern(tc, stroke.outlineDash, outW);
     _drawSmoothPath(tc, pts);
     tc.stroke();
-    tc.setLineDash([]);
 
     tc.strokeStyle = stroke.penColor;
     tc.lineWidth = penW;
@@ -2527,10 +2547,8 @@ function _renderOneStrokeToScreen(ctx, stroke, origin, scale, forceOpaque) {
   if (stroke.outlineEnabled) {
     ctx.strokeStyle = stroke.outlineColor;
     ctx.lineWidth = outW;
-    _setDashPattern(ctx, stroke.outlineDash, outW);
     _drawSmoothPath(ctx, pts);
     ctx.stroke();
-    ctx.setLineDash([]);
   }
 
   ctx.strokeStyle = stroke.penColor;
@@ -2644,10 +2662,8 @@ function _renderStrokesToCtx(ctx, strokes) {
     if (stroke.sketchJitter) pts = _applyJitter(pts, stroke.sketchJitter);
     tc.strokeStyle = stroke.outlineColor;
     tc.lineWidth = stroke.penSize + stroke.outlineSize * 2;
-    _setDashPattern(tc, stroke.outlineDash, tc.lineWidth);
     _drawSmoothPath(tc, pts);
     tc.stroke();
-    tc.setLineDash([]);
   });
 
   // 패스 2: 모든 펜
@@ -2657,7 +2673,6 @@ function _renderStrokesToCtx(ctx, strokes) {
     if (stroke.sketchJitter) pts = _applyJitter(pts, stroke.sketchJitter);
     tc.strokeStyle = stroke.penColor;
     tc.lineWidth = stroke.penSize;
-    tc.setLineDash([]);
     _drawSmoothPath(tc, pts);
     tc.stroke();
   });
