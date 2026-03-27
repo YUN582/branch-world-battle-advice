@@ -5924,19 +5924,11 @@
       _dbg(`%c[CE 이미지]%c ✅ ${committed}개 파일 → ${targetDir} 이동`,
         'color: #ff9800; font-weight: bold;', 'color: inherit;');
 
-      // Redux 엔티티도 직접 갱신 → 다음 bwbr-get-user-files 호출 시 최신 상태 반영
-      try {
-        const uf = reduxStore.getState().entities?.userFiles;
-        if (uf?.entities) {
-          for (const fid of fileIds) {
-            if (uf.entities[fid]) {
-              uf.entities[fid] = { ...uf.entities[fid], dir: targetDir, updatedAt: now };
-            }
-          }
-        }
-        // 더미 디스패치 → useSelector 재평가 → ccfolia UI 반영
-        try { reduxStore.dispatch({ type: '@@CE/FILES_UPDATED' }); } catch (_2) {}
-      } catch (_) { /* Redux 갱신 실패해도 Firestore는 이미 성공 */ }
+      // 로컬 오버라이드 기록 (Redux는 즉시 반영 안 되므로)
+      for (const fid of fileIds) {
+        const prev = _fileOverrides.get(fid) || {};
+        _fileOverrides.set(fid, { ...prev, dir: targetDir, updatedAt: now });
+      }
 
       respond({ success: true, movedCount: committed });
     } catch (err) {
@@ -5990,19 +5982,11 @@
       _dbg(`%c[CE 이미지]%c ✅ ${committed}개 파일 순서 변경`,
         'color: #ff9800; font-weight: bold;', 'color: inherit;');
 
-      // Redux 엔티티도 직접 갱신 → 다음 bwbr-get-user-files 호출 시 최신 순서 반영
-      try {
-        const uf = reduxStore.getState().entities?.userFiles;
-        if (uf?.entities) {
-          for (const entry of orderedEntries) {
-            if (uf.entities[entry.id]) {
-              uf.entities[entry.id] = { ...uf.entities[entry.id], createdAt: entry.createdAt, updatedAt: now };
-            }
-          }
-        }
-        // 더미 디스패치 → useSelector 재평가 → ccfolia UI 반영
-        try { reduxStore.dispatch({ type: '@@CE/FILES_UPDATED' }); } catch (_2) {}
-      } catch (_) { /* Redux 갱신 실패해도 Firestore는 이미 성공 */ }
+      // 로컬 오버라이드 기록 (Redux는 즉시 반영 안 되므로)
+      for (const entry of orderedEntries) {
+        const prev = _fileOverrides.get(entry.id) || {};
+        _fileOverrides.set(entry.id, { ...prev, createdAt: entry.createdAt, updatedAt: now });
+      }
 
       respond({ success: true, count: committed });
     } catch (err) {
@@ -6032,7 +6016,14 @@
       const uf = state.entities?.userFiles;
       if (!uf) return respond({ files: [] });
 
-      let files = uf.ids.map(id => uf.entities[id]).filter(Boolean);
+      // Redux 데이터 위에 로컬 오버라이드 적용 (Firestore 쓰기 후 Redux 미반영 보정)
+      let files = uf.ids.map(id => {
+        let f = uf.entities[id];
+        if (!f) return null;
+        const ov = _fileOverrides.get(id);
+        if (ov) f = { ...f, ...ov };
+        return f;
+      }).filter(Boolean);
 
       // archived(삭제된) 파일 제외 — ccfolia는 삭제 시 archived=true만 세팅
       files = files.filter(f => !f.archived);
