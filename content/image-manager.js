@@ -481,12 +481,24 @@
 
       if (result?.success) {
         console.log(TAG, `✅ ${result.movedCount}개 이동 완료`);
-        // 옵저버 억제 해제 후 탭 클릭 + draggable 재설정
+        // 캐시에서 이동된 파일 제거 (현재 탭 목록 갱신)
+        _fileCache = _fileCache.filter(f => !fileIds.includes(f._id));
+        buildHashIndex();
+        // 옵저버 억제 해제 후 탭 클릭 → 캐시 갱신
         tab.click();
-        setTimeout(() => {
+        setTimeout(async () => {
           _suppressObserver = false;
           const p = getPickerDialog();
-          if (p) setupDraggableImages(p);
+          if (p) {
+            // 대상 탭의 캐시를 새로 로드 (Redux가 이미 갱신됨)
+            const newDir = getCurrentDir(p);
+            const newRoomId = _isGroupRoom ? getRoomIdFromUrl() : null;
+            if (newDir) {
+              await refreshFileCache(newDir, newRoomId);
+              console.log(TAG, `탭 이동 후 캐시 갱신: ${_fileCache.length}개 (dir=${newDir})`);
+            }
+            setupDraggableImages(p);
+          }
         }, 500);
       } else {
         console.error(TAG, '이동 실패:', result?.error);

@@ -5924,6 +5924,20 @@
       _dbg(`%c[CE 이미지]%c ✅ ${committed}개 파일 → ${targetDir} 이동`,
         'color: #ff9800; font-weight: bold;', 'color: inherit;');
 
+      // Redux 엔티티도 직접 갱신 → 다음 bwbr-get-user-files 호출 시 최신 상태 반영
+      try {
+        const uf = reduxStore.getState().entities?.userFiles;
+        if (uf?.entities) {
+          for (const fid of fileIds) {
+            if (uf.entities[fid]) {
+              uf.entities[fid] = { ...uf.entities[fid], dir: targetDir, updatedAt: now };
+            }
+          }
+        }
+        // 더미 디스패치 → useSelector 재평가 → ccfolia UI 반영
+        try { reduxStore.dispatch({ type: '@@CE/FILES_UPDATED' }); } catch (_2) {}
+      } catch (_) { /* Redux 갱신 실패해도 Firestore는 이미 성공 */ }
+
       respond({ success: true, movedCount: committed });
     } catch (err) {
       console.error('[CE 이미지] 파일 이동 실패:', err);
@@ -5975,6 +5989,20 @@
       const committed = await _batchCommit(sdk, ops);
       _dbg(`%c[CE 이미지]%c ✅ ${committed}개 파일 순서 변경`,
         'color: #ff9800; font-weight: bold;', 'color: inherit;');
+
+      // Redux 엔티티도 직접 갱신 → 다음 bwbr-get-user-files 호출 시 최신 순서 반영
+      try {
+        const uf = reduxStore.getState().entities?.userFiles;
+        if (uf?.entities) {
+          for (const entry of orderedEntries) {
+            if (uf.entities[entry.id]) {
+              uf.entities[entry.id] = { ...uf.entities[entry.id], createdAt: entry.createdAt, updatedAt: now };
+            }
+          }
+        }
+        // 더미 디스패치 → useSelector 재평가 → ccfolia UI 반영
+        try { reduxStore.dispatch({ type: '@@CE/FILES_UPDATED' }); } catch (_2) {}
+      } catch (_) { /* Redux 갱신 실패해도 Firestore는 이미 성공 */ }
 
       respond({ success: true, count: committed });
     } catch (err) {
