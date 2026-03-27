@@ -53,10 +53,20 @@
 
   /** 카테고리 탭 목록 (전경/배경/캐릭터/스크린/...) */
   function getCategoryTabs(picker) {
-    // 두 번째 탭리스트 = 카테고리 (첫 번째는 ROOM/ALL/Unsplash)
+    // ROOM/ALL/Unsplash는 button이므로 tablist에 포함되지 않음
+    // 피커 내 tablist은 카테고리 탭 1개뿐
     const tabLists = picker.querySelectorAll('[role="tablist"]');
-    if (tabLists.length < 2) return [];
-    return Array.from(tabLists[1].querySelectorAll('[role="tab"]'));
+    if (tabLists.length === 0) return [];
+    // 카테고리 탭이 포함된 tablist 찾기 (known 카테고리명 매칭)
+    for (const tl of tabLists) {
+      const tabs = tl.querySelectorAll('[role="tab"]');
+      for (const t of tabs) {
+        const txt = t.textContent.trim();
+        if (TAB_DIR_MAP[txt]) return Array.from(tabs);
+      }
+    }
+    // fallback: 마지막 tablist
+    return Array.from(tabLists[tabLists.length - 1].querySelectorAll('[role="tab"]'));
   }
 
   /** 현재 선택된 카테고리 탭의 dir 값 */
@@ -71,16 +81,36 @@
     return null;
   }
 
-  /** 현재 그룹 탭 (ROOM/ALL/Unsplash) 감지 */
+  /** 현재 그룹 (ROOM/ALL/Unsplash) 감지 — toolbar 버튼에서 찾음 */
   function getCurrentGroup(picker) {
-    const tabLists = picker.querySelectorAll('[role="tablist"]');
-    if (!tabLists.length) return 'room';
-    const firstList = tabLists[0];
-    for (const tab of firstList.querySelectorAll('[role="tab"]')) {
-      if (tab.classList.contains('Mui-selected') || tab.getAttribute('aria-selected') === 'true') {
-        const t = tab.textContent.trim().toUpperCase();
-        if (t === 'ALL') return 'all';
-        if (t === 'UNSPLASH') return 'unsplash';
+    const toolbar = picker.querySelector('.MuiToolbar-root');
+    if (!toolbar) return 'room';
+    // ROOM/ALL/Unsplash 버튼 중 활성 상태인 것 찾기
+    const groupBtns = [];
+    for (const btn of toolbar.querySelectorAll('button')) {
+      const t = btn.textContent.trim().toUpperCase();
+      if (t === 'ROOM' || t === 'ALL' || t === 'UNSPLASH') {
+        groupBtns.push({ btn, text: t });
+      }
+    }
+    // MUI: contained variant = 활성, 또는 aria-pressed, 또는 배경색 비교
+    for (const { btn, text } of groupBtns) {
+      const cl = btn.className;
+      const isActive = cl.includes('contained') ||
+                       btn.getAttribute('aria-pressed') === 'true' ||
+                       cl.includes('Mui-selected');
+      if (isActive) {
+        if (text === 'ALL') return 'all';
+        if (text === 'UNSPLASH') return 'unsplash';
+        return 'room';
+      }
+    }
+    // fallback: 배경색 비교 (active 버튼은 배경이 있음)
+    for (const { btn, text } of groupBtns) {
+      const bg = getComputedStyle(btn).backgroundColor;
+      if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') {
+        if (text === 'ALL') return 'all';
+        if (text === 'UNSPLASH') return 'unsplash';
         return 'room';
       }
     }
@@ -92,18 +122,46 @@
     const out = [];
     for (const img of picker.querySelectorAll('img')) {
       if (!img.src || !img.src.startsWith('https://')) continue;
-      if (img.closest('button') || img.closest('header') || img.closest('[role="tab"]')) continue;
+      // toolbar/header/tab 안의 이미지 제외 (대문자 HEADER 태그)
+      if (img.closest('button') || img.closest('[role="tab"]')) continue;
+      const header = img.closest('header, .MuiAppBar-root, .MuiToolbar-root');
+      if (header) continue;
       if (img.naturalWidth > 0 && img.naturalWidth < 40) continue;
       out.push(img);
     }
     return out;
   }
 
-  /** 이미지 URL → 파일 _id 매핑 */
+  /** 이미지 URL → 파일 _id 매핑 (CDN URL ↔ Firestore URL 차이 허용) */
   function urlToFileId(url) {
+    if (!url) return null;
+    // 정확한 매칭
     for (const f of _fileCache) {
       if (f.url === url) return f._id;
     }
+    // CDN URL과 Firestore URL의 도메인이 다를 수 있으므로 hash 부분 비교
+    // CDN: https://h.turbo.ccfolia-cdn.net/users/{uid}/files/{hash}
+    // Firestore: https://firebasestorage.googleapis.com/.../{hash}?...
+    const urlHash = extractUrlHash(url);
+    if (urlHash) {
+      for (const f of _fileCache) {
+        if (f.url && f.url.includes(urlHash)) return f._id;
+      }
+    }
+    return null;
+  }
+
+  /** URL에서 파일 해시/경로 끝부분 추출 */
+  function extractUrlHash(url) {
+    try {
+      const u = new URL(url);
+      // ccfolia-cdn: /users/{uid}/files/{hash}
+      const match = u.pathname.match(/\/files\/([a-f0-9]+)/);
+      if (match) return match[1];
+      // firebasestorage: path 인코딩된 경로
+      const fsMatch = u.pathname.match(/([a-f0-9]{20,})/);
+      if (fsMatch) return fsMatch[1];
+    } catch {}
     return null;
   }
 
@@ -173,6 +231,18 @@
   /** 이미지 아이템에 draggable 속성 + 이벤트 추가 */
   function setupDraggableImages(picker) {
     const images = getPickerImages(picker);
+    console.log(TAG, `이미지 ${images.length}개 드래그 설정`);
+
+    // URL 매핑 디버그 (첫 설정 시)
+    if (images.length > 0 && _fileCache.length > 0) {
+      const firstImg = images[0];
+      const fid = urlToFileId(firstImg.src);
+      console.log(TAG, `URL매핑 테스트:`, {
+        imgSrc: firstImg.src.substring(0, 80),
+        cacheUrl0: _fileCache[0]?.url?.substring(0, 80),
+        matched: fid ? '✅' : '❌ 불일치'
+      });
+    }
 
     images.forEach((img, idx) => {
       const wrapper = img.parentElement;
@@ -535,16 +605,22 @@
   async function initPicker(picker) {
     const group = getCurrentGroup(picker);
     _isGroupRoom = group === 'room';
+    console.log(TAG, '피커 감지됨, group:', group);
 
     // Unsplash는 드래그 불가
     if (group === 'unsplash') return;
 
     const dir = getCurrentDir(picker);
-    if (!dir) return;
+    console.log(TAG, 'currentDir:', dir, 'tabs:', getCategoryTabs(picker).map(t => t.textContent.trim()));
+    if (!dir) {
+      console.warn(TAG, '⚠️ 카테고리 감지 실패 — tablist 구조 확인 필요');
+      return;
+    }
 
     // 파일 캐시 로드
     const roomId = _isGroupRoom ? getRoomIdFromUrl() : null;
     await refreshFileCache(dir, roomId);
+    console.log(TAG, `파일 캐시: ${_fileCache.length}개 (dir=${dir}, roomId=${roomId})`);
 
     // 드래그 및 드롭 설정
     setupDraggableImages(picker);
