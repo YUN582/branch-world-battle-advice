@@ -39,7 +39,7 @@
   let _fileCache = [];              // 현재 dir의 파일 목록 캐시
   let _currentDir = null;           // 현재 표시 중인 dir
   let _currentRoomId = null;        // 현재 방 ID (ROOM 탭) 또는 null (ALL)
-  let _dragFileIds = [];            // 드래그 중인 파일 ID 목록
+  let _dragHashes = [];             // 드래그 중인 파일 해시 (URL에서 추출, 캐시 무관)
   let _lastClickedIdx = -1;        // Shift 클릭용 마지막 클릭 인덱스
   let _isGroupRoom = true;         // ROOM 탭인지 ALL인지
   let _suppressObserver = false;    // 자체 쓰기 중 옵저버 억제
@@ -161,6 +161,17 @@
     return null;
   }
 
+  /** 해시 배열 → fileId 배열 변환 (캐시 미스 시 재로딩 후 재시도) */
+  async function resolveHashes(hashes) {
+    let ids = hashes.map(h => _hashToFileId.get(h)).filter(Boolean);
+    if (ids.length === hashes.length) return ids;
+    // 캐시 미스 — 재로딩 후 재시도
+    console.warn(TAG, `캐시 미스: ${hashes.length - ids.length}개 해시 미해석, 재로딩...`);
+    await refreshFileCache(_currentDir, _currentRoomId);
+    ids = hashes.map(h => _hashToFileId.get(h)).filter(Boolean);
+    return ids;
+  }
+
   /** URL에서 파일 해시 추출 (%2F 인코딩 허용) */
   function extractUrlHash(url) {
     try {
@@ -205,24 +216,22 @@
     return false;
   }
 
-  /** 네이티브 선택된 파일 ID 목록 (DOM 체크마크로 감지) */
-  function getNativeSelectedIds(picker) {
-    const ids = [];
-    // 네이티브 삭제 모드에서 체크된 이미지: 파란 체크 아이콘이 있는 것
+  /** 네이티브 선택된 이미지 해시 목록 (DOM 체크마크로 감지, 캐시 무관) */
+  function getNativeSelectedHashes(picker) {
+    const hashes = [];
     for (const img of getPickerImages(picker)) {
       const wrapper = img.parentElement;
       if (!wrapper) continue;
-      // 네이티브 체크: SVG circle fill="#2196F3" 또는 유사
       const svgs = wrapper.querySelectorAll('svg:not(.bwbr-check):not(.bwbr-img-drag-badge)');
       for (const svg of svgs) {
         const circle = svg.querySelector('circle');
         if (circle && circle.getAttribute('fill') === '#2196F3') {
-          const fid = urlToFileId(img.src);
-          if (fid) ids.push(fid);
+          const h = extractUrlHash(img.src);
+          if (h) hashes.push(h);
         }
       }
     }
-    return ids;
+    return hashes;
   }
 
   /* ══════════════════════════════════════════════════════
@@ -322,33 +331,25 @@
       const wrapper = findImageWrapper(e.target, picker);
       if (!wrapper) return;
       const img = wrapper.querySelector('img');
-      if (!img) return;
+      if (!img?.src) return;
+
+      const hash = extractUrlHash(img.src);
+      if (!hash) { e.preventDefault(); return; }
 
       if (isNativeDeleteMode(picker)) {
-        const selectedIds = getNativeSelectedIds(picker);
-        const thisId = urlToFileId(img.src);
-        if (selectedIds.length > 0) {
-          _dragFileIds = selectedIds.includes(thisId) ? selectedIds : (thisId ? [thisId] : []);
-        } else {
-          _dragFileIds = thisId ? [thisId] : [];
-        }
+        const selectedHashes = getNativeSelectedHashes(picker);
+        _dragHashes = selectedHashes.includes(hash) ? selectedHashes : [hash];
       } else {
-        const thisId = urlToFileId(img.src);
-        _dragFileIds = thisId ? [thisId] : [];
+        _dragHashes = [hash];
       }
 
-      if (_dragFileIds.length === 0) {
-        e.preventDefault();
-        return;
-      }
-
-      console.log(TAG, `dragstart: ${_dragFileIds.length}개 파일`);
+      console.log(TAG, `dragstart: ${_dragHashes.length}개`);
       e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', _dragFileIds.join(','));
+      e.dataTransfer.setData('text/plain', _dragHashes.join(','));
       wrapper.style.opacity = '0.4';
 
-      if (_dragFileIds.length > 1) {
-        const badge = createDragBadge(_dragFileIds.length);
+      if (_dragHashes.length > 1) {
+        const badge = createDragBadge(_dragHashes.length);
         document.body.appendChild(badge);
         e.dataTransfer.setDragImage(badge, 20, 20);
         setTimeout(() => badge.remove(), 0);
@@ -360,11 +361,12 @@
       const wrapper = findImageWrapper(e.target, picker);
       if (wrapper) wrapper.style.opacity = '1';
       clearDropIndicators(picker);
+      _dragHashes = [];
     }, true);
 
     // ── dragover (capture — MUI 이벤트 가로채기 방지) ──
     picker.addEventListener('dragover', e => {
-      if (_dragFileIds.length === 0) return;
+      if (_dragHashes.length === 0) return;
       e.preventDefault();
       e.stopPropagation();
       e.dataTransfer.dropEffect = 'move';
@@ -398,13 +400,22 @@
     picker.addEventListener('drop', async e => {
       e.preventDefault();
       e.stopPropagation();
-      console.log(TAG, 'drop:', e.target.tagName, e.target.className?.substring?.(0, 60));
+
+      if (_dragHashes.length === 0) {
+        clearDropIndicators(picker);
+        return;
+      }
 
       // 탭에 드롭
       const tab = e.target.closest('[role="tab"]');
       if (tab) {
         clearDropIndicators(picker);
-        await handleTabDrop(picker, tab);
+        const fileIds = await resolveHashes(_dragHashes);
+        if (fileIds.length === 0) {
+          console.error(TAG, '❌ 탭 이동 실패: 파일 해석 불가');
+          return;
+        }
+        await handleTabDrop(picker, tab, fileIds);
         return;
       }
 
@@ -414,20 +425,33 @@
         clearDropIndicators(picker);
         const img = wrapper.querySelector('img');
         if (!img) return;
-        const targetId = urlToFileId(img.src);
-        if (!targetId || _dragFileIds.length === 0) return;
-        if (_dragFileIds.length === 1 && _dragFileIds[0] === targetId) return;
-        await handleGridReorder(picker, _dragFileIds, targetId, wrapper, e);
+        const targetHash = extractUrlHash(img.src);
+        if (!targetHash) return;
+        if (_dragHashes.length === 1 && _dragHashes[0] === targetHash) return;
+
+        // 모든 해시를 한 번에 resolve (drag + target)
+        const allHashes = [...new Set([..._dragHashes, targetHash])];
+        const allIds = await resolveHashes(allHashes);
+        if (allIds.length < allHashes.length) {
+          console.error(TAG, `❌ 순서 변경 실패: ${allHashes.length - allIds.length}개 파일 해석 불가`);
+          return;
+        }
+        // 해시 → fileId 매핑
+        const dragIds = _dragHashes.map(h => _hashToFileId.get(h)).filter(Boolean);
+        const targetId = _hashToFileId.get(targetHash);
+        if (!targetId || dragIds.length === 0) return;
+
+        await handleGridReorder(picker, dragIds, targetId, wrapper, e);
         return;
       }
 
-      console.log(TAG, 'drop 대상 미매칭 — tab/wrapper 아님');
+      console.log(TAG, 'drop 대상 미매칭');
       clearDropIndicators(picker);
     }, true);
   }
 
-  /** 탭 드롭 처리 */
-  async function handleTabDrop(picker, tab) {
+  /** 탭 드롭 처리 (fileIds는 drop 핸들러에서 해시→ID 변환 완료) */
+  async function handleTabDrop(picker, tab, fileIds) {
     const tabText = tab.textContent.trim();
     const targetDir = TAB_DIR_MAP[tabText];
     if (!targetDir) {
@@ -438,15 +462,15 @@
       console.log(TAG, '같은 탭 드롭 무시');
       return;
     }
-    if (_dragFileIds.length === 0) return;
+    if (fileIds.length === 0) return;
 
-    console.log(TAG, `${_dragFileIds.length}개 파일 → ${tabText}(${targetDir}) 이동`);
+    console.log(TAG, `${fileIds.length}개 파일 → ${tabText}(${targetDir}) 이동`);
 
     _suppressObserver = true;
     try {
       const result = await BWBR_Bridge.request(
         'bwbr-move-files-dir', 'bwbr-move-files-dir-result',
-        { fileIds: _dragFileIds, targetDir },
+        { fileIds, targetDir },
         {
           sendAttr: 'data-bwbr-move-files-dir',
           recvAttr: 'data-bwbr-move-files-dir-result',
@@ -754,7 +778,7 @@
         const newDir = getCurrentDir(p);
         const newIsRoom = newGroup === 'room';
 
-        if (newDir !== _currentDir || newIsRoom !== _isGroupRoom) {
+        if (newDir && (newDir !== _currentDir || newIsRoom !== _isGroupRoom)) {
           _isGroupRoom = newIsRoom;
           await refreshFileCache(newDir, newIsRoom ? getRoomIdFromUrl() : null);
           _lastClickedIdx = -1;
@@ -771,7 +795,7 @@
     _hashToFileId.clear();
     _urlToFileIdCache.clear();
     _currentDir = null;
-    _dragFileIds = [];
+    _dragHashes = [];
     _lastClickedIdx = -1;
   }
 
