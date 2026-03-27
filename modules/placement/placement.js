@@ -2200,14 +2200,10 @@ function _redrawAllStrokes() {
   if (!origin) return;
   var scale = getZoomScale();
 
-  // 완료된 스트로크 렌더
-  _drawStrokes.forEach(function(stroke) {
-    _renderOneStrokeToScreen(_drawCtx, stroke, origin, scale);
-  });
-
-  // 진행 중인 스트로크 렌더
+  // 모든 스트로크 수집 (완료 + 진행 중)
+  var allStrokes = _drawStrokes.slice();
   if (_isDrawing && _drawPoints.length > 0 && _drawCurrentStrokeSettings) {
-    _renderOneStrokeToScreen(_drawCtx, {
+    allStrokes.push({
       points: _drawPoints,
       penSize: _drawCurrentStrokeSettings.penSize,
       penColor: _drawCurrentStrokeSettings.penColor,
@@ -2215,8 +2211,26 @@ function _redrawAllStrokes() {
       outlineEnabled: _drawCurrentStrokeSettings.outlineEnabled,
       outlineSize: _drawCurrentStrokeSettings.outlineSize,
       outlineColor: _drawCurrentStrokeSettings.outlineColor
-    }, origin, scale);
+    });
   }
+  if (allStrokes.length === 0) return;
+
+  // 임시 캔버스에 모든 스트로크를 불투명(alpha=1)으로 렌더 → 겹침 방지
+  var tmp = document.createElement('canvas');
+  tmp.width = _drawCanvas.width;
+  tmp.height = _drawCanvas.height;
+  var tc = tmp.getContext('2d');
+
+  allStrokes.forEach(function(stroke) {
+    _renderOneStrokeToScreen(tc, stroke, origin, scale, true);
+  });
+
+  // 공통 알파로 한 번에 합성
+  var alpha = allStrokes[0].penOpacity;
+  _drawCtx.save();
+  _drawCtx.globalAlpha = alpha;
+  _drawCtx.drawImage(tmp, 0, 0);
+  _drawCtx.restore();
 }
 
 // 부드러운 경로 그리기 (2차 베지어 곡선 보간)
@@ -2241,7 +2255,8 @@ function _drawSmoothPath(ctx, pts) {
 }
 
 // 맵 픽셀 좌표의 스트로크 하나를 화면 캔버스에 렌더
-function _renderOneStrokeToScreen(ctx, stroke, origin, scale) {
+// forceOpaque=true: 알파 무시하고 불투명 렌더 (외부에서 일괄 합성 시)
+function _renderOneStrokeToScreen(ctx, stroke, origin, scale, forceOpaque) {
   if (stroke.points.length === 0) return;
 
   // 맵 → 화면 좌표 변환
@@ -2251,9 +2266,10 @@ function _renderOneStrokeToScreen(ctx, stroke, origin, scale) {
 
   var outW = (stroke.penSize + stroke.outlineSize * 2) * scale;
   var penW = stroke.penSize * scale;
+  var alpha = forceOpaque ? 1 : stroke.penOpacity;
 
   // 윤곽선+펜을 임시 캔버스에 불투명으로 그린 뒤 알파 합성 (겹침 방지)
-  if (stroke.outlineEnabled && stroke.penOpacity < 1) {
+  if (stroke.outlineEnabled && alpha < 1) {
     var tmp = document.createElement('canvas');
     tmp.width = ctx.canvas.width;
     tmp.height = ctx.canvas.height;
@@ -2272,14 +2288,14 @@ function _renderOneStrokeToScreen(ctx, stroke, origin, scale) {
     tc.stroke();
 
     ctx.save();
-    ctx.globalAlpha = stroke.penOpacity;
+    ctx.globalAlpha = alpha;
     ctx.drawImage(tmp, 0, 0);
     ctx.restore();
     return;
   }
 
   ctx.save();
-  ctx.globalAlpha = stroke.penOpacity;
+  ctx.globalAlpha = alpha;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
@@ -2381,60 +2397,45 @@ function finishDrawing() {
 }
 
 // 스트로크를 지정된 캔버스 컨텍스트에 렌더링 (재사용 가능)
+// 모든 스트로크를 불투명으로 렌더한 뒤 공통 알파로 한 번에 합성 (스트로크 간 겹침 방지)
 function _renderStrokesToCtx(ctx, strokes) {
+  if (strokes.length === 0) return;
+  var alpha = strokes[0].penOpacity;
+
+  // 임시 캔버스에 불투명으로 렌더
+  var tmp = document.createElement('canvas');
+  tmp.width = ctx.canvas.width;
+  tmp.height = ctx.canvas.height;
+  var tc = tmp.getContext('2d');
+  tc.setTransform(ctx.getTransform());
+
   strokes.forEach(function(stroke) {
     if (stroke.points.length === 0) return;
-
     var outW = stroke.penSize + stroke.outlineSize * 2;
     var penW = stroke.penSize;
 
-    // 윤곽선+펜을 임시 캔버스에 불투명으로 그린 뒤 알파 합성 (겹침 방지)
-    if (stroke.outlineEnabled && stroke.penOpacity < 1) {
-      var tmp = document.createElement('canvas');
-      tmp.width = ctx.canvas.width;
-      tmp.height = ctx.canvas.height;
-      var tc = tmp.getContext('2d');
-      tc.setTransform(ctx.getTransform());
-      tc.lineCap = 'round';
-      tc.lineJoin = 'round';
+    tc.lineCap = 'round';
+    tc.lineJoin = 'round';
 
+    if (stroke.outlineEnabled) {
       tc.strokeStyle = stroke.outlineColor;
       tc.lineWidth = outW;
       _drawSmoothPath(tc, stroke.points);
       tc.stroke();
-
-      tc.strokeStyle = stroke.penColor;
-      tc.lineWidth = penW;
-      _drawSmoothPath(tc, stroke.points);
-      tc.stroke();
-
-      ctx.save();
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.globalAlpha = stroke.penOpacity;
-      ctx.drawImage(tmp, 0, 0);
-      ctx.restore();
-      return;
     }
 
-    ctx.save();
-    ctx.globalAlpha = stroke.penOpacity;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    if (stroke.outlineEnabled) {
-      ctx.strokeStyle = stroke.outlineColor;
-      ctx.lineWidth = outW;
-      _drawSmoothPath(ctx, stroke.points);
-      ctx.stroke();
-    }
-
-    ctx.strokeStyle = stroke.penColor;
-    ctx.lineWidth = penW;
-    _drawSmoothPath(ctx, stroke.points);
-    ctx.stroke();
-
-    ctx.restore();
+    tc.strokeStyle = stroke.penColor;
+    tc.lineWidth = penW;
+    _drawSmoothPath(tc, stroke.points);
+    tc.stroke();
   });
+
+  // 공통 알파로 합성
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(tmp, 0, 0);
+  ctx.restore();
 }
 
 
