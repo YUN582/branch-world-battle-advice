@@ -5878,4 +5878,150 @@
     }
   });
 
+  /* ══════════════════════════════════════════════════════════
+   *  이미지 매니저 — 파일 카테고리 이동 / 순서 변경 / 파일 목록 조회
+   * ══════════════════════════════════════════════════════════ */
+
+  /**
+   * bwbr-move-files-dir — 파일들의 카테고리(dir) 일괄 변경
+   * payload: { fileIds: string[], targetDir: string }
+   * response: bwbr-move-files-dir-result  { success, movedCount }
+   */
+  document.addEventListener('bwbr-move-files-dir', async () => {
+    const el = document.documentElement;
+    const raw = el.getAttribute('data-bwbr-move-files-dir');
+    el.removeAttribute('data-bwbr-move-files-dir');
+
+    function respond(data) {
+      el.setAttribute('data-bwbr-move-files-dir-result', JSON.stringify(data));
+      document.dispatchEvent(new CustomEvent('bwbr-move-files-dir-result'));
+    }
+
+    try {
+      const { fileIds, targetDir } = JSON.parse(raw);
+      if (!fileIds?.length || !targetDir) {
+        return respond({ success: false, error: '잘못된 페이로드' });
+      }
+
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) return respond({ success: false, error: 'Firestore SDK 없음' });
+
+      const state = reduxStore.getState();
+      const uid = state.app?.state?.uid || state.app?.user?.uid || '';
+      if (!uid) return respond({ success: false, error: 'UID 획득 실패' });
+
+      const filesCol = sdk.collection(sdk.db, 'users', uid, 'files');
+      const now = Date.now();
+
+      const ops = fileIds.map(fid => ({
+        type: 'set',
+        ref: sdk.doc(filesCol, fid),
+        data: { dir: targetDir, updatedAt: now },
+        options: { merge: true }
+      }));
+
+      const committed = await _batchCommit(sdk, ops);
+      _dbg(`%c[CE 이미지]%c ✅ ${committed}개 파일 → ${targetDir} 이동`,
+        'color: #ff9800; font-weight: bold;', 'color: inherit;');
+
+      respond({ success: true, movedCount: committed });
+    } catch (err) {
+      console.error('[CE 이미지] 파일 이동 실패:', err);
+      respond({ success: false, error: err.message });
+    }
+  });
+
+  /**
+   * bwbr-reorder-files — 파일 순서 일괄 변경 (createdAt 재배치)
+   * payload: { orderedEntries: [{id, createdAt}] }
+   * response: bwbr-reorder-files-result  { success, count }
+   *
+   * order 필드가 없으므로 createdAt을 재배치하여 정렬 순서를 변경합니다.
+   * 기존 createdAt 값 목록을 정렬한 뒤, 새 순서에 맞게 재할당합니다.
+   */
+  document.addEventListener('bwbr-reorder-files', async () => {
+    const el = document.documentElement;
+    const raw = el.getAttribute('data-bwbr-reorder-files');
+    el.removeAttribute('data-bwbr-reorder-files');
+
+    function respond(data) {
+      el.setAttribute('data-bwbr-reorder-files-result', JSON.stringify(data));
+      document.dispatchEvent(new CustomEvent('bwbr-reorder-files-result'));
+    }
+
+    try {
+      const { orderedEntries } = JSON.parse(raw);
+      if (!orderedEntries?.length) {
+        return respond({ success: false, error: '잘못된 페이로드' });
+      }
+
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) return respond({ success: false, error: 'Firestore SDK 없음' });
+
+      const state = reduxStore.getState();
+      const uid = state.app?.state?.uid || state.app?.user?.uid || '';
+      if (!uid) return respond({ success: false, error: 'UID 획득 실패' });
+
+      const filesCol = sdk.collection(sdk.db, 'users', uid, 'files');
+      const now = Date.now();
+
+      const ops = orderedEntries.map(entry => ({
+        type: 'set',
+        ref: sdk.doc(filesCol, entry.id),
+        data: { createdAt: entry.createdAt, updatedAt: now },
+        options: { merge: true }
+      }));
+
+      const committed = await _batchCommit(sdk, ops);
+      _dbg(`%c[CE 이미지]%c ✅ ${committed}개 파일 순서 변경`,
+        'color: #ff9800; font-weight: bold;', 'color: inherit;');
+
+      respond({ success: true, count: committed });
+    } catch (err) {
+      console.error('[CE 이미지] 순서 변경 실패:', err);
+      respond({ success: false, error: err.message });
+    }
+  });
+
+  /**
+   * bwbr-get-user-files — Redux에서 userFiles 목록 조회
+   * payload: { dir?: string, roomId?: string }
+   * response: bwbr-user-files-data  { files: [{_id, name, url, dir, createdAt, roomId}] }
+   */
+  document.addEventListener('bwbr-get-user-files', () => {
+    const el = document.documentElement;
+    const raw = el.getAttribute('data-bwbr-get-user-files');
+    el.removeAttribute('data-bwbr-get-user-files');
+
+    function respond(data) {
+      el.setAttribute('data-bwbr-user-files-data', JSON.stringify(data));
+      document.dispatchEvent(new CustomEvent('bwbr-user-files-data'));
+    }
+
+    try {
+      const opts = raw ? JSON.parse(raw) : {};
+      const state = reduxStore.getState();
+      const uf = state.entities?.userFiles;
+      if (!uf) return respond({ files: [] });
+
+      let files = uf.ids.map(id => uf.entities[id]).filter(Boolean);
+
+      if (opts.dir) files = files.filter(f => f.dir === opts.dir);
+      if (opts.roomId) files = files.filter(f => f.roomId === opts.roomId);
+
+      // createdAt ASC 정렬 (UI 표시 순서와 동일)
+      files.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+
+      const result = files.map(f => ({
+        _id: f._id, name: f.name, url: f.url,
+        dir: f.dir, createdAt: f.createdAt, roomId: f.roomId
+      }));
+
+      respond({ files: result });
+    } catch (err) {
+      console.error('[CE 이미지] 파일 목록 조회 실패:', err);
+      respond({ files: [] });
+    }
+  });
+
 })();

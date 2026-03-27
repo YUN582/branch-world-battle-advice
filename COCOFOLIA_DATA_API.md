@@ -38,6 +38,7 @@
 13. [엔티티 전체 목록](#13-엔티티-전체-목록)
 14. [UI 디자인 시스템 (테마 규칙)](#14-ui-디자인-시스템-테마-규칙)
 15. [스크린 패널 설정 다이얼로그 구조](#15-스크린-패널-설정-다이얼로그-구조)
+16. [유저 파일 데이터 구조 (userFiles)](#16-유저-파일-데이터-구조-userfiles)
 
 ---
 
@@ -2401,7 +2402,7 @@ DIV.MuiButtonBase-root.MuiListItemButton-root.MuiListItemButton-dense
 | `roomSavedatas` | 세이브 데이터 | `rooms/{roomId}/savedatas/{id}` |
 | `roomScenes` | 장면 (9.2 참조) | `rooms/{roomId}/scenes/{sceneId}` |
 | `roomHistories` | 방 히스토리 | — |
-| `userFiles` | 유저 파일 | `users/{uid}/files/{id}` |
+| `userFiles` | 유저 파일 (섹션 16 참조) | `users/{uid}/files/{id}` |
 | `userMedia` | 유저 미디어 | `users/{uid}/media/{id}` |
 | `userMediumDirectories` | 미디어 폴더 | `users/{uid}/mediumDirectories/{id}` |
 | `userHistories` | 유저 히스토리 | — |
@@ -2749,3 +2750,78 @@ MuiDialog-root
 > **참고**: 다이얼로그에서 item._id가 직접 노출되지 않음.
 > 폼 속성(width, height, z, memo, clickAction, locked, freezed, plane)을
 > roomItems와 매칭하여 식별해야 함.
+
+---
+
+## 16. 유저 파일 데이터 구조 (userFiles)
+
+> 코코포리아 이미지 피커에서 관리되는 유저 업로드 파일은 `entities.userFiles`에 저장됩니다.
+> 이미지 피커 다이얼로그의 ROOM/ALL 탭 중 ROOM은 `roomId`로 필터링, ALL은 전체 표시.
+>
+> **기준**: 2026-03-27 (콘솔 진단)
+
+### 접근 방법
+
+```js
+const state = store.getState();
+const uf = state.entities.userFiles;
+uf.ids    // ['008ebdee...', '123abc...', ...]
+uf.entities['파일ID']
+```
+
+### 파일 객체 키 (13개)
+
+```js
+{
+  _id: "008ebdee8ec4ee46b3cb...",       // Firestore 문서 ID (= hash)
+  roomId: "UlLwzdRUU",                  // 업로드된 방 ID
+  hash: "008ebdee8ec4ee46b3cb...",       // 파일 해시 (= _id)
+  createdAt: 1740890402902,              // 생성 시각 (정렬 기준)
+  name: "Bind.png",                      // 원본 파일명
+  dir: "item",                           // ⭐ 카테고리 디렉토리
+  owner: "Az1rUAx4tw...",               // 업로더 UID
+  url: "https://storage.ccfolia-cdn.net/users/.../files/...",
+  contentType: "image/png",              // MIME 타입
+  archived: false,                       // 아카이브 여부
+  updatedAt: 1740890403291,              // 수정 시각
+  uploaded: true,                        // 업로드 완료 여부
+  size: 4344                             // 파일 크기 (bytes)
+}
+```
+
+### dir 필드 — 카테고리 탭 매핑
+
+| UI 탭 | `dir` 값 | 비고 |
+|--------|----------|------|
+| 전경 | `"foreground"` | |
+| 배경 | `"background"` | |
+| 캐릭터 | `"characters"` | 복수형 주의 |
+| 스크린 | `"item"` | |
+| 스크린 뒷면 | `"coverItem"` | ⚠️ 미확인 (해당 파일 0개) |
+| 마커 | `"marker"` | |
+| 컷인 | `"effect"` | |
+
+> **order 필드 없음** — 파일 정렬은 `createdAt` ASC 순서.
+> 순서 변경 시 `createdAt` 값을 재배치하거나 커스텀 필드를 추가해야 함.
+
+### 이미지 피커 그룹 탭
+
+| 그룹 탭 | `openRoomImageSelectGroup` 값 | 필터링 |
+|---------|------------------------------|--------|
+| ROOM | `"room"` | `roomId === 현재 방 ID` |
+| ALL | `"all"` | 전체 파일 (roomId 무관) |
+| Unsplash | `"unsplash"` | 외부 이미지 (userFiles와 무관) |
+
+### Firestore 문서 경로
+
+```
+users/{uid}/files/{fileId}
+```
+
+### 파일 카테고리 변경 (dir 수정)
+
+```js
+const filesCol = sdk.collection(sdk.db, 'users', uid, 'files');
+const fileRef = sdk.doc(filesCol, fileId);
+await sdk.setDoc(fileRef, { dir: 'background', updatedAt: Date.now() }, { merge: true });
+```
