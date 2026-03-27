@@ -202,8 +202,8 @@
 
   async function refreshFileCache(dir, roomId) {
     try {
+      // 항상 전체 파일 로드 (roomId 필터 없음) — ROOM/ALL 모두 매칭 가능
       const payload = { dir };
-      if (roomId) payload.roomId = roomId;
       const result = await BWBR_Bridge.request(
         'bwbr-get-user-files', 'bwbr-user-files-data',
         payload,
