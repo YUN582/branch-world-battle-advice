@@ -1570,7 +1570,8 @@ function showPlacementHelp() {
       '<div style="margin-bottom:4px;"><b>R / Shift+R</b> — 선택 회전</div>' +
       '<div style="margin-bottom:4px;"><b>Del</b> — 선택 삭제</div>' +
       '<div style="margin-bottom:4px;"><b>Ctrl+Z/C/V</b> — 되돌리기/복사/붙여넣기</div>' +
-      '<div style="margin-bottom:4px;"><b>Alt+드래그</b> — 범위 선택 / 복사</div>' +
+      '<div style="margin-bottom:4px;"><b>Shift+드래그</b> — 직선 / 정비율 / 축 고정</div>' +
+      '<div style="margin-bottom:4px;"><b>Alt+드래그</b> — 범위 선택 / 복사 / 대칭 조절</div>' +
       '<div style="margin-bottom:2px;opacity:0.65;font-size:11px;color:#999;margin-top:6px;">' +
       'Esc — 단계별 취소</div>' +
       '<div style="margin-bottom:0;opacity:0.65;font-size:11px;color:#999;">' +
