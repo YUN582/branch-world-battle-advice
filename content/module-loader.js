@@ -78,6 +78,7 @@
             return self._loadUserModules();
           }).then(function () {
             self._loaded = true;
+            try { document.dispatchEvent(new CustomEvent('bwbr-modules-loaded')); } catch(e) {}
             resolve();
           });
         });
@@ -88,6 +89,7 @@
           return self._loadUserModules();
         }).then(function () {
           self._loaded = true;
+          try { document.dispatchEvent(new CustomEvent('bwbr-modules-loaded')); } catch(e) {}
           resolve();
         });
       }
