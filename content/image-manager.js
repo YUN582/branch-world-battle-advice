@@ -42,6 +42,7 @@
   let _lastClickedIdx = -1;        // Shift 클릭용 마지막 클릭 인덱스
   let _isGroupRoom = true;         // ROOM 탭인지 ALL인지
   let _suppressObserver = false;    // 자체 쓰기 중 옵저버 억제
+  let _dropLock = false;            // 동시 드롭 방지 락
 
   /* ══════════════════════════════════════════════════════
    *  DOM 헬퍼
@@ -405,12 +406,21 @@
       const tab = e.target.closest('[role="tab"]');
       if (tab) {
         clearDropIndicators(picker);
-        const fileIds = await resolveHashes(_dragHashes);
-        if (fileIds.length === 0) {
-          console.error(TAG, '❌ 탭 이동 실패: 파일 해석 불가');
+        if (_dropLock) {
+          console.warn(TAG, '이전 이동 처리 중 — 대기');
           return;
         }
-        await handleTabDrop(picker, tab, fileIds);
+        _dropLock = true;
+        try {
+          const fileIds = await resolveHashes(_dragHashes);
+          if (fileIds.length === 0) {
+            console.error(TAG, '❌ 탭 이동 실패: 파일 해석 불가');
+            return;
+          }
+          await handleTabDrop(picker, tab, fileIds);
+        } finally {
+          _dropLock = false;
+        }
         return;
       }
 
@@ -505,7 +515,7 @@
           }
         }, 500);
       } else {
-        console.error(TAG, '이동 실패:', result?.error);
+        console.error(TAG, '이동 실패:', result?.error || '응답에 error 필드 없음', result);
         _suppressObserver = false;
       }
     } catch (err) {

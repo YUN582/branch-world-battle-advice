@@ -5913,47 +5913,74 @@
       const uid = state.app?.state?.uid || state.app?.user?.uid || '';
       if (!uid) return respond({ success: false, error: 'UID 획득 실패' });
 
+      const uf = state.entities?.userFiles;
+
+      // ── 진단: fid ↔ Redux entity key 매칭 확인 ──
+      for (const fid of fileIds) {
+        const directEntity = uf?.entities?.[fid];
+        const entityKeyMatch = uf?.ids?.includes(fid);
+        // _id 필드로 역검색 (entity key와 다를 수 있음)
+        let foundByIdField = null;
+        if (!directEntity && uf?.ids) {
+          for (const key of uf.ids) {
+            if (uf.entities[key]?._id === fid) { foundByIdField = key; break; }
+          }
+        }
+        console.log(`[CE 이미지 진단] fid=${fid.slice(0,16)}...`,
+          `entityKey일치=${entityKeyMatch}`,
+          `entity존재=${!!directEntity}`,
+          `entity.dir=${directEntity?.dir || 'N/A'}`,
+          foundByIdField ? `⚠️ _id→entityKey 불일치! entityKey=${foundByIdField}` : '');
+      }
+
       const filesCol = sdk.collection(sdk.db, 'users', uid, 'files');
       const now = Date.now();
 
+      // ── Firestore 쓰기 (실제 entity key 사용) ──
+      const writeResults = [];
       for (const fid of fileIds) {
-        const ref = sdk.doc(filesCol, fid);
+        // fid가 entity key와 일치하면 그대로 사용, 아니면 entity key 역검색
+        let docId = fid;
+        if (!uf?.entities?.[fid] && uf?.ids) {
+          for (const key of uf.ids) {
+            if (uf.entities[key]?._id === fid) { docId = key; break; }
+          }
+        }
+        const ref = sdk.doc(filesCol, docId);
         await sdk.setDoc(ref, { dir: targetDir, updatedAt: now }, { merge: true });
+        writeResults.push({ fid, docId, match: fid === docId });
       }
-      _dbg(`%c[CE 이미지]%c ✅ ${fileIds.length}개 파일 → ${targetDir} Firestore 쓰기 완료`,
-        'color: #ff9800; font-weight: bold;', 'color: inherit;');
+      console.log(`[CE 이미지] ✅ ${fileIds.length}개 Firestore 쓰기 완료`,
+        writeResults.some(r => !r.match) ? `⚠️ ID 불일치 보정: ${JSON.stringify(writeResults)}` : '');
 
-      // 로컬 오버라이드 기록
-      for (const fid of fileIds) {
-        const prev = _fileOverrides.get(fid) || {};
-        _fileOverrides.set(fid, { ...prev, dir: targetDir, updatedAt: now });
+      // 로컬 오버라이드 기록 (entity key 기준)
+      for (const { docId } of writeResults) {
+        const prev = _fileOverrides.get(docId) || {};
+        _fileOverrides.set(docId, { ...prev, dir: targetDir, updatedAt: now });
       }
 
       // Redux 상태가 실제로 반영될 때까지 대기 (onSnapshot 전파 대기)
-      const checkFid = fileIds[0];
+      const checkDocId = writeResults[0]?.docId || fileIds[0];
       const waitStart = Date.now();
       let waitResult = 'unknown';
       await new Promise(resolve => {
-        // 이미 반영됐는지 즉시 확인
         const st = reduxStore.getState();
-        const ent = st.entities?.userFiles?.entities?.[checkFid];
+        const ent = st.entities?.userFiles?.entities?.[checkDocId];
         if (ent?.dir === targetDir) { waitResult = 'already'; resolve(); return; }
-        _dbg(`[CE 이미지] Redux 대기 시작: ${checkFid} 현재 dir=${ent?.dir}, 목표=${targetDir}`);
+        console.log(`[CE 이미지] Redux 대기: docId=${checkDocId.slice(0,16)}... 현재dir=${ent?.dir}, 목표=${targetDir}, entity존재=${!!ent}`);
 
         const unsub = reduxStore.subscribe(() => {
           const s = reduxStore.getState();
-          const e = s.entities?.userFiles?.entities?.[checkFid];
+          const e = s.entities?.userFiles?.entities?.[checkDocId];
           if (e?.dir === targetDir) {
             waitResult = 'updated';
             unsub(); resolve();
           }
         });
-        // 타임아웃 (3초) — 무한 대기 방지
         setTimeout(() => { waitResult = 'timeout'; unsub(); resolve(); }, 3000);
       });
       const elapsed = Date.now() - waitStart;
-      _dbg(`%c[CE 이미지]%c Redux 반영: ${waitResult} (${elapsed}ms), fid=${checkFid}`,
-        'color: #ff9800; font-weight: bold;', 'color: inherit;');
+      console.log(`[CE 이미지] Redux 반영: ${waitResult} (${elapsed}ms), docId=${checkDocId.slice(0,16)}...`);
 
       respond({ success: true, movedCount: fileIds.length, reduxWait: waitResult, reduxMs: elapsed });
     } catch (err) {
