@@ -5931,24 +5931,31 @@
 
       // Redux 상태가 실제로 반영될 때까지 대기 (onSnapshot 전파 대기)
       const checkFid = fileIds[0];
+      const waitStart = Date.now();
+      let waitResult = 'unknown';
       await new Promise(resolve => {
         // 이미 반영됐는지 즉시 확인
         const st = reduxStore.getState();
         const ent = st.entities?.userFiles?.entities?.[checkFid];
-        if (ent?.dir === targetDir) { resolve(); return; }
+        if (ent?.dir === targetDir) { waitResult = 'already'; resolve(); return; }
+        _dbg(`[CE 이미지] Redux 대기 시작: ${checkFid} 현재 dir=${ent?.dir}, 목표=${targetDir}`);
 
         const unsub = reduxStore.subscribe(() => {
           const s = reduxStore.getState();
           const e = s.entities?.userFiles?.entities?.[checkFid];
-          if (e?.dir === targetDir) { unsub(); resolve(); }
+          if (e?.dir === targetDir) {
+            waitResult = 'updated';
+            unsub(); resolve();
+          }
         });
         // 타임아웃 (3초) — 무한 대기 방지
-        setTimeout(() => { unsub(); resolve(); }, 3000);
+        setTimeout(() => { waitResult = 'timeout'; unsub(); resolve(); }, 3000);
       });
-      _dbg(`%c[CE 이미지]%c Redux 반영 확인 완료`,
+      const elapsed = Date.now() - waitStart;
+      _dbg(`%c[CE 이미지]%c Redux 반영: ${waitResult} (${elapsed}ms), fid=${checkFid}`,
         'color: #ff9800; font-weight: bold;', 'color: inherit;');
 
-      respond({ success: true, movedCount: fileIds.length });
+      respond({ success: true, movedCount: fileIds.length, reduxWait: waitResult, reduxMs: elapsed });
     } catch (err) {
       console.error('[CE 이미지] 파일 이동 실패:', err);
       respond({ success: false, error: err.message });
