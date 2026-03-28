@@ -450,27 +450,31 @@
       );
 
       if (result?.success) {
-        console.log(TAG, `✅ ${result.movedCount}개 이동 완료`);
-        // 캐시에서 이동된 파일 제거 (현재 탭 목록 갱신)
-        _fileCache = _fileCache.filter(f => !fileIds.includes(f._id));
+        console.log(TAG, `✅ ${result.movedCount}개 이동 완료 (Redux 반영 대기 완료)`);
+        // 캐시에서 이동된 파일의 dir 업데이트
+        for (const f of _fileCache) {
+          if (fileIds.includes(f._id)) f.dir = targetDir;
+        }
         buildHashIndex();
 
-        // 옵저버 억제 해제 후 탭 클릭 → 캐시 갱신
+        // React 재렌더 강제: 다른 탭으로 전환 후 대상 탭 클릭 (unmount→remount)
+        const allTabs = getCategoryTabs(picker);
+        const otherTab = allTabs.find(t => t !== tab);
+        if (otherTab) {
+          otherTab.click();
+          await new Promise(r => setTimeout(r, 150));
+        }
         tab.click();
+
         setTimeout(async () => {
           _suppressObserver = false;
           const p = getPickerDialog();
           if (p) {
-            // 대상 탭의 캐시를 새로 로드 (Redux가 이미 갱신됨)
-            const newDir = getCurrentDir(p);
-            const newRoomId = _isGroupRoom ? getRoomIdFromUrl() : null;
-            if (newDir) {
-              await refreshFileCache(newDir, newRoomId);
-              console.log(TAG, `탭 이동 후 캐시 갱신: ${_fileCache.length}개 (dir=${newDir})`);
-            }
+            await refreshFileCache(getCurrentDir(p) || targetDir, _isGroupRoom ? getRoomIdFromUrl() : null);
+            console.log(TAG, `탭 이동 후 캐시 갱신: ${_fileCache.length}개`);
             setupDraggableImages(p);
           }
-        }, 500);
+        }, 400);
       } else {
         console.error(TAG, '이동 실패:', result?.error);
         _suppressObserver = false;
