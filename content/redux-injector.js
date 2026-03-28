@@ -5982,14 +5982,33 @@
       }));
 
       const committed = await _batchCommit(sdk, ops);
-      _dbg(`%c[CE 이미지]%c ✅ ${committed}개 파일 순서 변경`,
-        'color: #ff9800; font-weight: bold;', 'color: inherit;');
+
+      // 상세 로그: 어떤 파일이 어떻게 변경되었는지
+      for (const entry of orderedEntries) {
+        const reduxFile = reduxStore.getState().entities?.userFiles?.entities?.[entry.id];
+        console.log(`%c[CE 이미지]%c 순서변경: ${entry.id} | Redux createdAt: ${reduxFile?.createdAt} → 새값: ${entry.createdAt}`,
+          'color: #ff9800; font-weight: bold;', 'color: inherit;');
+      }
+      console.log(`%c[CE 이미지]%c ✅ ${committed}개 Firestore 쓰기 완료`,
+        'color: #4caf50; font-weight: bold;', 'color: inherit;');
+
+      // 3초 후 Redux 동기화 확인 (디버그)
+      setTimeout(() => {
+        for (const entry of orderedEntries) {
+          const f = reduxStore.getState().entities?.userFiles?.entities?.[entry.id];
+          const synced = f?.createdAt === entry.createdAt;
+          console.log(`%c[CE 이미지]%c 3초후 Redux 확인: ${entry.id} | Redux: ${f?.createdAt} | 기대값: ${entry.createdAt} | 동기화: ${synced ? '✅' : '❌'}`,
+            'color: #2196f3; font-weight: bold;', 'color: inherit;');
+        }
+      }, 3000);
 
       // 로컬 오버라이드 기록 (Redux는 즉시 반영 안 되므로)
       for (const entry of orderedEntries) {
         const prev = _fileOverrides.get(entry.id) || {};
         _fileOverrides.set(entry.id, { ...prev, createdAt: entry.createdAt, updatedAt: now });
       }
+      console.log(`%c[CE 이미지]%c _fileOverrides: ${_fileOverrides.size}개 항목`,
+        'color: #9c27b0; font-weight: bold;', 'color: inherit;');
 
       respond({ success: true, count: committed });
     } catch (err) {
@@ -6020,13 +6039,18 @@
       if (!uf) return respond({ files: [] });
 
       // Redux 데이터 위에 로컬 오버라이드 적용 (Firestore 쓰기 후 Redux 미반영 보정)
+      let overrideCount = 0;
       let files = uf.ids.map(id => {
         let f = uf.entities[id];
         if (!f) return null;
         const ov = _fileOverrides.get(id);
-        if (ov) f = { ...f, ...ov };
+        if (ov) { overrideCount++; f = { ...f, ...ov }; }
         return f;
       }).filter(Boolean);
+      if (overrideCount > 0) {
+        console.log(`%c[CE 이미지]%c 파일조회: 오버라이드 ${overrideCount}개 적용 (총 ${files.length}개)`,
+          'color: #9c27b0; font-weight: bold;', 'color: inherit;');
+      }
 
       // archived(삭제된) 파일 제외 — ccfolia는 삭제 시 archived=true만 세팅
       files = files.filter(f => !f.archived);
