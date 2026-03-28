@@ -5920,7 +5920,7 @@
         const ref = sdk.doc(filesCol, fid);
         await sdk.setDoc(ref, { dir: targetDir, updatedAt: now }, { merge: true });
       }
-      _dbg(`%c[CE 이미지]%c ✅ ${fileIds.length}개 파일 → ${targetDir} 이동`,
+      _dbg(`%c[CE 이미지]%c ✅ ${fileIds.length}개 파일 → ${targetDir} Firestore 쓰기 완료`,
         'color: #ff9800; font-weight: bold;', 'color: inherit;');
 
       // 로컬 오버라이드 기록
@@ -5928,6 +5928,25 @@
         const prev = _fileOverrides.get(fid) || {};
         _fileOverrides.set(fid, { ...prev, dir: targetDir, updatedAt: now });
       }
+
+      // Redux 상태가 실제로 반영될 때까지 대기 (onSnapshot 전파 대기)
+      const checkFid = fileIds[0];
+      await new Promise(resolve => {
+        // 이미 반영됐는지 즉시 확인
+        const st = reduxStore.getState();
+        const ent = st.entities?.userFiles?.entities?.[checkFid];
+        if (ent?.dir === targetDir) { resolve(); return; }
+
+        const unsub = reduxStore.subscribe(() => {
+          const s = reduxStore.getState();
+          const e = s.entities?.userFiles?.entities?.[checkFid];
+          if (e?.dir === targetDir) { unsub(); resolve(); }
+        });
+        // 타임아웃 (3초) — 무한 대기 방지
+        setTimeout(() => { unsub(); resolve(); }, 3000);
+      });
+      _dbg(`%c[CE 이미지]%c Redux 반영 확인 완료`,
+        'color: #ff9800; font-weight: bold;', 'color: inherit;');
 
       respond({ success: true, movedCount: fileIds.length });
     } catch (err) {
