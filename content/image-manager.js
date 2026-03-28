@@ -2,10 +2,9 @@
  * image-manager.js — 이미지 피커 드래그 관리
  *
  * 네이티브 코코포리아 이미지 선택 다이얼로그에서:
- * 1. 이미지를 카테고리 탭으로 드래그 → 탭 이동(dir 변경)
- * 2. 같은 그리드 내 드래그 → 순서 변경(createdAt 재배치)
- * 3. Ctrl/Shift+클릭 → 네이티브 선택 모드 진입 후 복수 선택
- * 4. 복수 선택 상태에서 드래그 → 선택 전체 일괄 이동/정렬
+ * 1. 이미지를 카테고리 탭으로 드래그 → 탭 이동(dir 변경, Firestore 서버 반영)
+ * 2. Ctrl/Shift+클릭 → 네이티브 선택 모드 진입 후 복수 선택
+ * 3. 복수 선택 상태에서 드래그 → 선택 전체 일괄 탭 이동
  *
  * 크로스월드: BWBR_Bridge.request() (ISOLATED ↔ MAIN)
  */
@@ -43,68 +42,6 @@
   let _lastClickedIdx = -1;        // Shift 클릭용 마지막 클릭 인덱스
   let _isGroupRoom = true;         // ROOM 탭인지 ALL인지
   let _suppressObserver = false;    // 자체 쓰기 중 옵저버 억제
-
-  /* ── 커스텀 순서 저장/로드 (chrome.storage.local) ─── */
-  const ORDER_KEY_PREFIX = 'bwbr_imgOrder_';
-
-  /** 현재 dir의 DOM 이미지 순서를 chrome.storage.local에 저장 */
-  async function saveCurrentDomOrder(picker, dir) {
-    if (!dir) return;
-    const hashes = [];
-    for (const img of getPickerImages(picker)) {
-      const h = extractUrlHash(img.src);
-      if (h) hashes.push(h);
-    }
-    if (hashes.length === 0) return;
-    const key = ORDER_KEY_PREFIX + dir;
-    await chrome.storage.local.set({ [key]: hashes });
-    console.log(TAG, `순서 저장: ${hashes.length}개 (${dir})`);
-  }
-
-  /** 저장된 커스텀 순서를 읽어 DOM에 적용 */
-  async function applySavedOrder(picker, dir) {
-    if (!dir) return;
-    const key = ORDER_KEY_PREFIX + dir;
-    const data = await chrome.storage.local.get(key);
-    const savedOrder = data[key];
-    if (!savedOrder || !Array.isArray(savedOrder) || savedOrder.length === 0) return;
-
-    const images = getPickerImages(picker);
-    if (images.length === 0) return;
-
-    // hash → wrapper 매핑
-    const hashToWrapper = new Map();
-    for (const img of images) {
-      const h = extractUrlHash(img.src);
-      if (h) hashToWrapper.set(h, img.parentElement);
-    }
-
-    // 그리드 컨테이너 찾기
-    const firstWrapper = images[0]?.parentElement;
-    const grid = firstWrapper?.parentElement;
-    if (!grid) return;
-
-    // savedOrder 순서대로 DOM 재배치
-    let applied = 0;
-    let anchor = null; // 마지막으로 이동한 요소의 nextSibling
-    for (const hash of savedOrder) {
-      const wrapper = hashToWrapper.get(hash);
-      if (!wrapper) continue; // 삭제된 파일 스킵
-      hashToWrapper.delete(hash); // 처리 완료
-      if (anchor) {
-        grid.insertBefore(wrapper, anchor);
-      } else {
-        grid.insertBefore(wrapper, grid.firstChild);
-      }
-      anchor = wrapper.nextSibling;
-      applied++;
-    }
-
-    // savedOrder에 없는 이미지(신규 추가된 파일)는 끝에 그대로 남음
-    if (applied > 0) {
-      console.log(TAG, `저장된 순서 적용: ${applied}개 (${dir})`);
-    }
-  }
 
   /* ══════════════════════════════════════════════════════
    *  DOM 헬퍼
@@ -440,21 +377,12 @@
         tab.style.transition = 'border-bottom 0.15s';
         return;
       }
-
-      // 이미지 래퍼 위 인디케이터
-      const wrapper = findImageWrapper(e.target, picker);
-      if (wrapper) {
-        showGridDropIndicator(wrapper, e);
-        return;
-      }
     }, true);
 
     // ── dragleave (capture) ──────────────────────────
     picker.addEventListener('dragleave', e => {
       const tab = e.target.closest('[role="tab"]');
-      if (tab) { tab.style.borderBottom = ''; return; }
-      const wrapper = findImageWrapper(e.target, picker);
-      if (wrapper) { wrapper.style.boxShadow = ''; }
+      if (tab) { tab.style.borderBottom = ''; }
     }, true);
 
     // ── drop (capture — MUI 이벤트 가로채기 방지) ──────────
@@ -480,22 +408,7 @@
         return;
       }
 
-      // 이미지 래퍼에 드롭 (그리드 정렬)
-      const wrapper = findImageWrapper(e.target, picker);
-      if (wrapper) {
-        clearDropIndicators(picker);
-        const img = wrapper.querySelector('img');
-        if (!img) return;
-        const targetHash = extractUrlHash(img.src);
-        if (!targetHash) return;
-        if (_dragHashes.length === 1 && _dragHashes[0] === targetHash) return;
-
-        // DOM 기반 순서 변경 (Firestore 불필요)
-        await handleGridReorder(picker, null, null, wrapper, e);
-        return;
-      }
-
-      console.log(TAG, 'drop 대상 미매칭');
+      console.log(TAG, 'drop 대상 미매칭 (탭 외 영역)');
       clearDropIndicators(picker);
     }, true);
   }
@@ -536,17 +449,6 @@
         _fileCache = _fileCache.filter(f => !fileIds.includes(f._id));
         buildHashIndex();
 
-        // 저장된 순서에서 이동된 파일 해시 제거
-        const movedHashes = _dragHashes.slice();
-        const srcKey = ORDER_KEY_PREFIX + _currentDir;
-        try {
-          const srcData = await chrome.storage.local.get(srcKey);
-          if (srcData[srcKey]) {
-            const updated = srcData[srcKey].filter(h => !movedHashes.includes(h));
-            await chrome.storage.local.set({ [srcKey]: updated });
-          }
-        } catch {}
-
         // 옵저버 억제 해제 후 탭 클릭 → 캐시 갱신
         tab.click();
         setTimeout(async () => {
@@ -573,68 +475,14 @@
     }
   }
 
-  /* ── 그리드 내 순서 변경 ──────────────────────────── */
-
-  function showGridDropIndicator(wrapper, e) {
-    // 왼쪽/오른쪽 절반 판단
-    const rect = wrapper.getBoundingClientRect();
-    const isLeft = (e.clientX - rect.left) < rect.width / 2;
-    wrapper.style.boxShadow = isLeft
-      ? 'inset 3px 0 0 0 #2196F3'
-      : 'inset -3px 0 0 0 #2196F3';
-  }
+  /* ── 드래그 UI 헬퍼 ──────────────────────────────── */
 
   function clearTabHighlights(picker) {
     getCategoryTabs(picker).forEach(t => { t.style.borderBottom = ''; });
   }
 
   function clearDropIndicators(picker) {
-    // 모든 이미지 래퍼의 boxShadow 초기화 (data attr 의존 않음)
-    for (const img of getPickerImages(picker)) {
-      const w = img.parentElement;
-      if (w) w.style.boxShadow = '';
-    }
     clearTabHighlights(picker);
-  }
-
-  async function handleGridReorder(picker, dragIds, targetId, targetWrapper, e) {
-    // 드롭 위치 (타겟의 왼쪽/오른쪽)
-    const rect = targetWrapper.getBoundingClientRect();
-    const isLeft = (e.clientX - rect.left) < rect.width / 2;
-
-    // ── DOM 이동 (즉시 시각 반영) ──
-    const grid = targetWrapper.parentElement;
-    if (!grid) return;
-
-    // 드래그 해시 → wrapper 매핑
-    const dragWrappers = [];
-    for (const img of getPickerImages(picker)) {
-      const h = extractUrlHash(img.src);
-      if (h && _dragHashes.includes(h)) {
-        dragWrappers.push(img.parentElement);
-      }
-    }
-    if (dragWrappers.length === 0) return;
-
-    for (const dw of dragWrappers) {
-      if (dw === targetWrapper) continue;
-      if (isLeft) {
-        grid.insertBefore(dw, targetWrapper);
-      } else {
-        grid.insertBefore(dw, targetWrapper.nextSibling);
-      }
-    }
-
-    console.log(TAG, `✅ ${dragWrappers.length}개 순서 변경 (DOM)`);
-
-    // ── 현재 DOM 순서를 chrome.storage.local에 저장 ──
-    await saveCurrentDomOrder(picker, _currentDir);
-
-    // draggable 재설정
-    setTimeout(() => {
-      const p = getPickerDialog();
-      if (p) setupDraggableImages(p);
-    }, 100);
   }
 
   /* ══════════════════════════════════════════════════════
@@ -770,9 +618,6 @@
     setupDraggableImages(picker);
     setupCtrlShiftClick(picker);
 
-    // 저장된 커스텀 순서 적용
-    await applySavedOrder(picker, dir);
-
     // 탭 전환 / 이미지 로드 시 재설정 (디바운스)
     if (_pickerObs) _pickerObs.disconnect();
     let _debounceTimer = null;
@@ -799,8 +644,6 @@
           await refreshFileCache(newDir, newIsRoom ? getRoomIdFromUrl() : null);
           _lastClickedIdx = -1;
           console.log(TAG, `탭 전환: group=${newGroup}, dir=${newDir}, 캐시 ${_fileCache.length}개`);
-          // 탭 전환 시 저장된 순서 적용 (약간 딜레이)
-          setTimeout(() => applySavedOrder(p, newDir), 300);
         }
       }, 150);
     });
