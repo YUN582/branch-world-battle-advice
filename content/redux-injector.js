@@ -5879,11 +5879,11 @@
   });
 
   /* ══════════════════════════════════════════════════════════
-   *  이미지 매니저 — 파일 카테고리 이동 / 순서 변경 / 파일 목록 조회
+   *  이미지 매니저 — 파일 카테고리 이동 / 파일 목록 조회
    * ══════════════════════════════════════════════════════════ */
 
-  // Firestore 쓰기 후 Redux가 바로 반영되지 않으므로 로컬 오버라이드로 보정
-  const _fileOverrides = new Map(); // fileId → { dir?, createdAt?, updatedAt? }
+  // Firestore dir 쓰기 후 Redux가 바로 반영되지 않으므로 로컬 오버라이드로 보정
+  const _fileOverrides = new Map(); // fileId → { dir?, updatedAt? }
 
   /**
    * bwbr-move-files-dir — 파일들의 카테고리(dir) 일괄 변경
@@ -5916,7 +5916,6 @@
       const filesCol = sdk.collection(sdk.db, 'users', uid, 'files');
       const now = Date.now();
 
-      // writeBatch가 신뢰할 수 없으므로 직접 setDoc 사용 (bwbr-modify-status와 동일 패턴)
       for (const fid of fileIds) {
         const ref = sdk.doc(filesCol, fid);
         await sdk.setDoc(ref, { dir: targetDir, updatedAt: now }, { merge: true });
@@ -5924,7 +5923,7 @@
       _dbg(`%c[CE 이미지]%c ✅ ${fileIds.length}개 파일 → ${targetDir} 이동`,
         'color: #ff9800; font-weight: bold;', 'color: inherit;');
 
-      // 로컬 오버라이드 기록 (Redux는 즉시 반영 안 되므로)
+      // 로컬 오버라이드 기록
       for (const fid of fileIds) {
         const prev = _fileOverrides.get(fid) || {};
         _fileOverrides.set(fid, { ...prev, dir: targetDir, updatedAt: now });
@@ -5933,62 +5932,6 @@
       respond({ success: true, movedCount: fileIds.length });
     } catch (err) {
       console.error('[CE 이미지] 파일 이동 실패:', err);
-      respond({ success: false, error: err.message });
-    }
-  });
-
-  /**
-   * bwbr-reorder-files — 파일 순서 일괄 변경 (createdAt 재배치)
-   * payload: { orderedEntries: [{id, createdAt}] }
-   * response: bwbr-reorder-files-result  { success, count }
-   *
-   * order 필드가 없으므로 createdAt을 재배치하여 정렬 순서를 변경합니다.
-   * 기존 createdAt 값 목록을 정렬한 뒤, 새 순서에 맞게 재할당합니다.
-   */
-  document.addEventListener('bwbr-reorder-files', async () => {
-    const el = document.documentElement;
-    const raw = el.getAttribute('data-bwbr-reorder-files');
-    el.removeAttribute('data-bwbr-reorder-files');
-
-    function respond(data) {
-      el.setAttribute('data-bwbr-reorder-files-result', JSON.stringify(data));
-      document.dispatchEvent(new CustomEvent('bwbr-reorder-files-result'));
-    }
-
-    try {
-      const { orderedEntries } = JSON.parse(raw);
-      if (!orderedEntries?.length) {
-        return respond({ success: false, error: '잘못된 페이로드' });
-      }
-
-      const sdk = acquireFirestoreSDK();
-      if (!sdk) return respond({ success: false, error: 'Firestore SDK 없음' });
-
-      const state = reduxStore.getState();
-      const uid = state.app?.state?.uid || state.app?.user?.uid || '';
-      if (!uid) return respond({ success: false, error: 'UID 획득 실패' });
-
-      const filesCol = sdk.collection(sdk.db, 'users', uid, 'files');
-      const now = Date.now();
-
-      // writeBatch가 신뢰할 수 없으므로 직접 setDoc 사용 (bwbr-modify-status와 동일 패턴)
-      for (const entry of orderedEntries) {
-        const ref = sdk.doc(filesCol, entry.id);
-        await sdk.setDoc(ref, { createdAt: entry.createdAt, updatedAt: now }, { merge: true });
-      }
-
-      _dbg(`%c[CE 이미지]%c ✅ ${orderedEntries.length}개 순서 변경 완료`,
-        'color: #4caf50; font-weight: bold;', 'color: inherit;');
-
-      // 로컬 오버라이드 기록 (Redux는 즉시 반영 안 되므로)
-      for (const entry of orderedEntries) {
-        const prev = _fileOverrides.get(entry.id) || {};
-        _fileOverrides.set(entry.id, { ...prev, createdAt: entry.createdAt, updatedAt: now });
-      }
-
-      respond({ success: true, count: orderedEntries.length });
-    } catch (err) {
-      console.error('[CE 이미지] 순서 변경 실패:', err);
       respond({ success: false, error: err.message });
     }
   });
@@ -6014,7 +5957,7 @@
       const uf = state.entities?.userFiles;
       if (!uf) return respond({ files: [] });
 
-      // Redux 데이터 위에 로컬 오버라이드 적용 (Firestore 쓰기 후 Redux 미반영 보정)
+      // Redux 데이터 위에 로컬 오버라이드 적용 (dir 변경 후 Redux 미반영 보정)
       let overrideCount = 0;
       let files = uf.ids.map(id => {
         let f = uf.entities[id];
@@ -6023,19 +5966,12 @@
         if (ov) { overrideCount++; f = { ...f, ...ov }; }
         return f;
       }).filter(Boolean);
-      if (overrideCount > 0) {
-        console.log(`%c[CE 이미지]%c 파일조회: 오버라이드 ${overrideCount}개 적용 (총 ${files.length}개)`,
-          'color: #9c27b0; font-weight: bold;', 'color: inherit;');
-      }
 
-      // archived(삭제된) 파일 제외 — ccfolia는 삭제 시 archived=true만 세팅
+      // archived(삭제된) 파일 제외
       files = files.filter(f => !f.archived);
 
       if (opts.dir) files = files.filter(f => f.dir === opts.dir);
       if (opts.roomId) files = files.filter(f => f.roomId === opts.roomId);
-
-      // createdAt ASC 정렬 (UI 표시 순서와 동일)
-      files.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
 
       const result = files.map(f => ({
         _id: f._id, name: f.name, url: f.url,

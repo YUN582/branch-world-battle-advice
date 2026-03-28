@@ -2804,6 +2804,24 @@ uf.entities['파일ID']
 > **order 필드 없음** — 파일 정렬은 `createdAt` ASC 순서.
 > 순서 변경 시 `createdAt` 값을 재배치하거나 커스텀 필드를 추가해야 함.
 
+### ⚠️ 이미지 피커 정렬 순서 (2026-03-28 확인)
+
+**Firestore 쓰기 → 서버 반영**: `setDoc({ createdAt|dir|updatedAt }, { merge: true })` 모두 **정상** ✅
+
+**그러나 이미지 피커 표시 순서는 `createdAt`과 무관**: 
+
+진단 결과:
+- `createdAt ASC` ❌, `createdAt DESC` ❌
+- `_id 사전순(ASC/DESC)` ❌
+- `hash 사전순` ❌
+
+ccfolia 피커의 이미지 순서는 **Redux entity adapter의 `ids[]` 배열 순서**를 그대로 사용하며,
+이는 Firestore `onSnapshot` 리스너가 문서를 수신한 순서에 의해 결정됩니다.
+어떤 단일 필드로도 예측/제어할 수 없는 순서입니다.
+
+**결론**: `createdAt` 수정으로는 피커 순서를 변경할 수 없음.
+커스텀 순서는 `chrome.storage.local`에 저장하고 DOM 조작으로 적용해야 함.
+
 ### 이미지 피커 그룹 탭
 
 | 그룹 탭 | `openRoomImageSelectGroup` 값 | 필터링 |

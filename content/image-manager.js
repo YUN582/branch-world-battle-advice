@@ -44,6 +44,68 @@
   let _isGroupRoom = true;         // ROOM 탭인지 ALL인지
   let _suppressObserver = false;    // 자체 쓰기 중 옵저버 억제
 
+  /* ── 커스텀 순서 저장/로드 (chrome.storage.local) ─── */
+  const ORDER_KEY_PREFIX = 'bwbr_imgOrder_';
+
+  /** 현재 dir의 DOM 이미지 순서를 chrome.storage.local에 저장 */
+  async function saveCurrentDomOrder(picker, dir) {
+    if (!dir) return;
+    const hashes = [];
+    for (const img of getPickerImages(picker)) {
+      const h = extractUrlHash(img.src);
+      if (h) hashes.push(h);
+    }
+    if (hashes.length === 0) return;
+    const key = ORDER_KEY_PREFIX + dir;
+    await chrome.storage.local.set({ [key]: hashes });
+    console.log(TAG, `순서 저장: ${hashes.length}개 (${dir})`);
+  }
+
+  /** 저장된 커스텀 순서를 읽어 DOM에 적용 */
+  async function applySavedOrder(picker, dir) {
+    if (!dir) return;
+    const key = ORDER_KEY_PREFIX + dir;
+    const data = await chrome.storage.local.get(key);
+    const savedOrder = data[key];
+    if (!savedOrder || !Array.isArray(savedOrder) || savedOrder.length === 0) return;
+
+    const images = getPickerImages(picker);
+    if (images.length === 0) return;
+
+    // hash → wrapper 매핑
+    const hashToWrapper = new Map();
+    for (const img of images) {
+      const h = extractUrlHash(img.src);
+      if (h) hashToWrapper.set(h, img.parentElement);
+    }
+
+    // 그리드 컨테이너 찾기
+    const firstWrapper = images[0]?.parentElement;
+    const grid = firstWrapper?.parentElement;
+    if (!grid) return;
+
+    // savedOrder 순서대로 DOM 재배치
+    let applied = 0;
+    let anchor = null; // 마지막으로 이동한 요소의 nextSibling
+    for (const hash of savedOrder) {
+      const wrapper = hashToWrapper.get(hash);
+      if (!wrapper) continue; // 삭제된 파일 스킵
+      hashToWrapper.delete(hash); // 처리 완료
+      if (anchor) {
+        grid.insertBefore(wrapper, anchor);
+      } else {
+        grid.insertBefore(wrapper, grid.firstChild);
+      }
+      anchor = wrapper.nextSibling;
+      applied++;
+    }
+
+    // savedOrder에 없는 이미지(신규 추가된 파일)는 끝에 그대로 남음
+    if (applied > 0) {
+      console.log(TAG, `저장된 순서 적용: ${applied}개 (${dir})`);
+    }
+  }
+
   /* ══════════════════════════════════════════════════════
    *  DOM 헬퍼
    * ══════════════════════════════════════════════════════ */
@@ -428,19 +490,8 @@
         if (!targetHash) return;
         if (_dragHashes.length === 1 && _dragHashes[0] === targetHash) return;
 
-        // 모든 해시를 한 번에 resolve (drag + target)
-        const allHashes = [...new Set([..._dragHashes, targetHash])];
-        const allIds = await resolveHashes(allHashes);
-        if (allIds.length < allHashes.length) {
-          console.error(TAG, `❌ 순서 변경 실패: ${allHashes.length - allIds.length}개 파일 해석 불가`);
-          return;
-        }
-        // 해시 → fileId 매핑
-        const dragIds = _dragHashes.map(h => _hashToFileId.get(h)).filter(Boolean);
-        const targetId = _hashToFileId.get(targetHash);
-        if (!targetId || dragIds.length === 0) return;
-
-        await handleGridReorder(picker, dragIds, targetId, wrapper, e);
+        // DOM 기반 순서 변경 (Firestore 불필요)
+        await handleGridReorder(picker, null, null, wrapper, e);
         return;
       }
 
@@ -484,6 +535,18 @@
         // 캐시에서 이동된 파일 제거 (현재 탭 목록 갱신)
         _fileCache = _fileCache.filter(f => !fileIds.includes(f._id));
         buildHashIndex();
+
+        // 저장된 순서에서 이동된 파일 해시 제거
+        const movedHashes = _dragHashes.slice();
+        const srcKey = ORDER_KEY_PREFIX + _currentDir;
+        try {
+          const srcData = await chrome.storage.local.get(srcKey);
+          if (srcData[srcKey]) {
+            const updated = srcData[srcKey].filter(h => !movedHashes.includes(h));
+            await chrome.storage.local.set({ [srcKey]: updated });
+          }
+        } catch {}
+
         // 옵저버 억제 해제 후 탭 클릭 → 캐시 갱신
         tab.click();
         setTimeout(async () => {
@@ -535,123 +598,43 @@
   }
 
   async function handleGridReorder(picker, dragIds, targetId, targetWrapper, e) {
-    const ordered = [..._fileCache]; // createdAt ASC 정렬된 상태
-
-    // 드래그된 파일들과 나머지 분리
-    const dragItems = ordered.filter(f => dragIds.includes(f._id));
-    const remaining = ordered.filter(f => !dragIds.includes(f._id));
-    if (dragItems.length === 0) return;
-
-    // 타겟 위치 찾기
-    const targetIdx = remaining.findIndex(f => f._id === targetId);
-    if (targetIdx === -1) return;
-
     // 드롭 위치 (타겟의 왼쪽/오른쪽)
     const rect = targetWrapper.getBoundingClientRect();
     const isLeft = (e.clientX - rect.left) < rect.width / 2;
-    const insertIdx = isLeft ? targetIdx : targetIdx + 1;
 
-    // ── 최소 변경 알고리즘: 드래그 항목의 createdAt만 이웃 사이 값으로 설정 ──
-    const n = dragItems.length;
-    const prevTime = insertIdx > 0 ? remaining[insertIdx - 1].createdAt : null;
-    const nextTime = insertIdx < remaining.length ? remaining[insertIdx].createdAt : null;
+    // ── DOM 이동 (즉시 시각 반영) ──
+    const grid = targetWrapper.parentElement;
+    if (!grid) return;
 
-    let newTimes;
-    if (prevTime == null && nextTime == null) return;
-    if (prevTime == null) {
-      // 맨 앞에 삽입
-      newTimes = dragItems.map((_, i) => nextTime - (n - i) * 1000);
-    } else if (nextTime == null) {
-      // 맨 뒤에 삽입
-      newTimes = dragItems.map((_, i) => prevTime + (i + 1) * 1000);
-    } else {
-      const gap = nextTime - prevTime;
-      const step = gap / (n + 1);
-      if (step >= 1) {
-        // 충분한 간격 — 균등 분배
-        newTimes = dragItems.map((_, i) => Math.round(prevTime + step * (i + 1)));
+    // 드래그 해시 → wrapper 매핑
+    const dragWrappers = [];
+    for (const img of getPickerImages(picker)) {
+      const h = extractUrlHash(img.src);
+      if (h && _dragHashes.includes(h)) {
+        dragWrappers.push(img.parentElement);
+      }
+    }
+    if (dragWrappers.length === 0) return;
+
+    for (const dw of dragWrappers) {
+      if (dw === targetWrapper) continue;
+      if (isLeft) {
+        grid.insertBefore(dw, targetWrapper);
       } else {
-        // 간격 부족 — 이전 항목 기준으로 뒤에 배치
-        newTimes = dragItems.map((_, i) => prevTime + (i + 1));
+        grid.insertBefore(dw, targetWrapper.nextSibling);
       }
     }
 
-    // 실제 변경된 항목만 전송
-    const changedEntries = [];
-    dragItems.forEach((f, i) => {
-      if (f.createdAt !== newTimes[i]) {
-        changedEntries.push({ id: f._id, createdAt: newTimes[i] });
-      }
-    });
+    console.log(TAG, `✅ ${dragWrappers.length}개 순서 변경 (DOM)`);
 
-    if (changedEntries.length === 0) return;
+    // ── 현재 DOM 순서를 chrome.storage.local에 저장 ──
+    await saveCurrentDomOrder(picker, _currentDir);
 
-    console.log(TAG, `순서 변경: ${changedEntries.length}개 파일만 createdAt 변경`);
-
-    _suppressObserver = true;
-    try {
-      const result = await BWBR_Bridge.request(
-        'bwbr-reorder-files', 'bwbr-reorder-files-result',
-        { orderedEntries: changedEntries },
-        {
-          sendAttr: 'data-bwbr-reorder-files',
-          recvAttr: 'data-bwbr-reorder-files-result',
-          timeout: 10000,
-          on: document,
-          emit: document
-        }
-      );
-
-      if (result?.success) {
-        console.log(TAG, `✅ ${result.count}개 순서 변경 완료`);
-
-        // ── 드래그 항목만 DOM 이동 (전체 리렌더 아님) ──
-        try {
-          const grid = targetWrapper.parentElement;
-          if (grid) {
-            // 드래그 해시 → wrapper 매핑
-            const dragWrappers = [];
-            for (const img of getPickerImages(picker)) {
-              const h = extractUrlHash(img.src);
-              if (h && dragIds.some(id => _hashToFileId.get(h) === id || id === _hashToFileId.get(h))) {
-                dragWrappers.push(img.parentElement);
-              }
-            }
-            // 삽입 위치: 타겟 래퍼 앞 또는 뒤
-            for (const dw of dragWrappers) {
-              if (dw === targetWrapper) continue;
-              if (isLeft) {
-                grid.insertBefore(dw, targetWrapper);
-              } else {
-                grid.insertBefore(dw, targetWrapper.nextSibling);
-              }
-            }
-          }
-        } catch (domErr) {
-          console.warn(TAG, 'DOM 이동 실패 (무시):', domErr);
-        }
-
-        // 캐시 갱신
-        for (const entry of changedEntries) {
-          const f = _fileCache.find(c => c._id === entry.id);
-          if (f) f.createdAt = entry.createdAt;
-        }
-        _fileCache.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-        buildHashIndex();
-        // 짧은 억제 (변경 1-few건이라 빠름)
-        setTimeout(() => {
-          _suppressObserver = false;
-          const p = getPickerDialog();
-          if (p) setupDraggableImages(p);
-        }, 800);
-      } else {
-        console.error(TAG, '순서 변경 실패:', result?.error);
-        _suppressObserver = false;
-      }
-    } catch (err) {
-      console.error(TAG, '순서 변경 요청 실패:', err);
-      _suppressObserver = false;
-    }
+    // draggable 재설정
+    setTimeout(() => {
+      const p = getPickerDialog();
+      if (p) setupDraggableImages(p);
+    }, 100);
   }
 
   /* ══════════════════════════════════════════════════════
@@ -787,6 +770,9 @@
     setupDraggableImages(picker);
     setupCtrlShiftClick(picker);
 
+    // 저장된 커스텀 순서 적용
+    await applySavedOrder(picker, dir);
+
     // 탭 전환 / 이미지 로드 시 재설정 (디바운스)
     if (_pickerObs) _pickerObs.disconnect();
     let _debounceTimer = null;
@@ -813,6 +799,8 @@
           await refreshFileCache(newDir, newIsRoom ? getRoomIdFromUrl() : null);
           _lastClickedIdx = -1;
           console.log(TAG, `탭 전환: group=${newGroup}, dir=${newDir}, 캐시 ${_fileCache.length}개`);
+          // 탭 전환 시 저장된 순서 적용 (약간 딜레이)
+          setTimeout(() => applySavedOrder(p, newDir), 300);
         }
       }, 150);
     });
