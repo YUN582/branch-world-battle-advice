@@ -164,10 +164,38 @@
   async function resolveHashes(hashes) {
     let ids = hashes.map(h => _hashToFileId.get(h)).filter(Boolean);
     if (ids.length === hashes.length) return ids;
-    // 캐시 미스 — 재로딩 후 재시도
-    console.warn(TAG, `캐시 미스: ${hashes.length - ids.length}개 해시 미해석, 재로딩...`);
+
+    // 1차: 현재 dir 재로딩
+    const missing = hashes.filter(h => !_hashToFileId.get(h));
+    console.warn(TAG, `캐시 미스: ${missing.length}개 해시 미해석, 현재 dir 재로딩...`, missing);
     await refreshFileCache(_currentDir, _currentRoomId);
     ids = hashes.map(h => _hashToFileId.get(h)).filter(Boolean);
+    if (ids.length === hashes.length) return ids;
+
+    // 2차: dir 필터 없이 전체 파일에서 해시 탐색
+    const still = hashes.filter(h => !_hashToFileId.get(h));
+    console.warn(TAG, `여전히 ${still.length}개 미해석, 전체 파일 탐색...`, still);
+    try {
+      const result = await BWBR_Bridge.request(
+        'bwbr-get-user-files', 'bwbr-user-files-data',
+        {},   // dir 필터 없음 — 전체
+        { sendAttr: 'data-bwbr-get-user-files', recvAttr: 'data-bwbr-user-files-data',
+          timeout: 5000, on: document, emit: document }
+      );
+      for (const f of (result?.files || [])) {
+        if (!f.url) continue;
+        if (!_urlToFileIdCache.has(f.url)) _urlToFileIdCache.set(f.url, f._id);
+        const h = extractUrlHash(f.url);
+        if (h && !_hashToFileId.has(h)) _hashToFileId.set(h, f._id);
+      }
+    } catch (err) {
+      console.error(TAG, '전체 파일 탐색 실패:', err);
+    }
+    ids = hashes.map(h => _hashToFileId.get(h)).filter(Boolean);
+    if (ids.length < hashes.length) {
+      const final = hashes.filter(h => !_hashToFileId.get(h));
+      console.error(TAG, `최종 미해석 해시 (Redux에 없는 파일):`, final);
+    }
     return ids;
   }
 
