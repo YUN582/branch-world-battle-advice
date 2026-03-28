@@ -5979,43 +5979,57 @@
       });
       const elapsed = Date.now() - waitStart;
 
-      // ── timeout 시: Redux 강제 업데이트 시도 ──
+      // ── timeout 시: Redux 강제 업데이트 (userFiles/upsertOne 확인됨) ──
       if (waitResult === 'timeout') {
-        console.log(`[CE 이미지] Redux timeout (${elapsed}ms) — 강제 업데이트 시도, 캡처된 액션: ${_capturedUFActionType || '없음'}`);
-
-        // 방법 1: 캡처된 액션 타입으로 dispatch (RTK entity adapter 형식)
-        const ufState = reduxStore.getState().entities?.userFiles;
+        const freshUf = reduxStore.getState().entities?.userFiles;
         for (const { docId } of writeResults) {
-          const oldEntity = ufState?.entities?.[docId];
-          if (!oldEntity) continue;
-          const updated = { ...oldEntity, dir: targetDir, updatedAt: now };
+          // entity 검색: 직접 키 → _id 역검색 → URL 해시 역검색
+          let entity = freshUf?.entities?.[docId];
+          let entityKey = docId;
 
-          // RTK entity adapter의 일반적인 액션 타입 패턴 시도
-          const baseName = _capturedUFActionType?.split('/')[0] || 'userFiles';
-          const tryTypes = [
-            `${baseName}/upsertOne`,
-            `${baseName}/updateOne`,
-            `${baseName}/setOne`,
-          ];
-          let dispatched = false;
-          for (const actionType of tryTypes) {
-            try {
-              if (actionType.includes('update')) {
-                reduxStore.dispatch({ type: actionType, payload: { id: docId, changes: { dir: targetDir, updatedAt: now } } });
-              } else {
-                reduxStore.dispatch({ type: actionType, payload: updated });
+          if (!entity && freshUf?.ids) {
+            for (const key of freshUf.ids) {
+              const ent = freshUf.entities[key];
+              if (ent?._id === docId) {
+                entity = ent; entityKey = key; break;
               }
-              // 확인
-              const check = reduxStore.getState().entities?.userFiles?.entities?.[docId];
-              if (check?.dir === targetDir) {
-                console.log(`[CE 이미지] ✅ Redux 강제 업데이트 성공: ${actionType}`);
-                dispatched = true;
-                break;
+              // URL에서 해시 추출하여 비교
+              if (ent?.url) {
+                try {
+                  const m = decodeURIComponent(ent.url).match(/\/files\/([a-zA-Z0-9_-]+)/);
+                  if (m && m[1] === docId) { entity = ent; entityKey = key; break; }
+                } catch {}
               }
-            } catch (e) {}
+            }
           }
-          if (!dispatched) {
-            console.warn(`[CE 이미지] Redux 강제 업데이트 실패 — 캡처된 타입: ${_capturedUFActionType}`);
+
+          if (!entity) {
+            console.warn(`[CE 이미지] ⚠️ entity 못 찾음: docId=${docId.slice(0,16)}...`,
+              `ids 수: ${freshUf?.ids?.length}, entity 키 샘플:`, (freshUf?.ids || []).slice(0, 3));
+            continue;
+          }
+
+          const updated = { ...entity, _id: entityKey, dir: targetDir, updatedAt: now };
+          try {
+            reduxStore.dispatch({ type: 'userFiles/upsertOne', payload: updated });
+            const check = reduxStore.getState().entities?.userFiles?.entities?.[entityKey];
+            if (check?.dir === targetDir) {
+              console.log(`[CE 이미지] ✅ Redux 강제 upsert 성공: ${entityKey.slice(0,16)}...`);
+            } else {
+              // upsertOne이 작동 안 하면 updateOne 시도 (id + changes 형식)
+              reduxStore.dispatch({
+                type: 'userFiles/updateOne',
+                payload: { id: entityKey, changes: { dir: targetDir, updatedAt: now } }
+              });
+              const check2 = reduxStore.getState().entities?.userFiles?.entities?.[entityKey];
+              if (check2?.dir === targetDir) {
+                console.log(`[CE 이미지] ✅ Redux 강제 updateOne 성공: ${entityKey.slice(0,16)}...`);
+              } else {
+                console.warn(`[CE 이미지] ⚠️ 강제 dispatch 후에도 dir 불일치: have=${check2?.dir} want=${targetDir}`);
+              }
+            }
+          } catch (e) {
+            console.error(`[CE 이미지] dispatch 실패:`, e);
           }
         }
       }
