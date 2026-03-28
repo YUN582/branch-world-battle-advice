@@ -5916,15 +5916,12 @@
       const filesCol = sdk.collection(sdk.db, 'users', uid, 'files');
       const now = Date.now();
 
-      const ops = fileIds.map(fid => ({
-        type: 'set',
-        ref: sdk.doc(filesCol, fid),
-        data: { dir: targetDir, updatedAt: now },
-        options: { merge: true }
-      }));
-
-      const committed = await _batchCommit(sdk, ops);
-      _dbg(`%c[CE 이미지]%c ✅ ${committed}개 파일 → ${targetDir} 이동`,
+      // writeBatch가 신뢰할 수 없으므로 직접 setDoc 사용 (bwbr-modify-status와 동일 패턴)
+      for (const fid of fileIds) {
+        const ref = sdk.doc(filesCol, fid);
+        await sdk.setDoc(ref, { dir: targetDir, updatedAt: now }, { merge: true });
+      }
+      _dbg(`%c[CE 이미지]%c ✅ ${fileIds.length}개 파일 → ${targetDir} 이동`,
         'color: #ff9800; font-weight: bold;', 'color: inherit;');
 
       // 로컬 오버라이드 기록 (Redux는 즉시 반영 안 되므로)
@@ -5933,7 +5930,7 @@
         _fileOverrides.set(fid, { ...prev, dir: targetDir, updatedAt: now });
       }
 
-      respond({ success: true, movedCount: committed });
+      respond({ success: true, movedCount: fileIds.length });
     } catch (err) {
       console.error('[CE 이미지] 파일 이동 실패:', err);
       respond({ success: false, error: err.message });
@@ -5974,43 +5971,22 @@
       const filesCol = sdk.collection(sdk.db, 'users', uid, 'files');
       const now = Date.now();
 
-      const ops = orderedEntries.map(entry => ({
-        type: 'set',
-        ref: sdk.doc(filesCol, entry.id),
-        data: { createdAt: entry.createdAt, updatedAt: now },
-        options: { merge: true }
-      }));
-
-      const committed = await _batchCommit(sdk, ops);
-
-      // 상세 로그: 어떤 파일이 어떻게 변경되었는지
+      // writeBatch가 신뢰할 수 없으므로 직접 setDoc 사용 (bwbr-modify-status와 동일 패턴)
       for (const entry of orderedEntries) {
-        const reduxFile = reduxStore.getState().entities?.userFiles?.entities?.[entry.id];
-        console.log(`%c[CE 이미지]%c 순서변경: ${entry.id} | Redux createdAt: ${reduxFile?.createdAt} → 새값: ${entry.createdAt}`,
-          'color: #ff9800; font-weight: bold;', 'color: inherit;');
+        const ref = sdk.doc(filesCol, entry.id);
+        await sdk.setDoc(ref, { createdAt: entry.createdAt, updatedAt: now }, { merge: true });
       }
-      console.log(`%c[CE 이미지]%c ✅ ${committed}개 Firestore 쓰기 완료`,
-        'color: #4caf50; font-weight: bold;', 'color: inherit;');
 
-      // 3초 후 Redux 동기화 확인 (디버그)
-      setTimeout(() => {
-        for (const entry of orderedEntries) {
-          const f = reduxStore.getState().entities?.userFiles?.entities?.[entry.id];
-          const synced = f?.createdAt === entry.createdAt;
-          console.log(`%c[CE 이미지]%c 3초후 Redux 확인: ${entry.id} | Redux: ${f?.createdAt} | 기대값: ${entry.createdAt} | 동기화: ${synced ? '✅' : '❌'}`,
-            'color: #2196f3; font-weight: bold;', 'color: inherit;');
-        }
-      }, 3000);
+      _dbg(`%c[CE 이미지]%c ✅ ${orderedEntries.length}개 순서 변경 완료`,
+        'color: #4caf50; font-weight: bold;', 'color: inherit;');
 
       // 로컬 오버라이드 기록 (Redux는 즉시 반영 안 되므로)
       for (const entry of orderedEntries) {
         const prev = _fileOverrides.get(entry.id) || {};
         _fileOverrides.set(entry.id, { ...prev, createdAt: entry.createdAt, updatedAt: now });
       }
-      console.log(`%c[CE 이미지]%c _fileOverrides: ${_fileOverrides.size}개 항목`,
-        'color: #9c27b0; font-weight: bold;', 'color: inherit;');
 
-      respond({ success: true, count: committed });
+      respond({ success: true, count: orderedEntries.length });
     } catch (err) {
       console.error('[CE 이미지] 순서 변경 실패:', err);
       respond({ success: false, error: err.message });
