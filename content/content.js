@@ -213,8 +213,13 @@
             const mergedCombat = deepMerge(window.BWBR_COMBAT_DEFAULTS, combatData || {});
             const merged = Object.assign({}, mergedCore, mergedCombat);
             // 정규식, 템플릿은 항상 최신 기본값을 사용 (이전 버전 호환)
-            merged.patterns = JSON.parse(JSON.stringify(window.BWBR_COMBAT_DEFAULTS.patterns));
-            merged.templates = JSON.parse(JSON.stringify(window.BWBR_COMBAT_DEFAULTS.templates));
+            // 가지세계 모듈 비활성 시 BWBR_COMBAT_DEFAULTS가 빈 객체일 수 있으므로 안전 체크
+            if (window.BWBR_COMBAT_DEFAULTS.patterns) {
+              merged.patterns = JSON.parse(JSON.stringify(window.BWBR_COMBAT_DEFAULTS.patterns));
+            }
+            if (window.BWBR_COMBAT_DEFAULTS.templates) {
+              merged.templates = JSON.parse(JSON.stringify(window.BWBR_COMBAT_DEFAULTS.templates));
+            }
             // 효과음: 구 형식(single) → 신 형식(array) 마이그레이션
             migrateSounds(merged.sounds);
             alwaysLog('저장된 설정 로드 (패턴/템플릿은 기본값 사용)');
