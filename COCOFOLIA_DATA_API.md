@@ -2769,14 +2769,20 @@ uf.ids    // ['008ebdee...', '123abc...', ...]
 uf.entities['파일ID']
 ```
 
-### 파일 객체 키 (13개)
+### 파일 객체 키
 
+**Redux 노출 키 (6개)** — 피커 DOM에서 실제로 접근 가능한 키:
+```js
+{ _id, name, url, dir, createdAt, roomId }
+```
+
+**Firestore 실제 키 (13개)** — `getDoc()`으로 직접 읽었을 때:
 ```js
 {
   _id: "008ebdee8ec4ee46b3cb...",       // Firestore 문서 ID (= hash)
   roomId: "UlLwzdRUU",                  // 업로드된 방 ID
   hash: "008ebdee8ec4ee46b3cb...",       // 파일 해시 (= _id)
-  createdAt: 1740890402902,              // 생성 시각 (정렬 기준)
+  createdAt: 1740890402902,              // 생성 시각
   name: "Bind.png",                      // 원본 파일명
   dir: "item",                           // ⭐ 카테고리 디렉토리
   owner: "Az1rUAx4tw...",               // 업로더 UID
@@ -2788,6 +2794,8 @@ uf.entities['파일ID']
   size: 4344                             // 파일 크기 (bytes)
 }
 ```
+
+> ⚠️ Redux entity adapter는 6개 키만 노출. 나머지 7개(`hash`, `owner`, `contentType`, `archived`, `updatedAt`, `uploaded`, `size`)는 Firestore에만 존재.
 
 ### dir 필드 — 카테고리 탭 매핑
 
@@ -2801,26 +2809,32 @@ uf.entities['파일ID']
 | 마커 | `"marker"` | |
 | 컷인 | `"effect"` | |
 
-> **order 필드 없음** — 파일 정렬은 `createdAt` ASC 순서.
-> 순서 변경 시 `createdAt` 값을 재배치하거나 커스텀 필드를 추가해야 함.
+> **order 필드 없음** — 피커 정렬은 어떤 단일 필드와도 무관 (아래 참조).
 
-### ⚠️ 이미지 피커 정렬 순서 (2026-03-28 확인)
+### ⚠️ 이미지 피커 정렬 순서 (2026-03-28 최종 확인)
 
 **Firestore 쓰기 → 서버 반영**: `setDoc({ createdAt|dir|updatedAt }, { merge: true })` 모두 **정상** ✅
 
-**그러나 이미지 피커 표시 순서는 `createdAt`과 무관**: 
+**피커 표시 순서는 어떤 단일 필드로도 결정되지 않음**:
 
-진단 결과:
+진단 결과 (DOM 순서 vs 필드값 정렬 비교):
 - `createdAt ASC` ❌, `createdAt DESC` ❌
 - `_id 사전순(ASC/DESC)` ❌
+- `name ASC/DESC` ❌
 - `hash 사전순` ❌
+
+Redux 노출 키가 6개뿐(`_id, name, url, dir, createdAt, roomId`)이므로
+`updatedAt`, `uploaded`, `size` 등은 Redux에서 비교 불가.
 
 ccfolia 피커의 이미지 순서는 **Redux entity adapter의 `ids[]` 배열 순서**를 그대로 사용하며,
 이는 Firestore `onSnapshot` 리스너가 문서를 수신한 순서에 의해 결정됩니다.
-어떤 단일 필드로도 예측/제어할 수 없는 순서입니다.
 
-**결론**: `createdAt` 수정으로는 피커 순서를 변경할 수 없음.
-커스텀 순서는 `chrome.storage.local`에 저장하고 DOM 조작으로 적용해야 함.
+**미확인 실험 → 실험 완료 (2026-03-28)**:
+`createdAt`를 순차적 밀리초 값(1000~5000) 및 실제 타임스탬프 범위(170000xxxx)로
+덮어쓴 후 페이지 새로고침 → **피커 순서 변화 없음** ❌
+
+**최종 결론**: `createdAt` 수정은 피커 순서에 영향을 주지 않음.
+서버측 순서 제어 불가 확정. `chrome.storage.local` + DOM 조작이 유일한 방법.
 
 ### 이미지 피커 그룹 탭
 
