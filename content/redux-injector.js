@@ -5884,25 +5884,59 @@
 
   // Firestore dir 쓰기 후 Redux가 바로 반영되지 않으므로 로컬 오버라이드로 보정
   const _fileOverrides = new Map(); // fileId → { dir?, updatedAt? }
+  let _stateOverrideVersion = 0;
 
-  // ── Redux dispatch 인터셉터: userFiles 관련 액션 타입 캡처 ──
-  let _capturedUFActionType = null;  // 캡처된 userFiles 액션 타입
-  function setupDispatchInterceptor() {
-    if (reduxStore._ceFileIntercepted) return;
-    reduxStore._ceFileIntercepted = true;
-    const origDispatch = reduxStore.dispatch;
-    reduxStore.dispatch = function(action) {
-      if (action?.type && typeof action.type === 'string' && !action.type.startsWith('@@')) {
-        // userFiles 엔티티 변경 액션 감지
-        const t = action.type;
-        if ((t.includes('File') || t.includes('file')) && !_capturedUFActionType) {
-          _capturedUFActionType = t;
-          console.log('[CE] 🔍 userFiles 액션 캡처:', t, JSON.stringify(action).slice(0, 300));
+  // ── getState 인터셉터: _fileOverrides를 ccfolia React에 반영 ──
+  function setupGetStateInterceptor() {
+    if (reduxStore._ceGetStatePatched) return;
+    reduxStore._ceGetStatePatched = true;
+
+    const origGetState = reduxStore.getState.bind(reduxStore);
+    let _cachedRaw = null, _cachedPatched = null, _cachedOvVer = -1;
+
+    reduxStore.getState = function() {
+      const raw = origGetState();
+      if (_fileOverrides.size === 0) return raw;
+      if (raw === _cachedRaw && _stateOverrideVersion === _cachedOvVer && _cachedPatched) return _cachedPatched;
+
+      _cachedRaw = raw;
+      _cachedOvVer = _stateOverrideVersion;
+
+      const uf = raw.entities?.userFiles;
+      if (!uf) { _cachedPatched = raw; return raw; }
+
+      let anyPatch = false;
+      const newEnts = {};
+      const staleKeys = [];
+
+      for (const key of uf.ids) {
+        const ent = uf.entities[key];
+        const ov = _fileOverrides.get(key) || (ent?._id && ent._id !== key ? _fileOverrides.get(ent._id) : null);
+        if (ov && ent) {
+          if (ent.dir === ov.dir) {
+            // onSnapshot이 이미 반영됨 → 오버라이드 제거
+            staleKeys.push(ov === _fileOverrides.get(key) ? key : ent._id);
+            newEnts[key] = ent;
+          } else {
+            newEnts[key] = { ...ent, ...ov };
+            anyPatch = true;
+          }
+        } else {
+          newEnts[key] = ent;
         }
       }
-      return origDispatch.call(reduxStore, action);
+
+      for (const k of staleKeys) _fileOverrides.delete(k);
+
+      if (!anyPatch) { _cachedPatched = raw; return raw; }
+
+      _cachedPatched = {
+        ...raw,
+        entities: { ...raw.entities, userFiles: { ...uf, entities: newEnts } }
+      };
+      return _cachedPatched;
     };
-    console.log('[CE] dispatch 인터셉터 설정 완료');
+    console.log('[CE] getState 인터셉터 설정 완료');
   }
 
   /**
@@ -5926,9 +5960,6 @@
         return respond({ success: false, error: '잘못된 페이로드' });
       }
 
-      // dispatch 인터셉터 설정 (최초 1회)
-      setupDispatchInterceptor();
-
       const sdk = acquireFirestoreSDK();
       if (!sdk) return respond({ success: false, error: 'Firestore SDK 없음' });
 
@@ -5940,8 +5971,8 @@
       const filesCol = sdk.collection(sdk.db, 'users', uid, 'files');
       const now = Date.now();
 
-      // ── Firestore 쓰기 ──
-      const writeResults = [];
+      // ── Firestore 쓰기 + 오버라이드 ──
+      let movedCount = 0;
       for (const fid of fileIds) {
         let docId = fid;
         if (!uf?.entities?.[fid] && uf?.ids) {
@@ -5951,91 +5982,17 @@
         }
         const ref = sdk.doc(filesCol, docId);
         await sdk.setDoc(ref, { dir: targetDir, updatedAt: now }, { merge: true });
-        writeResults.push({ fid, docId, match: fid === docId });
+        _fileOverrides.set(docId, { dir: targetDir, updatedAt: now });
+        movedCount++;
       }
 
-      // 로컬 오버라이드 기록
-      for (const { docId } of writeResults) {
-        const prev = _fileOverrides.get(docId) || {};
-        _fileOverrides.set(docId, { ...prev, dir: targetDir, updatedAt: now });
-      }
+      // ── getState 인터셉터로 ccfolia React 강제 갱신 ──
+      _stateOverrideVersion++;
+      setupGetStateInterceptor();
+      reduxStore.dispatch({ type: '@@CE_FILE_OVERRIDE' });
 
-      // ── Redux 반영 대기 (짧은 타임아웃 — 룸 파일은 즉시, 비룸 파일은 500ms 후 강제) ──
-      const checkDocId = writeResults[0]?.docId || fileIds[0];
-      const waitStart = Date.now();
-      let waitResult = 'unknown';
-      await new Promise(resolve => {
-        const st = reduxStore.getState();
-        const ent = st.entities?.userFiles?.entities?.[checkDocId];
-        if (ent?.dir === targetDir) { waitResult = 'already'; resolve(); return; }
-
-        const unsub = reduxStore.subscribe(() => {
-          const s = reduxStore.getState();
-          const e = s.entities?.userFiles?.entities?.[checkDocId];
-          if (e?.dir === targetDir) { waitResult = 'updated'; unsub(); resolve(); }
-        });
-        // 500ms만 대기 (이전 3초 → 줄임)
-        setTimeout(() => { waitResult = 'timeout'; unsub(); resolve(); }, 500);
-      });
-      const elapsed = Date.now() - waitStart;
-
-      // ── timeout 시: Redux 강제 업데이트 (userFiles/upsertOne 확인됨) ──
-      if (waitResult === 'timeout') {
-        const freshUf = reduxStore.getState().entities?.userFiles;
-        for (const { docId } of writeResults) {
-          // entity 검색: 직접 키 → _id 역검색 → URL 해시 역검색
-          let entity = freshUf?.entities?.[docId];
-          let entityKey = docId;
-
-          if (!entity && freshUf?.ids) {
-            for (const key of freshUf.ids) {
-              const ent = freshUf.entities[key];
-              if (ent?._id === docId) {
-                entity = ent; entityKey = key; break;
-              }
-              // URL에서 해시 추출하여 비교
-              if (ent?.url) {
-                try {
-                  const m = decodeURIComponent(ent.url).match(/\/files\/([a-zA-Z0-9_-]+)/);
-                  if (m && m[1] === docId) { entity = ent; entityKey = key; break; }
-                } catch {}
-              }
-            }
-          }
-
-          if (!entity) {
-            console.warn(`[CE 이미지] ⚠️ entity 못 찾음: docId=${docId.slice(0,16)}...`,
-              `ids 수: ${freshUf?.ids?.length}, entity 키 샘플:`, (freshUf?.ids || []).slice(0, 3));
-            continue;
-          }
-
-          const updated = { ...entity, _id: entityKey, dir: targetDir, updatedAt: now };
-          try {
-            reduxStore.dispatch({ type: 'userFiles/upsertOne', payload: updated });
-            const check = reduxStore.getState().entities?.userFiles?.entities?.[entityKey];
-            if (check?.dir === targetDir) {
-              console.log(`[CE 이미지] ✅ Redux 강제 upsert 성공: ${entityKey.slice(0,16)}...`);
-            } else {
-              // upsertOne이 작동 안 하면 updateOne 시도 (id + changes 형식)
-              reduxStore.dispatch({
-                type: 'userFiles/updateOne',
-                payload: { id: entityKey, changes: { dir: targetDir, updatedAt: now } }
-              });
-              const check2 = reduxStore.getState().entities?.userFiles?.entities?.[entityKey];
-              if (check2?.dir === targetDir) {
-                console.log(`[CE 이미지] ✅ Redux 강제 updateOne 성공: ${entityKey.slice(0,16)}...`);
-              } else {
-                console.warn(`[CE 이미지] ⚠️ 강제 dispatch 후에도 dir 불일치: have=${check2?.dir} want=${targetDir}`);
-              }
-            }
-          } catch (e) {
-            console.error(`[CE 이미지] dispatch 실패:`, e);
-          }
-        }
-      }
-
-      console.log(`[CE 이미지] 완료: ${waitResult} (${elapsed}ms), ${writeResults.length}개 파일`);
-      respond({ success: true, movedCount: fileIds.length, reduxWait: waitResult, reduxMs: elapsed });
+      console.log(`[CE 이미지] ✅ ${movedCount}개 → ${targetDir} 이동 (getState 오버라이드)`);
+      respond({ success: true, movedCount });
     } catch (err) {
       console.error('[CE 이미지] 파일 이동 실패:', err);
       respond({ success: false, error: err.message });
