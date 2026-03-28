@@ -462,37 +462,27 @@
       if (result?.success) {
         console.log(TAG, `✅ ${result.movedCount}개 이동 완료`,
           `(Redux: ${result.reduxWait}, ${result.reduxMs}ms)`);
-        // 캐시에서 이동된 파일의 dir 업데이트
+
+        // 1) DOM에서 이동한 이미지 즉시 숨김 (드래그 원본)
+        const movedHashSet = new Set(_dragHashes);
+        for (const img of getPickerImages(picker)) {
+          const h = extractUrlHash(img.src);
+          if (h && movedHashSet.has(h)) {
+            const wrapper = img.parentElement;
+            if (wrapper) {
+              wrapper.style.display = 'none';
+              wrapper.dataset.bwbrMoved = '1';
+            }
+          }
+        }
+
+        // 2) 캐시에서 이동된 파일의 dir 업데이트
         for (const f of _fileCache) {
           if (fileIds.includes(f._id)) f.dir = targetDir;
         }
         buildHashIndex();
 
-        // ROOM/ALL 토글로 ccfolia React 완전 재빌드 강제
-        const toolbar = picker.querySelector('.MuiToolbar-root');
-        let toggled = false;
-        if (toolbar) {
-          const groupBtns = [];
-          for (const btn of toolbar.querySelectorAll('button')) {
-            const t = btn.textContent.trim().toUpperCase();
-            if (t === 'ROOM' || t === 'ALL') groupBtns.push({ btn, text: t });
-          }
-          const currentGroup = getCurrentGroup(picker);
-          const otherGroupBtn = groupBtns.find(b =>
-            (currentGroup === 'all' ? b.text === 'ROOM' : b.text === 'ALL'));
-          const currentGroupBtn = groupBtns.find(b =>
-            (currentGroup === 'all' ? b.text === 'ALL' : b.text === 'ROOM'));
-          if (otherGroupBtn && currentGroupBtn) {
-            otherGroupBtn.btn.click();          // 다른 그룹으로 전환
-            await new Promise(r => setTimeout(r, 250));
-            currentGroupBtn.btn.click();        // 원래 그룹으로 복귀
-            await new Promise(r => setTimeout(r, 250));
-            toggled = true;
-            console.log(TAG, `ROOM/ALL 토글 완료 (${currentGroup}→${otherGroupBtn.text}→${currentGroup})`);
-          }
-        }
-
-        // 대상 탭 클릭
+        // 3) 대상 탭 클릭
         tab.click();
 
         setTimeout(async () => {
@@ -502,18 +492,8 @@
             await refreshFileCache(getCurrentDir(p) || targetDir, _isGroupRoom ? getRoomIdFromUrl() : null);
             console.log(TAG, `탭 이동 후 캐시 갱신: ${_fileCache.length}개`);
             setupDraggableImages(p);
-
-            // 진단: 대상 탭 DOM에 이동한 이미지가 있는지 확인
-            const movedHashes = fileIds.map(fid => {
-              const f = _fileCache.find(x => x._id === fid);
-              return f ? extractUrlHash(f.url) : null;
-            }).filter(Boolean);
-            const domHashes = new Set(getPickerImages(p).map(img => extractUrlHash(img.src)).filter(Boolean));
-            const found = movedHashes.filter(h => domHashes.has(h));
-            console.log(TAG, `[진단] 대상탭 DOM: ${domHashes.size}개, 이동파일 DOM 존재: ${found.length}/${movedHashes.length}`,
-              found.length < movedHashes.length ? `(미표시: ${movedHashes.filter(h => !domHashes.has(h))})` : '');
           }
-        }, 500);
+        }, 400);
       } else {
         console.error(TAG, '이동 실패:', result?.error || '응답에 error 필드 없음', result);
         _suppressObserver = false;

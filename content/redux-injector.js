@@ -5885,6 +5885,26 @@
   // Firestore dir 쓰기 후 Redux가 바로 반영되지 않으므로 로컬 오버라이드로 보정
   const _fileOverrides = new Map(); // fileId → { dir?, updatedAt? }
 
+  // ── Redux dispatch 인터셉터: userFiles 관련 액션 타입 캡처 ──
+  let _capturedUFActionType = null;  // 캡처된 userFiles 액션 타입
+  function setupDispatchInterceptor() {
+    if (reduxStore._ceFileIntercepted) return;
+    reduxStore._ceFileIntercepted = true;
+    const origDispatch = reduxStore.dispatch;
+    reduxStore.dispatch = function(action) {
+      if (action?.type && typeof action.type === 'string' && !action.type.startsWith('@@')) {
+        // userFiles 엔티티 변경 액션 감지
+        const t = action.type;
+        if ((t.includes('File') || t.includes('file')) && !_capturedUFActionType) {
+          _capturedUFActionType = t;
+          console.log('[CE] 🔍 userFiles 액션 캡처:', t, JSON.stringify(action).slice(0, 300));
+        }
+      }
+      return origDispatch.call(reduxStore, action);
+    };
+    console.log('[CE] dispatch 인터셉터 설정 완료');
+  }
+
   /**
    * bwbr-move-files-dir — 파일들의 카테고리(dir) 일괄 변경
    * payload: { fileIds: string[], targetDir: string }
@@ -5906,6 +5926,9 @@
         return respond({ success: false, error: '잘못된 페이로드' });
       }
 
+      // dispatch 인터셉터 설정 (최초 1회)
+      setupDispatchInterceptor();
+
       const sdk = acquireFirestoreSDK();
       if (!sdk) return respond({ success: false, error: 'Firestore SDK 없음' });
 
@@ -5914,32 +5937,12 @@
       if (!uid) return respond({ success: false, error: 'UID 획득 실패' });
 
       const uf = state.entities?.userFiles;
-
-      // ── 진단: fid ↔ Redux entity key 매칭 확인 ──
-      for (const fid of fileIds) {
-        const directEntity = uf?.entities?.[fid];
-        const entityKeyMatch = uf?.ids?.includes(fid);
-        // _id 필드로 역검색 (entity key와 다를 수 있음)
-        let foundByIdField = null;
-        if (!directEntity && uf?.ids) {
-          for (const key of uf.ids) {
-            if (uf.entities[key]?._id === fid) { foundByIdField = key; break; }
-          }
-        }
-        console.log(`[CE 이미지 진단] fid=${fid.slice(0,16)}...`,
-          `entityKey일치=${entityKeyMatch}`,
-          `entity존재=${!!directEntity}`,
-          `entity.dir=${directEntity?.dir || 'N/A'}`,
-          foundByIdField ? `⚠️ _id→entityKey 불일치! entityKey=${foundByIdField}` : '');
-      }
-
       const filesCol = sdk.collection(sdk.db, 'users', uid, 'files');
       const now = Date.now();
 
-      // ── Firestore 쓰기 (실제 entity key 사용) ──
+      // ── Firestore 쓰기 ──
       const writeResults = [];
       for (const fid of fileIds) {
-        // fid가 entity key와 일치하면 그대로 사용, 아니면 entity key 역검색
         let docId = fid;
         if (!uf?.entities?.[fid] && uf?.ids) {
           for (const key of uf.ids) {
@@ -5950,16 +5953,14 @@
         await sdk.setDoc(ref, { dir: targetDir, updatedAt: now }, { merge: true });
         writeResults.push({ fid, docId, match: fid === docId });
       }
-      console.log(`[CE 이미지] ✅ ${fileIds.length}개 Firestore 쓰기 완료`,
-        writeResults.some(r => !r.match) ? `⚠️ ID 불일치 보정: ${JSON.stringify(writeResults)}` : '');
 
-      // 로컬 오버라이드 기록 (entity key 기준)
+      // 로컬 오버라이드 기록
       for (const { docId } of writeResults) {
         const prev = _fileOverrides.get(docId) || {};
         _fileOverrides.set(docId, { ...prev, dir: targetDir, updatedAt: now });
       }
 
-      // Redux 상태가 실제로 반영될 때까지 대기 (onSnapshot 전파 대기)
+      // ── Redux 반영 대기 (짧은 타임아웃 — 룸 파일은 즉시, 비룸 파일은 500ms 후 강제) ──
       const checkDocId = writeResults[0]?.docId || fileIds[0];
       const waitStart = Date.now();
       let waitResult = 'unknown';
@@ -5967,21 +5968,59 @@
         const st = reduxStore.getState();
         const ent = st.entities?.userFiles?.entities?.[checkDocId];
         if (ent?.dir === targetDir) { waitResult = 'already'; resolve(); return; }
-        console.log(`[CE 이미지] Redux 대기: docId=${checkDocId.slice(0,16)}... 현재dir=${ent?.dir}, 목표=${targetDir}, entity존재=${!!ent}`);
 
         const unsub = reduxStore.subscribe(() => {
           const s = reduxStore.getState();
           const e = s.entities?.userFiles?.entities?.[checkDocId];
-          if (e?.dir === targetDir) {
-            waitResult = 'updated';
-            unsub(); resolve();
-          }
+          if (e?.dir === targetDir) { waitResult = 'updated'; unsub(); resolve(); }
         });
-        setTimeout(() => { waitResult = 'timeout'; unsub(); resolve(); }, 3000);
+        // 500ms만 대기 (이전 3초 → 줄임)
+        setTimeout(() => { waitResult = 'timeout'; unsub(); resolve(); }, 500);
       });
       const elapsed = Date.now() - waitStart;
-      console.log(`[CE 이미지] Redux 반영: ${waitResult} (${elapsed}ms), docId=${checkDocId.slice(0,16)}...`);
 
+      // ── timeout 시: Redux 강제 업데이트 시도 ──
+      if (waitResult === 'timeout') {
+        console.log(`[CE 이미지] Redux timeout (${elapsed}ms) — 강제 업데이트 시도, 캡처된 액션: ${_capturedUFActionType || '없음'}`);
+
+        // 방법 1: 캡처된 액션 타입으로 dispatch (RTK entity adapter 형식)
+        const ufState = reduxStore.getState().entities?.userFiles;
+        for (const { docId } of writeResults) {
+          const oldEntity = ufState?.entities?.[docId];
+          if (!oldEntity) continue;
+          const updated = { ...oldEntity, dir: targetDir, updatedAt: now };
+
+          // RTK entity adapter의 일반적인 액션 타입 패턴 시도
+          const baseName = _capturedUFActionType?.split('/')[0] || 'userFiles';
+          const tryTypes = [
+            `${baseName}/upsertOne`,
+            `${baseName}/updateOne`,
+            `${baseName}/setOne`,
+          ];
+          let dispatched = false;
+          for (const actionType of tryTypes) {
+            try {
+              if (actionType.includes('update')) {
+                reduxStore.dispatch({ type: actionType, payload: { id: docId, changes: { dir: targetDir, updatedAt: now } } });
+              } else {
+                reduxStore.dispatch({ type: actionType, payload: updated });
+              }
+              // 확인
+              const check = reduxStore.getState().entities?.userFiles?.entities?.[docId];
+              if (check?.dir === targetDir) {
+                console.log(`[CE 이미지] ✅ Redux 강제 업데이트 성공: ${actionType}`);
+                dispatched = true;
+                break;
+              }
+            } catch (e) {}
+          }
+          if (!dispatched) {
+            console.warn(`[CE 이미지] Redux 강제 업데이트 실패 — 캡처된 타입: ${_capturedUFActionType}`);
+          }
+        }
+      }
+
+      console.log(`[CE 이미지] 완료: ${waitResult} (${elapsed}ms), ${writeResults.length}개 파일`);
       respond({ success: true, movedCount: fileIds.length, reduxWait: waitResult, reduxMs: elapsed });
     } catch (err) {
       console.error('[CE 이미지] 파일 이동 실패:', err);
