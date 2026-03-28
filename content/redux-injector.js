@@ -19,6 +19,64 @@
 
   let reduxStore = null;
 
+  // ── 이미지 매니저: 로컬 오버라이드 (setupStore보다 먼저 선언 필요) ──
+  const _fileOverrides = new Map(); // fileId → { dir?, updatedAt? }
+  let _stateOverrideVersion = 0;
+
+  // ── getState 인터셉터: _fileOverrides를 ccfolia React에 반영 ──
+  // setupStore()에서 즉시 호출하여 React 컴포넌트 마운트 전에 패치해야
+  // useSyncExternalStore 구독이 패치된 getState를 참조함
+  function setupGetStateInterceptor() {
+    if (!reduxStore || reduxStore._ceGetStatePatched) return;
+    reduxStore._ceGetStatePatched = true;
+
+    const origGetState = reduxStore.getState.bind(reduxStore);
+    let _cachedRaw = null, _cachedPatched = null, _cachedOvVer = -1;
+
+    reduxStore.getState = function() {
+      const raw = origGetState();
+      if (_fileOverrides.size === 0) return raw;
+      if (raw === _cachedRaw && _stateOverrideVersion === _cachedOvVer && _cachedPatched) return _cachedPatched;
+
+      _cachedRaw = raw;
+      _cachedOvVer = _stateOverrideVersion;
+
+      const uf = raw.entities?.userFiles;
+      if (!uf) { _cachedPatched = raw; return raw; }
+
+      let anyPatch = false;
+      const newEnts = {};
+      const staleKeys = [];
+
+      for (const key of uf.ids) {
+        const ent = uf.entities[key];
+        const ov = _fileOverrides.get(key) || (ent?._id && ent._id !== key ? _fileOverrides.get(ent._id) : null);
+        if (ov && ent) {
+          if (ent.dir === ov.dir) {
+            staleKeys.push(ov === _fileOverrides.get(key) ? key : ent._id);
+            newEnts[key] = ent;
+          } else {
+            newEnts[key] = { ...ent, ...ov };
+            anyPatch = true;
+          }
+        } else {
+          newEnts[key] = ent;
+        }
+      }
+
+      for (const k of staleKeys) _fileOverrides.delete(k);
+
+      if (!anyPatch) { _cachedPatched = raw; return raw; }
+
+      _cachedPatched = {
+        ...raw,
+        entities: { ...raw.entities, userFiles: { ...uf, entities: newEnts } }
+      };
+      return _cachedPatched;
+    };
+    console.log('[CE] getState 인터셉터 설정 완료');
+  }
+
   // ── [COMBAT] 토큰 바인딩 캐시 (ISOLATED world에서 동기화) ──
   let _tokenBindings = {};      // { panelId: charId }
   let _tokenBindingsRoomId = null;
@@ -137,6 +195,9 @@
     reduxStore = getReduxStore();
     
     if (reduxStore) {
+      // ★ getState 인터셉터를 최대한 빨리 설정 (React 컴포넌트 마운트 전)
+      setupGetStateInterceptor();
+
       const chars = getCharacterData();
       const charCount = chars?.length || 0;
       
@@ -5881,63 +5942,6 @@
   /* ══════════════════════════════════════════════════════════
    *  이미지 매니저 — 파일 카테고리 이동 / 파일 목록 조회
    * ══════════════════════════════════════════════════════════ */
-
-  // Firestore dir 쓰기 후 Redux가 바로 반영되지 않으므로 로컬 오버라이드로 보정
-  const _fileOverrides = new Map(); // fileId → { dir?, updatedAt? }
-  let _stateOverrideVersion = 0;
-
-  // ── getState 인터셉터: _fileOverrides를 ccfolia React에 반영 ──
-  function setupGetStateInterceptor() {
-    if (reduxStore._ceGetStatePatched) return;
-    reduxStore._ceGetStatePatched = true;
-
-    const origGetState = reduxStore.getState.bind(reduxStore);
-    let _cachedRaw = null, _cachedPatched = null, _cachedOvVer = -1;
-
-    reduxStore.getState = function() {
-      const raw = origGetState();
-      if (_fileOverrides.size === 0) return raw;
-      if (raw === _cachedRaw && _stateOverrideVersion === _cachedOvVer && _cachedPatched) return _cachedPatched;
-
-      _cachedRaw = raw;
-      _cachedOvVer = _stateOverrideVersion;
-
-      const uf = raw.entities?.userFiles;
-      if (!uf) { _cachedPatched = raw; return raw; }
-
-      let anyPatch = false;
-      const newEnts = {};
-      const staleKeys = [];
-
-      for (const key of uf.ids) {
-        const ent = uf.entities[key];
-        const ov = _fileOverrides.get(key) || (ent?._id && ent._id !== key ? _fileOverrides.get(ent._id) : null);
-        if (ov && ent) {
-          if (ent.dir === ov.dir) {
-            // onSnapshot이 이미 반영됨 → 오버라이드 제거
-            staleKeys.push(ov === _fileOverrides.get(key) ? key : ent._id);
-            newEnts[key] = ent;
-          } else {
-            newEnts[key] = { ...ent, ...ov };
-            anyPatch = true;
-          }
-        } else {
-          newEnts[key] = ent;
-        }
-      }
-
-      for (const k of staleKeys) _fileOverrides.delete(k);
-
-      if (!anyPatch) { _cachedPatched = raw; return raw; }
-
-      _cachedPatched = {
-        ...raw,
-        entities: { ...raw.entities, userFiles: { ...uf, entities: newEnts } }
-      };
-      return _cachedPatched;
-    };
-    console.log('[CE] getState 인터셉터 설정 완료');
-  }
 
   /**
    * bwbr-move-files-dir — 파일들의 카테고리(dir) 일괄 변경
