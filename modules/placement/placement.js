@@ -1207,6 +1207,8 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   border-radius: 8px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.25);
   padding: 10px;
+  width: 180px;
+  box-sizing: border-box;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -1231,7 +1233,8 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   flex-shrink: 0;
 }
 .bwbr-color-popup-hex {
-  width: 68px;
+  flex: 1;
+  min-width: 0;
   height: 24px;
   border: 1px solid #ccc;
   border-radius: 4px;
@@ -6128,10 +6131,14 @@ function _dispatchCreatePanelOrMarker(panelData) {
       document.documentElement.removeAttribute('data-bwbr-create-marker-result');
       try {
         var res = raw ? JSON.parse(raw) : {};
-        if (!res.success && res.error) {
+        if (res.success && res.imageStripped) {
+          if (window.BWBR_FabButtons && window.BWBR_FabButtons.showToast) {
+            window.BWBR_FabButtons.showToast('룸 문서 크기 제한으로 이미지 없이 마커가 생성되었습니다.', { bg: 'rgba(255,152,0,0.92)', color: '#fff', duration: 3500 });
+          }
+        } else if (!res.success && res.error) {
           var msg = '마커 생성 실패: ' + res.error;
           if (res.error.indexOf('size') !== -1 || res.error.indexOf('1,048,576') !== -1) {
-            msg = '⚠️ 룸 마커 데이터가 Firestore 1MB 제한에 도달했습니다.\n기존 마커를 삭제하거나 스크린(object) 타입으로 전환하세요.';
+            msg = '⚠️ 룸 문서가 Firestore 1MB 제한에 도달했습니다.\n기존 마커를 삭제하거나 스크린(object) 타입으로 전환하세요.';
           }
           if (window.BWBR_FabButtons && window.BWBR_FabButtons.showToast) {
             window.BWBR_FabButtons.showToast(msg, { bg: 'rgba(211,47,47,0.92)', color: '#fff', duration: 4000 });
@@ -6269,8 +6276,8 @@ function compositeAndCommit() {
     });
 
     var dataUrl;
-    // 마커(plane)는 룸 문서에 저장 → 1MB 제한 공유 → 200KB 이내로 압축
-    var compressMax = (s.type === 'plane') ? 200000 : 900000;
+    // 마커(plane)는 룸 문서에 inline 저장 → 1MB 문서 제한 공유 → 50KB 대상
+    var compressMax = (s.type === 'plane') ? 50000 : 900000;
     try {
       dataUrl = compressCanvasToDataUrl(canvas, compressMax);
     } catch (err) {
