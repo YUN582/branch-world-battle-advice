@@ -686,6 +686,34 @@
           };
           console.log('%c[CE]%c ✅ Firestore SDK 획득 성공 (알려진 키)',
             'color: #4caf50; font-weight: bold;', 'color: inherit;');
+
+          // ── 진단: onSnapshot/query/where 키 탐색 ──
+          try {
+            const queryKeys = [];
+            for (const [k, fn] of Object.entries(fsMod)) {
+              if (typeof fn !== 'function') continue;
+              const src = fn.toString().slice(0, 600);
+              if (src.includes('onSnapshot') || src.includes('Snapshot')) {
+                queryKeys.push({ k, hint: 'onSnapshot', src: src.slice(0, 120) });
+              }
+              if (src.includes('query') || src.includes('Query')) {
+                queryKeys.push({ k, hint: 'query', src: src.slice(0, 120) });
+              }
+              if (src.includes('where') || src.includes('Where')) {
+                queryKeys.push({ k, hint: 'where', src: src.slice(0, 120) });
+              }
+              if (src.includes('orderBy') || src.includes('OrderBy')) {
+                queryKeys.push({ k, hint: 'orderBy', src: src.slice(0, 120) });
+              }
+            }
+            if (queryKeys.length > 0) {
+              console.log('[CE 진단] Firestore 쿼리 관련 함수:', queryKeys.length, '개');
+              for (const q of queryKeys) console.log(`  ${q.hint}: key="${q.k}"`, q.src);
+            } else {
+              console.log('[CE 진단] Firestore 모듈에서 쿼리 함수 못 찾음');
+            }
+          } catch (diagErr) { console.warn('[CE 진단] 오류:', diagErr.message); }
+
           return _firestoreSDK;
         }
       } catch (e) {}
