@@ -745,10 +745,16 @@
     let getDocsFn = fsMod[_FS_CONFIG.fsKeys.getDocs];
     let deleteDocFn = fsMod[_FS_CONFIG.fsKeys.deleteDoc];
 
+    // 진단 로깅
+    console.log('[CE SDK] db:', !!db, 'db.type:', db?.type,
+      'col:', typeof collectionFn, 'doc:', typeof docFn, 'setDoc:', typeof setDocFn,
+      'getDocs:', typeof getDocsFn, 'deleteDoc:', typeof deleteDocFn);
+
     // 검증
     if (typeof collectionFn === 'function' && typeof docFn === 'function' && typeof setDocFn === 'function') {
       try {
         const testRef = collectionFn(db, '__bwbr_validate__');
+        console.log('[CE SDK] testRef:', !!testRef, 'type:', testRef?.type, 'path:', testRef?.path);
         if (testRef && testRef.type === 'collection') {
           _firestoreSDK = {
             db, setDoc: setDocFn, doc: docFn, collection: collectionFn,
@@ -764,27 +770,14 @@
 
           return _firestoreSDK;
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error('[CE SDK] 알려진 키 검증 예외:', e);
+      }
     }
 
-    // 2차: 자동 탐색
-    console.log('%c[CE]%c 알려진 키 실패 → 자동 탐색 시작...',
-      'color: #ff9800; font-weight: bold;', 'color: inherit;');
-    const discovered = autoDiscoverFirestoreFunctions(fsMod, db);
-    if (discovered) {
-      // getDocs, deleteDoc는 자동탐색으로 찾을 수 없으므로 알려진 키로 시도
-      let fallbackGetDocs = fsMod[_FS_CONFIG.fsKeys.getDocs];
-      let fallbackDeleteDoc = fsMod[_FS_CONFIG.fsKeys.deleteDoc];
-      _firestoreSDK = {
-        db, ...discovered,
-        getDocs: typeof fallbackGetDocs === 'function' ? fallbackGetDocs : null,
-        deleteDoc: typeof fallbackDeleteDoc === 'function' ? fallbackDeleteDoc : null,
-        writeBatch: _discoverWriteBatch(fsMod, db)
-      };
-      return _firestoreSDK;
-    }
-
-    console.error('[CE] Firestore SDK 자동 탐색 실패!');
+    // 2차: 자동 탐색 (안전 모드 — 진단만 출력, Firestore 호출 금지)
+    console.error('[CE] 알려진 키 검증 실패 — 모듈 키가 변경되었을 수 있음');
+    console.error('[CE] 모듈 ' + _FS_CONFIG.firestoreModId + ' export 키 목록:', Object.keys(fsMod).filter(k => typeof fsMod[k] === 'function').join(', '));
     console.error('[CE] → 콘솔에서 실행: window.dispatchEvent(new CustomEvent("bwbr-discover-firestore"))');
     return null;
   }
