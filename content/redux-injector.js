@@ -650,16 +650,18 @@
     const wrappedGetDocs = async function wrappedGetDocs() {
       const snapshot = await origGetDocs.apply(this, arguments);
 
+      // 진단: getDocs 호출 추적
+      let qPath = '';
+      try {
+        const segs = arguments[0]?._query?.path?.segments || arguments[0]?.path?.segments;
+        if (segs) qPath = segs.join('/');
+      } catch {}
+      console.log(`[CE getDocs] 호출됨 path=${qPath.slice(-40)} overrides=${_fileOverrides.size} docs=${snapshot.docs?.length}`);
+
       if (_fileOverrides.size === 0) return snapshot;
 
       // files 컬렉션 쿼리인지 확인
-      const queryRef = arguments[0];
-      let path = '';
-      try {
-        const segs = queryRef?._query?.path?.segments || queryRef?.path?.segments;
-        if (segs) path = segs.join('/');
-      } catch {}
-      if (!path.includes('/files')) return snapshot;
+      if (!qPath.includes('/files')) return snapshot;
 
       // docs에 오버라이드 적용
       let patchCount = 0;
@@ -685,7 +687,7 @@
 
       if (patchCount === 0) return snapshot;
 
-      console.log(`[CE getDocs] ✅ ${patchCount}개 문서 오버라이드 적용 (path: ...${path.slice(-30)})`);
+      console.log(`[CE getDocs] ✅ ${patchCount}개 문서 오버라이드 적용 (path: ...${qPath.slice(-30)})`);
 
       return new Proxy(snapshot, {
         get(target, prop) {

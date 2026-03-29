@@ -483,8 +483,32 @@
         }
         buildHashIndex();
 
-        // 3) 대상 탭 클릭
-        tab.click();
+        // 3) ALL 모드: ROOM→ALL 토글로 ccfolia의 getDocs 캐시 갱신 유도
+        //    ROOM 모드: onSnapshot이 자동 갱신하므로 불필요
+        if (!_isGroupRoom) {
+          const toolbar = picker.querySelector('.MuiToolbar-root');
+          let roomBtn = null, allBtn = null;
+          if (toolbar) {
+            for (const btn of toolbar.querySelectorAll('button')) {
+              const t = btn.textContent.trim().toUpperCase();
+              if (t === 'ROOM') roomBtn = btn;
+              else if (t === 'ALL') allBtn = btn;
+            }
+          }
+          if (roomBtn && allBtn) {
+            console.log(TAG, 'ALL 모드: ROOM→ALL 토글 (getDocs 재조회)');
+            roomBtn.click();
+            await new Promise(r => setTimeout(r, 150));
+            allBtn.click();
+            await new Promise(r => setTimeout(r, 300));
+          }
+        }
+
+        // 4) 대상 탭 클릭 (토글 후 탭이 재생성될 수 있으므로 다시 찾기)
+        const freshTabs = getCategoryTabs(picker);
+        const freshTarget = freshTabs.find(t => TAB_DIR_MAP[t.textContent.trim()] === targetDir);
+        if (freshTarget) freshTarget.click();
+        else tab.click();
 
         setTimeout(async () => {
           _suppressObserver = false;
