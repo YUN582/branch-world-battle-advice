@@ -392,15 +392,16 @@
       if (tab) { tab.style.borderBottom = ''; }
     }, true);
 
-    // ── drop (capture — MUI 이벤트 가로채기 방지) ──────────
+    // ── drop (capture — 내부 이미지 드래그만 가로채기) ──────────
     picker.addEventListener('drop', async e => {
-      e.preventDefault();
-      e.stopPropagation();
-
+      // 내부 이미지 드래그가 아니면 네이티브 동작 허용 (파일 업로드 등)
       if (_dragHashes.length === 0) {
         clearDropIndicators(picker);
         return;
       }
+
+      e.preventDefault();
+      e.stopPropagation();
 
       // 탭에 드롭
       const tab = e.target.closest('[role="tab"]');
