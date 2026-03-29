@@ -23,6 +23,9 @@
   const _fileOverrides = new Map(); // fileId → { dir?, updatedAt? }
   let _stateOverrideVersion = 0;
 
+  // getDocs 인터셉터용 window 노출 (getdocs-interceptor.js Proxy가 참조)
+  window.__ceFileOverrides = _fileOverrides;
+
   // ── getState 인터셉터: _fileOverrides를 ccfolia React에 반영 ──
   // setupStore()에서 즉시 호출하여 React 컴포넌트 마운트 전에 패치해야
   // useSyncExternalStore 구독이 패치된 getState를 참조함
@@ -635,19 +638,24 @@
   }
 
   /**
-   * getDocs를 래핑하여 쿼리 결과에 _fileOverrides를 적용합니다.
-   * webpack은 (0, module.PL)(args) 패턴으로 호출 시점에 export를 읽으므로,
-   * 모듈 exports 객체의 프로퍼티를 교체하면 이후 모든 호출에 적용됩니다.
+   * getDocs 래퍼 함수를 window.__ceWrappedGetDocs에 설정합니다.
+   * getdocs-interceptor.js가 document_start에서 설정한 Proxy가
+   * 이 함수를 getDocs 대신 반환합니다.
+   *
+   * 필요 조건: window.__ceOrigGetDocs (인터셉터가 설정)
    */
-  let _getDocsWrapped = false;
-  function _wrapGetDocsOnModule(fsMod) {
-    if (_getDocsWrapped) return;
-    const key = _FS_CONFIG.fsKeys.getDocs; // 'PL'
-    const origGetDocs = fsMod[key];
-    if (typeof origGetDocs !== 'function') return;
-    _getDocsWrapped = true;
+  let _getDocsWrapperSet = false;
+  function _setupGetDocsWrapper() {
+    if (_getDocsWrapperSet) return;
 
-    const wrappedGetDocs = async function wrappedGetDocs() {
+    const origGetDocs = window.__ceOrigGetDocs;
+    if (typeof origGetDocs !== 'function') {
+      console.warn('[CE] __ceOrigGetDocs 없음 — getDocs 래퍼 설정 불가 (인터셉터 미동작?)');
+      return;
+    }
+    _getDocsWrapperSet = true;
+
+    window.__ceWrappedGetDocs = async function wrappedGetDocs() {
       const snapshot = await origGetDocs.apply(this, arguments);
 
       // 진단: getDocs 호출 추적
@@ -705,17 +713,7 @@
       });
     };
 
-    // webpack getter-only export를 우회: Object.defineProperty로 getter 교체
-    try {
-      Object.defineProperty(fsMod, key, {
-        get: () => wrappedGetDocs,
-        configurable: true
-      });
-      console.log('[CE] ✅ getDocs 래핑 완료 (defineProperty getter 교체)');
-    } catch (e2) {
-      console.warn('[CE] getDocs 래핑 실패 (export 변경 불가):', e2.message);
-      _getDocsWrapped = false;
-    }
+    console.log('[CE] ✅ getDocs 래퍼 함수 설정 완료 (window.__ceWrappedGetDocs)');
   }
 
   /**
@@ -777,9 +775,9 @@
           console.log('%c[CE]%c ✅ Firestore SDK 획득 성공 (알려진 키)',
             'color: #4caf50; font-weight: bold;', 'color: inherit;');
 
-          // ── getDocs 래핑: 쿼리 결과에 _fileOverrides 적용 (실패해도 SDK 획득에 영향 없음) ──
-          try { _wrapGetDocsOnModule(fsMod); } catch (wrapErr) {
-            console.warn('[CE] getDocs 래핑 예외:', wrapErr.message);
+          // ── getDocs 래퍼 설정: getdocs-interceptor.js Proxy가 이 함수를 사용 ──
+          try { _setupGetDocsWrapper(); } catch (wrapErr) {
+            console.warn('[CE] getDocs 래퍼 설정 예외:', wrapErr.message);
           }
 
           return _firestoreSDK;

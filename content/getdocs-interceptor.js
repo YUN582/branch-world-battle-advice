@@ -1,126 +1,103 @@
 /**
  * getdocs-interceptor.js — MAIN world, document_start
  *
- * ccfolia의 webpack 번들이 Firestore getDocs를 import하기 전에
- * 함수를 래핑하여, _fileOverrides가 있으면 쿼리 결과에 반영합니다.
+ * webpack chunk push를 defineProperty로 인터셉트하여
+ * Firestore 모듈(49631)의 팩토리를 래핑합니다.
  *
- * 주입 순서: site-volume-page.js → getdocs-interceptor.js → (ccfolia 번들) → redux-injector.js
- * 통신: window.__ceFileOverrides (redux-injector.js가 설정)
+ * 팩토리 실행 후 module.exports를 Proxy로 교체하여
+ * PL(getDocs) 접근 시 window.__ceWrappedGetDocs를 반환합니다.
+ * (getter-only + non-configurable export 우회)
+ *
+ * redux-injector.js가 나중에 설정:
+ *   window.__ceFileOverrides = Map<docId, { dir, updatedAt }>
+ *   window.__ceWrappedGetDocs = async function(...)
  */
 (function () {
   'use strict';
 
-  // _FS_CONFIG와 동일한 값 (redux-injector.js와 동기화 필요)
-  const FS_MODULE_ID = 49631;
+  const FS_MODULE_ID = '49631';
   const GETDOCS_KEY = 'PL';
+  // Firestore 모듈 식별용 키 (오탐 방지)
+  const FS_VERIFY_KEYS = ['PL', 'hJ', 'JU', 'pl'];
 
-  // redux-injector.js가 나중에 설정하는 오버라이드 맵
-  // window.__ceFileOverrides = Map<docId, { dir, updatedAt }>
-  // window.__ceFileOverrideVer = number (변경 시 증가)
-
+  let _wpPush = null;   // webpack의 실제 push 함수
   let _wrapped = false;
 
-  /**
-   * webpack 모듈 팩토리를 래핑하여 getDocs export를 가로챕니다.
-   */
-  function wrapModuleFactory(moreModules) {
-    if (_wrapped || !moreModules || !moreModules[FS_MODULE_ID]) return;
+  function wrapFactory(moreModules) {
+    if (_wrapped) return;
+    const factory = moreModules[FS_MODULE_ID];
+    if (typeof factory !== 'function') return;
     _wrapped = true;
 
-    const origFactory = moreModules[FS_MODULE_ID];
     moreModules[FS_MODULE_ID] = function (module, exports, require) {
-      // 원본 팩토리 실행
-      origFactory.call(this, module, exports, require);
+      // 원본 팩토리 실행 (getter-only exports 설정됨)
+      factory.call(this, module, exports, require);
 
-      // getDocs 래핑
-      const origGetDocs = exports[GETDOCS_KEY];
-      if (typeof origGetDocs !== 'function') {
-        console.warn('[CE getDocs] key', GETDOCS_KEY, '가 함수가 아님, 래핑 스킵');
+      // Firestore 모듈인지 검증 (알려진 키 3개 이상 매칭)
+      let keyMatch = 0;
+      for (const k of FS_VERIFY_KEYS) {
+        try { if (typeof exports[k] === 'function') keyMatch++; } catch {}
+      }
+      if (keyMatch < 3) {
+        console.warn('[CE early] 모듈 ' + FS_MODULE_ID + ' 키 매칭 부족:', keyMatch);
+        _wrapped = false;
         return;
       }
 
-      exports[GETDOCS_KEY] = async function wrappedGetDocs() {
-        const snapshot = await origGetDocs.apply(this, arguments);
+      const origGetDocs = exports[GETDOCS_KEY];
+      if (typeof origGetDocs !== 'function') {
+        _wrapped = false;
+        return;
+      }
 
-        // 오버라이드가 없으면 원본 그대로 반환
-        const overrides = window.__ceFileOverrides;
-        if (!overrides || overrides.size === 0) return snapshot;
-
-        // 쿼리가 files 컬렉션인지 확인 (users/{uid}/files)
-        const queryRef = arguments[0];
-        const path = queryRef?._query?.path?.segments?.join?.('/') ||
-                     queryRef?.path?.segments?.join?.('/') || '';
-        if (!path.includes('/files')) return snapshot;
-
-        // QuerySnapshot의 docs를 래핑
-        let patchCount = 0;
-        const origDocs = snapshot.docs;
-        const patchedDocs = origDocs.map(doc => {
-          const docId = doc.id;
-          const ov = overrides.get(docId);
-          if (!ov) return doc;
-
-          // 이 문서의 data()를 래핑하여 오버라이드 적용
-          patchCount++;
-          return new Proxy(doc, {
-            get(target, prop) {
-              if (prop === 'data') {
-                return function () {
-                  const orig = target.data.apply(target, arguments);
-                  return { ...orig, ...ov };
-                };
-              }
-              return target[prop];
-            }
-          });
-        });
-
-        if (patchCount > 0) {
-          console.log(`[CE getDocs] ${patchCount}개 문서 오버라이드 적용 (path: ${path.slice(-30)})`);
-
-          // QuerySnapshot을 Proxy로 래핑하여 docs/forEach/size 등 오버라이드
-          return new Proxy(snapshot, {
-            get(target, prop) {
-              if (prop === 'docs') return patchedDocs;
-              if (prop === 'forEach') {
-                return function (cb, ctx) {
-                  patchedDocs.forEach(cb, ctx);
-                };
-              }
-              if (prop === 'size') return patchedDocs.length;
-              if (prop === Symbol.iterator) {
-                return function* () {
-                  yield* patchedDocs;
-                };
-              }
-              return typeof target[prop] === 'function'
-                ? target[prop].bind(target)
-                : target[prop];
-            }
-          });
+      // module.exports를 Proxy로 교체
+      // webpack 컴파일 코드: (0, module.PL)(query) → Proxy.get 트리거
+      const origExports = module.exports;
+      module.exports = new Proxy(origExports, {
+        get(target, prop) {
+          if (prop === GETDOCS_KEY && window.__ceWrappedGetDocs) {
+            return window.__ceWrappedGetDocs;
+          }
+          return Reflect.get(target, prop);
         }
+      });
 
-        return snapshot;
-      };
+      // 원본 getDocs를 window에 노출 (redux-injector.js에서 래퍼 생성 시 사용)
+      window.__ceOrigGetDocs = origGetDocs;
 
-      console.log('[CE getDocs] ✅ getDocs 래핑 완료 (모듈', FS_MODULE_ID, ')');
+      console.log('[CE early] ✅ Firestore getDocs Proxy 설정 완료');
     };
   }
 
-  // webpackChunkccfolia.push 가로채기
-  const chunks = window.webpackChunkccfolia = window.webpackChunkccfolia || [];
-
-  // 이미 로드된 청크에서 모듈 확인 (거의 없지만 안전장치)
-  for (const chunk of chunks) {
-    if (chunk?.[1]) wrapModuleFactory(chunk[1]);
+  // Push 인터셉터
+  function interceptPush() {
+    const chunk = arguments[0];
+    if (Array.isArray(chunk) && chunk[1] && typeof chunk[1] === 'object') {
+      wrapFactory(chunk[1]);
+    }
+    if (_wpPush) {
+      return _wpPush.apply(this, arguments);
+    }
+    return Array.prototype.push.apply(this, arguments);
   }
 
-  // 향후 push 가로채기
-  const origPush = chunks.push.bind(chunks);
-  chunks.push = function (chunk) {
-    if (chunk?.[1]) wrapModuleFactory(chunk[1]);
-    return origPush(chunk);
-  };
+  // webpackChunkccfolia 배열 생성/획득
+  const arr = window.webpackChunkccfolia = window.webpackChunkccfolia || [];
 
-  console.log('[CE getDocs] webpack 인터셉터 설정 완료');
+  // 이미 존재하는 청크 처리 (거의 없지만 안전장치)
+  for (const chunk of arr) {
+    if (Array.isArray(chunk) && chunk[1]) wrapFactory(chunk[1]);
+  }
+
+  // defineProperty로 push를 인터셉트:
+  // - get: 항상 interceptPush 반환 → ccfolia가 push()할 때 우리 코드 실행
+  // - set: webpack이 push를 자체 함수로 교체할 때 실제 함수를 캡처
+  Object.defineProperty(arr, 'push', {
+    get() { return interceptPush; },
+    set(fn) { _wpPush = fn; },
+    configurable: true,
+    enumerable: false
+  });
+
+  console.log('[CE early] webpack 인터셉터 설정 완료');
 })();
