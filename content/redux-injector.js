@@ -220,6 +220,9 @@
       // ★ getState 인터셉터를 최대한 빨리 설정 (React 컴포넌트 마운트 전)
       setupGetStateInterceptor();
 
+      // ★ getDocs 래핑을 미리 설정 (피커 열기 전에 래핑 필요)
+      try { acquireFirestoreSDK(); } catch (e) {}
+
       const chars = getCharacterData();
       const charCount = chars?.length || 0;
       
@@ -638,6 +641,78 @@
   }
 
   /**
+   * getDocs를 래핑하여 쿼리 결과에 _fileOverrides를 적용합니다.
+   * webpack은 (0, module.PL)(args) 패턴으로 호출 시점에 export를 읽으므로,
+   * 모듈 exports 객체의 프로퍼티를 교체하면 이후 모든 호출에 적용됩니다.
+   */
+  let _getDocsWrapped = false;
+  function _wrapGetDocsOnModule(fsMod) {
+    if (_getDocsWrapped) return;
+    const key = _FS_CONFIG.fsKeys.getDocs; // 'PL'
+    const origGetDocs = fsMod[key];
+    if (typeof origGetDocs !== 'function') return;
+    _getDocsWrapped = true;
+
+    fsMod[key] = async function wrappedGetDocs() {
+      const snapshot = await origGetDocs.apply(this, arguments);
+
+      if (_fileOverrides.size === 0) return snapshot;
+
+      // files 컬렉션 쿼리인지 확인
+      const queryRef = arguments[0];
+      let path = '';
+      try {
+        const segs = queryRef?._query?.path?.segments || queryRef?.path?.segments;
+        if (segs) path = segs.join('/');
+      } catch {}
+      if (!path.includes('/files')) return snapshot;
+
+      // docs에 오버라이드 적용
+      let patchCount = 0;
+      const origDocs = snapshot.docs;
+      const patchedDocs = origDocs.map(doc => {
+        const ov = _fileOverrides.get(doc.id);
+        if (!ov) return doc;
+        patchCount++;
+        return new Proxy(doc, {
+          get(target, prop) {
+            if (prop === 'data') {
+              return function () {
+                const orig = target.data.apply(target, arguments);
+                return { ...orig, ...ov };
+              };
+            }
+            if (prop === 'id') return target.id;
+            const v = target[prop];
+            return typeof v === 'function' ? v.bind(target) : v;
+          }
+        });
+      });
+
+      if (patchCount === 0) return snapshot;
+
+      console.log(`[CE getDocs] ✅ ${patchCount}개 문서 오버라이드 적용 (path: ...${path.slice(-30)})`);
+
+      return new Proxy(snapshot, {
+        get(target, prop) {
+          if (prop === 'docs') return patchedDocs;
+          if (prop === 'forEach') {
+            return function (cb, ctx) { patchedDocs.forEach(cb, ctx); };
+          }
+          if (prop === 'size') return patchedDocs.length;
+          if (prop === Symbol.iterator) {
+            return function* () { yield* patchedDocs; };
+          }
+          const v = target[prop];
+          return typeof v === 'function' ? v.bind(target) : v;
+        }
+      });
+    };
+
+    console.log('[CE] ✅ getDocs 래핑 완료 (모듈 export 직접 교체)');
+  }
+
+  /**
    * Firestore SDK (collection, doc, setDoc, db)를 획득합니다.
    * 1차: 알려진 모듈 ID + 프로퍼티 키로 시도 (빠름)
    * 2차: 자동 탐색으로 프로퍼티 키 재발견 (프로퍼티 키만 변경된 경우)
@@ -690,32 +765,8 @@
           console.log('%c[CE]%c ✅ Firestore SDK 획득 성공 (알려진 키)',
             'color: #4caf50; font-weight: bold;', 'color: inherit;');
 
-          // ── 진단: onSnapshot/query/where 키 탐색 ──
-          try {
-            const queryKeys = [];
-            for (const [k, fn] of Object.entries(fsMod)) {
-              if (typeof fn !== 'function') continue;
-              const src = fn.toString().slice(0, 600);
-              if (src.includes('onSnapshot') || src.includes('Snapshot')) {
-                queryKeys.push({ k, hint: 'onSnapshot', src: src.slice(0, 120) });
-              }
-              if (src.includes('query') || src.includes('Query')) {
-                queryKeys.push({ k, hint: 'query', src: src.slice(0, 120) });
-              }
-              if (src.includes('where') || src.includes('Where')) {
-                queryKeys.push({ k, hint: 'where', src: src.slice(0, 120) });
-              }
-              if (src.includes('orderBy') || src.includes('OrderBy')) {
-                queryKeys.push({ k, hint: 'orderBy', src: src.slice(0, 120) });
-              }
-            }
-            if (queryKeys.length > 0) {
-              console.log('[CE 진단] Firestore 쿼리 관련 함수:', queryKeys.length, '개');
-              for (const q of queryKeys) console.log(`  ${q.hint}: key="${q.k}"`, q.src);
-            } else {
-              console.log('[CE 진단] Firestore 모듈에서 쿼리 함수 못 찾음');
-            }
-          } catch (diagErr) { console.warn('[CE 진단] 오류:', diagErr.message); }
+          // ── getDocs 래핑: 쿼리 결과에 _fileOverrides 적용 ──
+          _wrapGetDocsOnModule(fsMod);
 
           return _firestoreSDK;
         }
