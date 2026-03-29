@@ -5844,6 +5844,32 @@
       if (!roomId) throw new Error('방 ID를 찾을 수 없음');
 
       const markerKey = Date.now().toString(16);
+      let imageUrl = d.imageUrl || '';
+
+      // 룸 문서 크기 추정 (Redux state 기반) → 마커 이미지 추가 압축 or 제거
+      try {
+        const state = reduxStore.getState();
+        const room = state.entities?.rooms?.entities?.[roomId];
+        if (room) {
+          const roomJson = JSON.stringify(room);
+          const currentSize = new Blob([roomJson]).size;
+          const remaining = 1048576 - currentSize - 1000; // 1KB 여유
+          _dbg('[CE] 룸 문서 추정 크기:', Math.round(currentSize / 1024) + 'KB, 잔여:', Math.round(remaining / 1024) + 'KB');
+          if (imageUrl && imageUrl.length > remaining) {
+            if (remaining < 500) {
+              // 공간 부족 → 이미지 완전 제거, 텍스트 마커로 생성
+              _dbg('[CE] 잔여 공간 부족 (' + remaining + 'B), 이미지 제거');
+              imageUrl = '';
+            } else {
+              _dbg('[CE] 마커 이미지가 잔여 공간 초과 (' + Math.round(imageUrl.length / 1024) + 'KB > ' + Math.round(remaining / 1024) + 'KB), 이미지 제거');
+              imageUrl = '';
+            }
+          }
+        }
+      } catch (sizeErr) {
+        _dbg('[CE] 룸 크기 확인 실패 (계속 진행):', sizeErr.message);
+      }
+
       const markerData = {
         x: d.x ?? 0,
         y: d.y ?? 0,
@@ -5853,7 +5879,7 @@
         locked: d.locked ?? false,
         freezed: d.freezed ?? false,
         text: d.memo || '',
-        imageUrl: d.imageUrl || '',
+        imageUrl: imageUrl,
         clickAction: null
       };
 

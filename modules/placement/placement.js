@@ -1248,7 +1248,6 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   font-size: 11px;
   color: #555;
   cursor: pointer;
-  margin-left: auto;
 }
 .bwbr-color-popup-trans input { cursor: pointer; margin: 0; }
 
@@ -3947,9 +3946,30 @@ function _openColorPopup(anchorEl, currentHex, isTransparent, allowTransparent, 
   svCtx.scale(2, 2);
   hueCtx.scale(2, 2);
 
-  // 하단 행: 미리보기 + hex + 투명
+  // 하단 행: 스포이드 / 미리보기 / hex / 체크박스 투명
   var row = document.createElement('div');
   row.className = 'bwbr-color-popup-row';
+
+  // 스포이드 버튼 (EyeDropper API — MAIN world 경유)
+  var eyeBtn = document.createElement('button');
+  eyeBtn.className = 'bwbr-color-popup-eyedropper';
+  eyeBtn.title = '스포이드';
+  eyeBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20.71 5.63l-2.34-2.34a1 1 0 00-1.41 0l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l8.92-8.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12a1 1 0 000-1.42zM6.92 19L5 17.08l8.06-8.06 1.92 1.92L6.92 19z"/></svg>';
+  eyeBtn.style.cssText = 'background:rgba(0,0,0,0.05);border:1px solid rgba(0,0,0,0.2);border-radius:4px;color:#555;cursor:pointer;padding:2px 4px;display:flex;align-items:center;justify-content:center;';
+  eyeBtn.addEventListener('mouseenter', function() { eyeBtn.style.background = 'rgba(0,0,0,0.1)'; });
+  eyeBtn.addEventListener('mouseleave', function() { eyeBtn.style.background = 'rgba(0,0,0,0.05)'; });
+  eyeBtn.addEventListener('click', function() {
+    _pickColorFromScreen(function(hex) {
+      if (!hex) return;
+      var rgb2 = _hexToRgb(hex);
+      var hsv2 = _rgbToHsv(rgb2[0], rgb2[1], rgb2[2]);
+      ch = hsv2[0]; cs = hsv2[1]; cv = hsv2[2];
+      if (trans && transCheck) { trans = false; transCheck.checked = false; }
+      redraw(); commit();
+    });
+  });
+  row.appendChild(eyeBtn);
+
   var preview = document.createElement('div');
   preview.className = 'bwbr-color-popup-preview';
   row.appendChild(preview);
@@ -3970,26 +3990,6 @@ function _openColorPopup(anchorEl, currentHex, isTransparent, allowTransparent, 
     transLabel.appendChild(document.createTextNode('투명'));
     row.appendChild(transLabel);
   }
-
-  // 스포이드 버튼 (EyeDropper API — MAIN world 경유)
-  var eyeBtn = document.createElement('button');
-  eyeBtn.className = 'bwbr-color-popup-eyedropper';
-  eyeBtn.title = '스포이드';
-  eyeBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20.71 5.63l-2.34-2.34a1 1 0 00-1.41 0l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l8.92-8.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12a1 1 0 000-1.42zM6.92 19L5 17.08l8.06-8.06 1.92 1.92L6.92 19z"/></svg>';
-  eyeBtn.style.cssText = 'background:none;border:1px solid rgba(255,255,255,0.25);border-radius:4px;color:#fff;cursor:pointer;padding:2px 4px;display:flex;align-items:center;justify-content:center;margin-left:4px;';
-  eyeBtn.addEventListener('mouseenter', function() { eyeBtn.style.background = 'rgba(255,255,255,0.15)'; });
-  eyeBtn.addEventListener('mouseleave', function() { eyeBtn.style.background = 'none'; });
-  eyeBtn.addEventListener('click', function() {
-    _pickColorFromScreen(function(hex) {
-      if (!hex) return;
-      var rgb2 = _hexToRgb(hex);
-      var hsv2 = _rgbToHsv(rgb2[0], rgb2[1], rgb2[2]);
-      ch = hsv2[0]; cs = hsv2[1]; cv = hsv2[2];
-      if (trans && transCheck) { trans = false; transCheck.checked = false; }
-      redraw(); commit();
-    });
-  });
-  row.appendChild(eyeBtn);
 
   popup.appendChild(row);
 
@@ -6129,9 +6129,9 @@ function _dispatchCreatePanelOrMarker(panelData) {
       try {
         var res = raw ? JSON.parse(raw) : {};
         if (!res.success && res.error) {
-          var msg = '마커 생성 실패';
+          var msg = '마커 생성 실패: ' + res.error;
           if (res.error.indexOf('size') !== -1 || res.error.indexOf('1,048,576') !== -1) {
-            msg = '마커 이미지가 너무 큽니다. 더 작은 이미지를 사용하거나 스크린 타입으로 전환하세요.';
+            msg = '⚠️ 룸 마커 데이터가 Firestore 1MB 제한에 도달했습니다.\n기존 마커를 삭제하거나 스크린(object) 타입으로 전환하세요.';
           }
           if (window.BWBR_FabButtons && window.BWBR_FabButtons.showToast) {
             window.BWBR_FabButtons.showToast(msg, { bg: 'rgba(211,47,47,0.92)', color: '#fff', duration: 4000 });
