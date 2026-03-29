@@ -437,6 +437,20 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   display: flex;
 }
 
+/* ── 배치 모드 텍스트 선택 차단 ─────────────────── */
+
+body.bwbr-placement-noselect,
+body.bwbr-placement-noselect * {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
+/* 텍스트 편집기 내부는 선택 허용 */
+body.bwbr-placement-noselect .bwbr-text-editor,
+body.bwbr-placement-noselect .bwbr-text-editor * {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
 /* ── 배치 오버레이 ─────────────────────────────── */
 
 .bwbr-placement-overlay {
@@ -1265,6 +1279,7 @@ var COMPOSITE_PX_PER_TILE = 48;  // 합성 이미지 해상도 (1타일 = 48px)
   background: #fff;
   flex: 1;
   min-width: 0;
+  max-width: 130px;
 }
 
 .bwbr-text-toolbar-confirm {
@@ -1512,11 +1527,13 @@ function togglePlacementMode() {
 
   if (_state.active) {
     _toolbar.classList.add('bwbr-placement-toolbar--open');
+    document.body.classList.add('bwbr-placement-noselect');
     activateMode('select');
     showPlacementHelp();
     _startStagingGuard();
   } else {
     _toolbar.classList.remove('bwbr-placement-toolbar--open');
+    document.body.classList.remove('bwbr-placement-noselect');
     deactivateMode();
     clearAllStaged();
     _state.undoStack = [];
