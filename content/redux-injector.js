@@ -19,86 +19,6 @@
 
   let reduxStore = null;
 
-  // ── 이미지 매니저: 로컬 오버라이드 (setupStore보다 먼저 선언 필요) ──
-  const _fileOverrides = new Map(); // fileId → { dir?, updatedAt? }
-  let _stateOverrideVersion = 0;
-
-  // getDocs 인터셉터용 window 노출 (getdocs-interceptor.js Proxy가 참조)
-  window.__ceFileOverrides = _fileOverrides;
-
-  // ── getState 인터셉터: _fileOverrides를 ccfolia React에 반영 ──
-  // setupStore()에서 즉시 호출하여 React 컴포넌트 마운트 전에 패치해야
-  // useSyncExternalStore 구독이 패치된 getState를 참조함
-  function setupGetStateInterceptor() {
-    if (!reduxStore || reduxStore._ceGetStatePatched) return;
-    reduxStore._ceGetStatePatched = true;
-
-    const origGetState = reduxStore.getState.bind(reduxStore);
-    let _cachedRaw = null, _cachedPatched = null, _cachedOvVer = -1;
-
-    // 진단용: window에 노출
-    window.__ceFileOverrides = _fileOverrides;
-    let _patchLogCount = 0;  // 로그 스팸 방지
-
-    reduxStore.getState = function() {
-      const raw = origGetState();
-      if (_fileOverrides.size === 0) return raw;
-      if (raw === _cachedRaw && _stateOverrideVersion === _cachedOvVer && _cachedPatched) {
-        if (_patchLogCount < 3) { _patchLogCount++; console.log('[CE getState] 캐시 반환, ov:', _stateOverrideVersion); }
-        return _cachedPatched;
-      }
-
-      _cachedRaw = raw;
-      _cachedOvVer = _stateOverrideVersion;
-
-      const uf = raw.entities?.userFiles;
-      if (!uf) { _cachedPatched = raw; return raw; }
-
-      let anyPatch = false;
-      const newEnts = {};
-      const staleKeys = [];
-      const debugMatches = [];
-
-      for (const key of uf.ids) {
-        const ent = uf.entities[key];
-        const ov = _fileOverrides.get(key) || (ent?._id && ent._id !== key ? _fileOverrides.get(ent._id) : null);
-        if (ov && ent) {
-          if (ent.dir === ov.dir) {
-            staleKeys.push(ov === _fileOverrides.get(key) ? key : ent._id);
-            newEnts[key] = ent;
-            debugMatches.push({ key: key.slice(0,12), status: 'stale', entDir: ent.dir });
-          } else {
-            newEnts[key] = { ...ent, ...ov };
-            anyPatch = true;
-            debugMatches.push({ key: key.slice(0,12), status: 'PATCHED', from: ent.dir, to: ov.dir });
-          }
-        } else {
-          newEnts[key] = ent;
-        }
-      }
-
-      for (const k of staleKeys) _fileOverrides.delete(k);
-
-      // 진단 로그 (오버라이드가 있을 때만, 최대 5회)
-      if (_patchLogCount < 5) {
-        _patchLogCount++;
-        const ovKeys = [..._fileOverrides.keys()].map(k => k.slice(0,12));
-        console.log(`[CE getState] 패치 계산: anyPatch=${anyPatch}, matches:`, debugMatches,
-          `stale:${staleKeys.length}, 남은 ov keys:`, ovKeys,
-          `uf.ids 수: ${uf.ids.length}`);
-      }
-
-      if (!anyPatch) { _cachedPatched = raw; return raw; }
-
-      _cachedPatched = {
-        ...raw,
-        entities: { ...raw.entities, userFiles: { ...uf, entities: newEnts } }
-      };
-      return _cachedPatched;
-    };
-    console.log('[CE] getState 인터셉터 설정 완료');
-  }
-
   // ── [COMBAT] 토큰 바인딩 캐시 (ISOLATED world에서 동기화) ──
   let _tokenBindings = {};      // { panelId: charId }
   let _tokenBindingsRoomId = null;
@@ -217,9 +137,6 @@
     reduxStore = getReduxStore();
     
     if (reduxStore) {
-      // ★ getState 인터셉터를 최대한 빨리 설정 (React 컴포넌트 마운트 전)
-      setupGetStateInterceptor();
-
       const chars = getCharacterData();
       const charCount = chars?.length || 0;
       
@@ -638,85 +555,6 @@
   }
 
   /**
-   * getDocs 래퍼 함수를 window.__ceWrappedGetDocs에 설정합니다.
-   * getdocs-interceptor.js가 document_start에서 설정한 Proxy가
-   * 이 함수를 getDocs 대신 반환합니다.
-   *
-   * 필요 조건: window.__ceOrigGetDocs (인터셉터가 설정)
-   */
-  let _getDocsWrapperSet = false;
-  function _setupGetDocsWrapper() {
-    if (_getDocsWrapperSet) return;
-
-    const origGetDocs = window.__ceOrigGetDocs;
-    if (typeof origGetDocs !== 'function') {
-      console.warn('[CE] __ceOrigGetDocs 없음 — getDocs 래퍼 설정 불가 (인터셉터 미동작?)');
-      return;
-    }
-    _getDocsWrapperSet = true;
-
-    window.__ceWrappedGetDocs = async function wrappedGetDocs() {
-      const snapshot = await origGetDocs.apply(this, arguments);
-
-      // 진단: getDocs 호출 추적
-      let qPath = '';
-      try {
-        const segs = arguments[0]?._query?.path?.segments || arguments[0]?.path?.segments;
-        if (segs) qPath = segs.join('/');
-      } catch {}
-      console.log(`[CE getDocs] 호출됨 path=${qPath.slice(-40)} overrides=${_fileOverrides.size} docs=${snapshot.docs?.length}`);
-
-      if (_fileOverrides.size === 0) return snapshot;
-
-      // files 컬렉션 쿼리인지 확인
-      if (!qPath.includes('/files')) return snapshot;
-
-      // docs에 오버라이드 적용
-      let patchCount = 0;
-      const origDocs = snapshot.docs;
-      const patchedDocs = origDocs.map(doc => {
-        const ov = _fileOverrides.get(doc.id);
-        if (!ov) return doc;
-        patchCount++;
-        return new Proxy(doc, {
-          get(target, prop) {
-            if (prop === 'data') {
-              return function () {
-                const orig = target.data.apply(target, arguments);
-                return { ...orig, ...ov };
-              };
-            }
-            if (prop === 'id') return target.id;
-            const v = target[prop];
-            return typeof v === 'function' ? v.bind(target) : v;
-          }
-        });
-      });
-
-      if (patchCount === 0) return snapshot;
-
-      console.log(`[CE getDocs] ✅ ${patchCount}개 문서 오버라이드 적용 (path: ...${qPath.slice(-30)})`);
-
-      return new Proxy(snapshot, {
-        get(target, prop) {
-          if (prop === 'docs') return patchedDocs;
-          if (prop === 'forEach') {
-            return function (cb, ctx) { patchedDocs.forEach(cb, ctx); };
-          }
-          if (prop === 'size') return patchedDocs.length;
-          if (prop === Symbol.iterator) {
-            return function* () { yield* patchedDocs; };
-          }
-          const v = target[prop];
-          return typeof v === 'function' ? v.bind(target) : v;
-        }
-      });
-    };
-
-    console.log('[CE] ✅ getDocs 래퍼 함수 설정 완료 (window.__ceWrappedGetDocs)');
-  }
-
-  /**
    * Firestore SDK (collection, doc, setDoc, db)를 획득합니다.
    * 1차: 알려진 모듈 ID + 프로퍼티 키로 시도 (빠름)
    * 2차: 자동 탐색으로 프로퍼티 키 재발견 (프로퍼티 키만 변경된 경우)
@@ -774,11 +612,6 @@
           };
           console.log('%c[CE]%c ✅ Firestore SDK 획득 성공 (알려진 키)',
             'color: #4caf50; font-weight: bold;', 'color: inherit;');
-
-          // ── getDocs 래퍼 설정: getdocs-interceptor.js Proxy가 이 함수를 사용 ──
-          try { _setupGetDocsWrapper(); } catch (wrapErr) {
-            console.warn('[CE] getDocs 래퍼 설정 예외:', wrapErr.message);
-          }
 
           return _firestoreSDK;
         }
@@ -6197,7 +6030,7 @@
       const filesCol = sdk.collection(sdk.db, 'users', uid, 'files');
       const now = Date.now();
 
-      // ── Firestore 쓰기 + 오버라이드 ──
+      // ── Firestore 쓰기 ──
       let movedCount = 0;
       for (const fid of fileIds) {
         let docId = fid;
@@ -6208,20 +6041,10 @@
         }
         const ref = sdk.doc(filesCol, docId);
         await sdk.setDoc(ref, { dir: targetDir, updatedAt: now }, { merge: true });
-        _fileOverrides.set(docId, { dir: targetDir, updatedAt: now });
-        console.log(`[CE 이미지] override 설정: docId=${docId.slice(0,16)}, fid=${fid.slice(0,16)}, match=${docId===fid}`);
         movedCount++;
       }
 
-      // ── getState 인터셉터로 ccfolia React 강제 갱신 ──
-      _stateOverrideVersion++;
-      setupGetStateInterceptor();
-      console.log(`[CE 이미지] dispatch 전: overrides=${_fileOverrides.size}, ver=${_stateOverrideVersion}`);
-      reduxStore.dispatch({ type: '@@CE_FILE_OVERRIDE' });
-      console.log(`[CE 이미지] dispatch 후: getState().entities.userFiles.entities[docId].dir =`,
-        reduxStore.getState()?.entities?.userFiles?.entities?.[fileIds[0]]?.dir || '(not found by fid)');
-
-      console.log(`[CE 이미지] ✅ ${movedCount}개 → ${targetDir} 이동 (getState 오버라이드)`);
+      console.log(`[CE 이미지] ✅ ${movedCount}개 → ${targetDir} 이동`);
       respond({ success: true, movedCount });
     } catch (err) {
       console.error('[CE 이미지] 파일 이동 실패:', err);
@@ -6250,14 +6073,9 @@
       const uf = state.entities?.userFiles;
       if (!uf) return respond({ files: [] });
 
-      // Redux 데이터 위에 로컬 오버라이드 적용 (dir 변경 후 Redux 미반영 보정)
-      let overrideCount = 0;
+      // Redux 데이터에서 파일 목록 추출
       let files = uf.ids.map(id => {
-        let f = uf.entities[id];
-        if (!f) return null;
-        const ov = _fileOverrides.get(id);
-        if (ov) { overrideCount++; f = { ...f, ...ov }; }
-        return f;
+        return uf.entities[id] || null;
       }).filter(Boolean);
 
       // archived(삭제된) 파일 제외

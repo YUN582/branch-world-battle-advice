@@ -43,6 +43,7 @@
   let _isGroupRoom = true;         // ROOM 탭인지 ALL인지
   let _suppressObserver = false;    // 자체 쓰기 중 옵저버 억제
   let _dropLock = false;            // 동시 드롭 방지 락
+  let _allMoveCount = 0;           // ALL 모드 이동 누적 카운트 (피커 세션)
 
   /* ══════════════════════════════════════════════════════
    *  DOM 헬퍼
@@ -461,8 +462,7 @@
       );
 
       if (result?.success) {
-        console.log(TAG, `✅ ${result.movedCount}개 이동 완료`,
-          `(Redux: ${result.reduxWait}, ${result.reduxMs}ms)`);
+        console.log(TAG, `✅ ${result.movedCount}개 이동 완료`);
 
         // 1) DOM에서 이동한 이미지 즉시 숨김 (드래그 원본)
         const movedHashSet = new Set(_dragHashes);
@@ -483,42 +483,22 @@
         }
         buildHashIndex();
 
-        // 3) ALL 모드: ROOM→ALL 토글로 ccfolia의 getDocs 캐시 갱신 유도
-        //    ROOM 모드: onSnapshot이 자동 갱신하므로 불필요
+        // 3) ALL 모드: 이동 안내 스낵바 표시 (새로고침 필요 안내)
         if (!_isGroupRoom) {
-          const toolbar = picker.querySelector('.MuiToolbar-root');
-          let roomBtn = null, allBtn = null;
-          if (toolbar) {
-            for (const btn of toolbar.querySelectorAll('button')) {
-              const t = btn.textContent.trim().toUpperCase();
-              if (t === 'ROOM') roomBtn = btn;
-              else if (t === 'ALL') allBtn = btn;
-            }
-          }
-          if (roomBtn && allBtn) {
-            console.log(TAG, 'ALL 모드: ROOM→ALL 토글 (getDocs 재조회)');
-            roomBtn.click();
-            await new Promise(r => setTimeout(r, 150));
-            allBtn.click();
-            await new Promise(r => setTimeout(r, 300));
-          }
+          _allMoveCount += result.movedCount;
+          _showMoveSnackbar(picker, _allMoveCount);
         }
 
-        // 4) 대상 탭 클릭 (토글 후 탭이 재생성될 수 있으므로 다시 찾기)
-        const freshTabs = getCategoryTabs(picker);
-        const freshTarget = freshTabs.find(t => TAB_DIR_MAP[t.textContent.trim()] === targetDir);
-        if (freshTarget) freshTarget.click();
-        else tab.click();
-
+        // 4) 캐시 갱신 & draggable 재설정
         setTimeout(async () => {
           _suppressObserver = false;
           const p = getPickerDialog();
           if (p) {
-            await refreshFileCache(getCurrentDir(p) || targetDir, _isGroupRoom ? getRoomIdFromUrl() : null);
-            console.log(TAG, `탭 이동 후 캐시 갱신: ${_fileCache.length}개`);
+            await refreshFileCache(getCurrentDir(p) || _currentDir, _isGroupRoom ? getRoomIdFromUrl() : null);
+            console.log(TAG, `이동 후 캐시 갱신: ${_fileCache.length}개`);
             setupDraggableImages(p);
           }
-        }, 400);
+        }, 300);
       } else {
         console.error(TAG, '이동 실패:', result?.error || '응답에 error 필드 없음', result);
         _suppressObserver = false;
@@ -527,6 +507,47 @@
       console.error(TAG, '이동 요청 실패:', err);
       _suppressObserver = false;
     }
+  }
+
+  /* ── ALL 모드 이동 안내 스낵바 ────────────────────── */
+
+  let _moveSnackbar = null;
+
+  function _showMoveSnackbar(picker, count) {
+    if (!_moveSnackbar) {
+      _moveSnackbar = document.createElement('div');
+      Object.assign(_moveSnackbar.style, {
+        position: 'fixed',
+        bottom: '24px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: '13010',
+        background: 'rgb(50, 50, 50)',
+        color: '#fff',
+        padding: '6px 16px',
+        borderRadius: '4px',
+        fontSize: '0.875rem',
+        fontFamily: '"Roboto","Helvetica","Arial",sans-serif',
+        lineHeight: '1.43',
+        letterSpacing: '0.01071em',
+        boxShadow: '0 3px 5px -1px rgba(0,0,0,.2), 0 6px 10px 0 rgba(0,0,0,.14), 0 1px 18px 0 rgba(0,0,0,.12)',
+        opacity: '0',
+        transition: 'opacity 225ms cubic-bezier(0.4, 0, 0.2, 1), transform 225ms cubic-bezier(0.4, 0, 0.2, 1)'
+      });
+      document.body.appendChild(_moveSnackbar);
+      requestAnimationFrame(() => { _moveSnackbar.style.opacity = '1'; });
+    }
+    _moveSnackbar.textContent = `${count}개 이동 완료 · ALL 탭 이동은 새로고침 후 반영됩니다`;
+  }
+
+  function _removeMoveSnackbar() {
+    if (_moveSnackbar) {
+      _moveSnackbar.style.opacity = '0';
+      setTimeout(() => {
+        if (_moveSnackbar) { _moveSnackbar.remove(); _moveSnackbar = null; }
+      }, 225);
+    }
+    _allMoveCount = 0;
   }
 
   /* ── 드래그 UI 헬퍼 ──────────────────────────────── */
@@ -712,6 +733,7 @@
     _currentDir = null;
     _dragHashes = [];
     _lastClickedIdx = -1;
+    _removeMoveSnackbar();
   }
 
   /** URL에서 roomId 추출 */
