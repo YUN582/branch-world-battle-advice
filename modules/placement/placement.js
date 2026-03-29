@@ -5185,39 +5185,50 @@ function _startResize(objId, dir, e) {
     origY: obj.mapCoords.y,
     origW: obj.mapCoords.width,
     origH: obj.mapCoords.height,
-    aspect: obj.mapCoords.width / (obj.mapCoords.height || 1)
+    aspect: obj.mapCoords.width / (obj.mapCoords.height || 1),
+    angle: obj.angle || 0
   };
 
   function onMove(ev) {
     if (!_resizeDrag) return;
     var scale = getZoomScale();
-    var dx = Math.round((ev.clientX - _resizeDrag.startX) / (scale * CELL_PX));
-    var dy = Math.round((ev.clientY - _resizeDrag.startY) / (scale * CELL_PX));
     var d = _resizeDrag.dir;
-    var nx = _resizeDrag.origX, ny = _resizeDrag.origY;
+    var alt = ev.altKey;
+    var angle = _resizeDrag.angle;
+    var hasRotation = Math.abs(angle % 360) > 0.01;
+
+    // 마우스 델타 → 타일 단위 (회전 시 로컬 좌표계로 변환)
+    var rawDx = (ev.clientX - _resizeDrag.startX) / (scale * CELL_PX);
+    var rawDy = (ev.clientY - _resizeDrag.startY) / (scale * CELL_PX);
+    var dx, dy;
+    if (hasRotation) {
+      var invRad = -(angle * Math.PI / 180);
+      dx = Math.round(rawDx * Math.cos(invRad) - rawDy * Math.sin(invRad));
+      dy = Math.round(rawDx * Math.sin(invRad) + rawDy * Math.cos(invRad));
+    } else {
+      dx = Math.round(rawDx);
+      dy = Math.round(rawDy);
+    }
+
     var nw = _resizeDrag.origW, nh = _resizeDrag.origH;
-    var alt = ev.altKey; // Alt: 양쪽 대칭 리사이즈
 
-    if (d.indexOf('w') >= 0) { nx += dx; nw -= dx; if (alt) { nw -= dx; } }
-    if (d.indexOf('e') >= 0) { nw += dx; if (alt) { nx -= dx; nw += dx; } }
-    if (d.indexOf('n') >= 0) { ny += dy; nh -= dy; if (alt) { nh -= dy; } }
-    if (d.indexOf('s') >= 0) { nh += dy; if (alt) { ny -= dy; nh += dy; } }
+    if (d.indexOf('w') >= 0) { nw -= dx; if (alt) nw -= dx; }
+    if (d.indexOf('e') >= 0) { nw += dx; if (alt) nw += dx; }
+    if (d.indexOf('n') >= 0) { nh -= dy; if (alt) nh -= dy; }
+    if (d.indexOf('s') >= 0) { nh += dy; if (alt) nh += dy; }
 
-    // Shift: 비율 유지 리사이즈 (코너 핸들만)
+    // Shift: 비율 유지 리사이즈
     if (ev.shiftKey && _resizeDrag.aspect > 0) {
-      var isCorner = d.length === 2; // 'nw','ne','sw','se'
+      var isCorner = d.length === 2;
       var isHoriz = d === 'e' || d === 'w';
       var isVert = d === 'n' || d === 's';
       if (isCorner) {
-        // 더 큰 변화량 기준으로 비율 맞춤
         var dw = nw - _resizeDrag.origW;
         var dh = nh - _resizeDrag.origH;
         if (Math.abs(dw) / _resizeDrag.aspect >= Math.abs(dh)) {
           nh = Math.max(1, Math.round(nw / _resizeDrag.aspect));
-          if (d.indexOf('n') >= 0) ny = _resizeDrag.origY + _resizeDrag.origH - nh;
         } else {
           nw = Math.max(1, Math.round(nh * _resizeDrag.aspect));
-          if (d.indexOf('w') >= 0) nx = _resizeDrag.origX + _resizeDrag.origW - nw;
         }
       } else if (isHoriz) {
         nh = Math.max(1, Math.round(nw / _resizeDrag.aspect));
@@ -5226,16 +5237,50 @@ function _startResize(objId, dir, e) {
       }
     }
 
-    if (nw < 1) { nw = 1; nx = _resizeDrag.origX + _resizeDrag.origW - 1; }
-    if (nh < 1) { nh = 1; ny = _resizeDrag.origY + _resizeDrag.origH - 1; }
+    if (nw < 1) nw = 1;
+    if (nh < 1) nh = 1;
 
-    // 텍스트 블록: 폰트 최소 높이 적용 (1타일 = CELL_PX, baseline 16px → 최소 2타일)
+    // 텍스트 블록: 최소 높이
     if (obj.textHtml) {
-      var minH = 2; // 기본 최소 2타일
-      if (nh < minH) {
-        if (d.indexOf('n') >= 0) ny = _resizeDrag.origY + _resizeDrag.origH - minH;
-        nh = minH;
-      }
+      var minH = 2;
+      if (nh < minH) nh = minH;
+    }
+
+    // 위치 계산
+    var nx, ny;
+    if (alt) {
+      // Alt: 중심 고정 대칭 리사이즈
+      var origCx = _resizeDrag.origX + _resizeDrag.origW / 2;
+      var origCy = _resizeDrag.origY + _resizeDrag.origH / 2;
+      nx = origCx - nw / 2;
+      ny = origCy - nh / 2;
+    } else if (hasRotation) {
+      // 회전된 오브젝트: 앵커 포인트 방식
+      var rad = angle * Math.PI / 180;
+      var cosR = Math.cos(rad), sinR = Math.sin(rad);
+      var oldCx = _resizeDrag.origX + _resizeDrag.origW / 2;
+      var oldCy = _resizeDrag.origY + _resizeDrag.origH / 2;
+      // 드래그 반대쪽 = 앵커
+      var aFx = 0, aFy = 0;
+      if (d.indexOf('e') >= 0) aFx = -1; else if (d.indexOf('w') >= 0) aFx = 1;
+      if (d.indexOf('s') >= 0) aFy = -1; else if (d.indexOf('n') >= 0) aFy = 1;
+      // 기존 앵커 위치 (로컬 → 월드)
+      var oaLx = aFx * _resizeDrag.origW / 2, oaLy = aFy * _resizeDrag.origH / 2;
+      var anchorWx = oldCx + oaLx * cosR - oaLy * sinR;
+      var anchorWy = oldCy + oaLx * sinR + oaLy * cosR;
+      // 새 앵커 오프셋 (로컬)
+      var naLx = aFx * nw / 2, naLy = aFy * nh / 2;
+      // 새 중심 = anchor_world - rotate(new_anchor_local)
+      var newCx = anchorWx - (naLx * cosR - naLy * sinR);
+      var newCy = anchorWy - (naLx * sinR + naLy * cosR);
+      nx = newCx - nw / 2;
+      ny = newCy - nh / 2;
+    } else {
+      // 미회전: 기존 로직
+      nx = _resizeDrag.origX;
+      ny = _resizeDrag.origY;
+      if (d.indexOf('w') >= 0) nx = _resizeDrag.origX + _resizeDrag.origW - nw;
+      if (d.indexOf('n') >= 0) ny = _resizeDrag.origY + _resizeDrag.origH - nh;
     }
 
     obj.mapCoords.x = nx; obj.mapCoords.y = ny;
@@ -6073,14 +6118,32 @@ function compositeAndCommit() {
     obj.settings.freezed = _state.panelSettings.freezed;
   });
 
-  // 1. 바운딩 박스 계산 (타일 좌표)
+  // 1. 바운딩 박스 계산 (타일 좌표, 회전 반영)
   var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   _state.stagedObjects.forEach(function (obj) {
     var mc = obj.mapCoords;
-    minX = Math.min(minX, mc.x);
-    minY = Math.min(minY, mc.y);
-    maxX = Math.max(maxX, mc.x + mc.width);
-    maxY = Math.max(maxY, mc.y + mc.height);
+    if (obj.angle && Math.abs(obj.angle % 360) > 0.01) {
+      // 회전된 오브젝트: 4개 꼬지점 계산
+      var cx = mc.x + mc.width / 2, cy = mc.y + mc.height / 2;
+      var hw = mc.width / 2, hh = mc.height / 2;
+      var rad = obj.angle * Math.PI / 180;
+      var cosA = Math.cos(rad), sinA = Math.sin(rad);
+      var corners = [
+        { x: cx + (-hw * cosA - (-hh) * sinA), y: cy + (-hw * sinA + (-hh) * cosA) },
+        { x: cx + ( hw * cosA - (-hh) * sinA), y: cy + ( hw * sinA + (-hh) * cosA) },
+        { x: cx + ( hw * cosA -   hh  * sinA), y: cy + ( hw * sinA +   hh  * cosA) },
+        { x: cx + (-hw * cosA -   hh  * sinA), y: cy + (-hw * sinA +   hh  * cosA) }
+      ];
+      corners.forEach(function(c) {
+        minX = Math.min(minX, c.x); minY = Math.min(minY, c.y);
+        maxX = Math.max(maxX, c.x); maxY = Math.max(maxY, c.y);
+      });
+    } else {
+      minX = Math.min(minX, mc.x);
+      minY = Math.min(minY, mc.y);
+      maxX = Math.max(maxX, mc.x + mc.width);
+      maxY = Math.max(maxY, mc.y + mc.height);
+    }
   });
   var bboxW = maxX - minX;
   var bboxH = maxY - minY;
@@ -6088,11 +6151,11 @@ function compositeAndCommit() {
 
   console.log('[CE 배치] 확인 → settings:', JSON.stringify(s), '/ bbox:', bboxW + '×' + bboxH);
 
-  // 단일 오브젝트 + URL 이미지 → 합성 없이 직접 생성
-  // (마커는 angle 미지원이므로 회전 있으면 합성 경로로 우회)
+  // 단일 오브젝트 + URL 이미지 + 회전 없음 → 합성 없이 직접 생성
+  // (회전이 있으면 이미지에 회전을 베이킹해야 하므로 합성 경로로)
   if (_state.stagedObjects.length === 1 && _state.stagedObjects[0].imageDataUrl &&
       !_state.stagedObjects[0].imageDataUrl.startsWith('data:') &&
-      !(s.type === 'plane' && (_state.stagedObjects[0].angle || 0) !== 0)) {
+      !(_state.stagedObjects[0].angle || 0)) {
     var obj0 = _state.stagedObjects[0];
     var panelData = {
       type: s.type, x: obj0.mapCoords.x, y: obj0.mapCoords.y, z: s.z,

@@ -106,7 +106,7 @@
       var eyeBtn = document.createElement('button');
       eyeBtn.title = '스포이드';
       eyeBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20.71 5.63l-2.34-2.34a1 1 0 00-1.41 0l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l8.92-8.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12a1 1 0 000-1.42zM6.92 19L5 17.08l8.06-8.06 1.92 1.92L6.92 19z"/></svg>';
-      eyeBtn.style.cssText = 'background:none;border:1px solid rgba(0,0,0,0.15);border-radius:4px;cursor:pointer;padding:3px 8px;display:flex;align-items:center;gap:4px;font-size:12px;color:#555;';
+      eyeBtn.style.cssText = 'background:rgba(0,0,0,0.05);border:1px solid rgba(0,0,0,0.25);border-radius:4px;cursor:pointer;padding:4px 10px;display:flex;align-items:center;gap:5px;font-size:12px;color:#333;font-weight:500;';
       eyeBtn.appendChild(document.createTextNode(' 스포이드'));
       eyeBtn.addEventListener('mouseenter', function() { eyeBtn.style.background = 'rgba(0,0,0,0.06)'; });
       eyeBtn.addEventListener('mouseleave', function() { eyeBtn.style.background = 'none'; });
