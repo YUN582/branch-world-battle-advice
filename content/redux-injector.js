@@ -33,10 +33,17 @@
     const origGetState = reduxStore.getState.bind(reduxStore);
     let _cachedRaw = null, _cachedPatched = null, _cachedOvVer = -1;
 
+    // 진단용: window에 노출
+    window.__ceFileOverrides = _fileOverrides;
+    let _patchLogCount = 0;  // 로그 스팸 방지
+
     reduxStore.getState = function() {
       const raw = origGetState();
       if (_fileOverrides.size === 0) return raw;
-      if (raw === _cachedRaw && _stateOverrideVersion === _cachedOvVer && _cachedPatched) return _cachedPatched;
+      if (raw === _cachedRaw && _stateOverrideVersion === _cachedOvVer && _cachedPatched) {
+        if (_patchLogCount < 3) { _patchLogCount++; console.log('[CE getState] 캐시 반환, ov:', _stateOverrideVersion); }
+        return _cachedPatched;
+      }
 
       _cachedRaw = raw;
       _cachedOvVer = _stateOverrideVersion;
@@ -47,6 +54,7 @@
       let anyPatch = false;
       const newEnts = {};
       const staleKeys = [];
+      const debugMatches = [];
 
       for (const key of uf.ids) {
         const ent = uf.entities[key];
@@ -55,9 +63,11 @@
           if (ent.dir === ov.dir) {
             staleKeys.push(ov === _fileOverrides.get(key) ? key : ent._id);
             newEnts[key] = ent;
+            debugMatches.push({ key: key.slice(0,12), status: 'stale', entDir: ent.dir });
           } else {
             newEnts[key] = { ...ent, ...ov };
             anyPatch = true;
+            debugMatches.push({ key: key.slice(0,12), status: 'PATCHED', from: ent.dir, to: ov.dir });
           }
         } else {
           newEnts[key] = ent;
@@ -65,6 +75,15 @@
       }
 
       for (const k of staleKeys) _fileOverrides.delete(k);
+
+      // 진단 로그 (오버라이드가 있을 때만, 최대 5회)
+      if (_patchLogCount < 5) {
+        _patchLogCount++;
+        const ovKeys = [..._fileOverrides.keys()].map(k => k.slice(0,12));
+        console.log(`[CE getState] 패치 계산: anyPatch=${anyPatch}, matches:`, debugMatches,
+          `stale:${staleKeys.length}, 남은 ov keys:`, ovKeys,
+          `uf.ids 수: ${uf.ids.length}`);
+      }
 
       if (!anyPatch) { _cachedPatched = raw; return raw; }
 
@@ -5987,13 +6006,17 @@
         const ref = sdk.doc(filesCol, docId);
         await sdk.setDoc(ref, { dir: targetDir, updatedAt: now }, { merge: true });
         _fileOverrides.set(docId, { dir: targetDir, updatedAt: now });
+        console.log(`[CE 이미지] override 설정: docId=${docId.slice(0,16)}, fid=${fid.slice(0,16)}, match=${docId===fid}`);
         movedCount++;
       }
 
       // ── getState 인터셉터로 ccfolia React 강제 갱신 ──
       _stateOverrideVersion++;
       setupGetStateInterceptor();
+      console.log(`[CE 이미지] dispatch 전: overrides=${_fileOverrides.size}, ver=${_stateOverrideVersion}`);
       reduxStore.dispatch({ type: '@@CE_FILE_OVERRIDE' });
+      console.log(`[CE 이미지] dispatch 후: getState().entities.userFiles.entities[docId].dir =`,
+        reduxStore.getState()?.entities?.userFiles?.entities?.[fileIds[0]]?.dir || '(not found by fid)');
 
       console.log(`[CE 이미지] ✅ ${movedCount}개 → ${targetDir} 이동 (getState 오버라이드)`);
       respond({ success: true, movedCount });
