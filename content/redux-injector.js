@@ -647,7 +647,7 @@
     if (typeof origGetDocs !== 'function') return;
     _getDocsWrapped = true;
 
-    fsMod[key] = async function wrappedGetDocs() {
+    const wrappedGetDocs = async function wrappedGetDocs() {
       const snapshot = await origGetDocs.apply(this, arguments);
 
       if (_fileOverrides.size === 0) return snapshot;
@@ -703,7 +703,17 @@
       });
     };
 
-    console.log('[CE] ✅ getDocs 래핑 완료 (모듈 export 직접 교체)');
+    // webpack getter-only export를 우회: Object.defineProperty로 getter 교체
+    try {
+      Object.defineProperty(fsMod, key, {
+        get: () => wrappedGetDocs,
+        configurable: true
+      });
+      console.log('[CE] ✅ getDocs 래핑 완료 (defineProperty getter 교체)');
+    } catch (e2) {
+      console.warn('[CE] getDocs 래핑 실패 (export 변경 불가):', e2.message);
+      _getDocsWrapped = false;
+    }
   }
 
   /**
@@ -765,8 +775,10 @@
           console.log('%c[CE]%c ✅ Firestore SDK 획득 성공 (알려진 키)',
             'color: #4caf50; font-weight: bold;', 'color: inherit;');
 
-          // ── getDocs 래핑: 쿼리 결과에 _fileOverrides 적용 ──
-          _wrapGetDocsOnModule(fsMod);
+          // ── getDocs 래핑: 쿼리 결과에 _fileOverrides 적용 (실패해도 SDK 획득에 영향 없음) ──
+          try { _wrapGetDocsOnModule(fsMod); } catch (wrapErr) {
+            console.warn('[CE] getDocs 래핑 예외:', wrapErr.message);
+          }
 
           return _firestoreSDK;
         }
