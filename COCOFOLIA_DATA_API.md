@@ -2857,3 +2857,123 @@ const filesCol = sdk.collection(sdk.db, 'users', uid, 'files');
 const fileRef = sdk.doc(filesCol, fileId);
 await sdk.setDoc(fileRef, { dir: 'background', updatedAt: Date.now() }, { merge: true });
 ```
+
+---
+
+## 이미지 업로드 (Firebase Storage via Cloud Function)
+
+> **2026-06-24 기준** — F12 네트워크 탭 + IndexedDB 분석으로 확인
+
+### 개요
+
+코코포리아는 Firebase Storage SDK를 직접 사용하지 **않음**.
+대신 **Cloud Function** (`uploadFileV2`)을 통해 서버 측에서 Storage에 기록하고,
+Cloud CDN (`storage.ccfolia-cdn.net`)을 통해 이미지를 서빙함.
+
+⚠️ Firestore 문서에 base64 data URL을 직접 저장하면 1MB 문서 크기 제한에 걸림.
+네이티브 앱은 항상 CDN URL만 저장함.
+
+### 엔드포인트
+
+```
+POST https://asia-northeast1-ccfolia-160aa.cloudfunctions.net/uploadFileV2
+```
+
+### 인증
+
+```
+Authorization: Bearer {Firebase ID Token}
+```
+
+토큰 소스: IndexedDB → `firebaseLocalStorageDb` DB → `firebaseLocalStorage` object store
+
+```js
+// IndexedDB에서 토큰 읽기
+const db = await new Promise((resolve, reject) => {
+  const req = indexedDB.open('firebaseLocalStorageDb');
+  req.onsuccess = () => resolve(req.result);
+  req.onerror = () => reject(req.error);
+});
+const tx = db.transaction('firebaseLocalStorage', 'readonly');
+const store = tx.objectStore('firebaseLocalStorage');
+const all = await new Promise((resolve) => {
+  const req = store.getAll();
+  req.onsuccess = () => resolve(req.result);
+});
+db.close();
+// all[0].value.stsTokenManager.accessToken → Firebase ID Token
+// all[0].value.stsTokenManager.refreshToken → Refresh Token
+// all[0].value.stsTokenManager.expirationTime → 만료 시각 (ms)
+// all[0].value.uid → 사용자 UID
+```
+
+### 토큰 갱신
+
+```
+POST https://securetoken.googleapis.com/v1/token?key=AIzaSyAMlcPs4ekVSBdzpRdEloqQ8lIgP9lEnRI
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=refresh_token&refresh_token={refreshToken}
+```
+
+응답: `{ id_token, refresh_token, expires_in, ... }`
+
+### 요청 형식 (FormData)
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `file` | Blob | 이미지 바이너리 (image/png, image/jpeg 등) |
+| `filePath` | string | `users/{uid}/files/{sha256_hex}` — 파일 내용의 SHA-256 해시 |
+
+```js
+const blob = /* 이미지 Blob */;
+const hashBuffer = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+const sha256 = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+const filePath = `users/${uid}/files/${sha256}`;
+
+const formData = new FormData();
+formData.append('file', blob, 'image.png');
+formData.append('filePath', filePath);
+
+const resp = await fetch(endpoint, {
+  method: 'POST',
+  headers: { 'Authorization': `Bearer ${token}` },
+  body: formData
+});
+```
+
+### 응답
+
+```json
+{
+  "name": "users/{uid}/files/{sha256_hex}",
+  ...
+}
+```
+
+### CDN URL 생성
+
+```
+https://storage.ccfolia-cdn.net/{response.name}
+```
+
+예시: `https://storage.ccfolia-cdn.net/users/Az1rUAx4tw.../files/e92862714d...`
+
+이 CDN URL이 Firestore 문서의 `imageUrl` 필드에 저장됨.
+
+### Storage 버킷
+
+```
+ccfolia-160aa.appspot.com
+```
+
+### 정리
+
+| 항목 | 값 |
+|------|-----|
+| 업로드 엔드포인트 | `asia-northeast1-ccfolia-160aa.cloudfunctions.net/uploadFileV2` |
+| CDN 베이스 | `https://storage.ccfolia-cdn.net/` |
+| Firebase API Key | `AIzaSyAMlcPs4ekVSBdzpRdEloqQ8lIgP9lEnRI` |
+| 파일 경로 형식 | `users/{uid}/files/{sha256_of_blob}` |
+| 인증 방식 | Bearer token (Firebase ID Token from IndexedDB) |
+| SDK 사용 여부 | ❌ (webpack에 Storage SDK 없음, Cloud Function 경유) |

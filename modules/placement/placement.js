@@ -6131,15 +6131,8 @@ function _dispatchCreatePanelOrMarker(panelData) {
       document.documentElement.removeAttribute('data-bwbr-create-marker-result');
       try {
         var res = raw ? JSON.parse(raw) : {};
-        if (res.success && res.imageStripped) {
-          if (window.BWBR_FabButtons && window.BWBR_FabButtons.showToast) {
-            window.BWBR_FabButtons.showToast('룸 문서 크기 제한으로 이미지 없이 마커가 생성되었습니다.', { bg: 'rgba(255,152,0,0.92)', color: '#fff', duration: 3500 });
-          }
-        } else if (!res.success && res.error) {
+        if (!res.success && res.error) {
           var msg = '마커 생성 실패: ' + res.error;
-          if (res.error.indexOf('size') !== -1 || res.error.indexOf('1,048,576') !== -1) {
-            msg = '⚠️ 룸 문서가 Firestore 1MB 제한에 도달했습니다.\n기존 마커를 삭제하거나 스크린(object) 타입으로 전환하세요.';
-          }
           if (window.BWBR_FabButtons && window.BWBR_FabButtons.showToast) {
             window.BWBR_FabButtons.showToast(msg, { bg: 'rgba(211,47,47,0.92)', color: '#fff', duration: 4000 });
           }
@@ -6276,8 +6269,8 @@ function compositeAndCommit() {
     });
 
     var dataUrl;
-    // 마커(plane)는 룸 문서에 inline 저장 → 1MB 문서 제한 공유 → 50KB 대상
-    var compressMax = (s.type === 'plane') ? 50000 : 900000;
+    // data URL은 redux-injector에서 Firebase Storage에 업로드 후 CDN URL로 변환됨
+    var compressMax = 900000;
     try {
       dataUrl = compressCanvasToDataUrl(canvas, compressMax);
     } catch (err) {

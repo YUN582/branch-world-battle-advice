@@ -5754,6 +5754,107 @@
   });
 
   // ================================================================
+  //  이미지 업로드 유틸리티 (Firebase Storage via Cloud Function)
+  //  data URL → uploadFileV2 → CDN URL 변환
+  // ================================================================
+  const _UPLOAD_ENDPOINT = 'https://asia-northeast1-ccfolia-160aa.cloudfunctions.net/uploadFileV2';
+  const _CDN_BASE = 'https://storage.ccfolia-cdn.net/';
+  const _FB_API_KEY = 'AIzaSyAMlcPs4ekVSBdzpRdEloqQ8lIgP9lEnRI';
+
+  async function _getFirebaseAuthToken() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open('firebaseLocalStorageDb');
+      req.onerror = () => reject(new Error('IndexedDB 열기 실패'));
+      req.onsuccess = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('firebaseLocalStorage')) {
+          return reject(new Error('firebaseLocalStorage store 없음'));
+        }
+        const tx = db.transaction('firebaseLocalStorage', 'readonly');
+        const store = tx.objectStore('firebaseLocalStorage');
+        const getAll = store.getAll();
+        getAll.onsuccess = () => {
+          const items = getAll.result;
+          if (!items || items.length === 0) return reject(new Error('Auth 항목 없음'));
+          const authItem = items[0].value;
+          if (!authItem || !authItem.stsTokenManager) return reject(new Error('stsTokenManager 없음'));
+          const stm = authItem.stsTokenManager;
+          const uid = authItem.uid;
+          // 토큰 만료 5분 전이면 갱신
+          if (stm.expirationTime && Date.now() > stm.expirationTime - 300000) {
+            _refreshFirebaseToken(stm.refreshToken).then(newToken => {
+              resolve({ token: newToken, uid });
+            }).catch(reject);
+          } else {
+            resolve({ token: stm.accessToken, uid });
+          }
+        };
+        getAll.onerror = () => reject(new Error('Auth 읽기 실패'));
+      };
+    });
+  }
+
+  async function _refreshFirebaseToken(refreshToken) {
+    const resp = await fetch(`https://securetoken.googleapis.com/v1/token?key=${_FB_API_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(refreshToken)}`
+    });
+    if (!resp.ok) throw new Error('토큰 갱신 실패: ' + resp.status);
+    const data = await resp.json();
+    return data.access_token || data.id_token;
+  }
+
+  function _dataUrlToBlob(dataUrl) {
+    const parts = dataUrl.split(',');
+    const mime = parts[0].match(/:(.*?);/)[1];
+    const b64 = atob(parts[1]);
+    const arr = new Uint8Array(b64.length);
+    for (let i = 0; i < b64.length; i++) arr[i] = b64.charCodeAt(i);
+    return new Blob([arr], { type: mime });
+  }
+
+  async function _computeSha256(blob) {
+    const buffer = await blob.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  /**
+   * data URL을 Firebase Storage에 업로드하고 CDN URL을 반환
+   * @param {string} dataUrl - data:image/webp;base64,... 형식
+   * @returns {Promise<string>} CDN URL (https://storage.ccfolia-cdn.net/users/...)
+   */
+  async function _uploadImageToStorage(dataUrl) {
+    const { token, uid } = await _getFirebaseAuthToken();
+    const blob = _dataUrlToBlob(dataUrl);
+    const sha256 = await _computeSha256(blob);
+    const filePath = `users/${uid}/files/${sha256}`;
+
+    const formData = new FormData();
+    formData.append('file', blob, 'image.webp');
+    formData.append('filePath', filePath);
+
+    const resp = await fetch(_UPLOAD_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      throw new Error(`업로드 실패 (${resp.status}): ${text.slice(0, 200)}`);
+    }
+
+    const result = await resp.json();
+    const cdnUrl = _CDN_BASE + result.name;
+    _dbg(`%c[CE]%c ☁️ 이미지 업로드 완료: ${Math.round(blob.size / 1024)}KB → ${cdnUrl.slice(0, 80)}...`,
+      'color: #2196f3; font-weight: bold;', 'color: inherit;');
+    return cdnUrl;
+  }
+
+  // ================================================================
   //  배치 모드: 패널(아이템) 생성
   //  Content Script에서 bwbr-create-panel 이벤트로 요청
   // ================================================================
@@ -5776,6 +5877,16 @@
 
       const state = reduxStore.getState();
       const uid = state.app?.state?.uid || '';
+
+      // data URL → Firebase Storage 업로드 → CDN URL
+      let imageUrl = panelData.imageUrl || '';
+      if (imageUrl.startsWith('data:')) {
+        try {
+          imageUrl = await _uploadImageToStorage(imageUrl);
+        } catch (uploadErr) {
+          _dbg('[CE] 이미지 업로드 실패, data URL 그대로 사용:', uploadErr.message);
+        }
+      }
 
       const itemsCol = sdk.collection(sdk.db, 'rooms', roomId, 'items');
       const newId = _generateFirestoreId();
@@ -5800,7 +5911,7 @@
         ownerName: '',
         ownerColor: '',
         memo: panelData.memo || '',
-        imageUrl: panelData.imageUrl || '',
+        imageUrl: imageUrl,
         coverImageUrl: '',
         clickAction: '',
         deckId: null,
@@ -5846,6 +5957,17 @@
       const markerKey = Date.now().toString(16);
       let imageUrl = d.imageUrl || '';
 
+      // data URL → Firebase Storage 업로드 → CDN URL
+      if (imageUrl.startsWith('data:')) {
+        try {
+          imageUrl = await _uploadImageToStorage(imageUrl);
+        } catch (uploadErr) {
+          _dbg('[CE] 마커 이미지 업로드 실패:', uploadErr.message);
+          // 업로드 실패 시 이미지 없이 생성
+          imageUrl = '';
+        }
+      }
+
       const markerData = {
         x: d.x ?? 0,
         y: d.y ?? 0,
@@ -5862,40 +5984,18 @@
       const roomRef = sdk.doc(sdk.collection(sdk.db, 'rooms'), roomId);
       const now = Date.now();
 
-      const doWrite = async (data) => {
-        if (sdk.writeBatch) {
-          const batch = sdk.writeBatch(sdk.db);
-          batch.update(roomRef, {
-            [`markers.${markerKey}`]: data,
-            updatedAt: now
-          });
-          await batch.commit();
-        } else {
-          await sdk.setDoc(roomRef, {
-            markers: { [markerKey]: data },
-            updatedAt: now
-          }, { merge: true });
-        }
-      };
-
-      try {
-        await doWrite(markerData);
-      } catch (writeErr) {
-        // Firestore 1MB 문서 제한 초과 → 이미지 제거 후 재시도
-        if (markerData.imageUrl && writeErr.message && writeErr.message.indexOf('size') !== -1) {
-          _dbg('[CE] 마커 이미지 포함 시 문서 크기 초과, 이미지 제거 후 재시도');
-          markerData.imageUrl = '';
-          try {
-            await doWrite(markerData);
-            _dbg(`%c[CE]%c ⚠️ 마커 생성 (이미지 제거됨): ${markerKey}`,
-              'color: #ff9800; font-weight: bold;', 'color: inherit;');
-            respond({ success: true, id: markerKey, imageStripped: true });
-            return;
-          } catch (retryErr) {
-            throw retryErr; // 이미지 없이도 실패 → 원래 에러 처리로
-          }
-        }
-        throw writeErr;
+      if (sdk.writeBatch) {
+        const batch = sdk.writeBatch(sdk.db);
+        batch.update(roomRef, {
+          [`markers.${markerKey}`]: markerData,
+          updatedAt: now
+        });
+        await batch.commit();
+      } else {
+        await sdk.setDoc(roomRef, {
+          markers: { [markerKey]: markerData },
+          updatedAt: now
+        }, { merge: true });
       }
 
       _dbg(`%c[CE]%c ✅ 마커 생성: ${markerKey} (${markerData.width}×${markerData.height})`,
