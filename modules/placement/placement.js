@@ -5729,12 +5729,15 @@ function setupSelectModeHandlers() {
   }, true);
   document.addEventListener('pointermove', function(e) {
     if (!e.isTrusted) return;
+    // 오버레이 자체 이벤트는 통과 (그리기/배치/범위선택 모두 오버레이의 pointer 핸들러가 처리)
+    if (e.target.closest('.bwbr-placement-overlay')) return;
     if (_altBoxSelect.active || _selectDrag.dragging) { e.stopImmediatePropagation(); }
     // 편집 모드: 오버레이 드래그/그리기 중 패닝 차단
     if (_state.mode === 'edit' && (_state.placing || _isDrawing)) { e.stopImmediatePropagation(); }
   }, true);
   document.addEventListener('pointerup', function(e) {
     if (!e.isTrusted) return;
+    if (e.target.closest('.bwbr-placement-overlay')) return;
     if (_altBoxSelect.active || _selectDrag.dragging) { e.stopImmediatePropagation(); }
     if (_isDrawing) { e.stopImmediatePropagation(); }
   }, true);
