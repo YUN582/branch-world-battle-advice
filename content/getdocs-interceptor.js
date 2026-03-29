@@ -69,16 +69,26 @@
     };
   }
 
-  // Push 인터셉터
+  // Push 인터셉터 (재귀 방지 플래그)
+  let _inPush = false;
   function interceptPush() {
-    const chunk = arguments[0];
-    if (Array.isArray(chunk) && chunk[1] && typeof chunk[1] === 'object') {
-      wrapFactory(chunk[1]);
+    if (_inPush) {
+      // 재귀 호출 — webpack 내부 push, 원본으로 바이패스
+      return Array.prototype.push.apply(this, arguments);
     }
-    if (_wpPush) {
-      return _wpPush.apply(this, arguments);
+    _inPush = true;
+    try {
+      const chunk = arguments[0];
+      if (Array.isArray(chunk) && chunk[1] && typeof chunk[1] === 'object') {
+        wrapFactory(chunk[1]);
+      }
+      if (_wpPush) {
+        return _wpPush.apply(this, arguments);
+      }
+      return Array.prototype.push.apply(this, arguments);
+    } finally {
+      _inPush = false;
     }
-    return Array.prototype.push.apply(this, arguments);
   }
 
   // webpackChunkccfolia 배열 생성/획득
