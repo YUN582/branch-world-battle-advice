@@ -459,6 +459,7 @@ body.bwbr-placement-noselect .bwbr-text-editor * {
   z-index: 102;
   cursor: crosshair;
   display: none;
+  touch-action: none;
 }
 
 .bwbr-placement-overlay--active {
@@ -4598,9 +4599,9 @@ function createOverlay() {
   _angleIndicator.className = 'bwbr-placement-angle-indicator';
   document.body.appendChild(_angleIndicator);
 
-  _overlay.addEventListener('mousedown', onOverlayMouseDown);
-  _overlay.addEventListener('mousemove', onOverlayMouseMove);
-  _overlay.addEventListener('mouseup', onOverlayMouseUp);
+  _overlay.addEventListener('pointerdown', onOverlayMouseDown);
+  _overlay.addEventListener('pointermove', onOverlayMouseMove);
+  _overlay.addEventListener('pointerup', onOverlayMouseUp);
 
   // 휠 줌 패스스루: 오버레이 아래 요소에 전달
   _overlay.addEventListener('wheel', function(e) {
@@ -4665,6 +4666,7 @@ function onOverlayMouseDown(e) {
 
   // 그리기 도구: 캔버스에 직접 그리기
   if (_state.currentTool === 'draw') {
+    _overlay.setPointerCapture(e.pointerId);
     onDrawMouseDown(e);
     return;
   }
@@ -5727,12 +5729,13 @@ function setupSelectModeHandlers() {
   document.addEventListener('pointermove', function(e) {
     if (!e.isTrusted) return;
     if (_altBoxSelect.active || _selectDrag.dragging) { e.stopImmediatePropagation(); }
-    // 편집 모드: 오버레이 드래그 중 패닝 차단
-    if (_state.mode === 'edit' && _state.placing) { e.stopImmediatePropagation(); }
+    // 편집 모드: 오버레이 드래그/그리기 중 패닝 차단
+    if (_state.mode === 'edit' && (_state.placing || _isDrawing)) { e.stopImmediatePropagation(); }
   }, true);
   document.addEventListener('pointerup', function(e) {
     if (!e.isTrusted) return;
     if (_altBoxSelect.active || _selectDrag.dragging) { e.stopImmediatePropagation(); }
+    if (_isDrawing) { e.stopImmediatePropagation(); }
   }, true);
 
   // 범위 선택용 mousemove/mouseup (document 레벨)
