@@ -3870,6 +3870,36 @@ function _rgbToHex(r, g, b) {
 }
 function _clamp01(x) { return Math.max(0, Math.min(1, x)); }
 
+// ── EyeDropper (MAIN world 경유) ────────────────────────────
+// ISOLATED world에서는 EyeDropper API 접근 불가 → script 태그로 MAIN world에서 실행
+function _pickColorFromScreen(cb) {
+  var evtName = '__ce_eyedrop_' + Date.now();
+  function onResult() {
+    document.removeEventListener(evtName, onResult);
+    var hex = document.documentElement.getAttribute('data-ce-eyedrop');
+    document.documentElement.removeAttribute('data-ce-eyedrop');
+    cb(hex || null);
+  }
+  document.addEventListener(evtName, onResult);
+  var s = document.createElement('script');
+  s.textContent = '(' + function(evName) {
+    if (typeof EyeDropper === 'undefined') {
+      document.documentElement.setAttribute('data-ce-eyedrop', '');
+      document.dispatchEvent(new CustomEvent(evName));
+      return;
+    }
+    new EyeDropper().open().then(function(r) {
+      document.documentElement.setAttribute('data-ce-eyedrop', r.sRGBHex);
+      document.dispatchEvent(new CustomEvent(evName));
+    }).catch(function() {
+      document.documentElement.setAttribute('data-ce-eyedrop', '');
+      document.dispatchEvent(new CustomEvent(evName));
+    });
+  }.toString() + ')(' + JSON.stringify(evtName) + ');';
+  (document.head || document.documentElement).appendChild(s);
+  s.remove();
+}
+
 function _closeColorPopup() {
   if (_colorPopupEl && _colorPopupEl.parentNode) _colorPopupEl.parentNode.removeChild(_colorPopupEl);
   _colorPopupEl = null;
@@ -3941,28 +3971,25 @@ function _openColorPopup(anchorEl, currentHex, isTransparent, allowTransparent, 
     row.appendChild(transLabel);
   }
 
-  // 스포이드 버튼 (EyeDropper API)
-  if (window.EyeDropper) {
-    var eyeBtn = document.createElement('button');
-    eyeBtn.className = 'bwbr-color-popup-eyedropper';
-    eyeBtn.title = '스포이드';
-    eyeBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20.71 5.63l-2.34-2.34a1 1 0 00-1.41 0l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l8.92-8.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12a1 1 0 000-1.42zM6.92 19L5 17.08l8.06-8.06 1.92 1.92L6.92 19z"/></svg>';
-    eyeBtn.style.cssText = 'background:none;border:1px solid rgba(255,255,255,0.25);border-radius:4px;color:#fff;cursor:pointer;padding:2px 4px;display:flex;align-items:center;justify-content:center;margin-left:4px;';
-    eyeBtn.addEventListener('mouseenter', function() { eyeBtn.style.background = 'rgba(255,255,255,0.15)'; });
-    eyeBtn.addEventListener('mouseleave', function() { eyeBtn.style.background = 'none'; });
-    eyeBtn.addEventListener('click', function() {
-      var dropper = new EyeDropper();
-      dropper.open().then(function(result) {
-        var hex = result.sRGBHex;
-        var rgb2 = _hexToRgb(hex);
-        var hsv2 = _rgbToHsv(rgb2[0], rgb2[1], rgb2[2]);
-        ch = hsv2[0]; cs = hsv2[1]; cv = hsv2[2];
-        if (trans && transCheck) { trans = false; transCheck.checked = false; }
-        redraw(); commit();
-      }).catch(function() { /* 사용자 취소 */ });
+  // 스포이드 버튼 (EyeDropper API — MAIN world 경유)
+  var eyeBtn = document.createElement('button');
+  eyeBtn.className = 'bwbr-color-popup-eyedropper';
+  eyeBtn.title = '스포이드';
+  eyeBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20.71 5.63l-2.34-2.34a1 1 0 00-1.41 0l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l8.92-8.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12a1 1 0 000-1.42zM6.92 19L5 17.08l8.06-8.06 1.92 1.92L6.92 19z"/></svg>';
+  eyeBtn.style.cssText = 'background:none;border:1px solid rgba(255,255,255,0.25);border-radius:4px;color:#fff;cursor:pointer;padding:2px 4px;display:flex;align-items:center;justify-content:center;margin-left:4px;';
+  eyeBtn.addEventListener('mouseenter', function() { eyeBtn.style.background = 'rgba(255,255,255,0.15)'; });
+  eyeBtn.addEventListener('mouseleave', function() { eyeBtn.style.background = 'none'; });
+  eyeBtn.addEventListener('click', function() {
+    _pickColorFromScreen(function(hex) {
+      if (!hex) return;
+      var rgb2 = _hexToRgb(hex);
+      var hsv2 = _rgbToHsv(rgb2[0], rgb2[1], rgb2[2]);
+      ch = hsv2[0]; cs = hsv2[1]; cv = hsv2[2];
+      if (trans && transCheck) { trans = false; transCheck.checked = false; }
+      redraw(); commit();
     });
-    row.appendChild(eyeBtn);
-  }
+  });
+  row.appendChild(eyeBtn);
 
   popup.appendChild(row);
 
@@ -6094,6 +6121,26 @@ function readSettingsFromDialog() {
 // type에 따라 스크린(items) 또는 마커(room.markers)로 생성
 function _dispatchCreatePanelOrMarker(panelData) {
   if (panelData.type === 'plane') {
+    // 마커 생성 결과 리스너 (1회)
+    var onResult = function() {
+      document.removeEventListener('bwbr-create-marker-result', onResult);
+      var raw = document.documentElement.getAttribute('data-bwbr-create-marker-result');
+      document.documentElement.removeAttribute('data-bwbr-create-marker-result');
+      try {
+        var res = raw ? JSON.parse(raw) : {};
+        if (!res.success && res.error) {
+          var msg = '마커 생성 실패';
+          if (res.error.indexOf('size') !== -1 || res.error.indexOf('1,048,576') !== -1) {
+            msg = '마커 이미지가 너무 큽니다. 더 작은 이미지를 사용하거나 스크린 타입으로 전환하세요.';
+          }
+          if (window.BWBR_FabButtons && window.BWBR_FabButtons.showToast) {
+            window.BWBR_FabButtons.showToast(msg, { bg: 'rgba(211,47,47,0.92)', color: '#fff', duration: 4000 });
+          }
+          console.error('[CE 배치] 마커 생성 실패:', res.error);
+        }
+      } catch (e) { /* ignore parse error */ }
+    };
+    document.addEventListener('bwbr-create-marker-result', onResult);
     document.documentElement.setAttribute('data-bwbr-create-marker', JSON.stringify(panelData));
     document.dispatchEvent(new CustomEvent('bwbr-create-marker'));
   } else {
@@ -6222,8 +6269,10 @@ function compositeAndCommit() {
     });
 
     var dataUrl;
+    // 마커(plane)는 룸 문서에 저장 → 1MB 제한 공유 → 200KB 이내로 압축
+    var compressMax = (s.type === 'plane') ? 200000 : 900000;
     try {
-      dataUrl = compressCanvasToDataUrl(canvas);
+      dataUrl = compressCanvasToDataUrl(canvas, compressMax);
     } catch (err) {
       console.warn('[CE 배치] 캔버스 합성 실패 (CORS), 개별 패널 생성으로 대체:', err.message);
       commitIndividualPanels();
@@ -6259,18 +6308,28 @@ function compositeAndCommit() {
   }
 }
 
-function compressCanvasToDataUrl(canvas) {
-  var maxLen = 900000;
-  var qualities = [0.85, 0.7, 0.5, 0.3];
+function compressCanvasToDataUrl(canvas, maxLen) {
+  if (!maxLen) maxLen = 900000;
+  var qualities = [0.85, 0.7, 0.5, 0.3, 0.15];
   for (var i = 0; i < qualities.length; i++) {
     var url = canvas.toDataURL('image/webp', qualities[i]);
     if (url.length < maxLen) return url;
   }
+  // 1/2 해상도
   var half = document.createElement('canvas');
-  half.width = Math.floor(canvas.width / 2);
-  half.height = Math.floor(canvas.height / 2);
+  half.width = Math.max(1, Math.floor(canvas.width / 2));
+  half.height = Math.max(1, Math.floor(canvas.height / 2));
   half.getContext('2d').drawImage(canvas, 0, 0, half.width, half.height);
-  return half.toDataURL('image/webp', 0.5);
+  for (var j = 0; j < qualities.length; j++) {
+    var url2 = half.toDataURL('image/webp', qualities[j]);
+    if (url2.length < maxLen) return url2;
+  }
+  // 1/4 해상도 최종 폴백
+  var quarter = document.createElement('canvas');
+  quarter.width = Math.max(1, Math.floor(canvas.width / 4));
+  quarter.height = Math.max(1, Math.floor(canvas.height / 4));
+  quarter.getContext('2d').drawImage(canvas, 0, 0, quarter.width, quarter.height);
+  return quarter.toDataURL('image/webp', 0.3);
 }
 
 
