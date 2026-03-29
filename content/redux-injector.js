@@ -35,12 +35,13 @@
 
     // 진단용: window에 노출
     window.__ceFileOverrides = _fileOverrides;
-    let _patchLogCount = 0;
+    let _patchLogCount = 0;  // 로그 스팸 방지
 
     reduxStore.getState = function() {
       const raw = origGetState();
       if (_fileOverrides.size === 0) return raw;
       if (raw === _cachedRaw && _stateOverrideVersion === _cachedOvVer && _cachedPatched) {
+        if (_patchLogCount < 3) { _patchLogCount++; console.log('[CE getState] 캐시 반환, ov:', _stateOverrideVersion); }
         return _cachedPatched;
       }
 
@@ -53,6 +54,7 @@
       let anyPatch = false;
       const newEnts = {};
       const staleKeys = [];
+      const debugMatches = [];
 
       for (const key of uf.ids) {
         const ent = uf.entities[key];
@@ -61,10 +63,11 @@
           if (ent.dir === ov.dir) {
             staleKeys.push(ov === _fileOverrides.get(key) ? key : ent._id);
             newEnts[key] = ent;
+            debugMatches.push({ key: key.slice(0,12), status: 'stale', entDir: ent.dir });
           } else {
-            // ★ 핵심: 객체 참조를 바꿔서 React memoization/reselect가 변화를 감지하도록 함
             newEnts[key] = { ...ent, ...ov };
             anyPatch = true;
+            debugMatches.push({ key: key.slice(0,12), status: 'PATCHED', from: ent.dir, to: ov.dir });
           }
         } else {
           newEnts[key] = ent;
@@ -73,20 +76,20 @@
 
       for (const k of staleKeys) _fileOverrides.delete(k);
 
+      // 진단 로그 (오버라이드가 있을 때만, 최대 5회)
+      if (_patchLogCount < 5) {
+        _patchLogCount++;
+        const ovKeys = [..._fileOverrides.keys()].map(k => k.slice(0,12));
+        console.log(`[CE getState] 패치 계산: anyPatch=${anyPatch}, matches:`, debugMatches,
+          `stale:${staleKeys.length}, 남은 ov keys:`, ovKeys,
+          `uf.ids 수: ${uf.ids.length}`);
+      }
+
       if (!anyPatch) { _cachedPatched = raw; return raw; }
 
-      // ★ 핵심: id 배열도 새로운 참조로 만들고 state 루트까지 전체 구조를 새로운 객체로 복제
-      // Redux의 상태 비교 참조가 새롭게 갱신되어야 ccfolia의 useSelector가 재계산됨
       _cachedPatched = {
         ...raw,
-        entities: {
-          ...raw.entities,
-          userFiles: {
-            ...uf,
-            ids: [...uf.ids],          // ids 배열도 새 참조
-            entities: newEnts          // entities 맵도 새 참조
-          }
-        }
+        entities: { ...raw.entities, userFiles: { ...uf, entities: newEnts } }
       };
       return _cachedPatched;
     };

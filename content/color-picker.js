@@ -99,6 +99,31 @@
     hueC.style.marginTop = '8px';
     root.appendChild(hueC);
 
+    // 스포이드 버튼 (EyeDropper API)
+    if (window.EyeDropper) {
+      var eyeRow = document.createElement('div');
+      eyeRow.style.cssText = 'margin-top:6px;display:flex;align-items:center;';
+      var eyeBtn = document.createElement('button');
+      eyeBtn.title = '스포이드';
+      eyeBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20.71 5.63l-2.34-2.34a1 1 0 00-1.41 0l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l8.92-8.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12a1 1 0 000-1.42zM6.92 19L5 17.08l8.06-8.06 1.92 1.92L6.92 19z"/></svg>';
+      eyeBtn.style.cssText = 'background:none;border:1px solid rgba(0,0,0,0.15);border-radius:4px;cursor:pointer;padding:3px 8px;display:flex;align-items:center;gap:4px;font-size:12px;color:#555;';
+      eyeBtn.appendChild(document.createTextNode(' 스포이드'));
+      eyeBtn.addEventListener('mouseenter', function() { eyeBtn.style.background = 'rgba(0,0,0,0.06)'; });
+      eyeBtn.addEventListener('mouseleave', function() { eyeBtn.style.background = 'none'; });
+      eyeBtn.addEventListener('click', function() {
+        var dropper = new EyeDropper();
+        dropper.open().then(function(result) {
+          var hex = result.sRGBHex.replace(/^#/, '');
+          var rgb2 = hexToRgb(hex);
+          var hsv2 = rgbToHsv(rgb2[0], rgb2[1], rgb2[2]);
+          h = hsv2[0]; s = hsv2[1]; v = hsv2[2];
+          redraw(); commit();
+        }).catch(function() { /* 사용자 취소 */ });
+      });
+      eyeRow.appendChild(eyeBtn);
+      root.appendChild(eyeRow);
+    }
+
     // 다이얼로그 콘텐츠 최상단에 삽입
     var content = paper.querySelector('.MuiDialogContent-root');
     if (content) content.insertBefore(root, content.firstChild);

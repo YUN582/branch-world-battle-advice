@@ -1672,7 +1672,12 @@ function activateMode(mode, skipToolRestore) {
     if (_imageSourceMenu) _imageSourceMenu.style.display = 'none';
     if (_textSettingsMenu) _textSettingsMenu.style.display = 'none';
     if (_drawSettingsMenu) _drawSettingsMenu.style.display = 'none';
-    cleanupDrawCanvas();
+    // 그리기 중이면 스트로크 자동 완료
+    if (_drawStrokes && _drawStrokes.length > 0) {
+      finishDrawing();
+    } else {
+      cleanupDrawCanvas();
+    }
   } else if (mode === 'edit') {
     // 편집 모드: 이전 도구가 있을 때만 설정 패널 열기 (skipToolRestore면 호출자가 직접 설정)
     if (!skipToolRestore && _state.lastTool) {
@@ -1696,7 +1701,12 @@ function deactivateMode() {
   _overlay.classList.remove('bwbr-placement-overlay--active');
   _preview.classList.remove('bwbr-placement-preview--visible');
   _settingsPanel.classList.remove('bwbr-place-settings--open');
-  cleanupDrawCanvas();
+  // 그리기 중이면 스트로크 자동 완료
+  if (_drawStrokes && _drawStrokes.length > 0) {
+    finishDrawing();
+  } else {
+    cleanupDrawCanvas();
+  }
   updatePlacementCursor();
   updateAlignBar();
 }
@@ -1707,20 +1717,29 @@ function setSubTool(toolId) {
   });
 
   if (_state.currentTool === toolId) {
+    // 그리기 툴 토글 OFF 시 스트로크 자동 완료
+    if (toolId === 'draw' && _drawStrokes && _drawStrokes.length > 0) {
+      finishDrawing();
+    } else {
+      cleanupDrawCanvas();
+    }
     _state.currentTool = null;
     _overlay.classList.remove('bwbr-placement-overlay--active');
     _settingsPanel.classList.remove('bwbr-place-settings--open');
     if (_imageSourceMenu) _imageSourceMenu.style.display = 'none';
     if (_textSettingsMenu) _textSettingsMenu.style.display = 'none';
     if (_drawSettingsMenu) _drawSettingsMenu.style.display = 'none';
-    cleanupDrawCanvas();
     updatePlacementCursor();
     return;
   }
 
-  // 이전 도구가 draw였으면 캔버스 정리
+  // 이전 도구가 draw였으면 스트로크가 있으면 자동 완료, 없으면 정리
   if (_state.currentTool === 'draw') {
-    cleanupDrawCanvas();
+    if (_drawStrokes && _drawStrokes.length > 0) {
+      finishDrawing();
+    } else {
+      cleanupDrawCanvas();
+    }
   }
 
   _state.currentTool = toolId;
@@ -2876,8 +2895,13 @@ function finishDrawing() {
   var bw = maxX - minX;
   var bh = maxY - minY;
 
-  // 맵 픽셀 → 고해상도 캔버스 (COMPOSITE_PX_PER_TILE / CELL_PX = 2x)
+  // 맵 픽셀 → 고해상도 캔버스 (기본 2x, 작은 그림은 최소 256px 보장)
   var compositeScale = COMPOSITE_PX_PER_TILE / CELL_PX;
+  var minOutputPx = 256;
+  var baseW = bw * compositeScale, baseH = bh * compositeScale;
+  if (baseW < minOutputPx && baseH < minOutputPx) {
+    compositeScale = Math.max(compositeScale, Math.min(minOutputPx / bw, minOutputPx / bh));
+  }
   var cropCanvas = document.createElement('canvas');
   cropCanvas.width = Math.max(1, Math.round(bw * compositeScale));
   cropCanvas.height = Math.max(1, Math.round(bh * compositeScale));
@@ -3916,6 +3940,30 @@ function _openColorPopup(anchorEl, currentHex, isTransparent, allowTransparent, 
     transLabel.appendChild(document.createTextNode('투명'));
     row.appendChild(transLabel);
   }
+
+  // 스포이드 버튼 (EyeDropper API)
+  if (window.EyeDropper) {
+    var eyeBtn = document.createElement('button');
+    eyeBtn.className = 'bwbr-color-popup-eyedropper';
+    eyeBtn.title = '스포이드';
+    eyeBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20.71 5.63l-2.34-2.34a1 1 0 00-1.41 0l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l8.92-8.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12a1 1 0 000-1.42zM6.92 19L5 17.08l8.06-8.06 1.92 1.92L6.92 19z"/></svg>';
+    eyeBtn.style.cssText = 'background:none;border:1px solid rgba(255,255,255,0.25);border-radius:4px;color:#fff;cursor:pointer;padding:2px 4px;display:flex;align-items:center;justify-content:center;margin-left:4px;';
+    eyeBtn.addEventListener('mouseenter', function() { eyeBtn.style.background = 'rgba(255,255,255,0.15)'; });
+    eyeBtn.addEventListener('mouseleave', function() { eyeBtn.style.background = 'none'; });
+    eyeBtn.addEventListener('click', function() {
+      var dropper = new EyeDropper();
+      dropper.open().then(function(result) {
+        var hex = result.sRGBHex;
+        var rgb2 = _hexToRgb(hex);
+        var hsv2 = _rgbToHsv(rgb2[0], rgb2[1], rgb2[2]);
+        ch = hsv2[0]; cs = hsv2[1]; cv = hsv2[2];
+        if (trans && transCheck) { trans = false; transCheck.checked = false; }
+        redraw(); commit();
+      }).catch(function() { /* 사용자 취소 */ });
+    });
+    row.appendChild(eyeBtn);
+  }
+
   popup.appendChild(row);
 
   // 그리기
@@ -6041,8 +6089,10 @@ function compositeAndCommit() {
   console.log('[CE 배치] 확인 → settings:', JSON.stringify(s), '/ bbox:', bboxW + '×' + bboxH);
 
   // 단일 오브젝트 + URL 이미지 → 합성 없이 직접 생성
+  // (마커는 angle 미지원이므로 회전 있으면 합성 경로로 우회)
   if (_state.stagedObjects.length === 1 && _state.stagedObjects[0].imageDataUrl &&
-      !_state.stagedObjects[0].imageDataUrl.startsWith('data:')) {
+      !_state.stagedObjects[0].imageDataUrl.startsWith('data:') &&
+      !(s.type === 'plane' && (_state.stagedObjects[0].angle || 0) !== 0)) {
     var obj0 = _state.stagedObjects[0];
     var panelData = {
       type: s.type, x: obj0.mapCoords.x, y: obj0.mapCoords.y, z: s.z,
