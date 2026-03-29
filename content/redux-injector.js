@@ -23,9 +23,6 @@
   const _fileOverrides = new Map(); // fileId → { dir?, updatedAt? }
   let _stateOverrideVersion = 0;
 
-  // getDocs 인터셉터용 window 노출 (getdocs-interceptor.js가 참조)
-  window.__ceFileOverrides = _fileOverrides;
-
   // ── getState 인터셉터: _fileOverrides를 ccfolia React에 반영 ──
   // setupStore()에서 즉시 호출하여 React 컴포넌트 마운트 전에 패치해야
   // useSyncExternalStore 구독이 패치된 getState를 참조함
@@ -219,9 +216,6 @@
     if (reduxStore) {
       // ★ getState 인터셉터를 최대한 빨리 설정 (React 컴포넌트 마운트 전)
       setupGetStateInterceptor();
-
-      // ★ getDocs 래핑을 미리 설정 (피커 열기 전에 래핑 필요)
-      try { acquireFirestoreSDK(); } catch (e) {}
 
       const chars = getCharacterData();
       const charCount = chars?.length || 0;
