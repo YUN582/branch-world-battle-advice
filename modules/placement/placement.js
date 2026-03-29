@@ -5658,7 +5658,8 @@ function setupSelectModeHandlers() {
         e.target.closest('.bwbr-text-toolbar') ||
         e.target.closest('.bwbr-text-editor-wrap') ||
         e.target.closest('.bwbr-place-confirm-dialog-overlay') ||
-        e.target.closest('.bwbr-color-popup')) return;
+        e.target.closest('.bwbr-color-popup') ||
+        e.target.closest('.bwbr-placement-overlay')) return;
 
     // 편집 모드: 항상 좌클릭 패닝 차단
     if (_state.mode === 'edit') { e.stopImmediatePropagation(); return; }
