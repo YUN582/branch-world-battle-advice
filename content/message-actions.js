@@ -1,7 +1,7 @@
 // ============================================================
 // [CORE] 메시지 수정/삭제 UI — ISOLATED world
 // 채팅 메시지 호버 시 수정/삭제 버튼 표시
-// 시스템 메시지: 수정(커스텀) + 삭제, 텍스트 메시지: 수정(네이티브 프록시) + 삭제
+// 시스템 메시지: 수정 + 삭제, 텍스트 메시지: 삭제만 (수정은 네이티브)
 // 자신이 보낸 메시지만 대상 (from === 내 UID)
 // ============================================================
 
@@ -271,17 +271,7 @@
     _actionContainer = document.createElement('div');
     _actionContainer.className = 'bwbr-msg-actions';
 
-    if (msgType === 'text') {
-      // ── 텍스트 메시지: 수정(네이티브 프록시) + 삭제 ──
-      var textEditBtn = _createActionBtn(ICON_EDIT, '수정', 'bwbr-msg-action-edit');
-      textEditBtn.onclick = function(e) {
-        e.stopPropagation();
-        // 네이티브 편집 버튼을 프로그래밍 방식으로 클릭
-        var nativeBtn = listItem.querySelector('.MuiIconButton-root');
-        if (nativeBtn) nativeBtn.click();
-      };
-      _actionContainer.appendChild(textEditBtn);
-    } else if (msgType === 'system') {
+    if (msgType === 'system') {
       // ── 시스템 메시지: 수정(커스텀 다이얼로그) + 삭제 ──
       var editBtn = _createActionBtn(ICON_EDIT, '수정', 'bwbr-msg-action-edit');
       editBtn.onclick = function(e) {
