@@ -1765,37 +1765,46 @@
 
 /* ── 메시지 수정/삭제 호버 버튼 ──────────────── */
 
-/* 시스템 메시지용 컨테이너 (네이티브 sc-ByBgr 대체) */
-.bwbr-msg-actions-sys {
+/* 독립 컨테이너 — 네이티브 DOM 비간섭 */
+.bwbr-msg-actions {
   position: absolute;
   top: 4px;
   right: 4px;
   display: flex;
-  gap: 0;
+  gap: 2px;
   opacity: 0;
   transition: opacity 0.15s;
   z-index: 10;
+  pointer-events: auto;
 }
 
-.MuiListItem-root:hover .bwbr-msg-actions-sys {
+.MuiListItem-root:hover .bwbr-msg-actions {
   opacity: 1;
 }
 
-/* 네이티브 MuiIconButton 스타일 매칭 — 추가 오버라이드 */
-.bwbr-msg-action-btn.MuiIconButton-sizeSmall {
-  /* MuiIconButton-sizeSmall 기본값 유지, 커스텀 오버라이드만 */
+.bwbr-msg-action-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: rgba(255,255,255,0.5);
+  background: transparent;
+  transition: background 0.15s, color 0.15s;
 }
 
-.bwbr-msg-action-btn .MuiSvgIcon-root {
-  width: 20px;
-  height: 20px;
-  fill: currentColor;
+.bwbr-msg-action-btn:hover {
+  color: rgba(255,255,255,0.8);
+  background: rgba(255,255,255,0.08);
 }
 
-/* 삭제 버튼 호버: 빨간색 */
 .bwbr-msg-action-delete:hover {
-  color: #ff6b6b !important;
-  background-color: rgba(255,80,80,0.12) !important;
+  color: #ff6b6b;
+  background: rgba(255,80,80,0.12);
 }
 
 

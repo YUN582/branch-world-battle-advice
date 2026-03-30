@@ -147,15 +147,15 @@
   }
 
   // ── 공통 SVG 아이콘 ──
-  var ICON_EDIT = '<svg class="MuiSvgIcon-root" focusable="false" viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"></path></svg>';
-  var ICON_DELETE = '<svg class="MuiSvgIcon-root" focusable="false" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"></path></svg>';
+  var ICON_EDIT = '<svg focusable="false" viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>';
+  var ICON_DELETE = '<svg focusable="false" viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>';
 
-  function _createMuiIconButton(icon, title, extraClass) {
+  function _createActionBtn(icon, title, extraClass) {
     var btn = document.createElement('button');
-    btn.className = 'MuiButtonBase-root MuiIconButton-root MuiIconButton-sizeSmall bwbr-msg-action-btn' + (extraClass ? ' ' + extraClass : '');
+    btn.className = 'bwbr-msg-action-btn' + (extraClass ? ' ' + extraClass : '');
     btn.setAttribute('type', 'button');
     btn.title = title;
-    btn.innerHTML = icon + '<span class="MuiTouchRipple-root"></span>';
+    btn.innerHTML = icon;
     return btn;
   }
 
@@ -181,17 +181,12 @@
 
   // ── 호버 버튼 주입/제거 ──
   var _currentHoveredItem = null;
-  var _injectedButtons = []; // 주입한 버튼들 추적
+  var _actionContainer = null;
 
   function _removeActions() {
-    for (var i = 0; i < _injectedButtons.length; i++) {
-      _injectedButtons[i].remove();
-    }
-    _injectedButtons = [];
-    // 시스템 메시지용 컨테이너 제거
-    if (_currentHoveredItem) {
-      var sc = _currentHoveredItem.querySelector('.bwbr-msg-actions-sys');
-      if (sc) sc.remove();
+    if (_actionContainer) {
+      _actionContainer.remove();
+      _actionContainer = null;
     }
     _currentHoveredItem = null;
   }
@@ -211,12 +206,13 @@
 
     _currentHoveredItem = listItem;
 
-    if (msgType === 'system') {
-      // ── 시스템 메시지: 수정 + 삭제 (네이티브 컨테이너 없음) ──
-      var sysContainer = document.createElement('div');
-      sysContainer.className = 'bwbr-msg-actions-sys';
+    // 독립 컨테이너 — 네이티브 DOM에 일절 손대지 않음
+    _actionContainer = document.createElement('div');
+    _actionContainer.className = 'bwbr-msg-actions';
 
-      var editBtn = _createMuiIconButton(ICON_EDIT, '수정', 'bwbr-msg-action-edit');
+    if (msgType === 'system') {
+      // ── 시스템 메시지: 수정 + 삭제 ──
+      var editBtn = _createActionBtn(ICON_EDIT, '수정', 'bwbr-msg-action-edit');
       editBtn.onclick = function(e) {
         e.stopPropagation();
         var textEl = listItem.querySelector('.MuiListItemText-secondary');
@@ -229,41 +225,19 @@
           });
         });
       };
-
-      var delBtn = _createMuiIconButton(ICON_DELETE, '삭제', 'bwbr-msg-action-delete');
-      delBtn.onclick = function(e) {
-        e.stopPropagation();
-        _doDelete(listItem, msgId);
-      };
-
-      sysContainer.appendChild(editBtn);
-      sysContainer.appendChild(delBtn);
-      listItem.style.position = 'relative';
-      listItem.appendChild(sysContainer);
-    } else {
-      // ── 텍스트 메시지: 네이티브 편집 버튼 컨테이너에 삭제 버튼 추가 ──
-      var nativeBtn = listItem.querySelector('.MuiIconButton-root');
-      var nativeContainer = nativeBtn ? nativeBtn.parentElement : null;
-
-      var delBtn = _createMuiIconButton(ICON_DELETE, '삭제', 'bwbr-msg-action-delete');
-      delBtn.onclick = function(e) {
-        e.stopPropagation();
-        _doDelete(listItem, msgId);
-      };
-
-      if (nativeContainer && nativeContainer !== listItem) {
-        // 네이티브 편집 버튼 뒤에 삭제 버튼 삽입
-        nativeContainer.appendChild(delBtn);
-        _injectedButtons.push(delBtn);
-      } else {
-        // 컨테이너 못 찾으면 fallback
-        listItem.style.position = 'relative';
-        var fb = document.createElement('div');
-        fb.className = 'bwbr-msg-actions-sys';
-        fb.appendChild(delBtn);
-        listItem.appendChild(fb);
-      }
+      _actionContainer.appendChild(editBtn);
     }
+
+    // 삭제 버튼 (시스템/텍스트 공용)
+    var delBtn = _createActionBtn(ICON_DELETE, '삭제', 'bwbr-msg-action-delete');
+    delBtn.onclick = function(e) {
+      e.stopPropagation();
+      _doDelete(listItem, msgId);
+    };
+    _actionContainer.appendChild(delBtn);
+
+    listItem.style.position = 'relative';
+    listItem.appendChild(_actionContainer);
   }
 
   // ── 이벤트 위임 (mouseover/mouseout) ──
