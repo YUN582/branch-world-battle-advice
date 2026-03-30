@@ -1740,11 +1740,40 @@ DIV.MuiListItem-root.MuiListItem-gutters.MuiListItem-padding.MuiListItem-alignIt
 
 #### 네이티브 수정 버튼 상세
 
+> **기준**: 2026-03-28 (진단 확인), 2026-03-30 (호버 컨테이너 스타일 미확인 → 진단 필요)
+
 - **셀렉터**: `.MuiListItem-root .MuiIconButton-root.MuiIconButton-sizeSmall`
 - **컨테이너**: `DIV.sc-ByBgr` (styled-component — 빌드마다 클래스 변경 가능)
 - **안정적 셀렉터**: `.MuiListItem-root .MuiIconButton-root` (MUI 클래스는 안정)
 - **SVG path**: `M3 17.25V21h3.75L17.81 9.94l-3.75-3.75...` (MUI EditIcon)
 - **표시 조건**: 텍스트 메시지에만 존재, 항상 DOM에 있음 (CSS `opacity`로 호버 시 표시 추정)
+- **시스템 메시지**: `DIV.sc-ByBgr` 자체가 DOM에 없음 (수정 버튼 없음)
+
+##### 컨테이너 컴퓨티드 스타일 (sc-ByBgr — 확인 필요)
+
+```
+position: absolute
+top: 12px
+right: ??? (진단 필요 — 2026-03-30)
+display: flex
+background: ??? (진단 필요 — 투명 또는 반투명 가능)
+```
+
+##### 버튼 컴퓨티드 스타일 (MuiIconButton-sizeSmall)
+
+```
+width: 30px, height: 30px
+padding: 5px
+color: rgb(255, 255, 255)
+background: transparent (rgba(0,0,0,0))
+borderRadius: 50%
+transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1)
+```
+
+##### 알려진 이슈 (CE 구현 관련)
+
+- **밝기 차이**: CE 버튼이 네이티브 버튼보다 밝아 보일 수 있음 — sc-ByBgr 컨테이너의 배경색이 버튼 밝기에 영향을 줄 가능성 있음 (진단 결과로 확인 필요)
+- **정렬**: sc-ByBgr의 정확한 `right` 오프셋을 모르면 CE 버튼과 네이티브 버튼의 위치가 불일치
 
 #### 셀렉터 가이드
 

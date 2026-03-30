@@ -1767,25 +1767,17 @@
 /* MuiListItem-root은 기본 position: relative — 별도 클래스 불필요 (진단 확인) */
 
 /* 독립 컨테이너 — 네이티브 DOM 절대 비간섭 */
+/* 네이티브 sc-ByBgr 위에 z-index로 오버레이 (텍스트 메시지 수정은 네이티브 프록시) */
 .bwbr-msg-actions {
   position: absolute;
   top: 12px;
+  right: 8px;
   display: flex;
   gap: 2px;
   opacity: 0;
   transition: opacity 0.15s;
   z-index: 10;
   pointer-events: auto;
-}
-
-/* 텍스트 메시지: 네이티브 편집 버튼(sc-ByBgr 30px + right 여백) 왼쪽 */
-.MuiListItem-root[data-msg-type="text"] > .bwbr-msg-actions {
-  right: 42px;
-}
-
-/* 시스템 메시지: 네이티브 호버 UI 없음 → 오른쪽 끝 */
-.MuiListItem-root[data-msg-type="system"] > .bwbr-msg-actions {
-  right: 8px;
 }
 
 .MuiListItem-root:hover > .bwbr-msg-actions {
