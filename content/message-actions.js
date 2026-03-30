@@ -60,9 +60,13 @@
     dialog.className = 'bwbr-msg-edit-box';
     dialog.setAttribute('role', 'dialog');
 
-    // DialogContent (padding: 0) → TextField → FilledInput 구조
+    // DialogContent (padding: 0) → form → TextField → FilledInput 구조
     var content = document.createElement('div');
     content.className = 'bwbr-msg-edit-content';
+
+    var form = document.createElement('form');
+    form.setAttribute('autocomplete', 'off');
+    form.addEventListener('submit', function(e) { e.preventDefault(); confirmBtn.click(); });
 
     var field = document.createElement('div');
     field.className = 'bwbr-msg-edit-field';
@@ -78,7 +82,6 @@
     var textarea = document.createElement('textarea');
     textarea.className = 'bwbr-msg-edit-textarea';
     textarea.value = currentText;
-    textarea.rows = 4;
 
     // 포커스 상태 관리 (언더라인 애니메이션)
     textarea.addEventListener('focus', function() {
@@ -91,7 +94,8 @@
     inputRoot.appendChild(textarea);
     field.appendChild(label);
     field.appendChild(inputRoot);
-    content.appendChild(field);
+    form.appendChild(field);
+    content.appendChild(form);
 
     // DialogActions — 네이티브는 "저장" 버튼 하나만
     var btnRow = document.createElement('div');

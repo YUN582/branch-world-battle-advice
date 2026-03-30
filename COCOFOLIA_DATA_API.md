@@ -1850,6 +1850,97 @@ btn top offset from LI top: 12.0
 .bwbr-msg-action-delete:hover { color: #ff6b6b; }
 ```
 
+##### 네이티브 수정 다이얼로그 컴퓨티드 스타일 (2026-03-30 진단 확인)
+
+> ccfolia 네이티브 메시지 편집 다이얼로그 (MUI Dialog + FilledInput)의 실제 computed style.
+> CE `_showEditDialog()`가 이 스타일을 정확히 재현함.
+
+**Dialog Paper** (`.MuiDialog-paper`):
+```
+background: rgba(44, 44, 44, 0.87)
+borderRadius: 4px
+width: 444px (calc(100% - 64px))
+margin: 32px
+maxWidth: 444px
+maxHeight: calc(100% - 64px)
+overflowY: auto
+boxShadow: 0px 11px 15px -7px rgba(0,0,0,0.2), 0px 24px 38px 3px rgba(0,0,0,0.14), 0px 9px 46px 8px rgba(0,0,0,0.12)
+```
+
+**DialogContent** (`.MuiDialogContent-root`):
+```
+padding: 20px 24px
+overflowY: auto
+```
+
+**FilledInput Wrapper** (`.MuiFilledInput-root`):
+```
+padding: 25px 12px 8px  /* ⚠️ padding은 textarea가 아닌 wrapper에 */
+background: rgba(255, 255, 255, 0.09)
+borderRadius: 4px 4px 0px 0px
+transition: background-color 0.2s cubic-bezier(0, 0, 0.2, 1)
+flexDirection: row
+border: 0
+```
+
+**FilledInput ::before** (밑줄 기본):
+```
+content: ' '  /* ⚠️ 빈 문자열이 아닌 공백 문자 */
+position: absolute
+left: 0px; right: 0px; bottom: 0px
+borderBottom: 1px solid rgba(255, 255, 255, 0.7)
+transition: border-bottom-color 0.2s cubic-bezier(0.4, 0, 0.2, 1)
+pointerEvents: none
+```
+
+**FilledInput ::after** (포커스 밑줄):
+```
+content: ''
+position: absolute
+left: 0px; right: 0px; bottom: 0px
+borderBottom: 2px solid rgb(33, 150, 243)  /* 포커스 시 파란 밑줄 */
+transform: scaleX(0) → scaleX(1)  /* 포커스 애니메이션 */
+transition: transform 0.2s cubic-bezier(0, 0, 0.2, 1)
+pointerEvents: none
+```
+
+**InputLabel** (`.MuiInputLabel-root`):
+```
+pointerEvents: auto  /* ⚠️ none이 아님 */
+transform-origin: 0px 0px
+lineHeight: 23px
+letterSpacing: 0.15008px
+```
+
+**Textarea** (`.MuiFilledInput-input`):
+```
+padding: 0  /* ⚠️ wrapper에 padding 있으므로 textarea는 0 */
+height: 92px  /* 4행 × 23px lineHeight */
+boxSizing: content-box  /* ⚠️ border-box 아님 */
+lineHeight: 23px
+letterSpacing: 0.15008px
+caretColor: rgb(255, 255, 255)
+resize: none
+```
+
+**Button** (`.MuiButton-textPrimary.MuiButton-fullWidth`):
+```
+fontWeight: 700  /* ⚠️ 500이 아님 */
+width: 100%  /* fullWidth */
+lineHeight: 24.5px
+letterSpacing: 0.39998px
+border: 0
+transition: background-color 0.25s, box-shadow 0.25s, border-color 0.25s, color 0.25s
+               (all cubic-bezier(0.4, 0, 0.2, 1))
+```
+
+**Button 리플** (`.MuiTouchRipple-root`):
+```
+/* CE는 CSS ::after pseudo-element로 리플 재현 */
+/* :active 시 radial-gradient scale(0) → scale(10) 애니메이션 */
+/* 확인: rgb(33,150,243,0.3), 취소: rgb(255,255,255,0.2), 삭제: rgb(239,83,80,0.3) */
+```
+
 ---
 
 ### 11.6 MUI 컴포넌트 ↔ DOM 매핑 요약
