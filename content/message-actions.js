@@ -329,6 +329,12 @@
       var item = e.target.closest('.MuiListItem-root');
       if (!item) return;
       if (item === _currentHoveredItem) return;
+      // 태그 없으면 MAIN world에 재태깅 요청 후 재시도
+      if (!item.getAttribute('data-msg-id')) {
+        document.dispatchEvent(new CustomEvent('bwbr-retag-messages'));
+        setTimeout(function() { _injectActions(item); }, 200);
+        return;
+      }
       _injectActions(item);
     });
 

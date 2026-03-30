@@ -6239,12 +6239,11 @@
       channelMsgs.push(ent);
     }
 
-    // DOM 순서와 Redux 순서 1:1 매칭
+    // DOM 순서와 Redux 순서 1:1 매칭 — 항상 전체 재태깅 (인덱스 어긋남 방지)
     const len = Math.min(items.length, channelMsgs.length);
     for (let i = 0; i < len; i++) {
       const item = items[i];
       const msg = channelMsgs[i];
-      if (item.getAttribute('data-msg-id') === msg._id) continue; // 이미 태깅됨
       item.setAttribute('data-msg-id', msg._id);
       item.setAttribute('data-msg-from', msg.from || '');
       item.setAttribute('data-msg-type', msg.type || 'text');
@@ -6283,6 +6282,20 @@
 
     _msgTagObserver.observe(msgList, { childList: true, subtree: true });
 
+    // Redux store 변경 감지 — 새 메시지 추가 시 재태깅
+    if (reduxStore) {
+      let _prevMsgCount = 0;
+      reduxStore.subscribe(() => {
+        const rm = reduxStore.getState().entities?.roomMessages;
+        const count = rm?.ids?.length || 0;
+        if (count !== _prevMsgCount) {
+          _prevMsgCount = count;
+          if (_msgTagTimer) clearTimeout(_msgTagTimer);
+          _msgTagTimer = setTimeout(_tagMessageItems, 100);
+        }
+      });
+    }
+
     // 탭 전환 감지: tablist의 aria-selected 변경 시 재태깅
     const tablist = document.querySelector('[role="tablist"]');
     if (tablist) {
@@ -6294,6 +6307,11 @@
 
     console.log('[CE] 메시지 DOM 태깅 시작');
   }
+
+  // ISOLATED world에서 재태깅 요청 시 즉시 실행
+  document.addEventListener('bwbr-retag-messages', () => {
+    _tagMessageItems();
+  });
 
   // 페이지 로드 후 태깅 시작
   if (document.readyState === 'complete') {
