@@ -6219,7 +6219,14 @@
     const msgList = document.querySelector('ul.MuiList-root');
     if (!msgList) return;
 
-    const items = msgList.querySelectorAll('.MuiListItem-root');
+    const allItems = msgList.querySelectorAll('.MuiListItem-root');
+    if (allItems.length === 0) return;
+
+    // display:none (삭제됨)인 아이템 제외 — 인덱스 어긋남 방지
+    const items = [];
+    for (let j = 0; j < allItems.length; j++) {
+      if (allItems[j].style.display !== 'none') items.push(allItems[j]);
+    }
     if (items.length === 0) return;
 
     const state = reduxStore.getState();
