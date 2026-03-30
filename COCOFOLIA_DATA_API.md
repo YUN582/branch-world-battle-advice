@@ -8,6 +8,7 @@
 >
 > 아래 모듈 ID·프로퍼티명은 **2026-02-16 기준**이며, 변경 시 재탐색이 필요합니다.
 > DOM 구조 레퍼런스는 **2026-02-24 ~ 2026-03-07 기준** (섹션 11 참조).
+> 메시지 수정/삭제 아키텍처는 **2026-03-30 기준** (섹션 11.5 참조).
 > rooms/roomScenes 엔티티 구조는 **2026-02-27 기준** (섹션 9.1, 9.2, 13 참조).
 > UI 디자인 시스템(테마 규칙)은 **2026-03-02 기준** (섹션 14 참조).
 > 스크린 패널 설정 다이얼로그는 **2026-03-02 기준** (섹션 15 참조).
@@ -1805,6 +1806,49 @@ btn top offset from LI top: 12.0
 | 캐릭터 아바타 | `.MuiListItemAvatar-root img` |
 | 네이티브 수정 버튼 | `.MuiListItem-root .MuiIconButton-root` |
 | 시스템 메시지 판별 | `.MuiListItem-root:not(:has(.MuiIconButton-root))` 또는 `.MuiListItemAvatar-root:not(:has(img))` |
+
+#### CE 메시지 수정/삭제 아키텍처 (2026-03-30 확인)
+
+##### 삭제 메커니즘
+
+- **Firestore**: `deleteDoc(rooms/{roomId}/messages/{msgId})` — 즉시 삭제
+- **onSnapshot 문제**: Firestore 리스너가 삭제된 문서를 잠깐 다시 Redux에 넣음 → "noname" 빈 메시지 렌더링
+- **해결**: MAIN world `_mainDeletedMsgIds` Set으로 삭제 ID 영구 추적
+  - `_purgeDeletedFromRedux()`: 태깅마다 Redux에서 재삽입된 삭제 메시지 제거
+  - `_tagMessageItems()`: channelMsgs 구성 시 삭제 ID 스킵, 초과 DOM은 `display:none`
+  - ISOLATED world `_deletedMsgIds`: DOM 수준 즉시 숨김 + 롤백용
+
+##### 태깅 동기화
+
+- **DOM ↔ Redux 1:1 매칭**: `_tagMessageItems()`에서 `display:none` 아이템 제외하고 매칭 (삭제된 DOM이 인덱스 방해 방지)
+- **UL 교체 안전**: 2초 간격 setInterval로 `ul.MuiList-root` 교체 감지 → MutationObserver 자동 재연결
+- **이벤트 위임**: document 레벨 `mouseover`/`mouseout` (UL에 바인딩하면 React 교체 시 동작 안 함)
+- **`closest()` 주의**: `closest('ul > .MuiListItem-root')` 직접 자식 결합자는 동작 안 함 → 별도 체크 필요
+
+##### Cross-World 이벤트
+
+| 이벤트 | 방향 | 용도 |
+|--------|------|------|
+| `bwbr-delete-message` | ISOLATED → MAIN | Firestore 삭제 요청 |
+| `bwbr-delete-message-result` | MAIN → ISOLATED | 삭제 결과 (success/error) |
+| `bwbr-edit-message` | ISOLATED → MAIN | Firestore 수정 요청 |
+| `bwbr-edit-message-result` | MAIN → ISOLATED | 수정 결과 |
+| `bwbr-retag-messages` | ISOLATED → MAIN | 즉시 재태깅 요청 |
+| `bwbr-tags-applied` | MAIN → ISOLATED | 태깅 완료 알림 (삭제 메시지 재숨김 트리거) |
+
+##### CSS 호버 버튼 스타일 (CE 구현)
+
+```css
+/* CE 버튼 컨테이너: 네이티브 sc-ByBgr과 동일 위치 */
+.bwbr-msg-actions { position: absolute; top: 12px; right: 16px; z-index: 2; }
+/* 텍스트 메시지: 네이티브 편집을 CSS로 왼쪽 이동 (DOM 비간섭) */
+.bwbr-has-actions[data-msg-type="text"] > div:not([class*="MuiListItem"]):not(.bwbr-msg-actions) {
+  right: 48px !important;
+}
+/* 호버 시 배경색 변화 없음, 삭제 아이콘만 빨간색 */
+.bwbr-msg-action-btn:hover { background-color: transparent; }
+.bwbr-msg-action-delete:hover { color: #ff6b6b; }
+```
 
 ---
 
