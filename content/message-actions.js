@@ -43,6 +43,33 @@
     setTimeout(function() { overlay.remove(); }, 230);
   }
 
+  // ── MUI 리플 효과 재현 (MuiTouchRipple 대체) ──
+  function _addRipple(btn, color) {
+    btn.addEventListener('mousedown', function(e) {
+      var rect = btn.getBoundingClientRect();
+      var x = e.clientX - rect.left;
+      var y = e.clientY - rect.top;
+      var dx = Math.max(x, rect.width - x);
+      var dy = Math.max(y, rect.height - y);
+      var radius = Math.sqrt(dx * dx + dy * dy);
+
+      var ripple = document.createElement('span');
+      ripple.className = 'bwbr-msg-ripple';
+      ripple.style.width = ripple.style.height = (radius * 2) + 'px';
+      ripple.style.left = (x - radius) + 'px';
+      ripple.style.top = (y - radius) + 'px';
+      ripple.style.backgroundColor = color;
+      btn.appendChild(ripple);
+
+      function fadeOut() {
+        ripple.style.opacity = '0';
+        setTimeout(function() { if (ripple.parentNode) ripple.remove(); }, 550);
+      }
+      btn.addEventListener('mouseup', fadeOut, { once: true });
+      btn.addEventListener('mouseleave', fadeOut, { once: true });
+    });
+  }
+
   // ── 수정 다이얼로그 (네이티브 MUI Dialog 구조 정밀 매칭) ──
   function _showEditDialog(msgId, currentText, onConfirm) {
     var existing = document.getElementById('bwbr-msg-edit-dialog');
@@ -113,6 +140,7 @@
     };
 
     btnRow.appendChild(confirmBtn);
+    _addRipple(confirmBtn, 'rgba(33, 150, 243, 0.3)');
     dialog.appendChild(content);
     dialog.appendChild(btnRow);
     overlay.appendChild(backdrop);
@@ -121,8 +149,6 @@
 
     // 백드롭 클릭 → 닫기
     backdrop.addEventListener('click', function() { _closeDialog(overlay); });
-
-    // opacity fade-in 애니메이션 (네이티브 0.225s cubic-bezier)
     requestAnimationFrame(function() {
       requestAnimationFrame(function() {
         overlay.classList.add('bwbr-dialog-open');
@@ -188,6 +214,8 @@
 
     btnRow.appendChild(cancelBtn);
     btnRow.appendChild(confirmBtn);
+    _addRipple(cancelBtn, 'rgba(255, 255, 255, 0.2)');
+    _addRipple(confirmBtn, 'rgba(239, 83, 80, 0.3)');
     dialog.appendChild(content);
     dialog.appendChild(btnRow);
     overlay.appendChild(backdrop);
