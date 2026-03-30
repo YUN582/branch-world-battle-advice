@@ -1764,17 +1764,12 @@
 
 
 /* ── 메시지 수정/삭제 호버 버튼 ──────────────── */
+/* MuiListItem-root은 기본 position: relative — 별도 클래스 불필요 (진단 확인) */
 
-/* 타겟 클래스 — 인라인 style 대신 CSS class 사용 */
-.MuiListItem-root.bwbr-msg-target {
-  position: relative;
-}
-
-/* 독립 컨테이너 — 네이티브 DOM 비간섭 */
+/* 독립 컨테이너 — 네이티브 DOM 절대 비간섭 */
 .bwbr-msg-actions {
   position: absolute;
-  top: 4px;
-  right: 36px; /* 네이티브 편집 버튼(sc-ByBgr ~28px) 왼쪽에 위치 */
+  top: 12px;
   display: flex;
   gap: 2px;
   opacity: 0;
@@ -1783,37 +1778,48 @@
   pointer-events: auto;
 }
 
-.MuiListItem-root:hover .bwbr-msg-actions {
+/* 텍스트 메시지: 네이티브 편집 버튼(sc-ByBgr 30px + right 여백) 왼쪽 */
+.MuiListItem-root[data-msg-type="text"] > .bwbr-msg-actions {
+  right: 42px;
+}
+
+/* 시스템 메시지: 네이티브 호버 UI 없음 → 오른쪽 끝 */
+.MuiListItem-root[data-msg-type="system"] > .bwbr-msg-actions {
+  right: 8px;
+}
+
+.MuiListItem-root:hover > .bwbr-msg-actions {
   opacity: 1;
 }
 
+/* 네이티브 MuiIconButton-sizeSmall 매칭 (30x30, padding 5px, white) */
 .bwbr-msg-action-btn {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border: none;
   border-radius: 50%;
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0;
-  color: rgba(255,255,255,0.5);
+  padding: 5px;
+  box-sizing: border-box;
+  color: rgb(255, 255, 255);
   background: transparent;
-  transition: background 0.15s, color 0.15s;
+  transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .bwbr-msg-action-btn:hover {
-  color: rgba(255,255,255,0.8);
-  background: rgba(255,255,255,0.08);
+  background-color: rgba(255, 255, 255, 0.08);
 }
 
 .bwbr-msg-action-delete:hover {
   color: #ff6b6b;
-  background: rgba(255,80,80,0.12);
+  background-color: rgba(255, 80, 80, 0.12);
 }
 
 
-/* ── 메시지 수정 다이얼로그 (네이티브 MUI Dialog 매칭) ──────────────── */
+/* ── 메시지 수정 다이얼로그 (네이티브 MUI Dialog 정밀 매칭) ──────── */
 
 .bwbr-msg-edit-overlay {
   position: fixed;
@@ -1830,22 +1836,22 @@
   opacity: 1;
 }
 
-/* 백드롭 — 네이티브 rgba(0,0,0,0.5) */
+/* Backdrop — 네이티브 MuiBackdrop: rgba(0,0,0,0.5) */
 .bwbr-msg-edit-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background-color: rgba(0, 0, 0, 0.5);
   z-index: -1;
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Paper — 네이티브 MuiPaper elevation24 */
+/* Paper — 네이티브 MuiPaper-elevation24, maxWidth xs(444), fullWidth */
 .bwbr-msg-edit-box {
   background-color: rgba(44, 44, 44, 0.87);
-  color: #fff;
+  color: rgb(255, 255, 255);
   border-radius: 4px;
   max-width: 444px;
-  width: 444px;
+  width: calc(100% - 64px);
   box-shadow: rgba(0, 0, 0, 0.2) 0px 11px 15px -7px,
               rgba(0, 0, 0, 0.14) 0px 24px 38px 3px,
               rgba(0, 0, 0, 0.12) 0px 9px 46px 8px;
@@ -1859,17 +1865,21 @@
 
 .bwbr-msg-edit-box--small {
   max-width: 380px;
-  width: 380px;
 }
 
-/* DialogContent */
+/* DialogContent — 네이티브 padding: 0 */
 .bwbr-msg-edit-content {
-  padding: 20px 24px;
+  padding: 0;
   overflow-y: auto;
   flex: 1 1 auto;
 }
 
-/* MuiFilledInput 스타일 TextField */
+/* 삭제 다이얼로그 전용 content padding */
+.bwbr-msg-edit-content--delete {
+  padding: 20px 24px;
+}
+
+/* TextField 래퍼 */
 .bwbr-msg-edit-field {
   position: relative;
   width: 100%;
@@ -1877,58 +1887,98 @@
   flex-direction: column;
 }
 
+/* InputLabel (shrunk/filled 상태) — 네이티브 MuiInputLabel */
 .bwbr-msg-edit-label {
   position: absolute;
-  top: 7px;
-  left: 12px;
-  font-size: 12px;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  transform: translate(12px, 7px) scale(0.75);
+  transform-origin: top left;
   color: rgba(255, 255, 255, 0.7);
+  font-size: 16px;
   font-family: Roboto, Helvetica, Arial, sans-serif;
   font-weight: 400;
   line-height: 1.4375em;
   letter-spacing: 0.00938em;
   pointer-events: none;
-  z-index: 1;
 }
 
+/* FilledInput wrapper — 네이티브 MuiFilledInput-root */
+.bwbr-msg-edit-input-root {
+  position: relative;
+  background-color: rgba(255, 255, 255, 0.09);
+  border-radius: 4px 4px 0 0;
+  cursor: text;
+  width: 100%;
+  display: flex;
+  transition: background-color 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.bwbr-msg-edit-input-root:hover {
+  background-color: rgba(255, 255, 255, 0.13);
+}
+
+.bwbr-msg-edit-input-root.bwbr-input-focused {
+  background-color: rgba(255, 255, 255, 0.09);
+}
+
+/* 언더라인 ::before (기본) */
+.bwbr-msg-edit-input-root::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.7);
+  transition: border-bottom-color 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+
+/* 언더라인 ::after (포커스) — 네이티브 MuiFilledInput-underline */
+.bwbr-msg-edit-input-root::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-bottom: 2px solid rgb(33, 150, 243);
+  transform: scaleX(0);
+  transition: transform 200ms cubic-bezier(0.0, 0, 0.2, 1);
+  pointer-events: none;
+}
+
+.bwbr-msg-edit-input-root.bwbr-input-focused::after {
+  transform: scaleX(1);
+}
+
+/* Textarea — 네이티브 MuiFilledInput-input */
 .bwbr-msg-edit-textarea {
   width: 100%;
-  background: rgba(255, 255, 255, 0.09);
-  border: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.42);
-  border-radius: 4px 4px 0 0;
-  color: #fff;
+  color: rgb(255, 255, 255);
   font-size: 16px;
   font-family: Roboto, Helvetica, Arial, sans-serif;
   font-weight: 400;
   line-height: 1.4375em;
   letter-spacing: 0.00938em;
   padding: 25px 12px 8px;
+  background: transparent;
+  border: none;
   resize: none;
   outline: none;
   box-sizing: border-box;
 }
 
-.bwbr-msg-edit-textarea:hover {
-  background: rgba(255, 255, 255, 0.13);
-}
-
-.bwbr-msg-edit-textarea:focus {
-  background: rgba(255, 255, 255, 0.09);
-  border-bottom: 2px solid #90caf9;
-  padding-bottom: 7px;
-}
-
-/* DialogActions */
+/* DialogActions — 네이티브 MuiDialogActions-spacing */
 .bwbr-msg-edit-btns {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   padding: 8px;
-  gap: 8px;
   flex: 0 0 auto;
 }
 
+/* Button — 네이티브 MuiButton-textPrimary */
 .bwbr-msg-edit-btn {
   border: none;
   border-radius: 4px;

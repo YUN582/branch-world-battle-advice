@@ -43,7 +43,7 @@
     setTimeout(function() { overlay.remove(); }, 230);
   }
 
-  // ── 수정 다이얼로그 (네이티브 MUI Dialog 구조 매칭) ──
+  // ── 수정 다이얼로그 (네이티브 MUI Dialog 구조 정밀 매칭) ──
   function _showEditDialog(msgId, currentText, onConfirm) {
     var existing = document.getElementById('bwbr-msg-edit-dialog');
     if (existing) existing.remove();
@@ -60,7 +60,7 @@
     dialog.className = 'bwbr-msg-edit-box';
     dialog.setAttribute('role', 'dialog');
 
-    // DialogContent → FilledInput 구조
+    // DialogContent (padding: 0) → TextField → FilledInput 구조
     var content = document.createElement('div');
     content.className = 'bwbr-msg-edit-content';
 
@@ -71,13 +71,26 @@
     label.className = 'bwbr-msg-edit-label';
     label.textContent = '메시지 편집';
 
+    // FilledInput wrapper (bg + ::before/::after 언더라인)
+    var inputRoot = document.createElement('div');
+    inputRoot.className = 'bwbr-msg-edit-input-root';
+
     var textarea = document.createElement('textarea');
     textarea.className = 'bwbr-msg-edit-textarea';
     textarea.value = currentText;
     textarea.rows = 4;
 
+    // 포커스 상태 관리 (언더라인 애니메이션)
+    textarea.addEventListener('focus', function() {
+      inputRoot.classList.add('bwbr-input-focused');
+    });
+    textarea.addEventListener('blur', function() {
+      inputRoot.classList.remove('bwbr-input-focused');
+    });
+
+    inputRoot.appendChild(textarea);
     field.appendChild(label);
-    field.appendChild(textarea);
+    field.appendChild(inputRoot);
     content.appendChild(field);
 
     // DialogActions — 네이티브는 "저장" 버튼 하나만
@@ -141,9 +154,7 @@
     dialog.setAttribute('role', 'dialog');
 
     var content = document.createElement('div');
-    content.className = 'bwbr-msg-edit-content';
-
-    var title = document.createElement('div');
+    content.className = 'bwbr-msg-edit-content bwbr-msg-edit-content--delete';
     title.className = 'bwbr-msg-edit-title';
     title.textContent = '메시지 삭제';
 
@@ -236,9 +247,6 @@
       _actionContainer.remove();
       _actionContainer = null;
     }
-    if (_currentHoveredItem) {
-      _currentHoveredItem.classList.remove('bwbr-msg-target');
-    }
     _currentHoveredItem = null;
   }
 
@@ -257,11 +265,12 @@
 
     _currentHoveredItem = listItem;
 
-    if (msgType === 'system') {
-      // ── 시스템 메시지: 독립 컨테이너에 수정 + 삭제 ──
-      _actionContainer = document.createElement('div');
-      _actionContainer.className = 'bwbr-msg-actions';
+    // 항상 독립 컨테이너 — 네이티브 DOM 절대 비간섭
+    _actionContainer = document.createElement('div');
+    _actionContainer.className = 'bwbr-msg-actions';
 
+    if (msgType === 'system') {
+      // ── 시스템 메시지: 수정 + 삭제 ──
       var editBtn = _createActionBtn(ICON_EDIT, '수정', 'bwbr-msg-action-edit');
       editBtn.onclick = function(e) {
         e.stopPropagation();
@@ -276,41 +285,17 @@
         });
       };
       _actionContainer.appendChild(editBtn);
-
-      var delBtnSys = _createActionBtn(ICON_DELETE, '삭제', 'bwbr-msg-action-delete');
-      delBtnSys.onclick = function(e) {
-        e.stopPropagation();
-        _doDelete(listItem, msgId);
-      };
-      _actionContainer.appendChild(delBtnSys);
-
-      listItem.classList.add('bwbr-msg-target');
-      listItem.appendChild(_actionContainer);
-    } else {
-      // ── 텍스트 메시지: 네이티브 호버 컨테이너에 삭제 버튼 삽입 ──
-      // 네이티브 편집 버튼(MuiIconButton)의 부모 = 호버 컨테이너(sc-ByBgr 등)
-      var nativeEditBtn = listItem.querySelector('.MuiIconButton-root');
-      var nativeHover = nativeEditBtn ? nativeEditBtn.parentElement : null;
-
-      var delBtn = _createActionBtn(ICON_DELETE, '삭제', 'bwbr-msg-action-delete');
-      delBtn.onclick = function(e) {
-        e.stopPropagation();
-        _doDelete(listItem, msgId);
-      };
-
-      if (nativeHover && nativeHover !== listItem) {
-        // 네이티브 컨테이너에 삽입 → 자동으로 네이티브 편집 버튼과 정렬
-        nativeHover.appendChild(delBtn);
-        _actionContainer = delBtn; // cleanup 시 이 버튼만 제거
-      } else {
-        // fallback: 네이티브 컨테이너 없으면 독립 컨테이너
-        _actionContainer = document.createElement('div');
-        _actionContainer.className = 'bwbr-msg-actions';
-        _actionContainer.appendChild(delBtn);
-        listItem.classList.add('bwbr-msg-target');
-        listItem.appendChild(_actionContainer);
-      }
     }
+
+    // 삭제 버튼 (시스템/텍스트 공용)
+    var delBtn = _createActionBtn(ICON_DELETE, '삭제', 'bwbr-msg-action-delete');
+    delBtn.onclick = function(e) {
+      e.stopPropagation();
+      _doDelete(listItem, msgId);
+    };
+    _actionContainer.appendChild(delBtn);
+
+    listItem.appendChild(_actionContainer);
   }
 
   // ── 이벤트 위임 (mouseover/mouseout) ──
