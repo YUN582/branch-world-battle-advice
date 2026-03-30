@@ -6116,7 +6116,8 @@
     }
 
     try {
-      const { msgId, newText } = JSON.parse(raw);
+      const payload = JSON.parse(raw);
+      const { msgId, newText } = payload;
       if (!msgId || typeof newText !== 'string') {
         return respond({ success: false, msgId, error: 'invalid params' });
       }
@@ -6132,11 +6133,15 @@
       const msgCol = sdk.collection(sdk.db, 'rooms', roomId, 'messages');
       const msgRef = sdk.doc(msgCol, msgId);
 
-      await sdk.setDoc(msgRef, {
+      const updateData = {
         text: newText,
-        edited: true,
         updatedAt: new Date()
-      }, { merge: true });
+      };
+      // 시스템 메시지는 edited 플래그 설정하지 않음 (편집됨 표시 방지)
+      if (payload.msgType !== 'system') {
+        updateData.edited = true;
+      }
+      await sdk.setDoc(msgRef, updateData, { merge: true });
 
       respond({ success: true, msgId });
     } catch (err) {
