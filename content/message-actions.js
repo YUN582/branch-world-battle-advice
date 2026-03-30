@@ -37,70 +37,93 @@
     return document.documentElement.getAttribute('data-bwbr-my-uid') || '';
   }
 
-  // ── 수정 다이얼로그 ──
+  // ── 다이얼로그 닫기 (fade-out 애니메이션) ──
+  function _closeDialog(overlay) {
+    overlay.classList.remove('bwbr-dialog-open');
+    setTimeout(function() { overlay.remove(); }, 230);
+  }
+
+  // ── 수정 다이얼로그 (네이티브 MUI Dialog 구조 매칭) ──
   function _showEditDialog(msgId, currentText, onConfirm) {
-    // 기존 다이얼로그 제거
     var existing = document.getElementById('bwbr-msg-edit-dialog');
     if (existing) existing.remove();
 
     var overlay = document.createElement('div');
     overlay.id = 'bwbr-msg-edit-dialog';
     overlay.className = 'bwbr-msg-edit-overlay';
+    overlay.setAttribute('role', 'presentation');
+
+    var backdrop = document.createElement('div');
+    backdrop.className = 'bwbr-msg-edit-backdrop';
 
     var dialog = document.createElement('div');
     dialog.className = 'bwbr-msg-edit-box';
+    dialog.setAttribute('role', 'dialog');
 
-    var title = document.createElement('div');
-    title.className = 'bwbr-msg-edit-title';
-    title.textContent = '메시지 수정';
+    // DialogContent → FilledInput 구조
+    var content = document.createElement('div');
+    content.className = 'bwbr-msg-edit-content';
+
+    var field = document.createElement('div');
+    field.className = 'bwbr-msg-edit-field';
+
+    var label = document.createElement('label');
+    label.className = 'bwbr-msg-edit-label';
+    label.textContent = '메시지 편집';
 
     var textarea = document.createElement('textarea');
     textarea.className = 'bwbr-msg-edit-textarea';
     textarea.value = currentText;
-    textarea.rows = 5;
+    textarea.rows = 4;
 
+    field.appendChild(label);
+    field.appendChild(textarea);
+    content.appendChild(field);
+
+    // DialogActions — 네이티브는 "저장" 버튼 하나만
     var btnRow = document.createElement('div');
     btnRow.className = 'bwbr-msg-edit-btns';
 
-    var cancelBtn = document.createElement('button');
-    cancelBtn.className = 'bwbr-msg-edit-btn bwbr-msg-edit-btn--cancel';
-    cancelBtn.textContent = '취소';
-    cancelBtn.onclick = function() { overlay.remove(); };
-
     var confirmBtn = document.createElement('button');
     confirmBtn.className = 'bwbr-msg-edit-btn bwbr-msg-edit-btn--confirm';
-    confirmBtn.textContent = '수정';
+    confirmBtn.textContent = '저장';
+    confirmBtn.setAttribute('type', 'button');
     confirmBtn.onclick = function() {
       var newText = textarea.value;
-      if (newText === currentText) { overlay.remove(); return; }
-      overlay.remove();
+      if (newText === currentText) { _closeDialog(overlay); return; }
+      _closeDialog(overlay);
       onConfirm(newText);
     };
 
-    btnRow.appendChild(cancelBtn);
     btnRow.appendChild(confirmBtn);
-    dialog.appendChild(title);
-    dialog.appendChild(textarea);
+    dialog.appendChild(content);
     dialog.appendChild(btnRow);
+    overlay.appendChild(backdrop);
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
 
-    // 오버레이 클릭 시 닫기
-    overlay.addEventListener('click', function(e) {
-      if (e.target === overlay) overlay.remove();
+    // 백드롭 클릭 → 닫기
+    backdrop.addEventListener('click', function() { _closeDialog(overlay); });
+
+    // opacity fade-in 애니메이션 (네이티브 0.225s cubic-bezier)
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        overlay.classList.add('bwbr-dialog-open');
+      });
     });
 
     // textarea 포커스
-    setTimeout(function() { textarea.focus(); textarea.select(); }, 50);
+    setTimeout(function() { textarea.focus(); textarea.select(); }, 100);
 
-    // Esc 닫기
-    textarea.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape') { overlay.remove(); }
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { confirmBtn.click(); }
-    });
+    // Esc 닫기, Ctrl+Enter 저장
+    function _onKey(e) {
+      if (e.key === 'Escape') { document.removeEventListener('keydown', _onKey); _closeDialog(overlay); }
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { document.removeEventListener('keydown', _onKey); confirmBtn.click(); }
+    }
+    document.addEventListener('keydown', _onKey);
   }
 
-  // ── 삭제 확인 ──
+  // ── 삭제 확인 (같은 MUI Dialog 스타일) ──
   function _showDeleteConfirm(msgId, onConfirm) {
     var existing = document.getElementById('bwbr-msg-edit-dialog');
     if (existing) existing.remove();
@@ -108,9 +131,17 @@
     var overlay = document.createElement('div');
     overlay.id = 'bwbr-msg-edit-dialog';
     overlay.className = 'bwbr-msg-edit-overlay';
+    overlay.setAttribute('role', 'presentation');
+
+    var backdrop = document.createElement('div');
+    backdrop.className = 'bwbr-msg-edit-backdrop';
 
     var dialog = document.createElement('div');
     dialog.className = 'bwbr-msg-edit-box bwbr-msg-edit-box--small';
+    dialog.setAttribute('role', 'dialog');
+
+    var content = document.createElement('div');
+    content.className = 'bwbr-msg-edit-content';
 
     var title = document.createElement('div');
     title.className = 'bwbr-msg-edit-title';
@@ -120,30 +151,47 @@
     desc.className = 'bwbr-msg-edit-desc';
     desc.textContent = '이 메시지를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.';
 
+    content.appendChild(title);
+    content.appendChild(desc);
+
     var btnRow = document.createElement('div');
     btnRow.className = 'bwbr-msg-edit-btns';
 
     var cancelBtn = document.createElement('button');
     cancelBtn.className = 'bwbr-msg-edit-btn bwbr-msg-edit-btn--cancel';
     cancelBtn.textContent = '취소';
-    cancelBtn.onclick = function() { overlay.remove(); };
+    cancelBtn.setAttribute('type', 'button');
+    cancelBtn.onclick = function() { _closeDialog(overlay); };
 
     var confirmBtn = document.createElement('button');
     confirmBtn.className = 'bwbr-msg-edit-btn bwbr-msg-edit-btn--delete';
     confirmBtn.textContent = '삭제';
-    confirmBtn.onclick = function() { overlay.remove(); onConfirm(); };
+    confirmBtn.setAttribute('type', 'button');
+    confirmBtn.onclick = function() { _closeDialog(overlay); setTimeout(function() { onConfirm(); }, 50); };
 
     btnRow.appendChild(cancelBtn);
     btnRow.appendChild(confirmBtn);
-    dialog.appendChild(title);
-    dialog.appendChild(desc);
+    dialog.appendChild(content);
     dialog.appendChild(btnRow);
+    overlay.appendChild(backdrop);
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
 
-    overlay.addEventListener('click', function(e) {
-      if (e.target === overlay) overlay.remove();
+    // 백드롭 클릭 → 닫기
+    backdrop.addEventListener('click', function() { _closeDialog(overlay); });
+
+    // fade-in
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        overlay.classList.add('bwbr-dialog-open');
+      });
     });
+
+    // Esc 닫기
+    function _onKey(e) {
+      if (e.key === 'Escape') { document.removeEventListener('keydown', _onKey); _closeDialog(overlay); }
+    }
+    document.addEventListener('keydown', _onKey);
   }
 
   // ── 공통 SVG 아이콘 ──
@@ -187,6 +235,9 @@
     if (_actionContainer) {
       _actionContainer.remove();
       _actionContainer = null;
+    }
+    if (_currentHoveredItem) {
+      _currentHoveredItem.classList.remove('bwbr-msg-target');
     }
     _currentHoveredItem = null;
   }
@@ -236,7 +287,7 @@
     };
     _actionContainer.appendChild(delBtn);
 
-    listItem.style.position = 'relative';
+    listItem.classList.add('bwbr-msg-target');
     listItem.appendChild(_actionContainer);
   }
 

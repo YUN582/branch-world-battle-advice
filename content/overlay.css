@@ -1765,11 +1765,16 @@
 
 /* ── 메시지 수정/삭제 호버 버튼 ──────────────── */
 
+/* 타겟 클래스 — 인라인 style 대신 CSS class 사용 */
+.MuiListItem-root.bwbr-msg-target {
+  position: relative;
+}
+
 /* 독립 컨테이너 — 네이티브 DOM 비간섭 */
 .bwbr-msg-actions {
   position: absolute;
   top: 4px;
-  right: 4px;
+  right: 36px; /* 네이티브 편집 버튼(sc-ByBgr ~28px) 왼쪽에 위치 */
   display: flex;
   gap: 2px;
   opacity: 0;
@@ -1808,111 +1813,177 @@
 }
 
 
-/* ── 메시지 수정 다이얼로그 ──────────────── */
+/* ── 메시지 수정 다이얼로그 (네이티브 MUI Dialog 매칭) ──────────────── */
 
 .bwbr-msg-edit-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.6);
   z-index: 100001;
   display: flex;
   align-items: center;
   justify-content: center;
+  opacity: 0;
+  transition: opacity 0.225s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.bwbr-msg-edit-overlay.bwbr-dialog-open {
+  opacity: 1;
+}
+
+/* 백드롭 — 네이티브 rgba(0,0,0,0.5) */
+.bwbr-msg-edit-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: -1;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Paper — 네이티브 MuiPaper elevation24 */
 .bwbr-msg-edit-box {
-  background: #3a3a3a;
-  border-radius: 8px;
-  padding: 20px;
-  min-width: 360px;
-  max-width: 520px;
-  width: 90%;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-  color: #eee;
-  font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+  background-color: rgba(44, 44, 44, 0.87);
+  color: #fff;
+  border-radius: 4px;
+  max-width: 444px;
+  width: 444px;
+  box-shadow: rgba(0, 0, 0, 0.2) 0px 11px 15px -7px,
+              rgba(0, 0, 0, 0.14) 0px 24px 38px 3px,
+              rgba(0, 0, 0, 0.12) 0px 9px 46px 8px;
+  overflow-y: auto;
+  margin: 32px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100% - 64px);
 }
 
 .bwbr-msg-edit-box--small {
-  min-width: 280px;
   max-width: 380px;
+  width: 380px;
 }
 
-.bwbr-msg-edit-title {
-  font-size: 16px;
-  font-weight: 600;
-  margin-bottom: 12px;
+/* DialogContent */
+.bwbr-msg-edit-content {
+  padding: 20px 24px;
+  overflow-y: auto;
+  flex: 1 1 auto;
 }
 
-.bwbr-msg-edit-desc {
-  font-size: 13px;
-  color: rgba(255,255,255,0.7);
-  margin-bottom: 16px;
-  line-height: 1.5;
+/* MuiFilledInput 스타일 TextField */
+.bwbr-msg-edit-field {
+  position: relative;
+  width: 100%;
+  display: inline-flex;
+  flex-direction: column;
+}
+
+.bwbr-msg-edit-label {
+  position: absolute;
+  top: 7px;
+  left: 12px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  font-family: Roboto, Helvetica, Arial, sans-serif;
+  font-weight: 400;
+  line-height: 1.4375em;
+  letter-spacing: 0.00938em;
+  pointer-events: none;
+  z-index: 1;
 }
 
 .bwbr-msg-edit-textarea {
   width: 100%;
-  min-height: 80px;
-  background: #212121;
-  border: 1px solid rgba(255,255,255,0.15);
-  border-radius: 6px;
-  color: #eee;
-  font-size: 14px;
-  padding: 10px;
-  resize: vertical;
+  background: rgba(255, 255, 255, 0.09);
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 4px 4px 0 0;
+  color: #fff;
+  font-size: 16px;
+  font-family: Roboto, Helvetica, Arial, sans-serif;
+  font-weight: 400;
+  line-height: 1.4375em;
+  letter-spacing: 0.00938em;
+  padding: 25px 12px 8px;
+  resize: none;
   outline: none;
-  font-family: inherit;
   box-sizing: border-box;
-  margin-bottom: 16px;
+}
+
+.bwbr-msg-edit-textarea:hover {
+  background: rgba(255, 255, 255, 0.13);
 }
 
 .bwbr-msg-edit-textarea:focus {
-  border-color: rgba(66,165,245,0.6);
+  background: rgba(255, 255, 255, 0.09);
+  border-bottom: 2px solid #90caf9;
+  padding-bottom: 7px;
 }
 
+/* DialogActions */
 .bwbr-msg-edit-btns {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  padding: 8px;
   gap: 8px;
+  flex: 0 0 auto;
 }
 
 .bwbr-msg-edit-btn {
-  padding: 6px 18px;
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 13px;
+  font-family: Roboto, Helvetica, Arial, sans-serif;
   font-weight: 500;
-  font-family: inherit;
-  transition: background 0.15s;
+  font-size: 14px;
+  line-height: 1.75;
+  letter-spacing: 0.02857em;
+  text-transform: uppercase;
+  min-width: 64px;
+  padding: 6px 8px;
+  transition: background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.bwbr-msg-edit-btn--confirm {
+  background: transparent;
+  color: rgb(33, 150, 243);
+}
+
+.bwbr-msg-edit-btn--confirm:hover {
+  background: rgba(33, 150, 243, 0.08);
 }
 
 .bwbr-msg-edit-btn--cancel {
   background: transparent;
-  color: rgba(255,255,255,0.6);
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .bwbr-msg-edit-btn--cancel:hover {
-  background: rgba(255,255,255,0.08);
-  color: #fff;
-}
-
-.bwbr-msg-edit-btn--confirm {
-  background: #42a5f5;
-  color: #fff;
-}
-
-.bwbr-msg-edit-btn--confirm:hover {
-  background: #64b5f6;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .bwbr-msg-edit-btn--delete {
-  background: #e53935;
-  color: #fff;
+  background: transparent;
+  color: #ef5350;
 }
 
 .bwbr-msg-edit-btn--delete:hover {
-  background: #ef5350;
+  background: rgba(239, 83, 80, 0.08);
+}
+
+/* 삭제 다이얼로그 전용 */
+.bwbr-msg-edit-title {
+  font-size: 16px;
+  font-weight: 500;
+  font-family: Roboto, Helvetica, Arial, sans-serif;
+  margin-bottom: 8px;
+}
+
+.bwbr-msg-edit-desc {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+  font-family: Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
 }
 
 
