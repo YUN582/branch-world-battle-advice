@@ -1670,7 +1670,97 @@ body
 
 ---
 
-### 11.5 MUI 컴포넌트 ↔ DOM 매핑 요약
+### 11.5 채팅 메시지 리스트 DOM 구조
+
+> **기준**: 2026-03-30 (콘솔 진단으로 확인)
+
+채팅 패널 내 메시지 리스트의 DOM 구조입니다.
+
+#### 컨테이너 구조
+
+```
+DIV.MuiDrawer-paper (채팅 사이드바)
+├─ HEADER.MuiAppBar-root ("룸 채팅" 헤더)
+├─ UL.MuiList-root.sc-hfVCuV (★ 메시지 리스트 — 스크롤 컨테이너)
+│  └─ DIV (래퍼 — 직접 자식 1개)
+│     ├─ DIV.MuiListItem-root (메시지 아이템 ×N)
+│     ├─ DIV.MuiListItem-root
+│     └─ ...
+├─ HEADER.MuiAppBar-root (채널 탭 바)
+└─ FORM.sc-fTFLve (채팅 입력 폼)
+```
+
+**메시지 리스트 셀렉터**: `ul.MuiList-root`
+**가상 스크롤**: ❌ 없음 (DOM 아이템 수 ∝ 스크롤 비율)
+
+#### 텍스트 메시지 아이템 (type: "text")
+
+```
+DIV.MuiListItem-root.MuiListItem-gutters.MuiListItem-padding.MuiListItem-alignItemsFlexStart
+├─ DIV.MuiListItemAvatar-root
+│  └─ DIV.sc-biHdkM (아바타 래퍼)
+│     └─ IMG [src="캐릭터 아이콘 URL"]
+├─ DIV.MuiListItemText-root.MuiListItemText-multiline
+│  ├─ H6.MuiTypography-subtitle2.MuiTypography-noWrap  →  "캐릭터이름"
+│  │  └─ SPAN.MuiTypography-caption  →  " - 2026/03/06" (날짜)
+│  └─ P.MuiTypography-body2.MuiListItemText-secondary  →  "메시지 본문"
+└─ DIV.sc-ByBgr (★ 네이티브 수정 버튼 컨테이너 — 호버 시 표시)
+   └─ BUTTON.MuiIconButton-root.MuiIconButton-sizeSmall (연필 아이콘)
+      └─ svg.MuiSvgIcon-root [path: "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75..."]
+```
+
+#### 시스템 메시지 아이템 (type: "system")
+
+```
+DIV.MuiListItem-root.MuiListItem-gutters.MuiListItem-padding.MuiListItem-alignItemsFlexStart
+├─ DIV.MuiListItemAvatar-root
+│  └─ DIV (★ 비어있음 — IMG 없음)
+├─ DIV.MuiListItemText-root.MuiListItemText-multiline
+│  ├─ H6.MuiTypography-subtitle2.MuiTypography-noWrap  →  "" (★ 이름 비어있음)
+│  └─ P.MuiTypography-body2.MuiListItemText-secondary  →  "〔 시스템 메시지 텍스트 〕"
+└─ (★ 수정 버튼 없음 — DIV.sc-ByBgr 자체가 없음)
+```
+
+#### 텍스트 vs 시스템 메시지 구분법
+
+| 판별 기준 | 텍스트 메시지 | 시스템 메시지 |
+|-----------|-------------|-------------|
+| 아바타 IMG | ✅ `MuiListItemAvatar-root IMG` 존재 | ❌ 아바타 DIV는 있지만 IMG 없음 |
+| H6 이름 | 캐릭터 이름 + 날짜 | 비어있음 (텍스트 없음) |
+| 수정 버튼 | ✅ `DIV.sc-ByBgr > BUTTON.MuiIconButton-root` | ❌ 없음 |
+| 같은 MUI 클래스 | `css-15eea9h` (동일) | `css-15eea9h` (동일) |
+
+**⚠️ CSS 클래스로는 구분 불가** — MUI 클래스가 동일하므로, 아바타 IMG 유무 또는 수정 버튼 유무로 판별해야 함.
+
+#### React Fiber 데이터 접근
+
+- **MuiListItem-root에서 직접 접근 불가** — fiber 탐색 20단계까지 메시지 엔티티 prop 미발견
+- **매칭 전략**: Redux `roomMessages` (채널 필터링) 순서와 DOM 아이템 순서가 1:1 대응
+- MAIN world에서 MutationObserver + 순서 기반 매칭으로 `data-msg-id` 등 속성 주입 필요
+
+#### 네이티브 수정 버튼 상세
+
+- **셀렉터**: `.MuiListItem-root .MuiIconButton-root.MuiIconButton-sizeSmall`
+- **컨테이너**: `DIV.sc-ByBgr` (styled-component — 빌드마다 클래스 변경 가능)
+- **안정적 셀렉터**: `.MuiListItem-root .MuiIconButton-root` (MUI 클래스는 안정)
+- **SVG path**: `M3 17.25V21h3.75L17.81 9.94l-3.75-3.75...` (MUI EditIcon)
+- **표시 조건**: 텍스트 메시지에만 존재, 항상 DOM에 있음 (CSS `opacity`로 호버 시 표시 추정)
+
+#### 셀렉터 가이드
+
+| 대상 | 셀렉터 |
+|------|--------|
+| 메시지 리스트 | `ul.MuiList-root` |
+| 모든 메시지 아이템 | `ul.MuiList-root .MuiListItem-root` |
+| 메시지 본문 텍스트 | `.MuiListItemText-secondary` |
+| 캐릭터 이름 | `.MuiTypography-subtitle2` |
+| 캐릭터 아바타 | `.MuiListItemAvatar-root img` |
+| 네이티브 수정 버튼 | `.MuiListItem-root .MuiIconButton-root` |
+| 시스템 메시지 판별 | `.MuiListItem-root:not(:has(.MuiIconButton-root))` 또는 `.MuiListItemAvatar-root:not(:has(img))` |
+
+---
+
+### 11.6 MUI 컴포넌트 ↔ DOM 매핑 요약
 
 | UI 요소 | MUI 컴포넌트 | DOM 클래스 | 비고 |
 |---------|-------------|-----------|------|
@@ -1681,10 +1771,13 @@ body
 | 캐릭터 편집 | Dialog (Modal) | `.MuiDialog-root` (= `.MuiModal-root`) | 둘 다 가짐 |
 | 채팅 입력 | TextField | `textarea[name="text"]` | — |
 | 채팅 탭 | Tabs | `[role="tablist"] > [role="tab"]` | — |
+| 메시지 리스트 | List | `ul.MuiList-root` | 가상 스크롤 없음 |
+| 메시지 아이템 | ListItem | `.MuiListItem-root` | 텍스트/시스템 동일 클래스 |
+| 네이티브 수정 버튼 | IconButton | `.MuiIconButton-root.MuiIconButton-sizeSmall` | 텍스트 메시지에만 |
 
 ---
 
-### 11.6 진단 스크립트
+### 11.7 진단 스크립트
 
 DOM 구조가 변경되었는지 확인할 때 아래 스크립트를 브라우저 콘솔(F12)에서 실행하세요.
 

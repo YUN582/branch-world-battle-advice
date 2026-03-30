@@ -1763,3 +1763,155 @@
 }
 
 
+/* ── 메시지 수정/삭제 호버 버튼 ──────────────── */
+
+.bwbr-msg-actions {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 10;
+  pointer-events: auto;
+}
+
+.MuiListItem-root:hover .bwbr-msg-actions {
+  opacity: 1;
+}
+
+.bwbr-msg-action-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: rgba(255,255,255,0.6);
+  background: rgba(50,50,50,0.8);
+  transition: background 0.15s, color 0.15s;
+}
+
+.bwbr-msg-action-btn:hover {
+  color: #fff;
+  background: rgba(80,80,80,0.95);
+}
+
+.bwbr-msg-action-delete:hover {
+  color: #ff6b6b;
+  background: rgba(80,30,30,0.95);
+}
+
+
+/* ── 메시지 수정 다이얼로그 ──────────────── */
+
+.bwbr-msg-edit-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 100001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bwbr-msg-edit-box {
+  background: #3a3a3a;
+  border-radius: 8px;
+  padding: 20px;
+  min-width: 360px;
+  max-width: 520px;
+  width: 90%;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  color: #eee;
+  font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+}
+
+.bwbr-msg-edit-box--small {
+  min-width: 280px;
+  max-width: 380px;
+}
+
+.bwbr-msg-edit-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.bwbr-msg-edit-desc {
+  font-size: 13px;
+  color: rgba(255,255,255,0.7);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.bwbr-msg-edit-textarea {
+  width: 100%;
+  min-height: 80px;
+  background: #212121;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  color: #eee;
+  font-size: 14px;
+  padding: 10px;
+  resize: vertical;
+  outline: none;
+  font-family: inherit;
+  box-sizing: border-box;
+  margin-bottom: 16px;
+}
+
+.bwbr-msg-edit-textarea:focus {
+  border-color: rgba(66,165,245,0.6);
+}
+
+.bwbr-msg-edit-btns {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.bwbr-msg-edit-btn {
+  padding: 6px 18px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+
+.bwbr-msg-edit-btn--cancel {
+  background: transparent;
+  color: rgba(255,255,255,0.6);
+}
+
+.bwbr-msg-edit-btn--cancel:hover {
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+}
+
+.bwbr-msg-edit-btn--confirm {
+  background: #42a5f5;
+  color: #fff;
+}
+
+.bwbr-msg-edit-btn--confirm:hover {
+  background: #64b5f6;
+}
+
+.bwbr-msg-edit-btn--delete {
+  background: #e53935;
+  color: #fff;
+}
+
+.bwbr-msg-edit-btn--delete:hover {
+  background: #ef5350;
+}
+
+

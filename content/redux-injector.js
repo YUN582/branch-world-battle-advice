@@ -6096,4 +6096,184 @@
     }
   });
 
+  // ================================================================
+  //  [CORE] 메시지 수정/삭제 + DOM 태깅
+  // ================================================================
+
+  /**
+   * bwbr-edit-message — 메시지 텍스트 수정 (Firestore setDoc merge)
+   * payload: { msgId: string, newText: string }
+   * response: bwbr-edit-message-result { success, msgId, error? }
+   */
+  document.addEventListener('bwbr-edit-message', async () => {
+    const el = document.documentElement;
+    const raw = el.getAttribute('data-bwbr-edit-message');
+    el.removeAttribute('data-bwbr-edit-message');
+
+    function respond(data) {
+      el.setAttribute('data-bwbr-edit-message-result', JSON.stringify(data));
+      document.dispatchEvent(new CustomEvent('bwbr-edit-message-result'));
+    }
+
+    try {
+      const { msgId, newText } = JSON.parse(raw);
+      if (!msgId || typeof newText !== 'string') {
+        return respond({ success: false, msgId, error: 'invalid params' });
+      }
+
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) return respond({ success: false, msgId, error: 'no SDK' });
+
+      const state = reduxStore.getState();
+      const roomId = state.app?.state?.roomId
+        || window.location.pathname.match(/rooms\/([^/]+)/)?.[1];
+      if (!roomId) return respond({ success: false, msgId, error: 'no roomId' });
+
+      const msgCol = sdk.collection(sdk.db, 'rooms', roomId, 'messages');
+      const msgRef = sdk.doc(msgCol, msgId);
+
+      await sdk.setDoc(msgRef, {
+        text: newText,
+        edited: true,
+        updatedAt: new Date()
+      }, { merge: true });
+
+      respond({ success: true, msgId });
+    } catch (err) {
+      console.error('[CE] 메시지 수정 실패:', err);
+      respond({ success: false, error: err.message });
+    }
+  });
+
+  /**
+   * bwbr-delete-message — 메시지 삭제 (Firestore deleteDoc)
+   * payload: { msgId: string }
+   * response: bwbr-delete-message-result { success, msgId, error? }
+   */
+  document.addEventListener('bwbr-delete-message', async () => {
+    const el = document.documentElement;
+    const raw = el.getAttribute('data-bwbr-delete-message');
+    el.removeAttribute('data-bwbr-delete-message');
+
+    function respond(data) {
+      el.setAttribute('data-bwbr-delete-message-result', JSON.stringify(data));
+      document.dispatchEvent(new CustomEvent('bwbr-delete-message-result'));
+    }
+
+    try {
+      const { msgId } = JSON.parse(raw);
+      if (!msgId) return respond({ success: false, error: 'no msgId' });
+
+      const sdk = acquireFirestoreSDK();
+      if (!sdk) return respond({ success: false, msgId, error: 'no SDK' });
+
+      const state = reduxStore.getState();
+      const roomId = state.app?.state?.roomId
+        || window.location.pathname.match(/rooms\/([^/]+)/)?.[1];
+      if (!roomId) return respond({ success: false, msgId, error: 'no roomId' });
+
+      const msgCol = sdk.collection(sdk.db, 'rooms', roomId, 'messages');
+      const msgRef = sdk.doc(msgCol, msgId);
+
+      await sdk.deleteDoc(msgRef);
+      respond({ success: true, msgId });
+    } catch (err) {
+      console.error('[CE] 메시지 삭제 실패:', err);
+      respond({ success: false, error: err.message });
+    }
+  });
+
+  /**
+   * 메시지 DOM 태깅 — MuiListItem에 data-msg-id, data-msg-from, data-msg-type 주입
+   * Redux roomMessages 순서와 DOM 순서를 매칭
+   */
+  function _tagMessageItems() {
+    if (!reduxStore) return;
+
+    const msgList = document.querySelector('ul.MuiList-root');
+    if (!msgList) return;
+
+    const items = msgList.querySelectorAll('.MuiListItem-root');
+    if (items.length === 0) return;
+
+    const state = reduxStore.getState();
+    const rm = state.entities?.roomMessages;
+    if (!rm || !rm.ids || rm.ids.length === 0) return;
+
+    // 현재 채널 감지
+    const chInfo = _detectCurrentChannel();
+    const currentChannel = chInfo?.channel || '';
+
+    // 현재 채널에 해당하는 메시지만 필터 (채널이 비어있으면 전부)
+    const channelMsgs = [];
+    for (let i = 0; i < rm.ids.length; i++) {
+      const ent = rm.entities?.[rm.ids[i]];
+      if (!ent) continue;
+      if (currentChannel && ent.channel && ent.channel !== currentChannel) continue;
+      channelMsgs.push(ent);
+    }
+
+    // DOM 순서와 Redux 순서 1:1 매칭
+    const len = Math.min(items.length, channelMsgs.length);
+    for (let i = 0; i < len; i++) {
+      const item = items[i];
+      const msg = channelMsgs[i];
+      if (item.getAttribute('data-msg-id') === msg._id) continue; // 이미 태깅됨
+      item.setAttribute('data-msg-id', msg._id);
+      item.setAttribute('data-msg-from', msg.from || '');
+      item.setAttribute('data-msg-type', msg.type || 'text');
+    }
+
+    // 내 UID도 documentElement에 설정 (ISOLATED world에서 접근용)
+    const myUid = state.app?.state?.uid || state.app?.user?.uid || '';
+    if (myUid && document.documentElement.getAttribute('data-bwbr-my-uid') !== myUid) {
+      document.documentElement.setAttribute('data-bwbr-my-uid', myUid);
+    }
+  }
+
+  // 메시지 태깅 MutationObserver 설정
+  let _msgTagObserver = null;
+  let _msgTagTimer = null;
+
+  function _startMessageTagging() {
+    // 즉시 한 번 태깅
+    _tagMessageItems();
+
+    // MutationObserver로 메시지 리스트 변경 감시
+    const msgList = document.querySelector('ul.MuiList-root');
+    if (!msgList) {
+      // 아직 DOM 준비 안 됨 — 재시도
+      setTimeout(_startMessageTagging, 2000);
+      return;
+    }
+
+    if (_msgTagObserver) _msgTagObserver.disconnect();
+
+    _msgTagObserver = new MutationObserver(() => {
+      // 디바운스: 짧은 시간 내 여러 변경을 한 번에 처리
+      if (_msgTagTimer) clearTimeout(_msgTagTimer);
+      _msgTagTimer = setTimeout(_tagMessageItems, 150);
+    });
+
+    _msgTagObserver.observe(msgList, { childList: true, subtree: true });
+
+    // 탭 전환 감지: tablist의 aria-selected 변경 시 재태깅
+    const tablist = document.querySelector('[role="tablist"]');
+    if (tablist) {
+      new MutationObserver(() => {
+        if (_msgTagTimer) clearTimeout(_msgTagTimer);
+        _msgTagTimer = setTimeout(_tagMessageItems, 200);
+      }).observe(tablist, { attributes: true, subtree: true, attributeFilter: ['aria-selected'] });
+    }
+
+    console.log('[CE] 메시지 DOM 태깅 시작');
+  }
+
+  // 페이지 로드 후 태깅 시작
+  if (document.readyState === 'complete') {
+    setTimeout(_startMessageTagging, 1500);
+  } else {
+    window.addEventListener('load', () => setTimeout(_startMessageTagging, 1500));
+  }
+
 })();
