@@ -6254,11 +6254,15 @@
     if (myUid && document.documentElement.getAttribute('data-bwbr-my-uid') !== myUid) {
       document.documentElement.setAttribute('data-bwbr-my-uid', myUid);
     }
+
+    // ISOLATED world에 태깅 완료 알림 → 삭제된 메시지 재숨김 등
+    document.dispatchEvent(new CustomEvent('bwbr-tags-applied'));
   }
 
   // 메시지 태깅 MutationObserver 설정
   let _msgTagObserver = null;
   let _msgTagTimer = null;
+  let _watchedMsgList = null;  // 현재 감시 중인 UL 참조
 
   function _startMessageTagging() {
     // 즉시 한 번 태깅
@@ -6271,6 +6275,8 @@
       setTimeout(_startMessageTagging, 2000);
       return;
     }
+
+    _watchedMsgList = msgList;
 
     if (_msgTagObserver) _msgTagObserver.disconnect();
 
@@ -6304,6 +6310,17 @@
         _msgTagTimer = setTimeout(_tagMessageItems, 200);
       }).observe(tablist, { attributes: true, subtree: true, attributeFilter: ['aria-selected'] });
     }
+
+    // UL 교체 감지 — React 리렌더로 UL이 바뀌면 observer 재연결
+    setInterval(() => {
+      const currentList = document.querySelector('ul.MuiList-root');
+      if (currentList && currentList !== _watchedMsgList) {
+        _watchedMsgList = currentList;
+        if (_msgTagObserver) _msgTagObserver.disconnect();
+        _msgTagObserver.observe(currentList, { childList: true, subtree: true });
+        _tagMessageItems();
+      }
+    }, 2000);
 
     console.log('[CE] 메시지 DOM 태깅 시작');
   }

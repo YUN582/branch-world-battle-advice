@@ -1808,12 +1808,11 @@
 }
 
 .bwbr-msg-action-btn:hover {
-  background-color: rgba(255, 255, 255, 0.08);
+  background-color: transparent;
 }
 
 .bwbr-msg-action-delete:hover {
   color: #ff6b6b;
-  background-color: rgba(255, 80, 80, 0.12);
 }
 
 

@@ -317,16 +317,11 @@
     }
   }
 
-  // ── 이벤트 위임 (mouseover/mouseout) ──
+  // ── 이벤트 위임 (document 레벨 — UL 교체에도 안전) ──
   function _setupHoverListeners() {
-    var msgList = document.querySelector('ul.MuiList-root');
-    if (!msgList) {
-      setTimeout(_setupHoverListeners, 2000);
-      return;
-    }
-
-    msgList.addEventListener('mouseover', function(e) {
-      var item = e.target.closest('.MuiListItem-root');
+    // document 레벨 delegation — React 리렌더로 UL이 교체되어도 동작
+    document.addEventListener('mouseover', function(e) {
+      var item = e.target.closest('ul.MuiList-root > .MuiListItem-root');
       if (!item) return;
       if (item === _currentHoveredItem) return;
       // 태그 없으면 MAIN world에 재태깅 요청 후 재시도
@@ -338,24 +333,31 @@
       _injectActions(item);
     });
 
-    msgList.addEventListener('mouseleave', function() {
-      _removeActions();
-    });
-
-    msgList.addEventListener('mouseout', function(e) {
-      var item = e.target.closest('.MuiListItem-root');
-      var relatedItem = e.relatedTarget ? e.relatedTarget.closest('.MuiListItem-root') : null;
-      if (item === _currentHoveredItem && !relatedItem) {
+    document.addEventListener('mouseout', function(e) {
+      if (!_currentHoveredItem) return;
+      var related = e.relatedTarget;
+      // 같은 ListItem 안에서 이동 중이면 무시
+      if (related && related.closest && related.closest('.MuiListItem-root') === _currentHoveredItem) return;
+      // 현재 호버 아이템에서 나갈 때만 제거
+      var fromItem = e.target.closest('.MuiListItem-root');
+      if (fromItem === _currentHoveredItem) {
         _removeActions();
       }
     });
 
-    // 삭제된 메시지 DOM 재표시 방지 (탭 전환/리렌더 감시)
-    var _hideTimer = null;
-    new MutationObserver(function() {
-      if (_hideTimer) clearTimeout(_hideTimer);
-      _hideTimer = setTimeout(function() { _hideDeletedMessages(msgList); }, 200);
-    }).observe(msgList, { childList: true, subtree: true });
+    // 삭제된 메시지 DOM 재표시 방지 — 태깅 완료 이벤트 수신 시 재숨김
+    document.addEventListener('bwbr-tags-applied', function() {
+      if (_deletedMsgIds.size === 0) return;
+      var msgList = document.querySelector('ul.MuiList-root');
+      if (msgList) _hideDeletedMessages(msgList);
+    });
+
+    // 주기적 삭제 메시지 숨김 (탭 전환 후 태깅 지연 대비)
+    setInterval(function() {
+      if (_deletedMsgIds.size === 0) return;
+      var msgList = document.querySelector('ul.MuiList-root');
+      if (msgList) _hideDeletedMessages(msgList);
+    }, 1500);
 
     console.log('[CE] 메시지 수정/삭제 UI 초기화 완료');
   }
