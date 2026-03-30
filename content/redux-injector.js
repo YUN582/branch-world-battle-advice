@@ -6150,6 +6150,23 @@
     }
   });
 
+  // ── MAIN world 삭제 추적 (onSnapshot 재삽입 방어) ──
+  const _mainDeletedMsgIds = new Set();
+
+  // Redux에서 삭제된 메시지 제거 (반복 호출 안전)
+  function _purgeDeletedFromRedux() {
+    if (_mainDeletedMsgIds.size === 0 || !reduxStore) return;
+    try {
+      const rm = reduxStore.getState().entities?.roomMessages;
+      if (!rm || !rm.ids) return;
+      for (const delId of _mainDeletedMsgIds) {
+        const idx = rm.ids.indexOf(delId);
+        if (idx !== -1) rm.ids.splice(idx, 1);
+        if (rm.entities?.[delId]) delete rm.entities[delId];
+      }
+    } catch(e) { /* ignore */ }
+  }
+
   /**
    * bwbr-delete-message — 메시지 삭제 (Firestore deleteDoc)
    * payload: { msgId: string }
@@ -6182,25 +6199,11 @@
 
       await sdk.deleteDoc(msgRef);
 
-      // Redux store에서 즉시 제거 (탭 전환 시 재표시 방지)
-      // RTK entityAdapter removeOne 시도 → 실패 시 state 직접 변경
-      try {
-        const rm = reduxStore.getState().entities?.roomMessages;
-        if (rm && rm.ids && rm.entities) {
-          // 방법 1: RTK 표준 액션 시도
-          reduxStore.dispatch({ type: 'roomMessages/removeOne', payload: msgId });
-          // 방법 2: 직접 ids 배열에서 제거 (dispatch가 무시된 경우 대비)
-          const rmAfter = reduxStore.getState().entities?.roomMessages;
-          if (rmAfter && rmAfter.entities?.[msgId]) {
-            // dispatch가 안 먹혔으면 직접 삭제
-            const idx = rmAfter.ids.indexOf(msgId);
-            if (idx !== -1) rmAfter.ids.splice(idx, 1);
-            delete rmAfter.entities[msgId];
-          }
-        }
-      } catch (reduxErr) {
-        console.warn('[CE] Redux 메시지 제거 실패 (Firestore는 삭제됨):', reduxErr);
-      }
+      // MAIN world 삭제 추적 Set에 등록 (onSnapshot 재삽입 방어)
+      _mainDeletedMsgIds.add(msgId);
+
+      // Redux에서 즉시 제거
+      _purgeDeletedFromRedux();
 
       respond({ success: true, msgId });
     } catch (err) {
@@ -6237,10 +6240,15 @@
     const chInfo = _detectCurrentChannel();
     const currentChannel = chInfo?.channel || '';
 
-    // 현재 채널에 해당하는 메시지만 필터 (채널이 비어있으면 전부)
+    // onSnapshot이 다시 넣은 삭제 메시지를 Redux에서 재제거
+    if (_mainDeletedMsgIds.size > 0) _purgeDeletedFromRedux();
+
+    // 현재 채널에 해당하는 메시지만 필터 (채널이 비어있으면 전부, 삭제된 건 제외)
     const channelMsgs = [];
     for (let i = 0; i < rm.ids.length; i++) {
-      const ent = rm.entities?.[rm.ids[i]];
+      const id = rm.ids[i];
+      if (_mainDeletedMsgIds.has(id)) continue;  // 삭제된 메시지 스킵
+      const ent = rm.entities?.[id];
       if (!ent) continue;
       if (currentChannel && ent.channel && ent.channel !== currentChannel) continue;
       channelMsgs.push(ent);
@@ -6254,6 +6262,10 @@
       item.setAttribute('data-msg-id', msg._id);
       item.setAttribute('data-msg-from', msg.from || '');
       item.setAttribute('data-msg-type', msg.type || 'text');
+    }
+    // 초과 DOM 아이템 숨김 (삭제로 Redux < DOM인 경우)
+    for (let i = len; i < items.length; i++) {
+      items[i].style.display = 'none';
     }
 
     // 내 UID도 documentElement에 설정 (ISOLATED world에서 접근용)
