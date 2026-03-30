@@ -220,36 +220,35 @@
     return btn;
   }
 
-  // ── 삭제 실행 (공통) ──
+  // ── 삭제 실행 (확인 없이 즉시 삭제) ──
   function _doDelete(listItem, msgId) {
-    _showDeleteConfirm(msgId, function() {
-      _sendToMain('bwbr-delete-message', { msgId: msgId }).then(function(res) {
-        if (res && res.success) {
-          listItem.style.transition = 'opacity 0.3s, max-height 0.3s';
-          listItem.style.opacity = '0';
-          listItem.style.maxHeight = listItem.offsetHeight + 'px';
-          setTimeout(function() {
-            listItem.style.maxHeight = '0';
-            listItem.style.overflow = 'hidden';
-            listItem.style.padding = '0';
-            listItem.style.margin = '0';
-          }, 200);
-          setTimeout(function() { listItem.remove(); }, 500);
-        }
-      });
+    _sendToMain('bwbr-delete-message', { msgId: msgId }).then(function(res) {
+      if (res && res.success) {
+        listItem.style.transition = 'opacity 0.3s, max-height 0.3s';
+        listItem.style.opacity = '0';
+        listItem.style.maxHeight = listItem.offsetHeight + 'px';
+        setTimeout(function() {
+          listItem.style.maxHeight = '0';
+          listItem.style.overflow = 'hidden';
+          listItem.style.padding = '0';
+          listItem.style.margin = '0';
+        }, 200);
+        setTimeout(function() { listItem.remove(); }, 500);
+      }
     });
   }
 
   // ── 호버 버튼 주입/제거 ──
   var _currentHoveredItem = null;
-  var _actionContainer = null;
+  var _actionContainer = null;  // 시스템 메시지용 CE 컨테이너
+  var _injectedDeleteBtn = null;  // 텍스트 메시지용 네이티브 컨테이너에 주입된 삭제 버튼
 
   function _removeActions() {
+    if (_injectedDeleteBtn) {
+      _injectedDeleteBtn.remove();
+      _injectedDeleteBtn = null;
+    }
     if (_actionContainer) {
-      // 텍스트 메시지: 숨긴 네이티브 편집 컨테이너 복원
-      if (_actionContainer._nativeHidden) {
-        _actionContainer._nativeHidden.style.display = '';
-      }
       _actionContainer.remove();
       _actionContainer = null;
     }
@@ -271,29 +270,27 @@
 
     _currentHoveredItem = listItem;
 
-    _actionContainer = document.createElement('div');
-    _actionContainer.className = 'bwbr-msg-actions';
-
     if (msgType === 'text') {
-      // ── 텍스트 메시지: 네이티브 편집 숨기고 CE [편집 프록시][삭제] ──
+      // ── 텍스트 메시지: 네이티브 sc-ByBgr 안에 삭제 버튼 추가 ──
+      // 네이티브가 [edit] → CE가 [delete] 추가 → flex로 [edit][delete]
       var nativeContainer = Array.from(listItem.children).find(function(c) {
-        return c.querySelector && c.querySelector('.MuiIconButton-root') && !c.classList.contains('bwbr-msg-actions');
+        return c.querySelector && c.querySelector('.MuiIconButton-root') &&
+               !c.classList.contains('bwbr-msg-actions');
       });
       if (nativeContainer) {
-        nativeContainer.style.display = 'none';
-        _actionContainer._nativeHidden = nativeContainer;
+        var delBtn = _createActionBtn(ICON_DELETE, '삭제', 'bwbr-msg-action-delete');
+        delBtn.onclick = function(e) {
+          e.stopPropagation();
+          _doDelete(listItem, msgId);
+        };
+        nativeContainer.appendChild(delBtn);
+        _injectedDeleteBtn = delBtn;
       }
-      var editProxy = _createActionBtn(ICON_EDIT, '수정', 'bwbr-msg-action-edit');
-      editProxy.onclick = function(e) {
-        e.stopPropagation();
-        // 네이티브 복원 → 클릭 → 네이티브 다이얼로그 열림
-        if (nativeContainer) nativeContainer.style.display = '';
-        var nativeBtn = nativeContainer ? nativeContainer.querySelector('.MuiIconButton-root') : null;
-        if (nativeBtn) nativeBtn.click();
-      };
-      _actionContainer.appendChild(editProxy);
     } else if (msgType === 'system') {
-      // ── 시스템 메시지: CE [편집][삭제] ──
+      // ── 시스템 메시지: CE 컨테이너 [편집][삭제] ──
+      _actionContainer = document.createElement('div');
+      _actionContainer.className = 'bwbr-msg-actions';
+
       var editBtn = _createActionBtn(ICON_EDIT, '수정', 'bwbr-msg-action-edit');
       editBtn.onclick = function(e) {
         e.stopPropagation();
@@ -308,17 +305,16 @@
         });
       };
       _actionContainer.appendChild(editBtn);
+
+      var delBtn2 = _createActionBtn(ICON_DELETE, '삭제', 'bwbr-msg-action-delete');
+      delBtn2.onclick = function(e) {
+        e.stopPropagation();
+        _doDelete(listItem, msgId);
+      };
+      _actionContainer.appendChild(delBtn2);
+
+      listItem.appendChild(_actionContainer);
     }
-
-    // 삭제 버튼 (공용 — 편집 오른쪽)
-    var delBtn = _createActionBtn(ICON_DELETE, '삭제', 'bwbr-msg-action-delete');
-    delBtn.onclick = function(e) {
-      e.stopPropagation();
-      _doDelete(listItem, msgId);
-    };
-    _actionContainer.appendChild(delBtn);
-
-    listItem.appendChild(_actionContainer);
   }
 
   // ── 이벤트 위임 (mouseover/mouseout) ──

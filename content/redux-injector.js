@@ -6181,6 +6181,27 @@
       const msgRef = sdk.doc(msgCol, msgId);
 
       await sdk.deleteDoc(msgRef);
+
+      // Redux store에서 즉시 제거 (탭 전환 시 재표시 방지)
+      // RTK entityAdapter removeOne 시도 → 실패 시 state 직접 변경
+      try {
+        const rm = reduxStore.getState().entities?.roomMessages;
+        if (rm && rm.ids && rm.entities) {
+          // 방법 1: RTK 표준 액션 시도
+          reduxStore.dispatch({ type: 'roomMessages/removeOne', payload: msgId });
+          // 방법 2: 직접 ids 배열에서 제거 (dispatch가 무시된 경우 대비)
+          const rmAfter = reduxStore.getState().entities?.roomMessages;
+          if (rmAfter && rmAfter.entities?.[msgId]) {
+            // dispatch가 안 먹혔으면 직접 삭제
+            const idx = rmAfter.ids.indexOf(msgId);
+            if (idx !== -1) rmAfter.ids.splice(idx, 1);
+            delete rmAfter.entities[msgId];
+          }
+        }
+      } catch (reduxErr) {
+        console.warn('[CE] Redux 메시지 제거 실패 (Firestore는 삭제됨):', reduxErr);
+      }
+
       respond({ success: true, msgId });
     } catch (err) {
       console.error('[CE] 메시지 삭제 실패:', err);
