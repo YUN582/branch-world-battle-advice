@@ -321,8 +321,10 @@
   function _setupHoverListeners() {
     // document 레벨 delegation — React 리렌더로 UL이 교체되어도 동작
     document.addEventListener('mouseover', function(e) {
-      var item = e.target.closest('ul.MuiList-root > .MuiListItem-root');
+      var item = e.target.closest('.MuiListItem-root');
       if (!item) return;
+      // 메시지 리스트 안의 아이템만 대상
+      if (!item.closest('ul.MuiList-root')) return;
       if (item === _currentHoveredItem) return;
       // 태그 없으면 MAIN world에 재태깅 요청 후 재시도
       if (!item.getAttribute('data-msg-id')) {
