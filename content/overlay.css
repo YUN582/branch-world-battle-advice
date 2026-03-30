@@ -1766,7 +1766,8 @@
 /* ── 메시지 수정/삭제 호버 버튼 ──────────────── */
 /* MuiListItem-root은 기본 position: relative — 별도 클래스 불필요 (진단 확인) */
 
-/* 독립 컨테이너 — 네이티브 sc-ByBgr 위치(right:16px, top:12px) 정밀 매칭 */
+/* 독립 CE 컨테이너 — right:16px = 네이티브 sc-ByBgr 위치 정밀 매칭 */
+/* 텍스트 메시지: [삭제]만, 시스템 메시지: [편집][삭제] */
 .bwbr-msg-actions {
   position: absolute;
   top: 12px;
@@ -1781,6 +1782,12 @@
 
 .MuiListItem-root:hover > .bwbr-msg-actions {
   opacity: 1;
+}
+
+/* 텍스트 메시지: CE 삭제가 있을 때 네이티브 편집 컨테이너를 왼쪽으로 이동 */
+/* 결과: [네이티브 편집 @ right:48px]  [CE 삭제 @ right:16px] */
+.bwbr-has-actions[data-msg-type="text"] > div:not([class*="MuiListItem"]):not(.bwbr-msg-actions) {
+  right: 48px !important;
 }
 
 /* 네이티브 MuiIconButton-sizeSmall 매칭 (30x30, padding 5px, white) */

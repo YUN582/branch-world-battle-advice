@@ -220,33 +220,33 @@
     return btn;
   }
 
-  // ── 삭제 실행 (확인 없이 즉시 삭제) ──
+  // ── 삭제된 메시지 추적 (탭 전환 시 재표시 방지) ──
+  var _deletedMsgIds = new Set();
+
+  // ── 삭제 실행 (확인 없이 즉시) ──
   function _doDelete(listItem, msgId) {
+    _deletedMsgIds.add(msgId);
+    listItem.style.display = 'none';
+    _removeActions();
     _sendToMain('bwbr-delete-message', { msgId: msgId }).then(function(res) {
-      if (res && res.success) {
-        listItem.style.transition = 'opacity 0.3s, max-height 0.3s';
-        listItem.style.opacity = '0';
-        listItem.style.maxHeight = listItem.offsetHeight + 'px';
-        setTimeout(function() {
-          listItem.style.maxHeight = '0';
-          listItem.style.overflow = 'hidden';
-          listItem.style.padding = '0';
-          listItem.style.margin = '0';
-        }, 200);
-        setTimeout(function() { listItem.remove(); }, 500);
+      if (!res || !res.success) {
+        // 삭제 실패 → 복원
+        _deletedMsgIds.delete(msgId);
+        listItem.style.display = '';
       }
     });
   }
 
   // ── 호버 버튼 주입/제거 ──
+  // 네이티브 DOM 절대 비간섭: 독립 CE 컨테이너만 사용
+  // 텍스트 메시지: CE[삭제] + CSS로 네이티브 편집 왼쪽 이동 → [편집][삭제]
+  // 시스템 메시지: CE[편집][삭제]
   var _currentHoveredItem = null;
-  var _actionContainer = null;  // 시스템 메시지용 CE 컨테이너
-  var _injectedDeleteBtn = null;  // 텍스트 메시지용 네이티브 컨테이너에 주입된 삭제 버튼
+  var _actionContainer = null;
 
   function _removeActions() {
-    if (_injectedDeleteBtn) {
-      _injectedDeleteBtn.remove();
-      _injectedDeleteBtn = null;
+    if (_currentHoveredItem) {
+      _currentHoveredItem.classList.remove('bwbr-has-actions');
     }
     if (_actionContainer) {
       _actionContainer.remove();
@@ -264,33 +264,20 @@
     var msgType = listItem.getAttribute('data-msg-type');
 
     if (!msgId) return;
+    // 삭제된 메시지면 숨기기
+    if (_deletedMsgIds.has(msgId)) { listItem.style.display = 'none'; return; }
 
     var myUid = _getMyUid();
     if (!myUid || msgFrom !== myUid) return;
 
     _currentHoveredItem = listItem;
+    listItem.classList.add('bwbr-has-actions');
 
-    if (msgType === 'text') {
-      // ── 텍스트 메시지: 네이티브 sc-ByBgr 안에 삭제 버튼 추가 ──
-      // 네이티브가 [edit] → CE가 [delete] 추가 → flex로 [edit][delete]
-      var nativeContainer = Array.from(listItem.children).find(function(c) {
-        return c.querySelector && c.querySelector('.MuiIconButton-root') &&
-               !c.classList.contains('bwbr-msg-actions');
-      });
-      if (nativeContainer) {
-        var delBtn = _createActionBtn(ICON_DELETE, '삭제', 'bwbr-msg-action-delete');
-        delBtn.onclick = function(e) {
-          e.stopPropagation();
-          _doDelete(listItem, msgId);
-        };
-        nativeContainer.appendChild(delBtn);
-        _injectedDeleteBtn = delBtn;
-      }
-    } else if (msgType === 'system') {
-      // ── 시스템 메시지: CE 컨테이너 [편집][삭제] ──
-      _actionContainer = document.createElement('div');
-      _actionContainer.className = 'bwbr-msg-actions';
+    _actionContainer = document.createElement('div');
+    _actionContainer.className = 'bwbr-msg-actions';
 
+    if (msgType === 'system') {
+      // ── 시스템 메시지: CE [편집][삭제] ──
       var editBtn = _createActionBtn(ICON_EDIT, '수정', 'bwbr-msg-action-edit');
       editBtn.onclick = function(e) {
         e.stopPropagation();
@@ -305,15 +292,28 @@
         });
       };
       _actionContainer.appendChild(editBtn);
+    }
+    // 텍스트 메시지: 편집은 네이티브가 제공, CE는 삭제만
+    // CSS가 .bwbr-has-actions[data-msg-type="text"]일 때 네이티브 컨테이너를 right:48px로 shift
 
-      var delBtn2 = _createActionBtn(ICON_DELETE, '삭제', 'bwbr-msg-action-delete');
-      delBtn2.onclick = function(e) {
-        e.stopPropagation();
-        _doDelete(listItem, msgId);
-      };
-      _actionContainer.appendChild(delBtn2);
+    var delBtn = _createActionBtn(ICON_DELETE, '삭제', 'bwbr-msg-action-delete');
+    delBtn.onclick = function(e) {
+      e.stopPropagation();
+      _doDelete(listItem, msgId);
+    };
+    _actionContainer.appendChild(delBtn);
 
-      listItem.appendChild(_actionContainer);
+    listItem.appendChild(_actionContainer);
+  }
+
+  // ── 삭제된 메시지 DOM 숨김 (탭 전환/리렌더 시) ──
+  function _hideDeletedMessages(msgList) {
+    if (_deletedMsgIds.size === 0) return;
+    var items = msgList.querySelectorAll('.MuiListItem-root[data-msg-id]');
+    for (var i = 0; i < items.length; i++) {
+      if (_deletedMsgIds.has(items[i].getAttribute('data-msg-id'))) {
+        items[i].style.display = 'none';
+      }
     }
   }
 
@@ -336,16 +336,20 @@
       _removeActions();
     });
 
-    // 개별 아이템에서 나갈 때도 제거
     msgList.addEventListener('mouseout', function(e) {
       var item = e.target.closest('.MuiListItem-root');
       var relatedItem = e.relatedTarget ? e.relatedTarget.closest('.MuiListItem-root') : null;
-      // 다른 아이템으로 이동하면 injectActions가 처리
-      // 리스트 밖으로 나가면 제거
       if (item === _currentHoveredItem && !relatedItem) {
         _removeActions();
       }
     });
+
+    // 삭제된 메시지 DOM 재표시 방지 (탭 전환/리렌더 감시)
+    var _hideTimer = null;
+    new MutationObserver(function() {
+      if (_hideTimer) clearTimeout(_hideTimer);
+      _hideTimer = setTimeout(function() { _hideDeletedMessages(msgList); }, 200);
+    }).observe(msgList, { childList: true, subtree: true });
 
     console.log('[CE] 메시지 수정/삭제 UI 초기화 완료');
   }
