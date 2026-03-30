@@ -1766,26 +1766,17 @@
 /* ── 메시지 수정/삭제 호버 버튼 ──────────────── */
 /* MuiListItem-root은 기본 position: relative — 별도 클래스 불필요 (진단 확인) */
 
-/* 독립 컨테이너 — 네이티브 DOM 절대 비간섭 */
+/* 독립 컨테이너 — 네이티브 sc-ByBgr 위치(right:16px, top:12px) 정밀 매칭 */
 .bwbr-msg-actions {
   position: absolute;
   top: 12px;
+  right: 16px;
   display: flex;
   gap: 2px;
   opacity: 0;
   transition: opacity 0.15s;
-  z-index: 1;
+  z-index: 2;
   pointer-events: auto;
-}
-
-/* 텍스트 메시지: 네이티브 편집 버튼(sc-ByBgr, ~30px @ right:~8px) 왼쪽에 배치 */
-.MuiListItem-root[data-msg-type="text"] > .bwbr-msg-actions {
-  right: 42px;
-}
-
-/* 시스템 메시지: 네이티브 호버 버튼 없음 → 오른쪽 8px */
-.MuiListItem-root[data-msg-type="system"] > .bwbr-msg-actions {
-  right: 8px;
 }
 
 .MuiListItem-root:hover > .bwbr-msg-actions {

@@ -1749,31 +1749,50 @@ DIV.MuiListItem-root.MuiListItem-gutters.MuiListItem-padding.MuiListItem-alignIt
 - **표시 조건**: 텍스트 메시지에만 존재, 항상 DOM에 있음 (CSS `opacity`로 호버 시 표시 추정)
 - **시스템 메시지**: `DIV.sc-ByBgr` 자체가 DOM에 없음 (수정 버튼 없음)
 
-##### 컨테이너 컴퓨티드 스타일 (sc-ByBgr — 확인 필요)
+##### 컨테이너 컴퓨티드 스타일 (sc-ByBgr — 2026-03-30 진단 확인)
 
 ```
+className: sc-ByBgr jAHLBk
 position: absolute
-top: 12px
-right: ??? (진단 필요 — 2026-03-30)
-display: flex
-background: ??? (진단 필요 — 투명 또는 반투명 가능)
+top: 12px | right: 16px
+display: flex | gap: normal
+width: 30px | height: 30px
+background: transparent (rgba(0, 0, 0, 0))
+opacity: 0 (호버 시 1로 전환)
+zIndex: auto
+padding: 0px
+borderRadius: 0px
+boxShadow: none
 ```
 
-##### 버튼 컴퓨티드 스타일 (MuiIconButton-sizeSmall)
+##### 버튼 컴퓨티드 스타일 (MuiIconButton-sizeSmall — 2026-03-30 진단 확인)
 
 ```
 width: 30px, height: 30px
 padding: 5px
 color: rgb(255, 255, 255)
 background: transparent (rgba(0,0,0,0))
+opacity: 1
 borderRadius: 50%
 transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1)
 ```
 
-##### 알려진 이슈 (CE 구현 관련)
+##### ListItem 관련
 
-- **밝기 차이**: CE 버튼이 네이티브 버튼보다 밝아 보일 수 있음 — sc-ByBgr 컨테이너의 배경색이 버튼 밝기에 영향을 줄 가능성 있음 (진단 결과로 확인 필요)
-- **정렬**: sc-ByBgr의 정확한 `right` 오프셋을 모르면 CE 버튼과 네이티브 버튼의 위치가 불일치
+```
+position: relative
+paddingRight: 16px
+paddingTop: 8px
+```
+
+##### 상대 위치 (px — 2026-03-30 진단 확인)
+
+```
+sc right offset from LI right: 16.0
+sc top offset from LI top: 12.0
+btn right offset from LI right: 16.0
+btn top offset from LI top: 12.0
+```
 
 #### 셀렉터 가이드
 

@@ -246,6 +246,10 @@
 
   function _removeActions() {
     if (_actionContainer) {
+      // 텍스트 메시지: 숨긴 네이티브 편집 컨테이너 복원
+      if (_actionContainer._nativeHidden) {
+        _actionContainer._nativeHidden.style.display = '';
+      }
       _actionContainer.remove();
       _actionContainer = null;
     }
@@ -267,12 +271,29 @@
 
     _currentHoveredItem = listItem;
 
-    // 항상 독립 컨테이너 — 네이티브 DOM 절대 비간섭
     _actionContainer = document.createElement('div');
     _actionContainer.className = 'bwbr-msg-actions';
 
-    if (msgType === 'system') {
-      // ── 시스템 메시지: 수정(커스텀 다이얼로그) + 삭제 ──
+    if (msgType === 'text') {
+      // ── 텍스트 메시지: 네이티브 편집 숨기고 CE [편집 프록시][삭제] ──
+      var nativeContainer = Array.from(listItem.children).find(function(c) {
+        return c.querySelector && c.querySelector('.MuiIconButton-root') && !c.classList.contains('bwbr-msg-actions');
+      });
+      if (nativeContainer) {
+        nativeContainer.style.display = 'none';
+        _actionContainer._nativeHidden = nativeContainer;
+      }
+      var editProxy = _createActionBtn(ICON_EDIT, '수정', 'bwbr-msg-action-edit');
+      editProxy.onclick = function(e) {
+        e.stopPropagation();
+        // 네이티브 복원 → 클릭 → 네이티브 다이얼로그 열림
+        if (nativeContainer) nativeContainer.style.display = '';
+        var nativeBtn = nativeContainer ? nativeContainer.querySelector('.MuiIconButton-root') : null;
+        if (nativeBtn) nativeBtn.click();
+      };
+      _actionContainer.appendChild(editProxy);
+    } else if (msgType === 'system') {
+      // ── 시스템 메시지: CE [편집][삭제] ──
       var editBtn = _createActionBtn(ICON_EDIT, '수정', 'bwbr-msg-action-edit');
       editBtn.onclick = function(e) {
         e.stopPropagation();
@@ -289,7 +310,7 @@
       _actionContainer.appendChild(editBtn);
     }
 
-    // 삭제 버튼 (시스템/텍스트 공용)
+    // 삭제 버튼 (공용 — 편집 오른쪽)
     var delBtn = _createActionBtn(ICON_DELETE, '삭제', 'bwbr-msg-action-delete');
     delBtn.onclick = function(e) {
       e.stopPropagation();
