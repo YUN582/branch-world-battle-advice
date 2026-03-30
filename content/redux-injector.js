@@ -6199,11 +6199,11 @@
 
       await sdk.deleteDoc(msgRef);
 
-      // MAIN world 삭제 추적 Set에 등록 (onSnapshot 재삽입 방어)
+      // MAIN world 삭제 추적 Set에 등록 (태깅 시 해당 DOM 숨김용)
       _mainDeletedMsgIds.add(msgId);
 
-      // Redux에서 즉시 제거
-      _purgeDeletedFromRedux();
+      // 즉시 재태깅 → 삭제된 아이템 숨김
+      _tagMessageItems();
 
       respond({ success: true, msgId });
     } catch (err) {
@@ -6215,6 +6215,12 @@
   /**
    * 메시지 DOM 태깅 — MuiListItem에 data-msg-id, data-msg-from, data-msg-type 주입
    * Redux roomMessages 순서와 DOM 순서를 매칭
+   *
+   * 핵심: 삭제된 메시지를 channelMsgs에서 제외하면 React 리렌더 타이밍과
+   * 어긋나서 DOM↔Redux 1:1 매칭이 깨짐. 따라서:
+   * 1) 모든 display:none 초기화 (React 요소 재사용 시 잔존 방지)
+   * 2) 삭제 ID 포함한 전체 channelMsgs로 태깅 (DOM과 순서 일치)
+   * 3) 태깅 후 삭제 ID를 가진 아이템만 display:none
    */
   function _tagMessageItems() {
     if (!reduxStore) return;
@@ -6225,12 +6231,10 @@
     const allItems = msgList.querySelectorAll('.MuiListItem-root');
     if (allItems.length === 0) return;
 
-    // display:none (삭제됨)인 아이템 제외 — 인덱스 어긋남 방지
-    const items = [];
+    // 1) 모든 inline display:none 초기화 (동기 실행이므로 리페인트 없음)
     for (let j = 0; j < allItems.length; j++) {
-      if (allItems[j].style.display !== 'none') items.push(allItems[j]);
+      allItems[j].style.display = '';
     }
-    if (items.length === 0) return;
 
     const state = reduxStore.getState();
     const rm = state.entities?.roomMessages;
@@ -6240,32 +6244,38 @@
     const chInfo = _detectCurrentChannel();
     const currentChannel = chInfo?.channel || '';
 
-    // onSnapshot이 다시 넣은 삭제 메시지를 Redux에서 재제거
-    if (_mainDeletedMsgIds.size > 0) _purgeDeletedFromRedux();
-
-    // 현재 채널에 해당하는 메시지만 필터 (채널이 비어있으면 전부, 삭제된 건 제외)
+    // 2) 현재 채널 메시지 필터 — 삭제 ID도 포함 (DOM과 순서 매칭 유지)
     const channelMsgs = [];
     for (let i = 0; i < rm.ids.length; i++) {
       const id = rm.ids[i];
-      if (_mainDeletedMsgIds.has(id)) continue;  // 삭제된 메시지 스킵
       const ent = rm.entities?.[id];
       if (!ent) continue;
       if (currentChannel && ent.channel && ent.channel !== currentChannel) continue;
       channelMsgs.push(ent);
     }
 
-    // DOM 순서와 Redux 순서 1:1 매칭 — 항상 전체 재태깅 (인덱스 어긋남 방지)
-    const len = Math.min(items.length, channelMsgs.length);
+    // 3) DOM 순서와 Redux 순서 1:1 매칭 — 전체 재태깅
+    const len = Math.min(allItems.length, channelMsgs.length);
     for (let i = 0; i < len; i++) {
-      const item = items[i];
+      const item = allItems[i];
       const msg = channelMsgs[i];
       item.setAttribute('data-msg-id', msg._id);
       item.setAttribute('data-msg-from', msg.from || '');
       item.setAttribute('data-msg-type', msg.type || 'text');
     }
-    // 초과 DOM 아이템 숨김 (삭제로 Redux < DOM인 경우)
-    for (let i = len; i < items.length; i++) {
-      items[i].style.display = 'none';
+
+    // 4) 삭제된 메시지 숨김 (태깅 후이므로 올바른 아이템에 적용)
+    if (_mainDeletedMsgIds.size > 0) {
+      for (let i = 0; i < len; i++) {
+        if (_mainDeletedMsgIds.has(channelMsgs[i]._id)) {
+          allItems[i].style.display = 'none';
+        }
+      }
+    }
+
+    // 5) 초과 DOM 아이템 숨김 (channelMsgs < DOM인 경우)
+    for (let i = len; i < allItems.length; i++) {
+      allItems[i].style.display = 'none';
     }
 
     // 내 UID도 documentElement에 설정 (ISOLATED world에서 접근용)
