@@ -1864,10 +1864,10 @@
   max-width: 380px;
 }
 
-/* DialogContent — 네이티브 MuiDialogContent-root: padding 20px 24px */
+/* DialogContent — 네이티브 padding: 0 (입력 패딩은 FilledInput-root에) */
 .bwbr-msg-edit-content {
-  padding: 20px 24px;
-  overflow: hidden auto;
+  padding: 0;
+  overflow: auto;
   flex: 1 1 auto;
 }
 
@@ -1976,8 +1976,7 @@
   box-sizing: content-box;
   caret-color: rgb(255, 255, 255);
   height: 92px;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: auto;
 }
 
 /* DialogActions — 네이티브 MuiDialogActions-spacing */
