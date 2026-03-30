@@ -257,12 +257,11 @@
 
     _currentHoveredItem = listItem;
 
-    // 독립 컨테이너 — 네이티브 DOM에 일절 손대지 않음
-    _actionContainer = document.createElement('div');
-    _actionContainer.className = 'bwbr-msg-actions';
-
     if (msgType === 'system') {
-      // ── 시스템 메시지: 수정 + 삭제 ──
+      // ── 시스템 메시지: 독립 컨테이너에 수정 + 삭제 ──
+      _actionContainer = document.createElement('div');
+      _actionContainer.className = 'bwbr-msg-actions';
+
       var editBtn = _createActionBtn(ICON_EDIT, '수정', 'bwbr-msg-action-edit');
       editBtn.onclick = function(e) {
         e.stopPropagation();
@@ -277,18 +276,41 @@
         });
       };
       _actionContainer.appendChild(editBtn);
+
+      var delBtnSys = _createActionBtn(ICON_DELETE, '삭제', 'bwbr-msg-action-delete');
+      delBtnSys.onclick = function(e) {
+        e.stopPropagation();
+        _doDelete(listItem, msgId);
+      };
+      _actionContainer.appendChild(delBtnSys);
+
+      listItem.classList.add('bwbr-msg-target');
+      listItem.appendChild(_actionContainer);
+    } else {
+      // ── 텍스트 메시지: 네이티브 호버 컨테이너에 삭제 버튼 삽입 ──
+      // 네이티브 편집 버튼(MuiIconButton)의 부모 = 호버 컨테이너(sc-ByBgr 등)
+      var nativeEditBtn = listItem.querySelector('.MuiIconButton-root');
+      var nativeHover = nativeEditBtn ? nativeEditBtn.parentElement : null;
+
+      var delBtn = _createActionBtn(ICON_DELETE, '삭제', 'bwbr-msg-action-delete');
+      delBtn.onclick = function(e) {
+        e.stopPropagation();
+        _doDelete(listItem, msgId);
+      };
+
+      if (nativeHover && nativeHover !== listItem) {
+        // 네이티브 컨테이너에 삽입 → 자동으로 네이티브 편집 버튼과 정렬
+        nativeHover.appendChild(delBtn);
+        _actionContainer = delBtn; // cleanup 시 이 버튼만 제거
+      } else {
+        // fallback: 네이티브 컨테이너 없으면 독립 컨테이너
+        _actionContainer = document.createElement('div');
+        _actionContainer.className = 'bwbr-msg-actions';
+        _actionContainer.appendChild(delBtn);
+        listItem.classList.add('bwbr-msg-target');
+        listItem.appendChild(_actionContainer);
+      }
     }
-
-    // 삭제 버튼 (시스템/텍스트 공용)
-    var delBtn = _createActionBtn(ICON_DELETE, '삭제', 'bwbr-msg-action-delete');
-    delBtn.onclick = function(e) {
-      e.stopPropagation();
-      _doDelete(listItem, msgId);
-    };
-    _actionContainer.appendChild(delBtn);
-
-    listItem.classList.add('bwbr-msg-target');
-    listItem.appendChild(_actionContainer);
   }
 
   // ── 이벤트 위임 (mouseover/mouseout) ──
