@@ -1436,7 +1436,8 @@ function readSettingsFromDOM() {
     _state.panelSettings.type = _settingsEls.typePlaneBtn.classList.contains('active') ? 'plane' : 'object';
   }
   if (_settingsEls.zInput) {
-    _state.panelSettings.z = parseInt(_settingsEls.zInput.value, 10) || 150;
+    var zVal = parseInt(_settingsEls.zInput.value, 10);
+    _state.panelSettings.z = isNaN(zVal) ? 150 : zVal;
   }
   if (_settingsEls.memoInput) {
     _state.panelSettings.memo = _settingsEls.memoInput.value || '';
@@ -2686,6 +2687,17 @@ function _redrawAllStrokes() {
   var hasOutlines = allStrokes.some(function(s) { return s.outlineEnabled && !s.isEraser; });
   var needsSeparate = hasOutlines && Math.abs(outAlpha - penAlpha) > 0.01;
 
+  // 지우개가 윤곽선까지 완전히 지울 수 있도록 최대 윤곽선 크기 계산
+  var maxOutlineExtra = 0;
+  if (hasOutlines) {
+    allStrokes.forEach(function(s) {
+      if (!s.isEraser && s.outlineEnabled && s.outlineSize > maxOutlineExtra) {
+        maxOutlineExtra = s.outlineSize;
+      }
+    });
+    maxOutlineExtra *= 2; // 양쪽 합산
+  }
+
   // 맵→화면 좌표 변환 + 지터 적용 헬퍼
   function toScreen(stroke) {
     var pts = stroke.points.map(function(p) {
@@ -2711,8 +2723,9 @@ function _redrawAllStrokes() {
       if (stroke.points.length === 0) return;
       var pts = toScreen(stroke);
       if (stroke.isEraser) {
+        var eraseW = (stroke.penSize + maxOutlineExtra) * scale;
         tcO.globalCompositeOperation = 'destination-out';
-        _renderStrokePass(tcO, pts, stroke, stroke.penSize * scale, 'pen');
+        _renderStrokePass(tcO, pts, stroke, eraseW, 'pen');
         tcO.globalCompositeOperation = 'source-over';
         tcP.globalCompositeOperation = 'destination-out';
         _renderStrokePass(tcP, pts, stroke, stroke.penSize * scale, 'pen');
@@ -2763,7 +2776,7 @@ function _redrawAllStrokes() {
       if (stroke.isEraser) {
         flushChunk();
         tc.globalCompositeOperation = 'destination-out';
-        _renderStrokePass(tc, pts, stroke, stroke.penSize * scale, 'pen');
+        _renderStrokePass(tc, pts, stroke, (stroke.penSize + maxOutlineExtra) * scale, 'pen');
         tc.globalCompositeOperation = 'source-over';
       } else {
         normalChunk.push({ pts: pts, stroke: stroke, outlineEnabled: stroke.outlineEnabled });
@@ -2982,6 +2995,17 @@ function _renderStrokesToCtx(ctx, strokes) {
   var hasOutlines = strokes.some(function(s) { return s.outlineEnabled && !s.isEraser; });
   var needsSeparate = hasOutlines && Math.abs(outAlpha - penAlpha) > 0.01;
 
+  // 지우개가 윤곽선까지 완전히 지울 수 있도록 최대 윤곽선 크기 계산
+  var maxOutlineExtra = 0;
+  if (hasOutlines) {
+    strokes.forEach(function(s) {
+      if (!s.isEraser && s.outlineEnabled && s.outlineSize > maxOutlineExtra) {
+        maxOutlineExtra = s.outlineSize;
+      }
+    });
+    maxOutlineExtra *= 2;
+  }
+
   function prepPts(stroke) {
     var pts = stroke.points;
     if (stroke.sketchJitter) pts = _applyJitter(pts, stroke.sketchJitter);
@@ -3005,8 +3029,9 @@ function _renderStrokesToCtx(ctx, strokes) {
       if (stroke.points.length === 0) return;
       var pts = prepPts(stroke);
       if (stroke.isEraser) {
+        var eraseW = stroke.penSize + maxOutlineExtra;
         tcO.globalCompositeOperation = 'destination-out';
-        _renderStrokePass(tcO, pts, stroke, stroke.penSize, 'pen');
+        _renderStrokePass(tcO, pts, stroke, eraseW, 'pen');
         tcO.globalCompositeOperation = 'source-over';
         tcP.globalCompositeOperation = 'destination-out';
         _renderStrokePass(tcP, pts, stroke, stroke.penSize, 'pen');
@@ -3055,7 +3080,7 @@ function _renderStrokesToCtx(ctx, strokes) {
       if (stroke.isEraser) {
         flushChunk();
         tc.globalCompositeOperation = 'destination-out';
-        _renderStrokePass(tc, pts, stroke, stroke.penSize, 'pen');
+        _renderStrokePass(tc, pts, stroke, stroke.penSize + maxOutlineExtra, 'pen');
         tc.globalCompositeOperation = 'source-over';
       } else {
         normalChunk.push({ pts: pts, stroke: stroke });
@@ -6132,7 +6157,8 @@ function readSettingsFromDialog() {
     _state.panelSettings.type = _confirmDialogEls.typePlaneBtn.classList.contains('active') ? 'plane' : 'object';
   }
   if (_confirmDialogEls.zInput) {
-    _state.panelSettings.z = parseInt(_confirmDialogEls.zInput.value, 10) || 150;
+    var zVal = parseInt(_confirmDialogEls.zInput.value, 10);
+    _state.panelSettings.z = isNaN(zVal) ? 150 : zVal;
   }
   if (_confirmDialogEls.memoInput) {
     _state.panelSettings.memo = _confirmDialogEls.memoInput.value || '';
