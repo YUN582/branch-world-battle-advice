@@ -6413,11 +6413,6 @@
     const allItems = msgList.querySelectorAll('.MuiListItem-root');
     if (allItems.length === 0) return;
 
-    // 1) 모든 inline display:none 초기화 (동기 실행이므로 리페인트 없음)
-    for (let j = 0; j < allItems.length; j++) {
-      allItems[j].style.display = '';
-    }
-
     const state = reduxStore.getState();
     const rm = state.entities?.roomMessages;
     if (!rm || !rm.ids || rm.ids.length === 0) return;
@@ -6436,7 +6431,7 @@
       channelMsgs.push(ent);
     }
 
-    // 3) DOM 순서와 Redux 순서 1:1 매칭 — 전체 재태깅
+    // 3) DOM 순서와 Redux 순서 1:1 매칭 + 빈 메시지 숨김 (단일 루프)
     const len = Math.min(allItems.length, channelMsgs.length);
     for (let i = 0; i < len; i++) {
       const item = allItems[i];
@@ -6444,14 +6439,8 @@
       item.setAttribute('data-msg-id', msg._id);
       item.setAttribute('data-msg-from', msg.from || '');
       item.setAttribute('data-msg-type', msg.type || 'text');
-    }
-
-    // 4) CE가 비운 메시지 숨김 (text==='' && name==='system' && type==='system')
-    for (let i = 0; i < len; i++) {
-      const msg = channelMsgs[i];
-      if (msg.type === 'system' && msg.name === 'system' && msg.text === '') {
-        allItems[i].style.display = 'none';
-      }
+      // CE가 비운 메시지면 숨김, 아니면 표시 복원
+      item.style.display = (msg.type === 'system' && msg.name === 'system' && msg.text === '') ? 'none' : '';
     }
 
     // 5) 초과 DOM 아이템 숨김 (channelMsgs < DOM인 경우)
@@ -6512,12 +6501,12 @@
       });
     }
 
-    // 탭 전환 감지: tablist의 aria-selected 변경 시 재태깅
+    // 탭 전환 감지: tablist의 aria-selected 변경 시 즉시 재태깅 + rAF
     const tablist = document.querySelector('[role="tablist"]');
     if (tablist) {
       new MutationObserver(() => {
-        if (_msgTagTimer) clearTimeout(_msgTagTimer);
-        _msgTagTimer = setTimeout(_tagMessageItems, 200);
+        _tagMessageItems();
+        requestAnimationFrame(_tagMessageItems);
       }).observe(tablist, { attributes: true, subtree: true, attributeFilter: ['aria-selected'] });
     }
 
