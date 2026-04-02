@@ -606,9 +606,36 @@
           }
         }
         const changes = combatEngine.refreshOriginalData(characters);
-        // 이름/아이콘 변경 시 상태 저장 및 UI 반영
+        // 이름/아이콘 변경 및 캐릭터 이탈 처리
         if (changes && changes.length > 0) {
-          _alwaysLog(`[전투 보조] 캐릭터 변경 감지: ${changes.map(c => c.type === 'name' ? `${c.old}→${c.new}` : `${c.name} 아이콘`).join(', ')}`);
+          const removals = changes.filter(c => c.type === 'removed');
+          const otherChanges = changes.filter(c => c.type !== 'removed');
+
+          if (otherChanges.length > 0) {
+            _alwaysLog(`[전투 보조] 캐릭터 변경 감지: ${otherChanges.map(c => c.type === 'name' ? `${c.old}→${c.new}` : `${c.name} 아이콘`).join(', ')}`);
+          }
+
+          // 이탈 캐릭터 제거
+          if (removals.length > 0 && flowState === STATE.TURN_COMBAT) {
+            const currentChar = combatEngine.getState()?.currentCharacter;
+            const wasCurrentRemoved = removals.some(r => currentChar && r.id === currentChar.id);
+
+            for (const r of removals) {
+              combatEngine.removeCharacter(r.id);
+            }
+
+            const removedNames = removals.map(r => r.name).join(', ');
+            _alwaysLog(`[전투 보조] 캐릭터 이탈: ${removedNames}`);
+            overlay.addLog(`➖ ${removedNames} 전투 이탈`, 'warning');
+            chat.sendSystemMessage(`〔 ➖ 전투 이탈 〕\n${removedNames}`);
+
+            if (wasCurrentRemoved && combatEngine.getState()?.currentCharacter) {
+              // 현재 차례 캐릭터가 이탈 → 다음 캐릭터로 자동 이동
+              _alwaysLog(`[전투 보조] 현재 차례 캐릭터 이탈 — 다음 차례로 자동 전환`);
+              sendTurnStartMessage();
+            }
+          }
+
           _saveTurnCombatState();
         }
       }

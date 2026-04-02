@@ -604,6 +604,7 @@ window.CombatEngine = class CombatEngine {
   refreshOriginalData(characters) {
     if (!characters || !this.turnOrder) return;
     const changes = [];
+    const activeIds = new Set(characters.map(c => c._id));
     for (const entry of this.turnOrder) {
       const fresh = characters.find(c => c._id === entry.id);
       if (fresh) {
@@ -619,14 +620,49 @@ window.CombatEngine = class CombatEngine {
           changes.push({ type: 'icon', name: entry.name });
         }
         entry.originalData = fresh;
+      } else if (!activeIds.has(entry.id)) {
+        // 활성 캐릭터 목록에서 사라짐 (숨김/집어넣기)
+        changes.push({ type: 'removed', name: entry.name, id: entry.id });
       }
     }
     if (changes.length > 0) {
-      this._log(`originalData 갱신 완료 (변경: ${changes.map(c => c.type === 'name' ? `${c.old}→${c.new}` : `${c.name} 아이콘`).join(', ')})`);
+      this._log(`originalData 갱신 완료 (변경: ${changes.map(c => c.type === 'name' ? `${c.old}→${c.new}` : c.type === 'removed' ? `${c.name} 이탈` : `${c.name} 아이콘`).join(', ')})`);
     } else {
       this._log('originalData 갱신 완료');
     }
     return changes;
+  }
+
+  /**
+   * turnOrder에서 지정한 ID의 캐릭터를 제거합니다.
+   * currentTurnIndex를 적절히 조정합니다.
+   * @param {string} charId - 제거할 캐릭터의 ID
+   * @returns {object|null} 제거된 엔트리 또는 null
+   */
+  removeCharacter(charId) {
+    if (!this.turnOrder) return null;
+    const idx = this.turnOrder.findIndex(e => e.id === charId);
+    if (idx < 0) return null;
+
+    const removed = this.turnOrder.splice(idx, 1)[0];
+
+    // currentTurnIndex 조정
+    if (this.turnOrder.length === 0) {
+      this.currentTurnIndex = 0;
+      this.currentTurn = null;
+    } else if (idx < this.currentTurnIndex) {
+      // 현재 차례 이전 캐릭터 제거 → 인덱스 1 감소
+      this.currentTurnIndex--;
+    } else if (idx === this.currentTurnIndex) {
+      // 현재 차례 캐릭터 제거 → 같은 인덱스에 다음 캐릭터가 옴
+      if (this.currentTurnIndex >= this.turnOrder.length) {
+        this.currentTurnIndex = 0;
+      }
+      this.currentTurn = this.turnOrder[this.currentTurnIndex] || null;
+    }
+
+    this._log(`캐릭터 제거: ${removed.name} (턴 순서에서 제외)`);
+    return removed;
   }
 
   /**
