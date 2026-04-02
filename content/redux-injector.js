@@ -1537,6 +1537,43 @@
     }));
   });
 
+  // Content Script에서 BGM/음악 URL 요청 (미리듣기 플레이어용)
+  document.addEventListener('bwbr-bgm-url-request', () => {
+    const raw = document.documentElement.getAttribute('data-bwbr-bgm-url-request');
+    document.documentElement.removeAttribute('data-bwbr-bgm-url-request');
+    const { name } = raw ? JSON.parse(raw) : {};
+    let url = null;
+
+    if (name && reduxStore) {
+      try {
+        const ents = reduxStore.getState().entities;
+        // 모든 엔티티 스토어를 순회하여 name으로 매칭되는 음악 아이템 찾기
+        for (const storeKey of Object.keys(ents)) {
+          const store = ents[storeKey];
+          if (!store?.ids || !store?.entities) continue;
+          for (const id of store.ids) {
+            const item = store.entities[id];
+            if (!item || !item.name) continue;
+            if (item.name.trim() === name.trim()) {
+              // url 또는 soundUrl 필드에서 오디오 URL 추출
+              const candidate = item.url || item.soundUrl || item.mediaUrl;
+              if (candidate && typeof candidate === 'string') {
+                url = candidate;
+                break;
+              }
+            }
+          }
+          if (url) break;
+        }
+      } catch (e) {
+        _dbg('[CE] BGM URL 검색 실패:', e);
+      }
+    }
+
+    document.documentElement.setAttribute('data-bwbr-bgm-url-result', JSON.stringify({ url }));
+    document.dispatchEvent(new CustomEvent('bwbr-bgm-url-result'));
+  });
+
   // Content Script에서 Redux 재시도 요청 시 처리
   window.addEventListener('bwbr-request-redux', () => {
     if (!reduxStore) {

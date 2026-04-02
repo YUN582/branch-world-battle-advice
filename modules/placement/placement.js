@@ -4996,8 +4996,8 @@ function stageObject(screenRect) {
   // DOM에서 직접 설정값 읽기 (이벤트 리스너 불발 대비)
   readSettingsFromDOM();
 
-  console.log('[CE 배치] 스테이징:', screenRect, '→ 타일:', mapCoords);
-  console.log('[CE 배치] panelSettings:', JSON.stringify(_state.panelSettings));
+  if (window._BWBR_DEBUG) console.log('[CE 배치] 스테이징:', screenRect, '→ 타일:', mapCoords);
+  if (window._BWBR_DEBUG) console.log('[CE 배치] panelSettings:', JSON.stringify(_state.panelSettings));
 
   var obj = {
     id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
@@ -5026,7 +5026,7 @@ function stageObject(screenRect) {
 
 // zoom 컨테이너 교체 시 기존 스테이징 아이템 → 새 컨테이너로 이동
 function _migrateStaged(newZoomEl) {
-  console.log('[CE 배치] zoom 컨테이너 교체 감지, 스테이징 아이템 재부착');
+  if (window._BWBR_DEBUG) console.log('[CE 배치] zoom 컨테이너 교체 감지, 스테이징 아이템 재부착');
   document.querySelectorAll('.bwbr-staged-item').forEach(function (el) {
     newZoomEl.appendChild(el);
   });
@@ -5586,7 +5586,7 @@ function finishAltBoxSelect() {
       }
     }
   });
-  if (found) console.log('[CE 배치] 선택:', _state.selectedStagedIds.length + '개');
+  if (found && window._BWBR_DEBUG) console.log('[CE 배치] 선택:', _state.selectedStagedIds.length + '개');
   updateAlignBar();
   _updateResizeHandles();
 }
@@ -6399,7 +6399,7 @@ function compositeAndCommit() {
   var bboxH = maxY - minY;
   var s = _state.stagedObjects[0].settings;
 
-  console.log('[CE 배치] 확인 → settings:', JSON.stringify(s), '/ bbox:', bboxW + '×' + bboxH);
+  if (window._BWBR_DEBUG) console.log('[CE 배치] 확인 → settings:', JSON.stringify(s), '/ bbox:', bboxW + '×' + bboxH);
 
   // 단일 오브젝트 + URL 이미지 + 회전 없음 → 합성 없이 직접 생성
   // (회전이 있으면 이미지에 회전을 베이킹해야 하므로 합성 경로로)
@@ -6482,7 +6482,7 @@ function compositeAndCommit() {
       return;
     }
 
-    console.log('[CE 배치] 합성 완료:', bboxW + '×' + bboxH + '타일,', total + '개 이미지,', Math.round(dataUrl.length / 1024) + 'KB');
+    if (window._BWBR_DEBUG) console.log('[CE 배치] 합성 완료:', bboxW + '×' + bboxH + '타일,', total + '개 이미지,', Math.round(dataUrl.length / 1024) + 'KB');
 
     var panelData = {
       type: s.type, x: minX, y: minY, z: s.z,

@@ -313,7 +313,7 @@
     if (!enabled) return;
     // @ 컷인 명령은 무시 (절대 전투 트리거가 아님)
     if (text.startsWith('@')) return;
-    alwaysLog(`[입력 감지] "${text.substring(0, 80)}" (flowState=${combatCtrl.getFlowState()})`);
+    log(`[입력 감지] "${text.substring(0, 80)}" (flowState=${combatCtrl.getFlowState()})`);
 
     // ★ 사용자 메시지가 Firestore에 도착할 때까지 대기할 프라미스 생성
     _userMessagePendingPromise = waitForUserMessageDelivery();
@@ -334,7 +334,7 @@
           curCharName = combatCtrl.getTrackedTurnName && combatCtrl.getTrackedTurnName();
         }
         if (curCharName && curCharName !== _cachedSpeakerName) {
-          alwaysLog(`[입력 감지] 화자="${_cachedSpeakerName}" ≠ 현재차례="${curCharName}" — 행동 소비 건너뜀 (전투개시/종료만 체크)`);
+          log(`[입력 감지] 화자="${_cachedSpeakerName}" ≠ 현재차례="${curCharName}" — 행동 소비 건너뜀 (전투개시/종료만 체크)`);
           // 전투 개시/종료 트리거만 체크 (행동 소비 제외)
           combatCtrl.checkForCombatAssistTrigger(text, true);
         } else {
@@ -344,7 +344,7 @@
         combatCtrl.checkForCombatAssistTrigger(text);
       }
     } else {
-      alwaysLog(`[입력 감지] flowState="${fs}" — 전투 보조 체크 건너뜀`);
+      log(`[입력 감지] flowState="${fs}" — 전투 보조 체크 건너뜀`);
     }
 
     // 범용 트리거 엔진 매칭

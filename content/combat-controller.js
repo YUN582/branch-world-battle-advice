@@ -156,7 +156,7 @@
 
   async function checkForCombatAssistTrigger(text, skipActionConsume) {
     try {
-    _alwaysLog(`[전투 보조] 트리거 체크 진입: flowState=${flowState}, text="${text.substring(0, 40)}"${skipActionConsume ? ' (행동소비 생략)' : ''}`);
+    _log(`[전투 보조] 트리거 체크 진입: flowState=${flowState}, text="${text.substring(0, 40)}"${skipActionConsume ? ' (행동소비 생략)' : ''}`);
     if (combatEngine.parseCombatStartTrigger(text)) {
       _log('[전투 보조] 전투개시 트리거 감지!');
       startCombatAssist();
@@ -198,7 +198,7 @@
     if (flowState === STATE.TURN_COMBAT || _turnTrackingActive) {
       const mainMatch = /《[^》]+》/.test(text);
       const subMatch = /【[^】]+】/.test(text);
-      _alwaysLog(`[전투 보조] 패턴 검사: mainMatch(《》)=${mainMatch}, subMatch(【】)=${subMatch}, tracking=${_turnTrackingActive}`);
+      _log(`[전투 보조] 패턴 검사: mainMatch(《》)=${mainMatch}, subMatch(【】)=${subMatch}, tracking=${_turnTrackingActive}`);
 
       if (mainMatch || subMatch) {
         const statLabel = mainMatch ? '주 행동🔺' : '보조 행동🔹';
@@ -218,11 +218,11 @@
           targetName = _currentTrackedTurn.name;
         }
         if (!targetName) {
-          _alwaysLog(`[전투 보조] 현재 차례 캐릭터 없음 — 행동 소비 생략`);
+          _log(`[전투 보조] 현재 차례 캐릭터 없음 — 행동 소비 생략`);
           return;
         }
 
-        _alwaysLog(`[전투 보조] ${actionType} 행동 소비 감지: 대상=${targetName} / 라벨="${statLabel}"`);
+        _log(`[전투 보조] ${actionType} 행동 소비 감지: 대상=${targetName} / 라벨="${statLabel}"`);
 
         await _awaitUserMessage();
         const result = await _modifyCharStat(targetName, statLabel, '-', 1, true);
@@ -612,7 +612,7 @@
           const otherChanges = changes.filter(c => c.type !== 'removed');
 
           if (otherChanges.length > 0) {
-            _alwaysLog(`[전투 보조] 캐릭터 변경 감지: ${otherChanges.map(c => c.type === 'name' ? `${c.old}→${c.new}` : `${c.name} 아이콘`).join(', ')}`);
+            _log(`[전투 보조] 캐릭터 변경 감지: ${otherChanges.map(c => c.type === 'name' ? `${c.old}→${c.new}` : `${c.name} 아이콘`).join(', ')}`);
           }
 
           // 이탈 캐릭터 제거
