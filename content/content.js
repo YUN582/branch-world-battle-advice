@@ -155,6 +155,11 @@
     // 사이트 UI에 음량 슬라이더 주입
     injectSiteVolumeSlider();
 
+    // 메시지 스타일 변경 적용
+    if (config.general.messageStyle) {
+      _applyMessageStyle(true);
+    }
+
     // 화면 표시 스케일 적용 (스탠딩/대화창 크기)
     if (window.BWBR_DisplayScale) {
       window.BWBR_DisplayScale.updateScale(
@@ -459,6 +464,13 @@
           removeSiteVolumeSlider();
         }
         alwaysLog(`더 나은 사운드바 ${message.betterSoundbar ? '활성화' : '비활성화'}`);
+        sendResponse({ success: true });
+        break;
+
+      case 'BWBR_SET_MESSAGE_STYLE':
+        config.general.messageStyle = message.messageStyle;
+        _applyMessageStyle(message.messageStyle);
+        alwaysLog(`메시지 스타일 변경 ${message.messageStyle ? '활성화' : '비활성화'}`);
         sendResponse({ success: true });
         break;
 
@@ -1543,6 +1555,49 @@ ${rows.join('\n')}
         if (native) native.style.display = '';
       }
       root.remove();
+    }
+  }
+
+  // ── 메시지 스타일 변경 (시스템 가운데정렬 + 연속 메시지 그룹핑) ──
+  const _MSG_STYLE_ID = 'bwbr-message-style-css';
+  function _applyMessageStyle(enabled) {
+    let styleEl = document.getElementById(_MSG_STYLE_ID);
+    if (enabled) {
+      if (!styleEl) {
+        styleEl = document.createElement('style');
+        styleEl.id = _MSG_STYLE_ID;
+        styleEl.textContent = `
+/* CE 메시지 스타일: 시스템 메시지 가운데 정렬 */
+.MuiListItem-root[data-msg-type="system"] .MuiListItemText-root {
+  text-align: center !important;
+}
+.MuiListItem-root[data-msg-type="system"] .MuiListItemAvatar-root {
+  display: none !important;
+}
+.MuiListItem-root[data-msg-type="system"] .MuiListItemText-primary {
+  display: none !important;
+}
+
+/* CE 메시지 스타일: 연속 메시지 그룹핑 */
+.MuiListItem-root[data-msg-group="cont"] .MuiListItemAvatar-root {
+  visibility: hidden !important;
+}
+.MuiListItem-root[data-msg-group="cont"] .MuiListItemText-primary {
+  display: none !important;
+}
+.MuiListItem-root[data-msg-group="cont"] {
+  padding-top: 0px !important;
+  margin-top: -4px !important;
+}
+hr[data-msg-group-hr="cont"],
+.MuiDivider-root[data-msg-group-hr="cont"] {
+  display: none !important;
+}
+`;
+        document.head.appendChild(styleEl);
+      }
+    } else {
+      if (styleEl) styleEl.remove();
     }
   }
 

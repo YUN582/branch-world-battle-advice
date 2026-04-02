@@ -447,8 +447,7 @@
     else if (s.type === 'characters') items = await loadCharData();
     else if (s.type === 'markers') items = await loadMarkerData();
     else {
-      const all = await loadPanelData();
-      items = all.filter(it => it.type === 'object');
+      items = await loadPanelData();
     }
     if (s.type === 'notes') buildNoteMap(paper, items);
     else if (s.type === 'cutins') buildCutinMap(paper, items);

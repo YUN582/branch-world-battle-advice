@@ -39,7 +39,8 @@ window.BWBR_CORE_DEFAULTS = {
     betterSoundbar: true,       // 더 나은 사운드바 (MUI Slider → 경량 슬라이더 교체)
     language: 'ko',             // UI 언어
     standingScale: 1.0,         // 대화창 내 스탠딩 이미지 확대 배율 (0.5~3.0)
-    chatBubbleScale: 1.0        // 대화창(말풍선) 전체 확대 배율 (0.5~3.0)
+    chatBubbleScale: 1.0,       // 대화창(말풍선) 전체 확대 배율 (0.5~3.0)
+    messageStyle: false           // 메시지 스타일 변경 (시스템 중앙정렬, 연속 메시지 그룹핑)
   },
 
   // ── DOM 선택자 (코코포리아 전용) ───────────────────────────

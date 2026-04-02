@@ -25,7 +25,8 @@
       betterSoundbar: true,
       language: 'ko',
       standingScale: 1.0,
-      chatBubbleScale: 1.0
+      chatBubbleScale: 1.0,
+      messageStyle: false
     },
     selectors: {
       chatContainer: ['[class*="MuiList-root"]', '[class*="chat-log"]', '[class*="message-list"]', '[role="log"]', '[class*="scroll"]'],
@@ -207,6 +208,7 @@
     $('gen-standingScale-val').textContent = Math.round((cfg.general.standingScale ?? 1.0) * 100) + '%';
     $('gen-chatBubbleScale').value = cfg.general.chatBubbleScale ?? 1.0;
     $('gen-chatBubbleScale-val').textContent = Math.round((cfg.general.chatBubbleScale ?? 1.0) * 100) + '%';
+    $('toggle-messageStyle').checked = cfg.general.messageStyle || false;
     $('toggle-debugMode').checked = cfg.general.debugMode;
 
     // ── 로컬 효과음 (커스텀 롤 사운드) ──
@@ -230,6 +232,7 @@
     cfg.general.betterSoundbar = $('toggle-betterSoundbar').checked;
     cfg.general.standingScale = parseFloat($('gen-standingScale').value) || 1.0;
     cfg.general.chatBubbleScale = parseFloat($('gen-chatBubbleScale').value) || 1.0;
+    cfg.general.messageStyle = $('toggle-messageStyle').checked;
     cfg.general.debugMode = $('toggle-debugMode').checked;
 
     // ── 전투 모듈 설정 (동적 패널 열려 있으면 수집, 아니면 현재 값 유지) ──
@@ -284,6 +287,11 @@
     // 더 나은 사운드바 토글 (즉시 적용)
     $('toggle-betterSoundbar').addEventListener('change', (e) => {
       sendToContent({ type: 'BWBR_SET_BETTER_SOUNDBAR', betterSoundbar: e.target.checked });
+    });
+
+    // 메시지 스타일 변경 토글 (즉시 적용)
+    $('toggle-messageStyle').addEventListener('change', (e) => {
+      sendToContent({ type: 'BWBR_SET_MESSAGE_STYLE', messageStyle: e.target.checked });
     });
 
     // 자동완성 토글 (즉시 적용)
