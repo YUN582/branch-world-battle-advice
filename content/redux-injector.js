@@ -6231,16 +6231,6 @@
     const allItems = msgList.querySelectorAll('.MuiListItem-root');
     if (allItems.length === 0) return;
 
-    // 1) 모든 inline display:none 초기화 (동기 실행이므로 리페인트 없음)
-    for (let j = 0; j < allItems.length; j++) {
-      allItems[j].style.display = '';
-    }
-    // HR/구분선도 초기화
-    const allHrs = msgList.querySelectorAll('hr, .MuiDivider-root');
-    for (let j = 0; j < allHrs.length; j++) {
-      allHrs[j].style.display = '';
-    }
-
     const state = reduxStore.getState();
     const rm = state.entities?.roomMessages;
     if (!rm || !rm.ids || rm.ids.length === 0) return;
@@ -6249,7 +6239,7 @@
     const chInfo = _detectCurrentChannel();
     const currentChannel = chInfo?.channel || '';
 
-    // 2) 현재 채널 메시지 필터 — 삭제 ID도 포함 (DOM과 순서 매칭 유지)
+    // 현재 채널 메시지 필터 — 삭제 ID도 포함 (DOM과 순서 매칭 유지)
     const channelMsgs = [];
     for (let i = 0; i < rm.ids.length; i++) {
       const id = rm.ids[i];
@@ -6259,46 +6249,53 @@
       channelMsgs.push(ent);
     }
 
-    // 3) DOM 순서와 Redux 순서 1:1 매칭 — 전체 재태깅
+    // 태깅 + 숨김을 한 루프에서 처리 (초기화 루프 제거 → 플래시 방지)
     const len = Math.min(allItems.length, channelMsgs.length);
     for (let i = 0; i < len; i++) {
       const item = allItems[i];
       const msg = channelMsgs[i];
+
+      // 태깅
       item.setAttribute('data-msg-id', msg._id);
       item.setAttribute('data-msg-from', msg.from || '');
       item.setAttribute('data-msg-type', msg.type || 'text');
-    }
 
-    // 4) 삭제된 메시지 숨김 (태깅 후이므로 올바른 아이템에 적용)
-    //    - _mainDeletedMsgIds: 이 세션에서 직접 삭제한 메시지
-    //    - text === '' && type === 'system': setDoc으로 삭제된 메시지 (다른 클라이언트 sync)
-    for (let i = 0; i < len; i++) {
-      const msg = channelMsgs[i];
+      // 숨김 여부 판정
       const shouldHide = _mainDeletedMsgIds.has(msg._id)
         || (msg.text === '' && msg.name === 'system' && msg.type === 'system');
+
+      item.style.display = shouldHide ? 'none' : '';
+
       if (shouldHide) {
-        allItems[i].style.display = 'none';
         // 인접 구분선(HR/MuiDivider)도 숨김
-        const wrapper = allItems[i].parentElement;
+        const wrapper = item.parentElement;
         if (wrapper) {
           const nextEl = wrapper.nextElementSibling;
           if (nextEl && (nextEl.tagName === 'HR' || nextEl.classList.contains('MuiDivider-root'))) {
             nextEl.style.display = 'none';
           }
-          const prevEl = wrapper.previousElementSibling;
-          if (prevEl && (prevEl.tagName === 'HR' || prevEl.classList.contains('MuiDivider-root'))) {
-            prevEl.style.display = 'none';
-          }
         }
-        // ListItem 직접 인접 형제도 체크
-        const nextSib = allItems[i].nextElementSibling;
+        const nextSib = item.nextElementSibling;
         if (nextSib && (nextSib.tagName === 'HR' || nextSib.classList.contains('MuiDivider-root'))) {
           nextSib.style.display = 'none';
+        }
+      } else {
+        // 보이는 아이템의 인접 HR은 복원
+        const wrapper = item.parentElement;
+        if (wrapper) {
+          const nextEl = wrapper.nextElementSibling;
+          if (nextEl && (nextEl.tagName === 'HR' || nextEl.classList.contains('MuiDivider-root'))) {
+            nextEl.style.display = '';
+          }
+        }
+        const nextSib = item.nextElementSibling;
+        if (nextSib && (nextSib.tagName === 'HR' || nextSib.classList.contains('MuiDivider-root'))) {
+          nextSib.style.display = '';
         }
       }
     }
 
-    // 5) 초과 DOM 아이템 숨김 (channelMsgs < DOM인 경우)
+    // 초과 DOM 아이템 숨김 (channelMsgs < DOM인 경우)
     for (let i = len; i < allItems.length; i++) {
       allItems[i].style.display = 'none';
     }
