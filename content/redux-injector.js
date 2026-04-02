@@ -6440,12 +6440,22 @@
       item.setAttribute('data-msg-from', msg.from || '');
       item.setAttribute('data-msg-type', msg.type || 'text');
       // CE가 비운 메시지면 숨김, 아니면 표시 복원
-      item.style.display = (msg.type === 'system' && msg.name === 'system' && msg.text === '') ? 'none' : '';
+      const shouldHide = msg.type === 'system' && msg.name === 'system' && msg.text === '';
+      item.style.display = shouldHide ? 'none' : '';
+      // 인접 구분선(hr/MuiDivider)도 같이 숨김/복원
+      const nextSib = item.nextElementSibling;
+      if (nextSib && (nextSib.tagName === 'HR' || nextSib.classList.contains('MuiDivider-root'))) {
+        nextSib.style.display = shouldHide ? 'none' : '';
+      }
     }
 
     // 5) 초과 DOM 아이템 숨김 (channelMsgs < DOM인 경우)
     for (let i = len; i < allItems.length; i++) {
       allItems[i].style.display = 'none';
+      const nextSib = allItems[i].nextElementSibling;
+      if (nextSib && (nextSib.tagName === 'HR' || nextSib.classList.contains('MuiDivider-root'))) {
+        nextSib.style.display = 'none';
+      }
     }
 
     // 내 UID도 documentElement에 설정 (ISOLATED world에서 접근용)
