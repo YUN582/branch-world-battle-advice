@@ -21,40 +21,37 @@
       .bwbr-bgm-player {
         display: flex;
         flex-direction: column;
-        gap: 6px;
-        padding: 8px 12px;
-        background: rgba(255,255,255,0.04);
-        border-radius: 6px;
-        margin: 12px 0 0 0;
         width: 100%;
         box-sizing: border-box;
+        margin: 4px 0 16px 0;
+        padding: 0 4px;
       }
       .bwbr-bgm-player-row {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 16px;
         width: 100%;
       }
       .bwbr-bgm-play-btn {
-        width: 32px; height: 32px;
+        width: 24px; height: 24px;
         border: none; background: none;
         cursor: pointer; padding: 0;
         display: flex; align-items: center; justify-content: center;
-        color: #90caf9;
+        color: rgba(255,255,255,0.7);
         border-radius: 50%;
-        transition: background 0.15s;
+        transition: color 0.15s;
         flex-shrink: 0;
       }
       .bwbr-bgm-play-btn:hover {
-        background: rgba(144,202,249,0.12);
+        color: #fff;
       }
       .bwbr-bgm-play-btn svg {
-        width: 22px; height: 22px;
+        width: 24px; height: 24px;
         fill: currentColor;
       }
       .bwbr-bgm-seekbar-wrap {
         flex: 1;
-        height: 20px;
+        height: 24px;
         display: flex;
         align-items: center;
         cursor: pointer;
@@ -65,74 +62,65 @@
       .bwbr-bgm-seekbar-rail {
         position: absolute;
         left: 0; right: 0;
-        height: 4px;
-        border-radius: 2px;
-        background: rgba(255,255,255,0.12);
-      }
-      .bwbr-bgm-seekbar-buffer {
-        position: absolute;
-        left: 0;
-        height: 4px;
-        border-radius: 2px;
-        background: rgba(144,202,249,0.2);
-        pointer-events: none;
-        transition: width 0.3s;
+        height: 2px;
+        border-radius: 1px;
+        background: rgba(255,255,255,0.3);
       }
       .bwbr-bgm-seekbar-track {
         position: absolute;
         left: 0;
-        height: 4px;
-        border-radius: 2px;
-        background: #90caf9;
+        height: 2px;
+        border-radius: 1px;
+        background: #3fa2f6;
         pointer-events: none;
       }
       .bwbr-bgm-seekbar-thumb {
         position: absolute;
-        width: 12px; height: 12px;
+        width: 14px; height: 14px;
         border-radius: 50%;
-        background: #90caf9;
+        background: #3fa2f6;
         transform: translate(-50%, -50%);
         top: 50%;
         pointer-events: none;
-        box-shadow: 0 0 0 0 rgba(144,202,249,0.2);
+        box-shadow: 0px 1px 3px rgba(0,0,0,0.4);
         transition: box-shadow 0.15s;
       }
       .bwbr-bgm-seekbar-wrap:hover .bwbr-bgm-seekbar-thumb,
       .bwbr-bgm-seekbar-wrap.seeking .bwbr-bgm-seekbar-thumb {
-        box-shadow: 0 0 0 6px rgba(144,202,249,0.2);
+        box-shadow: 0 0 0 8px rgba(63, 162, 246, 0.16);
       }
       .bwbr-bgm-time {
-        font-size: 11px;
-        color: rgba(255,255,255,0.5);
-        font-family: 'Roboto Mono', monospace;
+        font-size: 14px;
+        font-family: inherit;
+        color: rgba(255,255,255,0.85);
         white-space: nowrap;
-        min-width: 36px;
+        min-width: 40px;
         text-align: right;
         flex-shrink: 0;
         user-select: none;
+        line-height: 1;
       }
       .bwbr-bgm-loading {
-        font-size: 11px;
-        color: rgba(255,255,255,0.35);
+        font-size: 12px;
+        color: rgba(255,255,255,0.5);
         text-align: center;
         padding: 4px 0;
       }
       .bwbr-bgm-stop-btn {
-        width: 28px; height: 28px;
+        width: 24px; height: 24px;
         border: none; background: none;
         cursor: pointer; padding: 0;
         display: flex; align-items: center; justify-content: center;
-        color: rgba(255,255,255,0.4);
+        color: rgba(255,255,255,0.5);
         border-radius: 50%;
-        transition: background 0.15s, color 0.15s;
+        transition: color 0.15s;
         flex-shrink: 0;
       }
       .bwbr-bgm-stop-btn:hover {
-        background: rgba(255,255,255,0.08);
-        color: rgba(255,255,255,0.7);
+        color: #fff;
       }
       .bwbr-bgm-stop-btn svg {
-        width: 18px; height: 18px;
+        width: 14px; height: 14px;
         fill: currentColor;
       }
     `;
@@ -217,15 +205,12 @@
 
     const rail = document.createElement('div');
     rail.className = 'bwbr-bgm-seekbar-rail';
-    const buffer = document.createElement('div');
-    buffer.className = 'bwbr-bgm-seekbar-buffer';
     const track = document.createElement('div');
     track.className = 'bwbr-bgm-seekbar-track';
     const thumb = document.createElement('div');
     thumb.className = 'bwbr-bgm-seekbar-thumb';
 
     seekWrap.appendChild(rail);
-    seekWrap.appendChild(buffer);
     seekWrap.appendChild(track);
     seekWrap.appendChild(thumb);
 
@@ -263,12 +248,6 @@
         thumb.style.left = pct + '%';
       }
       timeEl.textContent = formatTime(cur) + ' / ' + formatTime(total);
-
-      // 버퍼 진행
-      if (_audio.buffered.length > 0) {
-        const buffEnd = _audio.buffered.end(_audio.buffered.length - 1);
-        buffer.style.width = Math.min(100, (buffEnd / total) * 100) + '%';
-      }
 
       if (!_audio.paused) {
         _rafId = requestAnimationFrame(updateUI);
