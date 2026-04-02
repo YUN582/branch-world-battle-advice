@@ -20,129 +20,92 @@
     style.textContent = `
       .bwbr-bgm-player {
         display: flex;
-        flex-direction: column;
-        gap: 2px;
+        align-items: center;
         margin: 8px 0 0 0;
         width: 100%;
         box-sizing: border-box;
-        background: rgba(255,255,255,0.05);
-        border-radius: 8px;
-        padding: 8px 10px 6px;
-      }
-      .bwbr-bgm-controls-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        width: 100%;
+        height: 34px;
       }
       .bwbr-bgm-play-btn {
-        width: 28px; height: 28px;
-        border: none;
-        border-radius: 50%;
-        background: #fff;
+        width: 24px; height: 24px;
+        border: none; background: none;
         cursor: pointer; padding: 0;
         display: flex; align-items: center; justify-content: center;
+        color: #fff;
         flex-shrink: 0;
-        transition: transform 0.2s cubic-bezier(0.4,0,0.2,1),
-                    box-shadow 0.2s cubic-bezier(0.4,0,0.2,1);
-      }
-      .bwbr-bgm-play-btn:hover {
-        transform: scale(1.06);
-        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-      }
-      .bwbr-bgm-play-btn:active {
-        transform: scale(0.97);
       }
       .bwbr-bgm-play-btn svg {
-        width: 16px; height: 16px;
-        fill: #121212;
-      }
-      .bwbr-bgm-play-btn svg.bwbr-svg-play {
-        margin-left: 2px;
+        width: 24px; height: 24px;
+        fill: currentColor;
       }
       .bwbr-bgm-seekbar-wrap {
         flex: 1;
-        height: 20px;
+        height: 28px;
         display: flex;
         align-items: center;
         cursor: pointer;
         position: relative;
         touch-action: none;
         user-select: none;
-        padding: 0;
+        padding: 13px 0;
+        margin: 0 8px;
       }
       .bwbr-bgm-seekbar-rail {
         position: absolute;
         left: 0; right: 0;
-        height: 3px;
-        border-radius: 2px;
-        background: rgba(255,255,255,0.12);
-        transition: height 0.15s cubic-bezier(0.4,0,0.2,1);
+        height: 2px;
+        border-radius: 12px;
+        background: rgba(33,150,243,0.38);
       }
       .bwbr-bgm-seekbar-buffer {
         position: absolute;
         left: 0;
-        height: 3px;
-        border-radius: 2px;
-        background: rgba(255,255,255,0.18);
+        height: 2px;
+        border-radius: 12px;
+        background: rgba(33,150,243,0.5);
         pointer-events: none;
-        transition: width 0.3s, height 0.15s cubic-bezier(0.4,0,0.2,1);
+        transition: width 0.3s;
       }
       .bwbr-bgm-seekbar-track {
         position: absolute;
         left: 0;
-        height: 3px;
-        border-radius: 2px;
+        height: 2px;
+        border-radius: 12px;
         background: #2196f3;
         pointer-events: none;
-        transition: height 0.15s cubic-bezier(0.4,0,0.2,1);
-      }
-      .bwbr-bgm-seekbar-wrap:hover .bwbr-bgm-seekbar-rail,
-      .bwbr-bgm-seekbar-wrap:hover .bwbr-bgm-seekbar-buffer,
-      .bwbr-bgm-seekbar-wrap:hover .bwbr-bgm-seekbar-track,
-      .bwbr-bgm-seekbar-wrap.seeking .bwbr-bgm-seekbar-rail,
-      .bwbr-bgm-seekbar-wrap.seeking .bwbr-bgm-seekbar-buffer,
-      .bwbr-bgm-seekbar-wrap.seeking .bwbr-bgm-seekbar-track {
-        height: 5px;
       }
       .bwbr-bgm-seekbar-thumb {
         position: absolute;
-        width: 10px; height: 10px;
+        width: 12px; height: 12px;
         border-radius: 50%;
-        background: #fff;
+        background: #2196f3;
         transform: translate(-50%, -50%);
         top: 50%;
         pointer-events: none;
-        opacity: 0;
-        transition: opacity 0.15s cubic-bezier(0.4,0,0.2,1);
-        box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+        transition: box-shadow 0.15s;
       }
       .bwbr-bgm-seekbar-wrap:hover .bwbr-bgm-seekbar-thumb,
       .bwbr-bgm-seekbar-wrap.seeking .bwbr-bgm-seekbar-thumb {
-        opacity: 1;
-      }
-      .bwbr-bgm-time-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        width: 100%;
-        padding: 0 2px;
+        box-shadow: 0 0 0 6px rgba(33,150,243,0.16);
       }
       .bwbr-bgm-time {
-        font-size: 10px;
+        font-size: 11px;
         color: rgba(255,255,255,0.5);
         font-family: 'Roboto Mono', monospace;
         white-space: nowrap;
+        min-width: 36px;
+        text-align: right;
+        flex-shrink: 0;
         user-select: none;
-        letter-spacing: 0.02em;
       }
       .bwbr-bgm-loading {
         font-size: 11px;
         color: rgba(255,255,255,0.35);
         text-align: center;
-        padding: 8px 0;
+        padding: 4px 0;
         width: 100%;
       }
+
     `;
     document.head.appendChild(style);
   }
@@ -156,7 +119,7 @@
     return m + ':' + (s < 10 ? '0' : '') + s;
   }
 
-  const SVG_PLAY = '<svg class="bwbr-svg-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+  const SVG_PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
   const SVG_PAUSE = '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
 
 
@@ -209,14 +172,14 @@
   function buildPlayerControls(player) {
     if (!_audio) return;
 
-    // Play/Pause 버튼 (Spotify 스타일 — 흰색 원형 배경, 다크 아이콘)
+    // Play/Pause 버튼 (볼륨 아이콘 위치와 동일한 24px 흰색)
     const playBtn = document.createElement('button');
     playBtn.className = 'bwbr-bgm-play-btn';
     playBtn.type = 'button';
     playBtn.innerHTML = SVG_PAUSE;
     playBtn.title = '일시정지';
 
-    // 시크바
+    // 시크바 (MUI 슬라이더와 동일한 레이아웃)
     const seekWrap = document.createElement('div');
     seekWrap.className = 'bwbr-bgm-seekbar-wrap';
 
@@ -234,27 +197,15 @@
     seekWrap.appendChild(track);
     seekWrap.appendChild(thumb);
 
-    // 컨트롤 행 (재생 버튼 + 시크바)
-    const controlsRow = document.createElement('div');
-    controlsRow.className = 'bwbr-bgm-controls-row';
-    controlsRow.appendChild(playBtn);
-    controlsRow.appendChild(seekWrap);
-
-    // 시간 행 (현재 시간 ↔ 총 시간)
-    const timeRow = document.createElement('div');
-    timeRow.className = 'bwbr-bgm-time-row';
-    const curTime = document.createElement('span');
-    curTime.className = 'bwbr-bgm-time';
-    curTime.textContent = '0:00';
-    const totalTime = document.createElement('span');
-    totalTime.className = 'bwbr-bgm-time';
+    // 시간 표시
+    const timeEl = document.createElement('span');
+    timeEl.className = 'bwbr-bgm-time';
     const dur = _audio.duration || 0;
-    totalTime.textContent = formatTime(dur);
-    timeRow.appendChild(curTime);
-    timeRow.appendChild(totalTime);
+    timeEl.textContent = '0:00 / ' + formatTime(dur);
 
-    player.appendChild(controlsRow);
-    player.appendChild(timeRow);
+    player.appendChild(playBtn);
+    player.appendChild(seekWrap);
+    player.appendChild(timeEl);
 
     // ── 상태 관리 ──
 
@@ -270,8 +221,7 @@
         track.style.width = pct + '%';
         thumb.style.left = pct + '%';
       }
-      curTime.textContent = formatTime(cur);
-      totalTime.textContent = formatTime(total);
+      timeEl.textContent = formatTime(cur) + ' / ' + formatTime(total);
 
       // 버퍼 진행
       if (_audio.buffered.length > 0) {
@@ -303,8 +253,7 @@
       track.style.width = '0%';
       thumb.style.left = '0%';
       _audio.currentTime = 0;
-      curTime.textContent = '0:00';
-      totalTime.textContent = formatTime(_audio.duration || 0);
+      timeEl.textContent = '0:00 / ' + formatTime(_audio.duration || 0);
       if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
     });
 
@@ -344,7 +293,7 @@
       track.style.width = (pct * 100) + '%';
       thumb.style.left = (pct * 100) + '%';
       if (_audio && isFinite(_audio.duration)) {
-        curTime.textContent = formatTime(pct * _audio.duration);
+        timeEl.textContent = formatTime(pct * _audio.duration) + ' / ' + formatTime(_audio.duration);
       }
     });
 
