@@ -182,10 +182,11 @@
 
     if (skipActionConsume) return;
 
-    if (flowState === STATE.TURN_COMBAT) {
+    // 전투 보조(TURN_COMBAT) 또는 관전 추적(_turnTrackingActive) 모드에서 행동 소비
+    if (flowState === STATE.TURN_COMBAT || _turnTrackingActive) {
       const mainMatch = /《[^》]+》/.test(text);
       const subMatch = /【[^】]+】/.test(text);
-      _alwaysLog(`[전투 보조] 패턴 검사: mainMatch(《》)=${mainMatch}, subMatch(【】)=${subMatch}`);
+      _alwaysLog(`[전투 보조] 패턴 검사: mainMatch(《》)=${mainMatch}, subMatch(【】)=${subMatch}, tracking=${_turnTrackingActive}`);
 
       if (mainMatch || subMatch) {
         const statLabel = mainMatch ? '주 행동🔺' : '보조 행동🔹';
@@ -195,9 +196,15 @@
         // 전투 개시/종료/차례 종료 패턴은 위에서 이미 return됨
         // 여기 도달 = 일반 《》 또는 【】 패턴
 
-        // 턴제에서는 항상 현재 차례 캐릭터에게 차감 (화자가 GM일 수 있으므로)
-        const curChar = combatEngine.getState()?.currentCharacter;
-        const targetName = curChar ? curChar.name : null;
+        // TURN_COMBAT: combatEngine에서 현재 차례 캐릭터
+        // 관전 추적: _currentTrackedTurn에서 현재 차례 캐릭터
+        let targetName;
+        if (flowState === STATE.TURN_COMBAT) {
+          const curChar = combatEngine.getState()?.currentCharacter;
+          targetName = curChar ? curChar.name : null;
+        } else if (_turnTrackingActive && _currentTrackedTurn) {
+          targetName = _currentTrackedTurn.name;
+        }
         if (!targetName) {
           _alwaysLog(`[전투 보조] 현재 차례 캐릭터 없음 — 행동 소비 생략`);
           return;
@@ -1932,6 +1939,8 @@
     getEngine: function () { return engine; },
     getCombatEngine: function () { return combatEngine; },
     getPaused: function () { return paused; },
+    isTrackingActive: function () { return _turnTrackingActive; },
+    getTrackedTurnName: function () { return _currentTrackedTurn ? _currentTrackedTurn.name : null; },
 
     // 입력/메시지 핸들러 (content.js 디스패처에서 호출)
     checkForCombatAssistTrigger: checkForCombatAssistTrigger,
