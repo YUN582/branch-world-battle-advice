@@ -6235,6 +6235,11 @@
     for (let j = 0; j < allItems.length; j++) {
       allItems[j].style.display = '';
     }
+    // HR/구분선도 초기화
+    const allHrs = msgList.querySelectorAll('hr, .MuiDivider-root');
+    for (let j = 0; j < allHrs.length; j++) {
+      allHrs[j].style.display = '';
+    }
 
     const state = reduxStore.getState();
     const rm = state.entities?.roomMessages;
@@ -6265,10 +6270,30 @@
     }
 
     // 4) 삭제된 메시지 숨김 (태깅 후이므로 올바른 아이템에 적용)
-    if (_mainDeletedMsgIds.size > 0) {
-      for (let i = 0; i < len; i++) {
-        if (_mainDeletedMsgIds.has(channelMsgs[i]._id)) {
-          allItems[i].style.display = 'none';
+    //    - _mainDeletedMsgIds: 이 세션에서 직접 삭제한 메시지
+    //    - text === '' && type === 'system': setDoc으로 삭제된 메시지 (다른 클라이언트 sync)
+    for (let i = 0; i < len; i++) {
+      const msg = channelMsgs[i];
+      const shouldHide = _mainDeletedMsgIds.has(msg._id)
+        || (msg.text === '' && msg.name === 'system' && msg.type === 'system');
+      if (shouldHide) {
+        allItems[i].style.display = 'none';
+        // 인접 구분선(HR/MuiDivider)도 숨김
+        const wrapper = allItems[i].parentElement;
+        if (wrapper) {
+          const nextEl = wrapper.nextElementSibling;
+          if (nextEl && (nextEl.tagName === 'HR' || nextEl.classList.contains('MuiDivider-root'))) {
+            nextEl.style.display = 'none';
+          }
+          const prevEl = wrapper.previousElementSibling;
+          if (prevEl && (prevEl.tagName === 'HR' || prevEl.classList.contains('MuiDivider-root'))) {
+            prevEl.style.display = 'none';
+          }
+        }
+        // ListItem 직접 인접 형제도 체크
+        const nextSib = allItems[i].nextElementSibling;
+        if (nextSib && (nextSib.tagName === 'HR' || nextSib.classList.contains('MuiDivider-root'))) {
+          nextSib.style.display = 'none';
         }
       }
     }
