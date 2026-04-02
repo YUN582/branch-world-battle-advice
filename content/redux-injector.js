@@ -6153,20 +6153,6 @@
   // ── MAIN world 삭제 추적 (onSnapshot 재삽입 방어) ──
   const _mainDeletedMsgIds = new Set();
 
-  // Redux에서 삭제된 메시지 제거 (반복 호출 안전)
-  function _purgeDeletedFromRedux() {
-    if (_mainDeletedMsgIds.size === 0 || !reduxStore) return;
-    try {
-      const rm = reduxStore.getState().entities?.roomMessages;
-      if (!rm || !rm.ids) return;
-      for (const delId of _mainDeletedMsgIds) {
-        const idx = rm.ids.indexOf(delId);
-        if (idx !== -1) rm.ids.splice(idx, 1);
-        if (rm.entities?.[delId]) delete rm.entities[delId];
-      }
-    } catch(e) { /* ignore */ }
-  }
-
   /**
    * bwbr-delete-message — 메시지 삭제 (Firestore deleteDoc)
    * payload: { msgId: string }
@@ -6223,21 +6209,18 @@
    * 2) 삭제 ID 포함한 전체 channelMsgs로 태깅 (DOM과 순서 일치)
    * 3) 태깅 후 삭제 ID를 가진 아이템만 display:none
    */
-  // ── CSS 기반 삭제 메시지 숨김 (플리커 제거) ──
+  // ── CSS 기반 삭제 메시지 숨김 (React 충돌 방지) ──
   let _hideStyleEl = null;
   function _updateHideCSS() {
-    // 삭제된 메시지 ID + setDoc 빈 메시지를 CSS로 항상 숨김
     if (!_hideStyleEl) {
       _hideStyleEl = document.createElement('style');
       _hideStyleEl.id = 'bwbr-hide-deleted-css';
       document.head.appendChild(_hideStyleEl);
     }
     const rules = [];
-    // _mainDeletedMsgIds (이 세션에서 삭제한 것)
     for (const id of _mainDeletedMsgIds) {
       rules.push(`[data-msg-id="${id}"]`);
     }
-    // setDoc 빈 메시지 (Redux에서 확인)
     if (reduxStore) {
       const rm = reduxStore.getState().entities?.roomMessages;
       if (rm && rm.ids) {
@@ -6256,8 +6239,8 @@
       return;
     }
     const sel = rules.join(',\n');
-    // ListItem 자체 숨김 + 인접 HR 숨김 (wrapper > ListItem 구조 대응)
-    _hideStyleEl.textContent = `${sel} { display: none !important; }\n${rules.map(r => `${r} + hr, ${r} + .MuiDivider-root`).join(',\n')} { display: none !important; }`;
+    // visibility:hidden + height:0 — React의 DOM 트리는 유지하되 시각적으로 숨김
+    _hideStyleEl.textContent = `${sel} { visibility: hidden !important; height: 0 !important; min-height: 0 !important; overflow: hidden !important; padding: 0 !important; margin: 0 !important; }\n${rules.map(r => `${r} + hr, ${r} + .MuiDivider-root`).join(',\n')} { visibility: hidden !important; height: 0 !important; min-height: 0 !important; overflow: hidden !important; padding: 0 !important; margin: 0 !important; }\n[data-bwbr-overflow="1"] { visibility: hidden !important; height: 0 !important; min-height: 0 !important; overflow: hidden !important; padding: 0 !important; margin: 0 !important; }`;
   }
 
   function _tagMessageItems() {
@@ -6295,11 +6278,12 @@
       item.setAttribute('data-msg-id', msg._id);
       item.setAttribute('data-msg-from', msg.from || '');
       item.setAttribute('data-msg-type', msg.type || 'text');
+      item.removeAttribute('data-bwbr-overflow');  // 정상 아이템은 overflow 제거
     }
 
-    // 초과 DOM 아이템 숨김 (channelMsgs < DOM인 경우)
+    // 초과 DOM 아이템 마킹 (inline style 대신 data 속성 + CSS)
     for (let i = len; i < allItems.length; i++) {
-      allItems[i].style.display = 'none';
+      allItems[i].setAttribute('data-bwbr-overflow', '1');
     }
 
     // CSS 기반 삭제 숨김 규칙 갱신
@@ -6358,12 +6342,14 @@
       });
     }
 
-    // 탭 전환 감지: tablist의 aria-selected 변경 시 재태깅
+    // 탭 전환 감지: tablist의 aria-selected 변경 시 즉시 재태깅
     const tablist = document.querySelector('[role="tablist"]');
     if (tablist) {
       new MutationObserver(() => {
-        if (_msgTagTimer) clearTimeout(_msgTagTimer);
-        _msgTagTimer = setTimeout(_tagMessageItems, 200);
+        // 탭 전환은 즉시 실행 (깜빡임 방지)
+        _tagMessageItems();
+        // rAF에서 한 번 더 (React 리렌더 직후 보장)
+        requestAnimationFrame(_tagMessageItems);
       }).observe(tablist, { attributes: true, subtree: true, attributeFilter: ['aria-selected'] });
     }
 
@@ -6376,7 +6362,7 @@
         _msgTagObserver.observe(currentList, { childList: true, subtree: true });
         _tagMessageItems();
       }
-    }, 2000);
+    }, 500);
 
     console.log('[CE] 메시지 DOM 태깅 시작');
   }
