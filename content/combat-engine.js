@@ -32,8 +32,8 @@ window.CombatEngine = class CombatEngine {
    * @returns {boolean}
    */
   parseCombatStartTrigger(text) {
-    // 《 전투개시 》 또는 《 전투 개시 》 (뒤에 @컷인 가능)
-    const pattern = /《\s*전투\s*개시\s*》/;
+    // ―――⫶⫶⫶ 전투 개시 ⫶⫶⫶―――
+    const pattern = /―{3}⫶{3}\s*전투\s*개시\s*⫶{3}―{3}/;
     return pattern.test(text);
   }
 
@@ -43,8 +43,8 @@ window.CombatEngine = class CombatEngine {
    * @returns {boolean}
    */
   parseTurnEndTrigger(text) {
-    // 《 차례 종료 》 또는 《 차례종료 》 (뒤에 @컷인 가능)
-    const pattern = /《\s*차례\s*종료\s*》/;
+    // ―――⫶⫶⫶ 차례 종료 ⫶⫶⫶―――
+    const pattern = /―{3}⫶{3}\s*차례\s*종료\s*⫶{3}―{3}/;
     return pattern.test(text);
   }
 
@@ -54,8 +54,8 @@ window.CombatEngine = class CombatEngine {
    * @returns {boolean}
    */
   parseTurnRevertTrigger(text) {
-    // 《 이전 차례 》 또는 《 이전차례 》 (뒤에 @컷인 가능)
-    const pattern = /《\s*이전\s*차례\s*》/;
+    // ―――⫶⫶⫶ 이전 차례 ⫶⫶⫶―――
+    const pattern = /―{3}⫶{3}\s*이전\s*차례\s*⫶{3}―{3}/;
     return pattern.test(text);
   }
 
@@ -65,8 +65,8 @@ window.CombatEngine = class CombatEngine {
    * @returns {boolean}
    */
   parseCombatEndTrigger(text) {
-    // 《 전투종료 》 또는 《 전투 종료 》 (뒤에 @컷인 가능)
-    const pattern = /《\s*전투\s*종료\s*》/;
+    // ―――⫶⫶⫶ 전투 종료 ⫶⫶⫶―――
+    const pattern = /―{3}⫶{3}\s*전투\s*종료\s*⫶{3}―{3}/;
     return pattern.test(text);
   }
 
@@ -142,8 +142,9 @@ window.CombatEngine = class CombatEngine {
    * @returns {boolean}
    */
   parseMainActionRoll(text) {
-    // 제외 패턴: 시스템 메시지 (차례, 전투개시, 전투종료, 차례종료, 행동 소비/추가, 합 개시/승리/종료)
-    if (/[《〔]\s*[\u{1F53A}\u{1F539}]?\s*(전투\s*개시|전투\s*종료|차례\s*종료|.+의\s*차례|(주|보조)\s*행동\s*(소비|추가)|합\s*개시|합\s*승리|합\s*종료|\d+합)\s*[》〕]/u.test(text)) {
+    // 제외 패턴: ⫶⫶⫶ 전투 명령, 시스템 메시지 (차례, 행동 소비/추가, 합 개시/승리/종료)
+    if (/―{3}⫶{3}/.test(text)) return false;
+    if (/[《〔]\s*[\u{1F53A}\u{1F539}]?\s*(.+의\s*차례|(주|보조)\s*행동\s*(소비|추가)|합\s*개시|합\s*승리|합\s*종료|\d+합)\s*[》〕]/u.test(text)) {
       return false;
     }
     
@@ -289,7 +290,7 @@ window.CombatEngine = class CombatEngine {
       .map((c, i) => `${i + 1}. ${c.name} (이니셔티브 ${c.initiative})`)
       .join('\n');
     
-    return `《 전투 개시 》\n\n▶ 차례 순서:\n${orderList}`;
+    return `―――⫶⫶⫶ 전투 개시 ⫶⫶⫶―――\n\n▶ 차례 순서:\n${orderList}`;
   }
 
   // ── 차례 관리 ───────────────────────────────────────────
@@ -539,7 +540,7 @@ window.CombatEngine = class CombatEngine {
 
     return {
       success: true,
-      message: '《 전투 종료 》'
+      message: '―――⫶⫶⫶ 전투 종료 ⫶⫶⫶―――'
     };
   }
 
