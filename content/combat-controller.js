@@ -180,6 +180,18 @@
       return;
     }
 
+    if (flowState === STATE.TURN_COMBAT && combatEngine.parseTurnRevertTrigger && combatEngine.parseTurnRevertTrigger(text)) {
+      const now = Date.now();
+      if (now - _lastTurnAdvanceTime < 1000) {
+        _log('[전투 보조] 차례 되돌리기 중복 감지 — 무시');
+        return;
+      }
+      _lastTurnAdvanceTime = now;
+      _log('[전투 보조] 차례되돌리기 트리거 감지!');
+      revertTurn();
+      return;
+    }
+
     if (skipActionConsume) return;
 
     // 전투 보조(TURN_COMBAT) 또는 관전 추적(_turnTrackingActive) 모드에서 행동 소비
@@ -249,6 +261,17 @@
       }
       _lastTurnAdvanceTime = now;
       advanceTurn();
+      return;
+    }
+
+    if (combatEngine.parseTurnRevertTrigger && combatEngine.parseTurnRevertTrigger(text)) {
+      const now = Date.now();
+      if (now - _lastTurnAdvanceTime < 1000) {
+        _log('[전투 보조] 차례 되돌리기 중복 감지 — 무시');
+        return;
+      }
+      _lastTurnAdvanceTime = now;
+      revertTurn();
       return;
     }
 
@@ -343,6 +366,19 @@
     if (!nextChar) {
       _log('모든 캐릭터 턴 완료, 처음으로 돌아감');
     }
+    sendTurnStartMessage();
+  }
+
+  function revertTurn() {
+    if (flowState !== STATE.TURN_COMBAT) return;
+
+    const prevChar = combatEngine.previousTurn();
+    if (!prevChar || !prevChar.success) {
+      _log('[전투 보조] 차례 되돌리기 실패');
+      return;
+    }
+    _alwaysLog(`[전투 보조] ⏪ 차례 되돌림: ${prevChar.turn.name}`);
+    overlay.addLog(`⏪ ${prevChar.turn.name}의 차례로 되돌림`, 'warning');
     sendTurnStartMessage();
   }
 
@@ -569,7 +605,12 @@
             _saveTurnCombatState();
           }
         }
-        combatEngine.refreshOriginalData(characters);
+        const changes = combatEngine.refreshOriginalData(characters);
+        // 이름/아이콘 변경 시 상태 저장 및 UI 반영
+        if (changes && changes.length > 0) {
+          _alwaysLog(`[전투 보조] 캐릭터 변경 감지: ${changes.map(c => c.type === 'name' ? `${c.old}→${c.new}` : `${c.name} 아이콘`).join(', ')}`);
+          _saveTurnCombatState();
+        }
       }
     } catch (e) {
       _alwaysLog(`[전투 보조] 캐릭터 데이터 갱신 실패: ${e.message}`);
@@ -1951,6 +1992,7 @@
     // 전투 제어
     cancelCombat: cancelCombat,
     togglePause: togglePause,
+    revertTurn: revertTurn,
     tryRestore: function () { return _tryRestoreTurnCombat(); },
 
     // 설정/상태 관리

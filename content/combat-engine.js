@@ -49,6 +49,17 @@ window.CombatEngine = class CombatEngine {
   }
 
   /**
+   * 차례 되돌리기 트리거 감지
+   * @param {string} text - 채팅 메시지 텍스트
+   * @returns {boolean}
+   */
+  parseTurnRevertTrigger(text) {
+    // 《 차례 되돌리기 》 또는 《 차례되돌리기 》 (뒤에 @컷인 가능)
+    const pattern = /《\s*차례\s*되돌리기\s*》/;
+    return pattern.test(text);
+  }
+
+  /**
    * 전투 종료 트리거 감지
    * @param {string} text - 채팅 메시지 텍스트
    * @returns {boolean}
@@ -320,6 +331,37 @@ window.CombatEngine = class CombatEngine {
   }
 
   /**
+   * 이전 차례로 되돌리기
+   * @returns {object} { success, turn, message }
+   */
+  previousTurn() {
+    if (!this.inCombat || this.turnOrder.length === 0) {
+      return { success: false, message: '전투가 진행 중이 아닙니다.' };
+    }
+
+    this.currentTurnIndex--;
+
+    // 첫 번째 캐릭터에서 되돌리면 마지막으로
+    if (this.currentTurnIndex < 0) {
+      this.currentTurnIndex = this.turnOrder.length - 1;
+    }
+
+    this.currentTurn = this.turnOrder[this.currentTurnIndex];
+
+    // 행동 리셋 (되돌린 차례 시작)
+    this.currentTurn.mainActions = this.currentTurn.mainActionsMax;
+    this.currentTurn.subActions = this.currentTurn.subActionsMax;
+
+    this._log(`${this.currentTurn.name}의 차례로 되돌림`);
+
+    return {
+      success: true,
+      turn: this.currentTurn,
+      message: this._formatTurnMessage()
+    };
+  }
+
+  /**
    * 현재 차례 메시지 포맷
    */
   _formatTurnMessage() {
@@ -560,13 +602,30 @@ window.CombatEngine = class CombatEngine {
    */
   refreshOriginalData(characters) {
     if (!characters || !this.turnOrder) return;
+    const changes = [];
     for (const entry of this.turnOrder) {
-      const fresh = characters.find(c => c._id === entry.id || c.name === entry.name);
+      const fresh = characters.find(c => c._id === entry.id);
       if (fresh) {
+        // 이름 변경 감지 및 동기화
+        if (fresh.name && fresh.name !== entry.name) {
+          const oldName = entry.name;
+          entry.name = fresh.name;
+          changes.push({ type: 'name', old: oldName, new: fresh.name });
+        }
+        // 아이콘 변경 감지 및 동기화
+        if (fresh.iconUrl !== undefined && fresh.iconUrl !== entry.iconUrl) {
+          entry.iconUrl = fresh.iconUrl;
+          changes.push({ type: 'icon', name: entry.name });
+        }
         entry.originalData = fresh;
       }
     }
-    this._log('originalData 갱신 완료');
+    if (changes.length > 0) {
+      this._log(`originalData 갱신 완료 (변경: ${changes.map(c => c.type === 'name' ? `${c.old}→${c.new}` : `${c.name} 아이콘`).join(', ')})`);
+    } else {
+      this._log('originalData 갱신 완료');
+    }
+    return changes;
   }
 
   /**
@@ -579,10 +638,9 @@ window.CombatEngine = class CombatEngine {
     if (!characters || !this.turnOrder || !this.inCombat) return [];
 
     const existingIds = new Set(this.turnOrder.map(e => e.id));
-    const existingNames = new Set(this.turnOrder.map(e => e.name));
 
     const newChars = characters.filter(c =>
-      c.active !== false && !existingIds.has(c._id) && !existingNames.has(c.name)
+      c.active !== false && !existingIds.has(c._id)
     );
 
     if (newChars.length === 0) return [];
