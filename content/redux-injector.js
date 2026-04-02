@@ -6447,20 +6447,6 @@
       if (nextSib && (nextSib.tagName === 'HR' || nextSib.classList.contains('MuiDivider-root'))) {
         nextSib.style.display = shouldHide ? 'none' : '';
       }
-      // 메시지 그룹핑: 이전 표시 메시지와 같은 from+name이면 continuation
-      if (shouldHide) {
-        item.setAttribute('data-msg-group', 'hidden');
-      } else {
-        let isGroupCont = false;
-        if (i > 0 && msg.type === 'text') {
-          const prevMsg = channelMsgs[i - 1];
-          const prevHidden = prevMsg.type === 'system' && prevMsg.name === 'system' && prevMsg.text === '';
-          if (!prevHidden && prevMsg.type === 'text' && prevMsg.from === msg.from && prevMsg.name === msg.name) {
-            isGroupCont = true;
-          }
-        }
-        item.setAttribute('data-msg-group', isGroupCont ? 'cont' : 'start');
-      }
     }
 
     // 5) 초과 DOM 아이템 숨김 (channelMsgs < DOM인 경우)
@@ -6469,36 +6455,6 @@
       const nextSib = allItems[i].nextElementSibling;
       if (nextSib && (nextSib.tagName === 'HR' || nextSib.classList.contains('MuiDivider-root'))) {
         nextSib.style.display = 'none';
-      }
-    }
-
-    // 6) 그룹 continuation 구분선 숨김 — ListItem이 래퍼 div 안에 있을 수 있으므로
-    //    parentElement를 거슬러 올라가며 HR을 찾음
-    for (let i = 0; i < len; i++) {
-      const group = allItems[i].getAttribute('data-msg-group');
-      if (group === 'cont') {
-        let el = allItems[i];
-        for (let up = 0; up < 4; up++) {
-          const prev = el.previousElementSibling;
-          if (prev && (prev.tagName === 'HR' || prev.classList.contains('MuiDivider-root'))) {
-            prev.style.display = 'none';
-            break;
-          }
-          if (el.parentElement && el.parentElement !== msgList) el = el.parentElement;
-          else break;
-        }
-      } else if (group === 'start') {
-        // start 앞의 구분선은 복원 (hidden 메시지에 의해 숨겨진 것은 제외)
-        let el = allItems[i];
-        for (let up = 0; up < 4; up++) {
-          const prev = el.previousElementSibling;
-          if (prev && (prev.tagName === 'HR' || prev.classList.contains('MuiDivider-root'))) {
-            if (prev.style.display === 'none') prev.style.display = '';
-            break;
-          }
-          if (el.parentElement && el.parentElement !== msgList) el = el.parentElement;
-          else break;
-        }
       }
     }
 

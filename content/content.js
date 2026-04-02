@@ -1558,9 +1558,92 @@ ${rows.join('\n')}
     }
   }
 
-  // ── 메시지 스타일 변경 (시스템 가운데정렬 + 연속 메시지 그룹핑) ──
+  // ── 메시지 스타일 변경 (시스템 가운데정렬 + 마크다운 렌더링) ──
   const _MSG_STYLE_ID = 'bwbr-message-style-css';
+  let _msgStyleEnabled = false;
+
+  // 마크다운 파서: 텍스트 → HTML
+  // 지원 문법: **굵게**, *기울임*, __밑줄__, ~~취소선~~, `코드`,
+  //   (텍스트|#색상코드), (텍스트|툴팁:내용), (텍스트|루비:루비문자),
+  //   # 크기1, ## 크기2, ### 크기3
+  function _parseMarkdown(text) {
+    // HTML 이스케이프
+    let s = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    // 헤딩 (줄 시작): ### → h5(1.1em), ## → h4(1.3em), # → h3(1.5em)
+    s = s.replace(/^### (.+)$/gm, '<span style="font-size:1.1em;font-weight:700">$1</span>');
+    s = s.replace(/^## (.+)$/gm, '<span style="font-size:1.3em;font-weight:700">$1</span>');
+    s = s.replace(/^# (.+)$/gm, '<span style="font-size:1.5em;font-weight:700">$1</span>');
+
+    // (텍스트|루비:루비문자)
+    s = s.replace(/\(([^|)]+)\|루비:([^)]+)\)/g, '<ruby>$1<rp>(</rp><rt>$2</rt><rp>)</rp></ruby>');
+
+    // (텍스트|툴팁:툴팁내용)
+    s = s.replace(/\(([^|)]+)\|툴팁:([^)]+)\)/g, '<span class="bwbr-md-tooltip" title="$2" style="border-bottom:1px dotted currentColor;cursor:help">$1</span>');
+
+    // (텍스트|#색상코드) — 6자리 hex만 허용 (XSS 방지)
+    s = s.replace(/\(([^|)]+)\|#([0-9a-fA-F]{6})\)/g, '<span style="color:#$2">$1</span>');
+    // (텍스트|#3자리 hex)
+    s = s.replace(/\(([^|)]+)\|#([0-9a-fA-F]{3})\)/g, '<span style="color:#$2">$1</span>');
+
+    // `코드`
+    s = s.replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.1);padding:1px 4px;border-radius:3px;font-family:monospace;font-size:0.9em">$1</code>');
+
+    // **굵게**
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+    // *기울임* (단일 — **와 충돌 방지를 위해 ** 처리 후)
+    s = s.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>');
+
+    // __밑줄__
+    s = s.replace(/__([^_]+)__/g, '<span style="text-decoration:underline">$1</span>');
+
+    // ~~취소선~~
+    s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+
+    return s;
+  }
+
+  // 마크다운이 포함된 텍스트인지 빠른 검사
+  function _hasMarkdown(text) {
+    return /\*\*|(?<!\*)\*[^*]|__|~~|`[^`]+`|\([^|)]+\|[#루툴]|^#{1,3} /m.test(text);
+  }
+
+  // DOM에 마크다운 적용
+  function _applyMarkdownToMessages() {
+    if (!_msgStyleEnabled) return;
+    const items = document.querySelectorAll('.MuiListItem-root[data-msg-id]');
+    for (const item of items) {
+      if (item.style.display === 'none') continue;
+      const textEl = item.querySelector('.MuiListItemText-secondary');
+      if (!textEl) continue;
+      // 이미 처리된 요소 스킵
+      if (textEl.getAttribute('data-bwbr-md') === '1') continue;
+      const raw = textEl.textContent || '';
+      if (!_hasMarkdown(raw)) {
+        textEl.setAttribute('data-bwbr-md', '1');
+        continue;
+      }
+      const html = _parseMarkdown(raw);
+      textEl.innerHTML = html;
+      textEl.setAttribute('data-bwbr-md', '1');
+    }
+  }
+
+  // 마크다운 해제: innerHTML → textContent 복원
+  function _removeMarkdownFromMessages() {
+    const items = document.querySelectorAll('.MuiListItemText-secondary[data-bwbr-md]');
+    for (const item of items) {
+      item.removeAttribute('data-bwbr-md');
+      // React가 다음 리렌더 시 자동 복원하므로, 수동 textContent 복원 불필요
+    }
+  }
+
   function _applyMessageStyle(enabled) {
+    _msgStyleEnabled = enabled;
     let styleEl = document.getElementById(_MSG_STYLE_ID);
     if (enabled) {
       if (!styleEl) {
@@ -1578,22 +1661,22 @@ ${rows.join('\n')}
   display: none !important;
 }
 
-/* CE 메시지 스타일: 연속 메시지 그룹핑 */
-.MuiListItem-root[data-msg-group="cont"] .MuiListItemAvatar-root {
-  visibility: hidden !important;
-}
-.MuiListItem-root[data-msg-group="cont"] .MuiListItemText-primary {
-  display: none !important;
-}
-.MuiListItem-root[data-msg-group="cont"] {
-  padding-top: 0px !important;
-  margin-top: -4px !important;
+/* CE 마크다운 루비 */
+.MuiListItemText-secondary ruby rt {
+  font-size: 0.6em;
+  color: rgba(255,255,255,0.7);
 }
 `;
         document.head.appendChild(styleEl);
       }
+      // 기존 메시지에 마크다운 적용
+      _applyMarkdownToMessages();
+      // 태깅 완료 이벤트에 마크다운 적용 연결
+      document.addEventListener('bwbr-tags-applied', _applyMarkdownToMessages);
     } else {
       if (styleEl) styleEl.remove();
+      _removeMarkdownFromMessages();
+      document.removeEventListener('bwbr-tags-applied', _applyMarkdownToMessages);
     }
   }
 
