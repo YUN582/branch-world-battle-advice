@@ -6446,7 +6446,15 @@
       item.setAttribute('data-msg-type', msg.type || 'text');
     }
 
-    // 4) 초과 DOM 아이템 숨김 (channelMsgs < DOM인 경우)
+    // 4) CE가 비운 메시지 숨김 (text==='' && name==='system' && type==='system')
+    for (let i = 0; i < len; i++) {
+      const msg = channelMsgs[i];
+      if (msg.type === 'system' && msg.name === 'system' && msg.text === '') {
+        allItems[i].style.display = 'none';
+      }
+    }
+
+    // 5) 초과 DOM 아이템 숨김 (channelMsgs < DOM인 경우)
     for (let i = len; i < allItems.length; i++) {
       allItems[i].style.display = 'none';
     }
