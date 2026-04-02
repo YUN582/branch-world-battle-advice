@@ -1715,6 +1715,74 @@ ${rows.join('\n')}
     }
   }
 
+  // ── 채팅 커맨드 도움말에 마크다운 섹션 주입 ──
+  const _MD_HELP_MARKER = 'bwbr-md-help';
+  let _helpDialogObserver = null;
+
+  function _injectMarkdownHelp() {
+    // role="dialog" 인 MuiPaper 찾기
+    const dialogs = document.querySelectorAll('[role="dialog"]');
+    for (const dlg of dialogs) {
+      const content = dlg.querySelector('.MuiDialogContent-root');
+      if (!content) continue;
+      const title = dlg.querySelector('.MuiDialogTitle-root');
+      if (!title || !title.textContent.includes('채팅 커맨드')) continue;
+      // 이미 주입됐으면 스킵
+      if (content.querySelector('.' + _MD_HELP_MARKER)) continue;
+
+      // 구분선
+      const hr = document.createElement('hr');
+      hr.className = 'MuiDivider-root MuiDivider-fullWidth';
+      hr.style.margin = '16px 0';
+      hr.setAttribute('role', 'separator');
+
+      // 제목
+      const h6 = document.createElement('h6');
+      h6.className = 'MuiTypography-root MuiTypography-h6 MuiTypography-gutterBottom';
+      h6.textContent = '마크다운 서식 (CE 확장)';
+      h6.classList.add(_MD_HELP_MARKER);
+
+      // 본문
+      const p = document.createElement('p');
+      p.className = 'MuiTypography-root MuiTypography-body2';
+      p.style.cssText = 'word-break:break-all;white-space:pre-wrap;';
+      p.innerHTML = [
+        '<strong>**굵게**</strong>',
+        '<em>*기울임*</em>',
+        '<span style="text-decoration:underline">__밑줄__</span>',
+        '<del>~~취소선~~</del>',
+        '<code style="background:rgba(255,255,255,0.1);padding:1px 4px;border-radius:3px">`코드`</code>',
+        '',
+        '<span style="color:#FF6B6B">(텍스트|#FF6B6B)</span> — 색상 변경 (3~6자리 HEX)',
+        '<ruby>텍스트<rp>(</rp><rt>루비</rt><rp>)</rp></ruby> — (텍스트|루비:루비)',
+        '<span style="border-bottom:1px dotted currentColor;cursor:help">텍스트</span> — (텍스트|툴팁:설명)',
+        '',
+        '<span style="font-size:1.5em;font-weight:700"># 크기 1</span>',
+        '<span style="font-size:1.3em;font-weight:700">## 크기 2</span>',
+        '<span style="font-size:1.1em;font-weight:700">### 크기 3</span>',
+        '',
+        '단축키: Ctrl+B 굵게, Ctrl+I 기울임, Ctrl+U 밑줄, Ctrl+D 취소선',
+        '',
+        '※ 설정 &gt; 일반 &gt; "메시지 스타일 변경" 토글 필요',
+      ].join('<br>');
+
+      content.appendChild(hr);
+      content.appendChild(h6);
+      content.appendChild(p);
+    }
+  }
+
+  // 도움말 다이얼로그 열림 감지 — body 에 MutationObserver
+  function _startHelpDialogWatch() {
+    if (_helpDialogObserver) return;
+    _helpDialogObserver = new MutationObserver(() => {
+      _injectMarkdownHelp();
+    });
+    _helpDialogObserver.observe(document.body, { childList: true, subtree: false });
+  }
+  // 초기화 시 한 번 호출
+  _startHelpDialogWatch();
+
   /**
    * 코코포리아의 네이티브 MUI 음량 슬라이더를 숨기고,
    * 동일 위치에 렉 없는 경량 슬라이더로 교체합니다.
