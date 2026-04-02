@@ -6215,7 +6215,11 @@
   const _mainDeletedMsgIds = new Set();
 
   /**
-   * bwbr-delete-message — 메시지 삭제 (Firestore deleteDoc)
+   * bwbr-delete-message — 메시지 삭제 (소프트 디리트: 빈 시스템 메시지로 전환)
+   * 실제 삭제가 아니라 Firestore 문서를 빈 시스템으로 변환하여
+   * 다른 클라이언트에도 onSnapshot ‘modified’ 이벤트가 전파되게 함.
+   * 모든 CE 클라이언트의 _updateHideCSS()가 빈 시스템 메시지를 감지→CSS 숨김.
+   *
    * payload: { msgId: string }
    * response: bwbr-delete-message-result { success, msgId, error? }
    */
@@ -6244,14 +6248,21 @@
       const msgCol = sdk.collection(sdk.db, 'rooms', roomId, 'messages');
       const msgRef = sdk.doc(msgCol, msgId);
 
-      await sdk.deleteDoc(msgRef);
+      // 소프트 디리트: 빈 시스템 메시지로 전환
+      // • deleteDoc은 ccfolia onSnapshot이 ‘removed’를 Redux에 반영 안 함 → 다른 PL에게 전파 안 됨
+      // • setDoc merge는 ‘modified’ 이벤트 → 모든 클라이언트 Redux 반영 → React 리렌더 → CSS 숨김
+      await sdk.setDoc(msgRef, {
+        text: '',
+        type: 'system',
+        name: 'system',
+        iconUrl: ''
+      }, { merge: true });
 
-      // MAIN world 삭제 추적 Set에 등록
+      // MAIN world 삭제 추적 Set에 등록 (로컬 즉시 숨김)
       _mainDeletedMsgIds.add(msgId);
 
-      // CSS 즉시 갱신 → 해당 아이템 즉시 숨김 (태깅은 별도)
+      // CSS 즉시 갱신 → 해당 아이템 즉시 숨김
       _updateHideCSS();
-      _tagMessageItems();
 
       respond({ success: true, msgId });
     } catch (err) {
@@ -6301,7 +6312,9 @@
     }
     const sel = rules.join(',\n');
     // visibility:hidden + height:0 — React의 DOM 트리는 유지하되 시각적으로 숨김
-    _hideStyleEl.textContent = `${sel} { visibility: hidden !important; height: 0 !important; min-height: 0 !important; overflow: hidden !important; padding: 0 !important; margin: 0 !important; }\n${rules.map(r => `${r} + hr, ${r} + .MuiDivider-root`).join(',\n')} { visibility: hidden !important; height: 0 !important; min-height: 0 !important; overflow: hidden !important; padding: 0 !important; margin: 0 !important; }\n[data-bwbr-overflow="1"] { visibility: hidden !important; height: 0 !important; min-height: 0 !important; overflow: hidden !important; padding: 0 !important; margin: 0 !important; }`;
+    // overflow 아이템은 숨기지 않음 — 스크롤 시 DOM 불일치로 height:0 토글되면 목록 들썩임 발생
+    const hide = `{ visibility: hidden !important; height: 0 !important; min-height: 0 !important; overflow: hidden !important; padding: 0 !important; margin: 0 !important; }`;
+    _hideStyleEl.textContent = `${sel} ${hide}\n${rules.map(r => `${r} + hr, ${r} + .MuiDivider-root`).join(',\n')} ${hide}`;
   }
 
   function _tagMessageItems() {
