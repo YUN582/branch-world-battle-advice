@@ -13,6 +13,16 @@
   'use strict';
 
   // ============================================================
+  //  Debug log (gated by _BWBR_DEBUG)
+  // ============================================================
+  function _log() {
+    if (!window._BWBR_DEBUG) return;
+    var args = ['%c[CE MS]%c', 'color:#2196f3;font-weight:bold', 'color:inherit'];
+    for (var i = 0; i < arguments.length; i++) args.push(arguments[i]);
+    console.log.apply(console, args);
+  }
+
+  // ============================================================
   //  Constants
   // ============================================================
   var NATIVE_CELL = 24;       // ccfolia 1 grid unit = 24px
@@ -389,7 +399,7 @@
     var intersecting = movables.filter(function (el) {
       return rectsIntersect(sRect, el.getBoundingClientRect());
     });
-    console.log('[CE MS] processSelection modifier=' + modifier + ' intersecting=' + intersecting.length + '/' + movables.length);
+    _log('processSelection modifier=' + modifier + ' intersecting=' + intersecting.length + '/' + movables.length);
     if (intersecting.length === 0) return;
 
     // 스크린(alt) → roomItems만, 마커(ctrl) → markers만, 전체(ctrlalt) → 둘 다
@@ -401,10 +411,10 @@
     fetchPromise.then(function (items) {
       var screenCount = 0, markerCount = 0;
       items.forEach(function (it) { if (it._source === 'marker') markerCount++; else screenCount++; });
-      console.log('[CE MS] 데이터: 스크린=' + screenCount + ' 마커=' + markerCount);
+      _log('데이터: 스크린=' + screenCount + ' 마커=' + markerCount);
 
       var matchMap = matchMovablesToItems(intersecting, items);
-      console.log('[CE MS] 매칭 결과: ' + matchMap.size + '/' + intersecting.length);
+      _log('매칭 결과: ' + matchMap.size + '/' + intersecting.length);
 
       // 매칭 실패 디버그
       if (matchMap.size < intersecting.length) {
@@ -413,7 +423,7 @@
             var uel = intersecting[di];
             var uPos = extractTransform(uel);
             var uImg = normalizeStoragePath(extractImageUrl(uel));
-            console.log('[CE MS] ❌ 미매칭 DOM[' + di + '] pos=(' +
+            _log('❌ 미매칭 DOM[' + di + '] pos=(' +
               Math.round(uPos.x / NATIVE_CELL) + ',' + Math.round(uPos.y / NATIVE_CELL) +
               ') size=' + uel.offsetWidth + 'x' + uel.offsetHeight +
               ' img=' + (uImg ? uImg.slice(-30) : 'NONE'));
@@ -426,7 +436,7 @@
         _selectedItems.set(el, item);
         highlightEl(el, item._source === 'marker' ? 'plane' : 'object');
       });
-      console.log('[CE MS] 최종: ' + _selectedItems.size + '개 선택됨');
+      _log('최종: ' + _selectedItems.size + '개 선택됨');
     });
   }
 
@@ -644,7 +654,7 @@
     if (s.screenIds.length) promises.push(batchOp('lock', s.screenIds));
     if (s.markerIds.length) promises.push(markerBatchOp('lock', s.markerIds));
     Promise.all(promises).then(function () {
-      console.log('[CE MS] 위치 고정 전환 (스크린:' + s.screenIds.length + ' 마커:' + s.markerIds.length + ')');
+      _log('위치 고정 전환 (스크린:' + s.screenIds.length + ' 마커:' + s.markerIds.length + ')');
       _selectedItems.forEach(function (item) { item.locked = !item.locked; });
     }).catch(function (e) { console.error('[CE MS] lock:', e); });
   }
@@ -654,7 +664,7 @@
     var s = getSelectedIdsBySource();
     if (!s.markerIds.length) return;
     markerBatchOp('freeze', s.markerIds).then(function () {
-      console.log('[CE MS] 크기 고정 전환 마커:' + s.markerIds.length);
+      _log('크기 고정 전환 마커:' + s.markerIds.length);
       _selectedItems.forEach(function (item) {
         if (item._source === 'marker') item.freezed = !item.freezed;
       });
@@ -666,7 +676,7 @@
     var s = getSelectedIdsBySource();
     if (!s.screenIds.length) return;
     batchOp('toggleActive', s.screenIds).then(function () {
-      console.log('[CE MS] ' + s.screenIds.length + '개 활성 전환');
+      _log(s.screenIds.length + '개 활성 전환');
       clearSelection();
     }).catch(function (e) { console.error('[CE MS] active:', e); });
   }
@@ -674,11 +684,11 @@
   function doBatchVisibility(mode) {
     // 마커에는 visible/closed/withoutOwner 없음 → 스크린만
     var s = getSelectedIdsBySource();
-    console.log('[CE MS] doBatchVisibility mode=' + mode + ' screenIds=' + s.screenIds.length +
+    _log('doBatchVisibility mode=' + mode + ' screenIds=' + s.screenIds.length +
       ' markerIds=' + s.markerIds.length + ' ids:', s.screenIds);
-    if (!s.screenIds.length) { console.warn('[CE MS] 가시성 변경 대상 스크린 없음'); return; }
+    if (!s.screenIds.length) { _log('가시성 변경 대상 스크린 없음'); return; }
     batchOp('setVisibility', s.screenIds, { mode: mode }).then(function (res) {
-      console.log('[CE MS] 가시성 결과:', res);
+      _log('가시성 결과:', res);
     }).catch(function (e) { console.error('[CE MS] visibility:', e); });
   }
 
@@ -688,7 +698,7 @@
     if (s.screenIds.length) promises.push(batchOp('rotate', s.screenIds, { angle: angle }));
     // 마커 회전은 미지원
     Promise.all(promises).then(function () {
-      console.log('[CE MS] 회전 ' + angle + '°');
+      _log('회전 ' + angle + '°');
     }).catch(function (e) { console.error('[CE MS] rotate:', e); });
   }
 
@@ -698,7 +708,7 @@
     if (s.screenIds.length) promises.push(batchOp('duplicate', s.screenIds));
     if (s.markerIds.length) promises.push(markerBatchOp('duplicate', s.markerIds));
     Promise.all(promises).then(function () {
-      console.log('[CE MS] 복제 (스크린:' + s.screenIds.length + ' 마커:' + s.markerIds.length + ')');
+      _log('복제 (스크린:' + s.screenIds.length + ' 마커:' + s.markerIds.length + ')');
       clearSelection();
     }).catch(function (e) { console.error('[CE MS] duplicate:', e); });
   }
@@ -709,7 +719,7 @@
     if (s.screenIds.length) promises.push(batchOp('delete', s.screenIds));
     if (s.markerIds.length) promises.push(markerBatchOp('delete', s.markerIds));
     Promise.all(promises).then(function () {
-      console.log('[CE MS] 삭제 (스크린:' + s.screenIds.length + ' 마커:' + s.markerIds.length + ')');
+      _log('삭제 (스크린:' + s.screenIds.length + ' 마커:' + s.markerIds.length + ')');
       clearSelection();
     }).catch(function (e) { console.error('[CE MS] delete:', e); });
   }
@@ -790,7 +800,7 @@
       Promise.all(promises).then(function (results) {
         var allOk = results.every(function (r) { return r && r.success; });
         if (allOk) {
-          console.log('[CE MS] 이동 (스크린:' + s.screenIds.length + ' 마커:' + s.markerIds.length + ' dx:' + dxGrid + ' dy:' + dyGrid + ')');
+          _log('이동 (스크린:' + s.screenIds.length + ' 마커:' + s.markerIds.length + ' dx:' + dxGrid + ' dy:' + dyGrid + ')');
           _selectedItems.forEach(function (item) {
             item.x = (item.x || 0) + dxGrid;
             item.y = (item.y || 0) + dyGrid;
@@ -952,7 +962,7 @@
     // 모듈 활성화 확인
     if (window.BWBR_ModuleLoader && typeof window.BWBR_ModuleLoader.isEnabled === 'function') {
       if (window.BWBR_ModuleLoader.isEnabled('multi-select') === false) {
-        console.log('[CE] 다중 선택 모듈 비활성화됨');
+        _log('다중 선택 모듈 비활성화됨');
         return;
       }
     }
@@ -964,8 +974,7 @@
     document.addEventListener('contextmenu', onContextMenu, true);
     document.addEventListener('keydown', onKeyDown, true);
 
-    console.log('%c[CE]%c 다중 선택 모듈 초기화 완료',
-      'color: #2196f3; font-weight: bold;', 'color: inherit;');
+    _log('다중 선택 모듈 초기화 완료');
   }
 
   // DOM 준비 후 초기화 (짧은 딜레이 — 모듈 로더 완료 대기)

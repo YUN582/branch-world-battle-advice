@@ -329,7 +329,7 @@
     const faces = Array.from(_selected.values());
     if (faces.length === 0) return;
 
-    console.log(TAG, `표정 ${faces.length}장 추가 요청`);
+    if (window._BWBR_DEBUG) console.log(TAG, `표정 ${faces.length}장 추가 요청`);
 
     const btn = document.querySelector('.bwbr-face-add-btn');
     if (btn) { btn.disabled = true; btn.textContent = '처리 중...'; }
@@ -346,7 +346,7 @@
       );
 
       if (result?.success) {
-        console.log(TAG, `✅ ${result.count}장 추가 완료`);
+        if (window._BWBR_DEBUG) console.log(TAG, `✅ ${result.count}장 추가 완료`);
       } else {
         console.error(TAG, '❌ 추가 실패:', result?.error);
         window.alert('표정 추가 실패: ' + (result?.error || '알 수 없는 오류'));
@@ -400,7 +400,7 @@
 
   _mainObs.observe(document.body, { childList: true, subtree: true });
 
-  console.log(
+  if (window._BWBR_DEBUG) console.log(
     '%c[CE]%c 표정 일괄 추가 모듈 로드',
     'color: #2196F3; font-weight: bold;', 'color: inherit;'
   );

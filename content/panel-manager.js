@@ -544,7 +544,7 @@
       const all = await loadPanelData();
       items = all.filter(it => it.type === 'object');
     }
-    if (!items.length) { console.log(TAG, '아이템 0개 — 주입 생략'); return; }
+    if (!items.length) { if (window._BWBR_DEBUG) console.log(TAG, '아이템 0개 — 주입 생략'); return; }
 
     if (s.type === 'notes') { buildNoteMap(paper, items); }
     else if (s.type === 'cutins') { buildCutinMap(paper, items); }
@@ -830,7 +830,7 @@
     const s = getState(paper);
     // 시나리오 텍스트: MuiList-root 없음 → MuiDialogContent-root 사용
     const container = paper.querySelector('.MuiList-root') || paper.querySelector('.MuiDialogContent-root');
-    if (!container) { console.warn(TAG, '컨테이너 없음 — 선택 모드 실패'); return; }
+    if (!container) { if (window._BWBR_DEBUG) console.warn(TAG, '컨테이너 없음 — 선택 모드 실패'); return; }
 
     // 1. 매핑된 아이템 + dnd-kit sortable 래퍼의 pointer-events 차단
     for (const item of getListItems(paper)) {
@@ -968,7 +968,7 @@
         async () => {
           if (s.selected.size === 0) return;
           const res = await doBatchOp(s.type, 'toggleActive', [...s.selected]);
-          if (res?.success) { console.log(TAG, '✅', res.count + '개 표시 전환'); }
+          if (res?.success) { if (window._BWBR_DEBUG) console.log(TAG, '✅', res.count + '개 표시 전환'); }
           else { console.error(TAG, '표시 전환 실패:', res?.error); }
         }
       ));
@@ -982,7 +982,7 @@
         async () => {
           if (s.selected.size === 0) return;
           const res = await doBatchOp(s.type, 'toggleSecret', [...s.selected]);
-          if (res?.success) { console.log(TAG, '✅', res.count + '개 스테이터스 전환'); watchListAndRefresh(paper); }
+          if (res?.success) { if (window._BWBR_DEBUG) console.log(TAG, '✅', res.count + '개 스테이터스 전환'); watchListAndRefresh(paper); }
           else { console.error(TAG, '스테이터스 전환 실패:', res?.error); }
         }
       ));
@@ -992,7 +992,7 @@
         async () => {
           if (s.selected.size === 0) return;
           const res = await doBatchOp(s.type, 'toggleHideStatus', [...s.selected]);
-          if (res?.success) { console.log(TAG, '✅', res.count + '개 목록 표시 전환'); watchListAndRefresh(paper); }
+          if (res?.success) { if (window._BWBR_DEBUG) console.log(TAG, '✅', res.count + '개 목록 표시 전환'); watchListAndRefresh(paper); }
           else { console.error(TAG, '목록 표시 전환 실패:', res?.error); }
         }
       ));
@@ -1002,7 +1002,7 @@
         async () => {
           if (s.selected.size === 0) return;
           const res = await doBatchOp(s.type, 'toggleActive', [...s.selected]);
-          if (res?.success) { console.log(TAG, '✅', res.count + '개 꺼내기/집어넣기 전환'); watchListAndRefresh(paper); }
+          if (res?.success) { if (window._BWBR_DEBUG) console.log(TAG, '✅', res.count + '개 꺼내기/집어넣기 전환'); watchListAndRefresh(paper); }
           else { console.error(TAG, '꺼내기/집어넣기 실패:', res?.error); }
         }
       ));
@@ -1015,7 +1015,7 @@
         if (s.selected.size === 0) return;
         const res = await doBatchOp(s.type, 'duplicate', [...s.selected]);
         if (res?.success) {
-          console.log(TAG, '✅', res.count + '개 복제');
+          if (window._BWBR_DEBUG) console.log(TAG, '✅', res.count + '개 복제');
           watchListAndRefresh(paper);
         }
         else { console.error(TAG, '복제 실패:', res?.error); }
@@ -1049,7 +1049,7 @@
 
         const res = await doBatchOp(s.type, 'delete', [...deletedIds]);
         if (res?.success) {
-          console.log(TAG, '✅', res.count + '개 삭제');
+          if (window._BWBR_DEBUG) console.log(TAG, '✅', res.count + '개 삭제');
           // 매핑에서 삭제된 항목 제거
           for (const [domItem, data] of s.itemMap) {
             if (deletedIds.has(data._id)) s.itemMap.delete(domItem);
@@ -1164,7 +1164,7 @@
 
   _mainObs.observe(document.body, { childList: true, subtree: true });
 
-  console.log(
+  if (window._BWBR_DEBUG) console.log(
     '%c[CE]%c 패널 관리 모듈 로드',
     'color: #2196F3; font-weight: bold;', 'color: inherit;'
   );

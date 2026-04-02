@@ -183,7 +183,7 @@
     rows[toIdx].style.background = 'rgba(33,150,243,0.15)';
     setTimeout(() => { rows[toIdx].style.background = ''; }, 400);
 
-    console.log(TAG, `${fromIdx} → ${toIdx} 이동 완료`);
+    if (window._BWBR_DEBUG) console.log(TAG, `${fromIdx} → ${toIdx} 이동 완료`);
   }
 
   /* ── 메인 옵저버: 편집 다이얼로그 감지 ──────────────── */
@@ -229,7 +229,7 @@
 
   _obs.observe(document.body, { childList: true, subtree: true });
 
-  console.log(
+  if (window._BWBR_DEBUG) console.log(
     '%c[CE]%c 스탯/매개변수 순서 변경 모듈 로드',
     'color: #4caf50; font-weight: bold;', 'color: inherit;'
   );

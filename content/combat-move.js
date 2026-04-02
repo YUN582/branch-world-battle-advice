@@ -17,7 +17,7 @@
 
 (function () {
   'use strict';
-  console.log('[Branch Move] combat-move.js v1.2.109 loaded');
+  LOG('combat-move.js v1.2.109 loaded');
 
   var CELL_PX = 24;
   var NATIVE_CELL = 24;       // 코코포리아 기본 셀 = 24px
@@ -169,14 +169,14 @@
       var raw = movables[i].style.transform || '(inline 없음)';
       var computed = '';
       try { computed = window.getComputedStyle(movables[i]).transform || '(없음)'; } catch (e) { computed = '(에러)'; }
-      console.log('[Branch Move] movable[' + i + '/' + movables.length + '] inline="' + raw + '" computed="' + computed + '"');
+      LOG('movable[' + i + '/' + movables.length + '] inline="' + raw + '" computed="' + computed + '"');
       var pos = extractTransformPosition(movables[i]);
       if (pos) {
-        console.log('[Branch Move] 패널 transform 발견: movable[' + i + '/' + movables.length + '] pos=(' + pos.x + ', ' + pos.y + ')');
+        LOG('패널 transform 발견: movable[' + i + '/' + movables.length + '] pos=(' + pos.x + ', ' + pos.y + ')');
         return pos;
       }
     }
-    console.log('[Branch Move] ⚠️ 모든 movable(' + movables.length + '개)에서 transform 발견 못함');
+    LOG('⚠️ 모든 movable(' + movables.length + '개)에서 transform 발견 못함');
     return null;
   }
 
@@ -194,10 +194,10 @@
       var last = window.BWBR_getLastClickedPanel();
       if (last && last.position) {
         position = last.position;
-        console.log('[Branch Move] token-binding 폴백 위치: (' + position.x + ', ' + position.y + ')');
+        LOG('token-binding 폴백 위치: (' + position.x + ', ' + position.y + ')');
       }
     }
-    console.log('[Branch Move] 토큰 클릭: imageUrl=' + (imageUrl ? imageUrl.substring(0, 60) + '...' : 'null') +
+    LOG('토큰 클릭: imageUrl=' + (imageUrl ? imageUrl.substring(0, 60) + '...' : 'null') +
         ', pos=' + (position ? '(' + position.x + ', ' + position.y + ')' : 'NULL'));
 
     if (!imageUrl) {
@@ -231,7 +231,7 @@
       // ★ pointerdown 시점에 위치 추출 (click보다 안정적 — token-binding과 동일 타이밍)
       _lastPointerDownPos = extractTransformPosition(movable);
       _pointerDownScreenPos = { x: e.clientX, y: e.clientY };
-      console.log('[Branch Move] pointerdown 위치 캐시: ' +
+      LOG('pointerdown 위치 캐시: ' +
         (_lastPointerDownPos ? '(' + _lastPointerDownPos.x + ', ' + _lastPointerDownPos.y + ')' : 'NULL') +
         ' (inline="' + (movable.style.transform || '') + '")');
       // 드래그는 차단하지 않음 — 클릭 이벤트에서 처리
@@ -848,11 +848,11 @@
             var cc = window.BWBR_CombatController;
             var ce = cc.getCombatEngine && cc.getCombatEngine();
             var curChar = ce && ce.getState() && ce.getState().currentCharacter;
-            console.log('[Branch Move] 행동 소비 체크: 이동캐릭="' + char.name + '", 현재차례="' + (curChar ? curChar.name : 'null') + '", 일치=' + (curChar ? curChar.name === char.name : false));
+            LOG('행동 소비 체크: 이동캐릭="' + char.name + '", 현재차례="' + (curChar ? curChar.name : 'null') + '", 일치=' + (curChar ? curChar.name === char.name : false));
             if (curChar && curChar.name === char.name) {
               cc.checkForCombatAssistTrigger(moveMsg);
             } else {
-              console.log('[Branch Move] 행동 소비 생략: 이동="' + char.name + '" ≠ 현재차례="' + (curChar ? curChar.name : 'null') + '"');
+              LOG('행동 소비 생략: 이동="' + char.name + '" ≠ 현재차례="' + (curChar ? curChar.name : 'null') + '"');
             }
           }
         } else {

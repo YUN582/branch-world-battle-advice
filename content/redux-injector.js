@@ -160,7 +160,7 @@
       const chars = getCharacterData();
       const charCount = chars?.length || 0;
       
-      console.log('%c[CE Redux]%c ✅ Store 획득 성공! 캐릭터 수: ' + charCount, 
+      _dbg('%c[CE Redux]%c ✅ Store 획득 성공! 캐릭터 수: ' + charCount, 
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
 
       // Content Script에 성공 알림
@@ -220,7 +220,7 @@
       if (setupStore() || attempts >= maxAttempts) {
         clearInterval(interval);
         if (attempts >= maxAttempts && !reduxStore) {
-          console.log('%c[CE Redux]%c ⚠️ Store를 찾을 수 없습니다.', 
+          _dbg('%c[CE Redux]%c ⚠️ Store를 찾을 수 없습니다.', 
             'color: #ff9800; font-weight: bold;', 'color: inherit;');
           window.dispatchEvent(new CustomEvent('bwbr-redux-ready', {
             detail: { success: false }
@@ -315,7 +315,7 @@
     const state = reduxStore.getState();
     const rm = state.entities?.roomMessages;
     if (!rm) {
-      console.log('%c[CE Redux]%c ⚠️ roomMessages를 찾을 수 없습니다.',
+      _dbg('%c[CE Redux]%c ⚠️ roomMessages를 찾을 수 없습니다.',
         'color: #ff9800; font-weight: bold;', 'color: inherit;');
       return false;
     }
@@ -391,7 +391,7 @@
 
           let text = extractMessageText(entity);
           if (!text) {
-            console.log('%c[CE Redux]%c ⚠️ 텍스트 필드 없음:',
+            _dbg('%c[CE Redux]%c ⚠️ 텍스트 필드 없음:',
               'color: #ff9800; font-weight: bold;', 'color: inherit;',
               Object.keys(entity));
             continue;
@@ -427,7 +427,7 @@
       }
     });
 
-    console.log('%c[CE Redux]%c ✅ 메시지 관찰 시작 (기존 %d개 등록)',
+    _dbg('%c[CE Redux]%c ✅ 메시지 관찰 시작 (기존 %d개 등록)',
       'color: #4caf50; font-weight: bold;', 'color: inherit;', _prevMessageIdSet.size);
 
     return true;
@@ -440,7 +440,7 @@
       _storeUnsubscribe = null;
     }
     _prevMessageIdSet.clear();
-    console.log('%c[CE Redux]%c 메시지 관찰 중지',
+    _dbg('%c[CE Redux]%c 메시지 관찰 중지',
       'color: #4caf50; font-weight: bold;', 'color: inherit;');
   }
 
@@ -512,7 +512,7 @@
     }
     if (!setDocFn) return null;
 
-    console.log(`%c[CE]%c ✅ Firestore 함수 자동 발견: collection=${collectionKey}, doc=${docKey}, setDoc=${setDocKey}`,
+    _dbg(`%c[CE]%c ✅ Firestore 함수 자동 발견: collection=${collectionKey}, doc=${docKey}, setDoc=${setDocKey}`,
       'color: #4caf50; font-weight: bold;', 'color: inherit;');
     return { collection: collectionFn, doc: docFn, setDoc: setDocFn, getDocs: null };
   }
@@ -545,7 +545,7 @@
         }
       } catch {}
     }
-    console.warn('[CE] deleteField 함수를 찾을 수 없음');
+    _dbg('[CE] deleteField 함수를 찾을 수 없음');
     return null;
   }
 
@@ -570,7 +570,7 @@
         }
       } catch (e) {}
     }
-    console.warn('[CE] writeBatch를 찾을 수 없음 — 순차 쓰기 폴백');
+    _dbg('[CE] writeBatch를 찾을 수 없음 — 순차 쓰기 폴백');
     return null;
   }
 
@@ -585,7 +585,7 @@
 
     const req = acquireWebpackRequire();
     if (!req) {
-      console.warn('[CE] webpack require 획득 실패');
+      _dbg('[CE] webpack require 획득 실패');
       return null;
     }
 
@@ -614,7 +614,7 @@
     let deleteDocFn = fsMod[_FS_CONFIG.fsKeys.deleteDoc];
 
     // 진단 로깅
-    console.log('[CE SDK] db:', !!db, 'db.type:', db?.type,
+    _dbg('[CE SDK] db:', !!db, 'db.type:', db?.type,
       'col:', typeof collectionFn, 'doc:', typeof docFn, 'setDoc:', typeof setDocFn,
       'getDocs:', typeof getDocsFn, 'deleteDoc:', typeof deleteDocFn);
 
@@ -622,7 +622,7 @@
     if (typeof collectionFn === 'function' && typeof docFn === 'function' && typeof setDocFn === 'function') {
       try {
         const testRef = collectionFn(db, '__bwbr_validate__');
-        console.log('[CE SDK] testRef:', !!testRef, 'type:', testRef?.type, 'path:', testRef?.path);
+        _dbg('[CE SDK] testRef:', !!testRef, 'type:', testRef?.type, 'path:', testRef?.path);
         if (testRef && testRef.type === 'collection') {
           _firestoreSDK = {
             db, setDoc: setDocFn, doc: docFn, collection: collectionFn,
@@ -630,7 +630,7 @@
             deleteDoc: typeof deleteDocFn === 'function' ? deleteDocFn : null,
             writeBatch: _discoverWriteBatch(fsMod, db)
           };
-          console.log('%c[CE]%c ✅ Firestore SDK 획득 성공 (알려진 키)',
+          _dbg('%c[CE]%c ✅ Firestore SDK 획득 성공 (알려진 키)',
             'color: #4caf50; font-weight: bold;', 'color: inherit;');
 
           return _firestoreSDK;
@@ -770,7 +770,7 @@
       };
     }
 
-    console.warn('[CE] getMessageContext: uid=' + uid +
+    _dbg('[CE] getMessageContext: uid=' + uid +
       ', 메시지 수=' + (rm?.ids?.length || 0) +
       ', speaking=' + (speakingChar?.name || 'none'));
     return null;
@@ -808,7 +808,8 @@
     }
 
     if (!effectId) {
-      console.log(`%c[CE]%c 🔔 컷인 이펙트 없음: "${tag}"`,
+      _dbg(`%c[CE]%c 🔔 컷인 이펙트 없음: "${tag}"`,
+
         'color: #ff9800; font-weight: bold;', 'color: inherit;');
       return;
     }
@@ -876,7 +877,7 @@
     if (!ctx) {
       // 컨텍스트 없어도 시스템 메시지는 최소한의 정보만으로 전송 가능
       if (!overrides) {
-        console.warn('[CE] 메시지 컨텍스트 없음 (아직 메시지를 보낸 적 없음?)');
+        _dbg('[CE] 메시지 컨텍스트 없음 (아직 메시지를 보낸 적 없음?)');
         return false;
       }
     }
@@ -885,7 +886,7 @@
     const roomId = state.app?.state?.roomId ||
       window.location.pathname.match(/rooms\/([^/]+)/)?.[1];
     if (!roomId) {
-      console.warn('[CE] roomId를 찾을 수 없음');
+      _dbg('[CE] roomId를 찾을 수 없음');
       return false;
     }
 
@@ -1043,7 +1044,7 @@
       // 커스텀 탭이지만 매핑 실패 → other 폴백
       return { channel: 'other', channelName: 'other' };
     } catch (e) {
-      console.warn('[CE] _detectCurrentChannel error:', e);
+      _dbg('[CE] _detectCurrentChannel error:', e);
       return null;
     }
   }
@@ -1073,7 +1074,7 @@
     el.removeAttribute('data-bwbr-send-text');
     el.removeAttribute('data-bwbr-send-type');
     if (!text) {
-      console.warn('[CE] bwbr-send-message-direct: 텍스트 없음 (data-bwbr-send-text 비어있음)');
+      _dbg('[CE] bwbr-send-message-direct: 텍스트 없음 (data-bwbr-send-text 비어있음)');
       window.dispatchEvent(new CustomEvent('bwbr-send-message-result', {
         detail: { success: false, text: '', error: 'no-text' }
       }));
@@ -1476,7 +1477,7 @@
     );
 
     if (!input) {
-      console.warn('[CE] 캐릭터 이름 입력 필드를 찾을 수 없습니다');
+      _dbg('[CE] 캐릭터 이름 입력 필드를 찾을 수 없습니다');
       return;
     }
 
@@ -2154,7 +2155,7 @@
       saveData.updatedAt = Date.now();
       await sdk.setDoc(charRef, saveData, { merge: true });
 
-      console.log(`%c[CE]%c ✅ ${char.name || charId} 표정 ${newFaces.length}장 추가 (총 ${mergedFaces.length}장)`,
+      _dbg(`%c[CE]%c ✅ ${char.name || charId} 표정 ${newFaces.length}장 추가 (총 ${mergedFaces.length}장)`,
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
 
       // 이미지 피커 닫기 + 편집 다이얼로그 닫기 → 재열기
@@ -2421,7 +2422,7 @@
         || state.entities?.room?.name
         || document.title?.replace(' - ココフォリア', '') || '';
 
-      console.log('%c[CE]%c 📜 로그 추출 시작... (roomId: ' + roomId + ')',
+      _dbg('%c[CE]%c 📜 로그 추출 시작... (roomId: ' + roomId + ')',
         'color: #2196f3; font-weight: bold;', 'color: inherit;');
 
       // Firestore에서 전체 메시지 컬렉션 조회
@@ -2468,7 +2469,7 @@
       // 시간순 정렬
       messages.sort((a, b) => a.createdAt - b.createdAt);
 
-      console.log(`%c[CE]%c 📜 로그 추출 완료: ${messages.length}건`,
+      _dbg(`%c[CE]%c 📜 로그 추출 완료: ${messages.length}건`,
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
 
       respond({ success: true, messages, roomId, roomName });
@@ -2548,7 +2549,7 @@
 
       const check = reduxStore.getState().app?.state;
       if (check?.openRoomCharacter === true && check?.openRoomCharacterId === char.__id) {
-        console.log(`%c[CE]%c ✅ ${name} 편집 다이얼로그 열림 (ID: ${char.__id})`,
+        _dbg(`%c[CE]%c ✅ ${name} 편집 다이얼로그 열림 (ID: ${char.__id})`,
           'color: #4caf50; font-weight: bold;', 'color: inherit;');
       } else {
         respondAction(name + ': 편집 다이얼로그 열기 실패');
@@ -2601,7 +2602,7 @@
                 item.click();
                 hideStyle.remove();
                 respondAction(name + ' → ' + actionLabel);
-                console.log(`%c[CE]%c ✅ ${name} 네이티브 ${actionLabel} (메뉴: "${t}")`,
+                _dbg(`%c[CE]%c ✅ ${name} 네이티브 ${actionLabel} (메뉴: "${t}")`,
                   'color: #4caf50; font-weight: bold;', 'color: inherit;');
                 setTimeout(broadcastCharacterList, 500);
                 return;
@@ -2619,11 +2620,11 @@
           if (lastPop) {
             const foundItems = lastPop.querySelectorAll('li[role="menuitem"]');
             const labels = [...foundItems].map(el => `"${(el.textContent||'').trim()}"`);
-            console.warn(`[CE] ${actionLabel} 실패: 메뉴 항목 미발견\n  찾은 항목: [${labels.join(', ')}]\n  검색 키워드: [${menuKeywords.join(', ')}]`);
+            _dbg(`[CE] ${actionLabel} 실패: 메뉴 항목 미발견\n  찾은 항목: [${labels.join(', ')}]\n  검색 키워드: [${menuKeywords.join(', ')}]`);
             const bd = lastPop.querySelector('.MuiBackdrop-root');
             if (bd) bd.click(); else document.body.click();
           } else {
-            console.warn(`[CE] ${actionLabel} 실패: MuiPopover-root 자체가 없음`);
+            _dbg(`[CE] ${actionLabel} 실패: MuiPopover-root 자체가 없음`);
           }
           respondAction(name + ': ' + actionLabel + ' 실패 — 메뉴 항목을 찾을 수 없습니다');
         }
@@ -2663,7 +2664,7 @@
         await sdk.setDoc(charRef, { active: true, updatedAt: Date.now() }, { merge: true });
 
         respondAction(name + ' → 꺼내기');
-        console.log(`%c[CE]%c ✅ ${name} 꺼내기 (Firestore direct)`,
+        _dbg(`%c[CE]%c ✅ ${name} 꺼내기 (Firestore direct)`,
           'color: #4caf50; font-weight: bold;', 'color: inherit;');
         setTimeout(broadcastCharacterList, 500);
       } catch (err) {
@@ -2709,7 +2710,7 @@
   // ================================================================
   document.addEventListener('bwbr-sync-token-bindings', () => {
     _readBindingsFromDOM();
-    console.log(`%c[CE]%c 토큰 바인딩 동기화: ${Object.keys(_tokenBindings).length}개`,
+    _dbg(`%c[CE]%c 토큰 바인딩 동기화: ${Object.keys(_tokenBindings).length}개`,
       'color: #ab47bc; font-weight: bold;', 'color: inherit;');
   });
   // window 이벤트로도 수신 (크로스-월드 호환성)
@@ -2762,7 +2763,7 @@
         if (imageMatches.length === 1) {
           // 유일 매칭
           const item = imageMatches[0];
-          console.log(`%c[CE]%c 패널 식별 (imageUrl 유일): "${item._id}"`,
+          _dbg(`%c[CE]%c 패널 식별 (imageUrl 유일): "${item._id}"`,
             'color: #ab47bc; font-weight: bold;', 'color: inherit;');
           return respond({ success: true, panelId: item._id, imageUrl: item.imageUrl });
         } else if (imageMatches.length > 1 && trackedPos) {
@@ -2771,7 +2772,7 @@
           const NATIVE_CELL = 24;
           const trkX = trackedPos.x / NATIVE_CELL;
           const trkY = trackedPos.y / NATIVE_CELL;
-          console.log(`%c[CE]%c 패널 위치 변환: DOM(${trackedPos.x}, ${trackedPos.y})px → native(${trkX.toFixed(1)}, ${trkY.toFixed(1)}) (24px/cell)`,
+          _dbg(`%c[CE]%c 패널 위치 변환: DOM(${trackedPos.x}, ${trackedPos.y})px → native(${trkX.toFixed(1)}, ${trkY.toFixed(1)}) (24px/cell)`,
             'color: #ab47bc; font-weight: bold;', 'color: inherit;');
 
           let closest = null;
@@ -2782,7 +2783,7 @@
             const dx = ix - trkX;
             const dy = iy - trkY;
             const dist = dx * dx + dy * dy;
-            console.log(`%c[CE]%c   후보: "${item._id}" pos=(${ix}, ${iy}) dist=${Math.sqrt(dist).toFixed(1)}`,
+            _dbg(`%c[CE]%c   후보: "${item._id}" pos=(${ix}, ${iy}) dist=${Math.sqrt(dist).toFixed(1)}`,
               'color: #ab47bc; font-weight: bold;', 'color: inherit;');
             if (dist < closestDist) {
               closestDist = dist;
@@ -2790,17 +2791,17 @@
             }
           }
           if (closest) {
-            console.log(`%c[CE]%c 패널 식별 (imageUrl+위치): "${closest._id}" (${imageMatches.length}개 중, dist=${Math.sqrt(closestDist).toFixed(1)})`,
+            _dbg(`%c[CE]%c 패널 식별 (imageUrl+위치): "${closest._id}" (${imageMatches.length}개 중, dist=${Math.sqrt(closestDist).toFixed(1)})`,
               'color: #ab47bc; font-weight: bold;', 'color: inherit;');
             return respond({ success: true, panelId: closest._id, imageUrl: closest.imageUrl });
           }
         } else if (imageMatches.length > 1) {
-          console.log(`%c[CE]%c 같은 imageUrl ${imageMatches.length}개, 위치 정보 없음 → 스코어링 폴백`,
+          _dbg(`%c[CE]%c 같은 imageUrl ${imageMatches.length}개, 위치 정보 없음 → 스코어링 폴백`,
             'color: #ab47bc; font-weight: bold;', 'color: inherit;');
         }
 
         if (imageMatches.length === 0) {
-          console.log(`%c[CE]%c imageUrl 매칭 실패, 스코어링 폴백`,
+          _dbg(`%c[CE]%c imageUrl 매칭 실패, 스코어링 폴백`,
             'color: #ab47bc; font-weight: bold;', 'color: inherit;');
         }
       }
@@ -2833,11 +2834,11 @@
       }
 
       if (bestMatch && bestScore >= 8) {
-        console.log(`%c[CE]%c 패널 식별 (스코어링): "${bestMatch._id}" (점수 ${bestScore}/12)`,
+        _dbg(`%c[CE]%c 패널 식별 (스코어링): "${bestMatch._id}" (점수 ${bestScore}/12)`,
           'color: #ab47bc; font-weight: bold;', 'color: inherit;');
         respond({ success: true, panelId: bestMatch._id, imageUrl: bestMatch.imageUrl || '' });
       } else {
-        console.log(`%c[CE]%c 패널 식별 실패 (최고 점수 ${bestScore}/12)`,
+        _dbg(`%c[CE]%c 패널 식별 실패 (최고 점수 ${bestScore}/12)`,
           'color: #ab47bc; font-weight: bold;', 'color: inherit;');
         respond({ success: false });
       }
@@ -2872,7 +2873,7 @@
       imageUrl = rawPayload;
     }
 
-    console.log(`[Branch Move MAIN] 요청 수신: imageUrl=${imageUrl ? imageUrl.substring(0, 60) + '...' : 'EMPTY'}, clickPos=${clickPos ? `(${clickPos.x}, ${clickPos.y})` : 'NULL'}, rawLen=${rawPayload.length}`);
+    _dbg(`[Branch Move MAIN] 요청 수신: imageUrl=${imageUrl ? imageUrl.substring(0, 60) + '...' : 'EMPTY'}, clickPos=${clickPos ? `(${clickPos.x}, ${clickPos.y})` : 'NULL'}, rawLen=${rawPayload.length}`);
 
     const fail = () => {
       document.documentElement.setAttribute('data-bwbr-char-move-result', JSON.stringify({ success: false }));
@@ -2910,33 +2911,33 @@
       const NATIVE_CELL = 24;
       const trkX = clickPos.x / NATIVE_CELL;
       const trkY = clickPos.y / NATIVE_CELL;
-      console.log(`[Branch Move] 위치 변환: DOM(${clickPos.x}, ${clickPos.y})px → native(${trkX.toFixed(1)}, ${trkY.toFixed(1)})`);
+      _dbg(`[Branch Move] 위치 변환: DOM(${clickPos.x}, ${clickPos.y})px → native(${trkX.toFixed(1)}, ${trkY.toFixed(1)})`);
       let closestDist = Infinity;
       for (const it of imageMatches) {
         const ix = it.x ?? 0, iy = it.y ?? 0;
         const dx = ix - trkX, dy = iy - trkY;
         const dist = dx * dx + dy * dy;
-        console.log(`[Branch Move]   후보: "${it._id}" pos=(${ix}, ${iy}) dist=${Math.sqrt(dist).toFixed(1)}`);
+        _dbg(`[Branch Move]   후보: "${it._id}" pos=(${ix}, ${iy}) dist=${Math.sqrt(dist).toFixed(1)}`);
         if (dist < closestDist) {
           closestDist = dist;
           item = it;
         }
       }
-      console.log(`[Branch Move] 선택: "${item?._id}" (${imageMatches.length}개 중, dist=${Math.sqrt(closestDist).toFixed(1)})`);
+      _dbg(`[Branch Move] 선택: "${item?._id}" (${imageMatches.length}개 중, dist=${Math.sqrt(closestDist).toFixed(1)})`);
     } else if (imageMatches.length > 1) {
       // 위치 정보 없으면 첫 번째 (레거시 폴백)
       item = imageMatches[0];
-      console.log(`[Branch Move] 같은 imageUrl ${imageMatches.length}개, 위치 정보 없음 → 첫 번째 선택`);
+      _dbg(`[Branch Move] 같은 imageUrl ${imageMatches.length}개, 위치 정보 없음 → 첫 번째 선택`);
     }
 
     if (!item) {
-      console.log(`[Branch Move] roomItem imageUrl 매칭 실패: "${imageUrl.substring(0, 80)}..."`);
+      _dbg(`[Branch Move] roomItem imageUrl 매칭 실패: "${imageUrl.substring(0, 80)}..."`);
       return fail();
     }
 
     // ── 성공 응답 헬퍼 (DOM 속성 브릿지 — MAIN→ISOLATED 크로스-월드 안정성) ──
     const succeed = (charObj) => {
-      console.log(`[Branch Move] 매칭: item "${item._id}" → 캐릭터 "${charObj.name}"`);
+      _dbg(`[Branch Move] 매칭: item "${item._id}" → 캐릭터 "${charObj.name}"`);
       const result = {
         success: true,
         item: {
@@ -2965,26 +2966,26 @@
     _readBindingsFromDOM();
     const boundCharId = _tokenBindings[item._id];
     if (boundCharId) {
-      console.log(`[Branch Move] 바인딩 확인: item "${item._id}" → charId "${boundCharId}"`);
+      _dbg(`[Branch Move] 바인딩 확인: item "${item._id}" → charId "${boundCharId}"`);
     } else {
-      console.log(`[Branch Move] 바인딩 없음 (item "${item._id}"), 토큰 수: ${Object.keys(_tokenBindings).length}`);
+      _dbg(`[Branch Move] 바인딩 없음 (item "${item._id}"), 토큰 수: ${Object.keys(_tokenBindings).length}`);
     }
     if (boundCharId && rc?.ids) {
       for (const id of rc.ids) {
         const ch = rc.entities?.[id];
         if (ch && (ch._id === boundCharId || id === boundCharId)) {
-          console.log(`[Branch Move] 바인딩으로 매칭: "${item._id}" → "${ch.name}"`);
+          _dbg(`[Branch Move] 바인딩으로 매칭: "${item._id}" → "${ch.name}"`);
           return succeed(ch);
         }
       }
-      console.log(`[Branch Move] 바인딩 캐릭터 "${boundCharId}" 미발견 — memo 폴백`);
+      _dbg(`[Branch Move] 바인딩 캐릭터 "${boundCharId}" 미발견 — memo 폴백`);
     }
 
     // 3) memo에서 〔캐릭터이름〕 파싱 (폴백)
     const memo = item.memo || '';
     const nameMatch = memo.match(/〔(.+?)〕/);
     if (!nameMatch) {
-      console.log(`[Branch Move] memo에 〔이름〕 없음: "${memo}"`);
+      _dbg(`[Branch Move] memo에 〔이름〕 없음: "${memo}"`);
       return fail();
     }
     const charName = nameMatch[1].trim();
@@ -3000,7 +3001,7 @@
       }
     }
     if (!found) {
-      console.log(`[Branch Move] 캐릭터 "${charName}" 미발견`);
+      _dbg(`[Branch Move] 캐릭터 "${charName}" 미발견`);
       return fail();
     }
 
@@ -3036,7 +3037,7 @@
       const itemRef = sdk.doc(itemsCol, itemId);
       await sdk.setDoc(itemRef, { x, y, updatedAt: Date.now() }, { merge: true });
 
-      console.log(`%c[CE]%c ✅ 아이템 이동: ${itemId} → (${x}, ${y})`,
+      _dbg(`%c[CE]%c ✅ 아이템 이동: ${itemId} → (${x}, ${y})`,
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
       respond({ success: true, itemId, x, y });
     } catch (err) {
@@ -3969,7 +3970,7 @@
     if (!raw) return;
     document.documentElement.removeAttribute('data-bwbr-cutin-batch-op');
     const { op, ids } = JSON.parse(raw);
-    console.log('[CE] [CutinBatch] op:', op, 'ids:', ids?.length);
+    _dbg('[CE] [CutinBatch] op:', op, 'ids:', ids?.length);
     _cutinBatchHandlerAsync(op, ids);
   }
   window.addEventListener('bwbr-cutin-batch-op', _cutinBatchHandler);
@@ -4084,7 +4085,7 @@
     if (!raw) return;
     document.documentElement.removeAttribute('data-bwbr-char-batch-op');
     const { op, ids } = JSON.parse(raw);
-    console.log('[CE] [CharBatch] op:', op, 'ids:', ids?.length);
+    _dbg('[CE] [CharBatch] op:', op, 'ids:', ids?.length);
     _charBatchHandlerAsync(op, ids);
   }
   window.addEventListener('bwbr-char-batch-op', _charBatchHandler);
@@ -4268,7 +4269,7 @@
     }
 
     if (!sceneId) {
-      console.warn('[CE] 마커: sceneId 찾기 실패!',
+      _dbg('[CE] 마커: sceneId 찾기 실패!',
         'roomId:', roomId,
         'room 키:', room ? Object.keys(room) : 'room 없음',
         'app.state scene 키:', state.app?.state ? Object.keys(state.app.state).filter(k => /scene/i.test(k)) : '없음',
@@ -4317,7 +4318,7 @@
     if (!raw) return;
     document.documentElement.removeAttribute('data-bwbr-marker-batch-op');
     const { op, ids, extra } = JSON.parse(raw);
-    console.log('[CE] [MarkerBatch] op:', op, 'ids:', ids?.length, 'extra:', extra);
+    _dbg('[CE] [MarkerBatch] op:', op, 'ids:', ids?.length, 'extra:', extra);
     _markerBatchHandlerAsync(op, ids, extra);
   }
   window.addEventListener('bwbr-marker-batch-op', _markerBatchHandler);
@@ -4624,7 +4625,7 @@
       const roomRef = sdk.doc(roomCol, roomId);
       await sdk.setDoc(roomRef, update, { merge: true });
 
-      console.log(`%c[CE]%c ✅ 방 설정 변경:`, 'color: #4caf50; font-weight: bold;', 'color: inherit;',
+      _dbg(`%c[CE]%c ✅ 방 설정 변경:`, 'color: #4caf50; font-weight: bold;', 'color: inherit;',
         Object.keys(fields));
       respond({ success: true, fields: Object.keys(fields) });
     } catch (err) {
@@ -4756,7 +4757,7 @@
       const roomRef = sdk.doc(roomCol, roomId);
       await sdk.setDoc(roomRef, update, { merge: true });
 
-      console.log(`%c[CE]%c ✅ 장면 적용:`, 'color: #4caf50; font-weight: bold;', 'color: inherit;',
+      _dbg(`%c[CE]%c ✅ 장면 적용:`, 'color: #4caf50; font-weight: bold;', 'color: inherit;',
         sceneName, '(' + applyOption + ')', '필드:', Object.keys(update).length);
       respond({ success: true, sceneName: sceneName });
     } catch (err) {
@@ -5073,7 +5074,7 @@
                 const origX = appState.roomPointerX;
                 if (safeProbeType(testType, appState, origX)) {
                     _setedActionCreator = val.seted;
-                    console.log(`%c[CE]%c ✅ seted action creator 발견: type="${testType}" (module ${ids[mi]}, key "${key}")`,
+                    _dbg(`%c[CE]%c ✅ seted action creator 발견: type="${testType}" (module ${ids[mi]}, key "${key}")`,
                       'color: #4caf50; font-weight: bold;', 'color: inherit;');
                     return _setedActionCreator;
                 }
@@ -5082,7 +5083,7 @@
           }
         } catch { /* skip module */ }
       }
-      console.log('[CE] webpack 모듈 검색 완료, seted 미발견 → 인터셉터 대기');
+      _dbg('[CE] webpack 모듈 검색 완료, seted 미발견 → 인터셉터 대기');
     }
 
     // ── 방법 2: 확장된 type 문자열 브루트포스 ──
@@ -5102,7 +5103,7 @@
           const type = `${sn}/${an}`;
           if (safeProbeType(type, appState, origX)) {
               _setedActionCreator = { type, __synthetic: true };
-              console.log(`%c[CE]%c ✅ app.state type 발견 (브루트포스): "${type}"`,
+              _dbg(`%c[CE]%c ✅ app.state type 발견 (브루트포스): "${type}"`,
                 'color: #4caf50; font-weight: bold;', 'color: inherit;');
               return _setedActionCreator;
           }
@@ -5200,7 +5201,7 @@
       const roomRef = sdk.doc(roomCol, grid.roomId);
       await sdk.setDoc(roomRef, { displayGrid: next }, { merge: true });
 
-      console.log(`%c[CE]%c 그리드 토글: displayGrid = ${grid.value} → ${next}`,
+      _dbg(`%c[CE]%c 그리드 토글: displayGrid = ${grid.value} → ${next}`,
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
 
       window.dispatchEvent(new CustomEvent('bwbr-toggle-native-grid-result', {
@@ -5412,7 +5413,7 @@
         paper.style.transform = 'translate3d(0, 0, 0)';
       }
 
-      console.log(`%c[CE]%c Inspector 이미지 제한: ${nw}×${nh} → ${fitW}×${fitH} (viewport ${vw}×${vh})`,
+      _dbg(`%c[CE]%c Inspector 이미지 제한: ${nw}×${nh} → ${fitW}×${fitH} (viewport ${vw}×${vh})`,
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
       return true;
     }
@@ -5463,7 +5464,7 @@
 
       const check = reduxStore.getState().app?.state;
       if (check?.openInspector === true && check?.inspectImageUrl === imageUrl) {
-        console.log('%c[CE]%c ✅ 네이티브 확대 보기 열림',
+        _dbg('%c[CE]%c ✅ 네이티브 확대 보기 열림',
           'color: #4caf50; font-weight: bold;', 'color: inherit;');
         window.dispatchEvent(new CustomEvent('bwbr-native-zoom-result', { detail: { success: true } }));
       } else {
@@ -5538,7 +5539,7 @@
         items: items
       };
 
-      console.log(`%c[CE]%c 📦 룸 데이터 내보내기: 방 설정 + 캐릭터 ${characters.length}개 + 아이템 ${items.length}개`,
+      _dbg(`%c[CE]%c 📦 룸 데이터 내보내기: 방 설정 + 캐릭터 ${characters.length}개 + 아이템 ${items.length}개`,
         'color: #ce93d8; font-weight: bold;', 'color: inherit;');
 
       respond({ success: true, data: exportData, roomName: roomName });
@@ -5604,7 +5605,7 @@
       }
       const uid = state.app?.state?.uid || '';
 
-      console.log(`%c[CE]%c 📥 룸 데이터 가져오기 시작 (roomId: ${roomId})`,
+      _dbg(`%c[CE]%c 📥 룸 데이터 가져오기 시작 (roomId: ${roomId})`,
         'color: #90caf9; font-weight: bold;', 'color: inherit;');
 
       // ── 1. 방 설정 덮어쓰기 (merge) ── (roomSettings가 null이면 건너뜀)
@@ -5629,9 +5630,9 @@
         const roomRef = sdk.doc(roomCol, roomId);
         await sdk.setDoc(roomRef, cleanSettings, { merge: true });
         settingsUpdated = true;
-        console.log('%c[CE]%c   방 설정 업데이트 완료', 'color: #90caf9; font-weight: bold;', 'color: inherit;');
+        _dbg('%c[CE]%c   방 설정 업데이트 완료', 'color: #90caf9; font-weight: bold;', 'color: inherit;');
       } else {
-        console.log('%c[CE]%c   방 설정 건너뜀 (선택 안 됨)', 'color: #90caf9; font-weight: bold;', 'color: #888;');
+        _dbg('%c[CE]%c   방 설정 건너뜀 (선택 안 됨)', 'color: #90caf9; font-weight: bold;', 'color: #888;');
       }
 
       // ── 2. 캐릭터 복사 ──
@@ -5653,7 +5654,7 @@
           ops.push({ type: 'set', ref: sdk.doc(charsCol, newId), data: charData });
         }
         charCount = await _batchCommit(sdk, ops);
-        console.log(`%c[CE]%c   캐릭터 ${charCount}개 생성 완료`, 'color: #90caf9; font-weight: bold;', 'color: inherit;');
+        _dbg(`%c[CE]%c   캐릭터 ${charCount}개 생성 완료`, 'color: #90caf9; font-weight: bold;', 'color: inherit;');
       }
 
       // ── 3. 아이템/스크린패널 복사 ──
@@ -5673,10 +5674,10 @@
           ops.push({ type: 'set', ref: sdk.doc(itemsCol, newId), data: itemData });
         }
         itemCount = await _batchCommit(sdk, ops);
-        console.log(`%c[CE]%c   아이템 ${itemCount}개 생성 완료`, 'color: #90caf9; font-weight: bold;', 'color: inherit;');
+        _dbg(`%c[CE]%c   아이템 ${itemCount}개 생성 완료`, 'color: #90caf9; font-weight: bold;', 'color: inherit;');
       }
 
-      console.log(`%c[CE]%c ✅ 룸 데이터 가져오기 완료!`,
+      _dbg(`%c[CE]%c ✅ 룸 데이터 가져오기 완료!`,
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
 
       respond({ success: true, settingsUpdated, charCount, itemCount });
@@ -6064,7 +6065,7 @@
         movedCount++;
       }
 
-      console.log(`[CE 이미지] ✅ ${movedCount}개 → ${targetDir} 이동`);
+      _dbg(`[CE 이미지] ✅ ${movedCount}개 → ${targetDir} 이동`);
       respond({ success: true, movedCount });
     } catch (err) {
       console.error('[CE 이미지] 파일 이동 실패:', err);
@@ -6290,19 +6291,23 @@
       channelMsgs.push(ent);
     }
 
-    // 태깅만 수행 (숨김은 CSS가 담당)
+    // 태깅: 뒤(최신)에서 앞(과거)으로 역방향 매칭
+    // → DOM 아이템 수 ≠ Redux 메시지 수일 때 최신(스크롤 하단) 메시지가 항상 정확히 매칭됨
+    // 가상화/윈도잉으로 DOM이 부분 렌더링되더라도 최신 메시지 타입이 틀리지 않음
     const len = Math.min(allItems.length, channelMsgs.length);
+    const domOffset = allItems.length - len;   // DOM 앞쪽 초과분 (overflow)
+    const msgOffset = channelMsgs.length - len; // Redux 앞쪽 건너뛸 분량
     for (let i = 0; i < len; i++) {
-      const item = allItems[i];
-      const msg = channelMsgs[i];
+      const item = allItems[domOffset + i];
+      const msg = channelMsgs[msgOffset + i];
       item.setAttribute('data-msg-id', msg._id);
       item.setAttribute('data-msg-from', msg.from || '');
       item.setAttribute('data-msg-type', msg.type || 'text');
-      item.removeAttribute('data-bwbr-overflow');  // 정상 아이템은 overflow 제거
+      item.removeAttribute('data-bwbr-overflow');
     }
 
-    // 초과 DOM 아이템 마킹 (inline style 대신 data 속성 + CSS)
-    for (let i = len; i < allItems.length; i++) {
+    // 초과 DOM 아이템 마킹 (DOM 앞쪽 — 매칭 안 된 오래된 항목)
+    for (let i = 0; i < domOffset; i++) {
       allItems[i].setAttribute('data-bwbr-overflow', '1');
     }
 
@@ -6384,7 +6389,7 @@
       }
     }, 500);
 
-    console.log('[CE] 메시지 DOM 태깅 시작');
+    _dbg('[CE] 메시지 DOM 태깅 시작');
   }
 
   // ISOLATED world에서 재태깅 요청 시 즉시 실행

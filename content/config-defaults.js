@@ -122,12 +122,12 @@ window.BWBR_migrateConfigV1toV2 = function(oldConfig) {
       chrome.storage.sync.set({ bwbr_core: core, bwbr_combat: combat }, function() {
         // 구 키 삭제
         chrome.storage.sync.remove('bwbr_config', function() {
-          console.log('[CE] 설정 마이그레이션 완료: bwbr_config → bwbr_core + bwbr_combat');
+          if (window._BWBR_DEBUG) console.log('[CE] 설정 마이그레이션 완료: bwbr_config → bwbr_core + bwbr_combat');
           resolve({ core: core, combat: combat });
         });
       });
     } catch (e) {
-      console.warn('[CE] 마이그레이션 저장 실패:', e);
+      if (window._BWBR_DEBUG) console.warn('[CE] 마이그레이션 저장 실패:', e);
       resolve({ core: core, combat: combat });
     }
   });

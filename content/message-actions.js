@@ -395,7 +395,7 @@
       if (msgList) _hideDeletedMessages(msgList);
     }, 1500);
 
-    console.log('[CE] 메시지 수정/삭제 UI 초기화 완료');
+    if (window._BWBR_DEBUG) console.log('[CE] 메시지 수정/삭제 UI 초기화 완료');
   }
 
   // 초기화

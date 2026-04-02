@@ -12,6 +12,7 @@
   'use strict';
 
   const TAG = '[CE 이미지매니저]';
+  function _log(...args) { if (window._BWBR_DEBUG) console.log(TAG, ...args); }
 
   /* ── 카테고리 탭 ↔ dir 값 매핑 ───────────────────── */
   const TAB_DIR_MAP = {
@@ -169,7 +170,7 @@
 
     // 캐시 미스 — 전체 파일 재로딩 후 재시도
     const missing = hashes.filter(h => !_hashToFileId.get(h));
-    console.warn(TAG, `캐시 미스: ${missing.length}개 해시 미해석, 전체 재로딩...`, missing);
+    _log(`캐시 미스: ${missing.length}개 해시 미해석, 전체 재로딩...`, missing);
     await refreshFileCache(_currentDir, _currentRoomId);
     ids = hashes.map(h => _hashToFileId.get(h)).filter(Boolean);
     if (ids.length < hashes.length) {
@@ -283,7 +284,7 @@
             if (retry?.files?.length > 0 && _currentDir === dir) {
               _fileCache = retry.files;
               buildHashIndex();
-              console.log(TAG, `재시도 캐시: ${_fileCache.length}개`);
+              _log(`재시도 캐시: ${_fileCache.length}개`);
             }
           } catch {}
         }, 1000);
@@ -313,7 +314,7 @@
     });
 
     if (newCount > 0) {
-      console.log(TAG, `이미지 ${newCount}개 draggable 설정 (전체 ${images.length}개)`);
+      _log(`이미지 ${newCount}개 draggable 설정 (전체 ${images.length}개)`);
     }
   }
 
@@ -321,7 +322,7 @@
   function setupPickerDelegation(picker) {
     if (picker.dataset.bwbrDelegation === '1') return;
     picker.dataset.bwbrDelegation = '1';
-    console.log(TAG, '이벤트 위임 설정');
+    _log('이벤트 위임 설정');
 
     // ── mousedown (capture) — just-in-time draggable 설정 ──
     picker.addEventListener('mousedown', e => {
@@ -349,7 +350,7 @@
         _dragHashes = [hash];
       }
 
-      console.log(TAG, `dragstart: ${_dragHashes.length}개`);
+      _log(`dragstart: ${_dragHashes.length}개`);
       e.dataTransfer.effectAllowed = 'move';
       e.dataTransfer.setData('text/plain', _dragHashes.join(','));
       wrapper.style.opacity = '0.4';
@@ -409,7 +410,7 @@
       if (tab) {
         clearDropIndicators(picker);
         if (_dropLock) {
-          console.warn(TAG, '이전 이동 처리 중 — 대기');
+          _log('이전 이동 처리 중 — 대기');
           return;
         }
         _dropLock = true;
@@ -426,7 +427,7 @@
         return;
       }
 
-      console.log(TAG, 'drop 대상 미매칭 (탭 외 영역)');
+      _log('drop 대상 미매칭 (탭 외 영역)');
       clearDropIndicators(picker);
     }, true);
   }
@@ -436,16 +437,16 @@
     const tabText = tab.textContent.trim();
     const targetDir = TAB_DIR_MAP[tabText];
     if (!targetDir) {
-      console.warn(TAG, '알 수 없는 탭:', tabText);
+      _log('알 수 없는 탭:', tabText);
       return;
     }
     if (targetDir === _currentDir) {
-      console.log(TAG, '같은 탭 드롭 무시');
+      _log('같은 탭 드롭 무시');
       return;
     }
     if (fileIds.length === 0) return;
 
-    console.log(TAG, `${fileIds.length}개 파일 → ${tabText}(${targetDir}) 이동`);
+    _log(`${fileIds.length}개 파일 → ${tabText}(${targetDir}) 이동`);
 
     _suppressObserver = true;
     try {
@@ -462,7 +463,7 @@
       );
 
       if (result?.success) {
-        console.log(TAG, `✅ ${result.movedCount}개 이동 완료`);
+        _log(`✅ ${result.movedCount}개 이동 완료`);
 
         // 1) DOM에서 이동한 이미지 즉시 숨김 (드래그 원본)
         const movedHashSet = new Set(_dragHashes);
@@ -495,7 +496,7 @@
           const p = getPickerDialog();
           if (p) {
             await refreshFileCache(getCurrentDir(p) || _currentDir, _isGroupRoom ? getRoomIdFromUrl() : null);
-            console.log(TAG, `이동 후 캐시 갱신: ${_fileCache.length}개`);
+            _log(`이동 후 캐시 갱신: ${_fileCache.length}개`);
             setupDraggableImages(p);
           }
         }, 300);
@@ -671,22 +672,22 @@
   async function initPicker(picker) {
     const group = getCurrentGroup(picker);
     _isGroupRoom = group === 'room';
-    console.log(TAG, '피커 감지됨, group:', group);
+    _log('피커 감지됨, group:', group);
 
     // Unsplash는 드래그 불가
     if (group === 'unsplash') return;
 
     const dir = getCurrentDir(picker);
-    console.log(TAG, 'currentDir:', dir, 'tabs:', getCategoryTabs(picker).map(t => t.textContent.trim()));
+    _log('currentDir:', dir, 'tabs:', getCategoryTabs(picker).map(t => t.textContent.trim()));
     if (!dir) {
-      console.warn(TAG, '⚠️ 카테고리 감지 실패 — tablist 구조 확인 필요');
+      _log('⚠️ 카테고리 감지 실패 — tablist 구조 확인 필요');
       return;
     }
 
     // 파일 캐시 로드
     const roomId = _isGroupRoom ? getRoomIdFromUrl() : null;
     await refreshFileCache(dir, roomId);
-    console.log(TAG, `파일 캐시: ${_fileCache.length}개 (dir=${dir}, roomId=${roomId})`);
+    _log(`파일 캐시: ${_fileCache.length}개 (dir=${dir}, roomId=${roomId})`);
 
     // 이벤트 위임 (1회) + draggable 속성
     setupPickerDelegation(picker);
@@ -718,7 +719,7 @@
           _isGroupRoom = newIsRoom;
           await refreshFileCache(newDir, newIsRoom ? getRoomIdFromUrl() : null);
           _lastClickedIdx = -1;
-          console.log(TAG, `탭 전환: group=${newGroup}, dir=${newDir}, 캐시 ${_fileCache.length}개`);
+          _log(`탭 전환: group=${newGroup}, dir=${newDir}, 캐시 ${_fileCache.length}개`);
         }
       }, 150);
     });
@@ -770,6 +771,6 @@
 
   _mainObs.observe(document.body, { childList: true, subtree: true });
 
-  console.log(TAG, '✅ 이미지 매니저 로드됨');
+  _log('✅ 이미지 매니저 로드됨');
 
 })();
