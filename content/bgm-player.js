@@ -20,30 +20,19 @@
     style.textContent = `
       .bwbr-bgm-player {
         display: flex;
-        flex-direction: column;
+        align-items: center;
+        margin: 8px 0 0 0;
         width: 100%;
         box-sizing: border-box;
-        margin: 4px 0 16px 0;
-        padding: 0 4px;
-      }
-      .bwbr-bgm-player-row {
-        display: flex;
-        align-items: center;
-        gap: 16px;
-        width: 100%;
+        height: 34px;
       }
       .bwbr-bgm-play-btn {
         width: 24px; height: 24px;
         border: none; background: none;
         cursor: pointer; padding: 0;
         display: flex; align-items: center; justify-content: center;
-        color: rgba(255,255,255,0.7);
-        border-radius: 50%;
-        transition: color 0.15s;
-        flex-shrink: 0;
-      }
-      .bwbr-bgm-play-btn:hover {
         color: #fff;
+        flex-shrink: 0;
       }
       .bwbr-bgm-play-btn svg {
         width: 24px; height: 24px;
@@ -51,60 +40,70 @@
       }
       .bwbr-bgm-seekbar-wrap {
         flex: 1;
-        height: 24px;
+        height: 28px;
         display: flex;
         align-items: center;
         cursor: pointer;
         position: relative;
         touch-action: none;
         user-select: none;
+        padding: 13px 0;
+        margin: 0 8px;
       }
       .bwbr-bgm-seekbar-rail {
         position: absolute;
         left: 0; right: 0;
         height: 2px;
-        border-radius: 1px;
-        background: rgba(255,255,255,0.3);
+        border-radius: 12px;
+        background: rgba(33,150,243,0.38);
+      }
+      .bwbr-bgm-seekbar-buffer {
+        position: absolute;
+        left: 0;
+        height: 2px;
+        border-radius: 12px;
+        background: rgba(33,150,243,0.5);
+        pointer-events: none;
+        transition: width 0.3s;
       }
       .bwbr-bgm-seekbar-track {
         position: absolute;
         left: 0;
         height: 2px;
-        border-radius: 1px;
-        background: #3fa2f6;
+        border-radius: 12px;
+        background: #2196f3;
         pointer-events: none;
       }
       .bwbr-bgm-seekbar-thumb {
         position: absolute;
-        width: 14px; height: 14px;
+        width: 12px; height: 12px;
         border-radius: 50%;
-        background: #3fa2f6;
+        background: #2196f3;
         transform: translate(-50%, -50%);
         top: 50%;
         pointer-events: none;
-        box-shadow: 0px 1px 3px rgba(0,0,0,0.4);
         transition: box-shadow 0.15s;
       }
       .bwbr-bgm-seekbar-wrap:hover .bwbr-bgm-seekbar-thumb,
       .bwbr-bgm-seekbar-wrap.seeking .bwbr-bgm-seekbar-thumb {
-        box-shadow: 0 0 0 8px rgba(63, 162, 246, 0.16);
+        box-shadow: 0 0 0 6px rgba(33,150,243,0.16);
       }
       .bwbr-bgm-time {
-        font-size: 14px;
-        font-family: inherit;
-        color: rgba(255,255,255,0.85);
+        font-size: 11px;
+        color: rgba(255,255,255,0.5);
+        font-family: 'Roboto Mono', monospace;
         white-space: nowrap;
-        min-width: 40px;
+        min-width: 36px;
         text-align: right;
         flex-shrink: 0;
         user-select: none;
-        line-height: 1;
       }
       .bwbr-bgm-loading {
-        font-size: 12px;
-        color: rgba(255,255,255,0.5);
+        font-size: 11px;
+        color: rgba(255,255,255,0.35);
         text-align: center;
         padding: 4px 0;
+        width: 100%;
       }
       .bwbr-bgm-stop-btn {
         width: 24px; height: 24px;
@@ -112,15 +111,14 @@
         cursor: pointer; padding: 0;
         display: flex; align-items: center; justify-content: center;
         color: rgba(255,255,255,0.5);
-        border-radius: 50%;
-        transition: color 0.15s;
         flex-shrink: 0;
+        transition: color 0.15s;
       }
       .bwbr-bgm-stop-btn:hover {
         color: #fff;
       }
       .bwbr-bgm-stop-btn svg {
-        width: 14px; height: 14px;
+        width: 18px; height: 18px;
         fill: currentColor;
       }
     `;
@@ -189,28 +187,28 @@
   function buildPlayerControls(player) {
     if (!_audio) return;
 
-    const row = document.createElement('div');
-    row.className = 'bwbr-bgm-player-row';
-
-    // Play/Pause 버튼
+    // Play/Pause 버튼 (볼륨 아이콘 위치와 동일한 24px 흰색)
     const playBtn = document.createElement('button');
     playBtn.className = 'bwbr-bgm-play-btn';
     playBtn.type = 'button';
-    playBtn.innerHTML = SVG_PAUSE; // 자동재생이므로 일시정지 아이콘으로 시작
+    playBtn.innerHTML = SVG_PAUSE;
     playBtn.title = '일시정지';
 
-    // 시크바
+    // 시크바 (MUI 슬라이더와 동일한 레이아웃)
     const seekWrap = document.createElement('div');
     seekWrap.className = 'bwbr-bgm-seekbar-wrap';
 
     const rail = document.createElement('div');
     rail.className = 'bwbr-bgm-seekbar-rail';
+    const buffer = document.createElement('div');
+    buffer.className = 'bwbr-bgm-seekbar-buffer';
     const track = document.createElement('div');
     track.className = 'bwbr-bgm-seekbar-track';
     const thumb = document.createElement('div');
     thumb.className = 'bwbr-bgm-seekbar-thumb';
 
     seekWrap.appendChild(rail);
+    seekWrap.appendChild(buffer);
     seekWrap.appendChild(track);
     seekWrap.appendChild(thumb);
 
@@ -227,11 +225,10 @@
     stopBtn.innerHTML = SVG_STOP;
     stopBtn.title = '정지';
 
-    row.appendChild(playBtn);
-    row.appendChild(seekWrap);
-    row.appendChild(timeEl);
-    row.appendChild(stopBtn);
-    player.appendChild(row);
+    player.appendChild(playBtn);
+    player.appendChild(seekWrap);
+    player.appendChild(timeEl);
+    player.appendChild(stopBtn);
 
     // ── 상태 관리 ──
 
@@ -248,6 +245,12 @@
         thumb.style.left = pct + '%';
       }
       timeEl.textContent = formatTime(cur) + ' / ' + formatTime(total);
+
+      // 버퍼 진행
+      if (_audio.buffered.length > 0) {
+        const buffEnd = _audio.buffered.end(_audio.buffered.length - 1);
+        buffer.style.width = Math.min(100, (buffEnd / total) * 100) + '%';
+      }
 
       if (!_audio.paused) {
         _rafId = requestAnimationFrame(updateUI);
