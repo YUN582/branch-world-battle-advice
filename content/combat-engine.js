@@ -54,8 +54,8 @@ window.CombatEngine = class CombatEngine {
    * @returns {boolean}
    */
   parseTurnRevertTrigger(text) {
-    // 《 차례 되돌리기 》 또는 《 차례되돌리기 》 (뒤에 @컷인 가능)
-    const pattern = /《\s*차례\s*되돌리기\s*》/;
+    // 《 이전 차례 》 또는 《 이전차례 》 (뒤에 @컷인 가능)
+    const pattern = /《\s*이전\s*차례\s*》/;
     return pattern.test(text);
   }
 
