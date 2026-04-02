@@ -2,7 +2,7 @@
 // [CORE] 메시지 수정/삭제 UI — ISOLATED world
 // 채팅 메시지 호버 시 수정/삭제 버튼 표시
 // 시스템 메시지: 수정 + 삭제, 텍스트 메시지: 삭제만 (수정은 네이티브)
-// 자신이 보낸 메시지만 대상 (from === 내 UID)
+// 자신이 보낸 메시지: 수정+삭제, 다른 사람 메시지: 삭제만
 // ============================================================
 
 (function() {
@@ -300,7 +300,9 @@
     if (_deletedMsgIds.has(msgId)) { listItem.style.display = 'none'; return; }
 
     var myUid = _getMyUid();
-    if (!myUid || msgFrom !== myUid) return;
+    if (!myUid) return;
+
+    var isOwn = (msgFrom === myUid);
 
     _currentHoveredItem = listItem;
     listItem.classList.add('bwbr-has-actions');
@@ -308,7 +310,7 @@
     _actionContainer = document.createElement('div');
     _actionContainer.className = 'bwbr-msg-actions';
 
-    if (msgType === 'system') {
+    if (isOwn && msgType === 'system') {
       // ── 시스템 메시지: CE [편집][삭제] ──
       var editBtn = _createActionBtn(ICON_EDIT, '수정', 'bwbr-msg-action-edit');
       editBtn.onclick = function(e) {
