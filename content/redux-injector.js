@@ -6199,10 +6199,11 @@
 
       await sdk.deleteDoc(msgRef);
 
-      // MAIN world 삭제 추적 Set에 등록 (태깅 시 해당 DOM 숨김용)
+      // MAIN world 삭제 추적 Set에 등록
       _mainDeletedMsgIds.add(msgId);
 
-      // 즉시 재태깅 → 삭제된 아이템 숨김
+      // CSS 즉시 갱신 → 해당 아이템 즉시 숨김 (태깅은 별도)
+      _updateHideCSS();
       _tagMessageItems();
 
       respond({ success: true, msgId });
@@ -6222,6 +6223,43 @@
    * 2) 삭제 ID 포함한 전체 channelMsgs로 태깅 (DOM과 순서 일치)
    * 3) 태깅 후 삭제 ID를 가진 아이템만 display:none
    */
+  // ── CSS 기반 삭제 메시지 숨김 (플리커 제거) ──
+  let _hideStyleEl = null;
+  function _updateHideCSS() {
+    // 삭제된 메시지 ID + setDoc 빈 메시지를 CSS로 항상 숨김
+    if (!_hideStyleEl) {
+      _hideStyleEl = document.createElement('style');
+      _hideStyleEl.id = 'bwbr-hide-deleted-css';
+      document.head.appendChild(_hideStyleEl);
+    }
+    const rules = [];
+    // _mainDeletedMsgIds (이 세션에서 삭제한 것)
+    for (const id of _mainDeletedMsgIds) {
+      rules.push(`[data-msg-id="${id}"]`);
+    }
+    // setDoc 빈 메시지 (Redux에서 확인)
+    if (reduxStore) {
+      const rm = reduxStore.getState().entities?.roomMessages;
+      if (rm && rm.ids) {
+        for (let i = 0; i < rm.ids.length; i++) {
+          const ent = rm.entities?.[rm.ids[i]];
+          if (ent && ent.text === '' && ent.name === 'system' && ent.type === 'system') {
+            if (!_mainDeletedMsgIds.has(ent._id)) {
+              rules.push(`[data-msg-id="${ent._id}"]`);
+            }
+          }
+        }
+      }
+    }
+    if (rules.length === 0) {
+      _hideStyleEl.textContent = '';
+      return;
+    }
+    const sel = rules.join(',\n');
+    // ListItem 자체 숨김 + 인접 HR 숨김 (wrapper > ListItem 구조 대응)
+    _hideStyleEl.textContent = `${sel} { display: none !important; }\n${rules.map(r => `${r} + hr, ${r} + .MuiDivider-root`).join(',\n')} { display: none !important; }`;
+  }
+
   function _tagMessageItems() {
     if (!reduxStore) return;
 
@@ -6249,50 +6287,14 @@
       channelMsgs.push(ent);
     }
 
-    // 태깅 + 숨김을 한 루프에서 처리 (초기화 루프 제거 → 플래시 방지)
+    // 태깅만 수행 (숨김은 CSS가 담당)
     const len = Math.min(allItems.length, channelMsgs.length);
     for (let i = 0; i < len; i++) {
       const item = allItems[i];
       const msg = channelMsgs[i];
-
-      // 태깅
       item.setAttribute('data-msg-id', msg._id);
       item.setAttribute('data-msg-from', msg.from || '');
       item.setAttribute('data-msg-type', msg.type || 'text');
-
-      // 숨김 여부 판정
-      const shouldHide = _mainDeletedMsgIds.has(msg._id)
-        || (msg.text === '' && msg.name === 'system' && msg.type === 'system');
-
-      item.style.display = shouldHide ? 'none' : '';
-
-      if (shouldHide) {
-        // 인접 구분선(HR/MuiDivider)도 숨김
-        const wrapper = item.parentElement;
-        if (wrapper) {
-          const nextEl = wrapper.nextElementSibling;
-          if (nextEl && (nextEl.tagName === 'HR' || nextEl.classList.contains('MuiDivider-root'))) {
-            nextEl.style.display = 'none';
-          }
-        }
-        const nextSib = item.nextElementSibling;
-        if (nextSib && (nextSib.tagName === 'HR' || nextSib.classList.contains('MuiDivider-root'))) {
-          nextSib.style.display = 'none';
-        }
-      } else {
-        // 보이는 아이템의 인접 HR은 복원
-        const wrapper = item.parentElement;
-        if (wrapper) {
-          const nextEl = wrapper.nextElementSibling;
-          if (nextEl && (nextEl.tagName === 'HR' || nextEl.classList.contains('MuiDivider-root'))) {
-            nextEl.style.display = '';
-          }
-        }
-        const nextSib = item.nextElementSibling;
-        if (nextSib && (nextSib.tagName === 'HR' || nextSib.classList.contains('MuiDivider-root'))) {
-          nextSib.style.display = '';
-        }
-      }
     }
 
     // 초과 DOM 아이템 숨김 (channelMsgs < DOM인 경우)
@@ -6300,13 +6302,16 @@
       allItems[i].style.display = 'none';
     }
 
+    // CSS 기반 삭제 숨김 규칙 갱신
+    _updateHideCSS();
+
     // 내 UID도 documentElement에 설정 (ISOLATED world에서 접근용)
     const myUid = state.app?.state?.uid || state.app?.user?.uid || '';
     if (myUid && document.documentElement.getAttribute('data-bwbr-my-uid') !== myUid) {
       document.documentElement.setAttribute('data-bwbr-my-uid', myUid);
     }
 
-    // ISOLATED world에 태깅 완료 알림 → 삭제된 메시지 재숨김 등
+    // ISOLATED world에 태깅 완료 알림
     document.dispatchEvent(new CustomEvent('bwbr-tags-applied'));
   }
 
