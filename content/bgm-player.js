@@ -25,7 +25,7 @@
         padding: 8px 12px;
         background: rgba(255,255,255,0.04);
         border-radius: 6px;
-        margin: 4px 0;
+        margin: 12px 0 0 0;
         width: 100%;
         box-sizing: border-box;
       }
@@ -177,7 +177,9 @@
     loading.className = 'bwbr-bgm-loading';
     loading.textContent = '로딩 중...';
     player.appendChild(loading);
-    container.appendChild(player);
+    
+    // sliderContainer 바로 위에 삽입
+    container.parentNode.insertBefore(player, container);
 
     let uiBuilt = false;
     function onReady() {
@@ -464,43 +466,31 @@
       // 볼륨 슬라이더 확인 (추가 검증)
       const volInput = form.querySelector('input[name="volume"]');
       if (!volInput) return;
-
-      // 기존 미리듣기 버튼의 클릭을 가로채기
-      // 원본 이벤트 리스너를 제거할 수 없으므로, 버튼을 복제하여 교체
-      const newPreviewBtn = previewBtn.cloneNode(true);
-      previewBtn.parentNode.replaceChild(newPreviewBtn, previewBtn);
+      const sliderContainer = volInput.closest('.sc-fpAljo') || volInput.parentNode;
 
       _currentPopover = popoverNode;
 
-      newPreviewBtn.addEventListener('click', async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-
+      async function injectPlayer() {
         const name = nameInput.value?.trim();
         if (!name) return;
 
-        // 이미 플레이어가 있으면 토글
+        // 이미 플레이어가 있으면 스킵
         const existingPlayer = document.getElementById(PLAYER_ID);
-        if (existingPlayer) {
-          cleanup();
-          return;
-        }
+        if (existingPlayer) return;
 
         const volume = parseFloat(volInput.value) || 0.5;
         const url = await getAudioUrlForItem(name);
 
-        if (!url) {
-          // URL을 못 찾으면 원본 동작 (noop — 원본 미리듣기 이벤트가 이미 복제로 사라짐)
-          // 사용자에게 알림
-          newPreviewBtn.textContent = 'URL 없음';
-          setTimeout(() => { newPreviewBtn.textContent = '미리듣기'; }, 1500);
-          return;
-        }
+        if (!url) return;
 
-        // 미리듣기 버튼 컨테이너에 플레이어 삽입
-        const btnContainer = newPreviewBtn.parentElement;
-        buildPlayer(btnContainer, url, volume);
-      });
+        // 사운드 음량바 위에 재생바 넣기
+        buildPlayer(sliderContainer, url, volume);
+        
+        // 미리듣기 버튼은 숨기기
+        previewBtn.style.display = 'none';
+      }
+
+      injectPlayer();
     }));
   }
 
