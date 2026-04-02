@@ -289,6 +289,11 @@
         }
       }
     }
+
+    // 일반 스탯 변경 감지 → UI 갱신 ("[ 캐릭 ] 라벨 : N → N" 패턴)
+    if (/\].+:\s*\d+\s*→\s*\d+/.test(text)) {
+      _scheduleStatRefreshUI(300);
+    }
   }
 
   function _scheduleStatRefreshUI(ms) {
