@@ -17,6 +17,26 @@
   if (window.__BWBR_REDUX_INJECTED) return;
   window.__BWBR_REDUX_INJECTED = true;
 
+  // ── React DOM 조작 충돌 방지 패치 ──
+  // 확장이 innerHTML을 수정하면 React가 리렌더 시 원래 자식 노드를 못 찾아
+  // removeChild/insertBefore에서 크래시함. 안전하게 무시하도록 패치.
+  // (Grammarly, 1Password 등 주요 확장이 사용하는 표준 패턴)
+  const _origRemoveChild = Node.prototype.removeChild;
+  Node.prototype.removeChild = function(child) {
+    if (child && child.parentNode !== this) {
+      return child;  // 이미 다른 부모이거나 제거됨 → 무시
+    }
+    return _origRemoveChild.call(this, child);
+  };
+
+  const _origInsertBefore = Node.prototype.insertBefore;
+  Node.prototype.insertBefore = function(newNode, refNode) {
+    if (refNode && refNode.parentNode !== this) {
+      return newNode;  // 참조 노드가 이 부모의 자식이 아님 → 무시
+    }
+    return _origInsertBefore.call(this, newNode, refNode);
+  };
+
   let reduxStore = null;
 
   // ── [COMBAT] 토큰 바인딩 캐시 (ISOLATED world에서 동기화) ──
