@@ -155,9 +155,19 @@
     // 사이트 UI에 음량 슬라이더 주입
     injectSiteVolumeSlider();
 
-    // 메시지 스타일 변경 적용
-    if (config.general.messageStyle) {
-      _applyMessageStyle(true);
+    // 이전 messageStyle 호환 → 새 키로 매핑
+    if (config.general.messageStyle && !config.general.systemCenter && !config.general.markdown) {
+      config.general.systemCenter = true;
+      config.general.markdown = true;
+    }
+
+    // 시스템 메시지 가운데 정렬
+    if (config.general.systemCenter) {
+      _applySystemCenter(true);
+    }
+    // 마크다운 서식
+    if (config.general.markdown) {
+      _applyMarkdown(true);
     }
 
     // 화면 표시 스케일 적용 (스탠딩/대화창 크기)
@@ -467,10 +477,17 @@
         sendResponse({ success: true });
         break;
 
-      case 'BWBR_SET_MESSAGE_STYLE':
-        config.general.messageStyle = message.messageStyle;
-        _applyMessageStyle(message.messageStyle);
-        alwaysLog(`메시지 스타일 변경 ${message.messageStyle ? '활성화' : '비활성화'}`);
+      case 'BWBR_SET_SYSTEM_CENTER':
+        config.general.systemCenter = message.systemCenter;
+        _applySystemCenter(message.systemCenter);
+        alwaysLog(`시스템 가운데 정렬 ${message.systemCenter ? '활성화' : '비활성화'}`);
+        sendResponse({ success: true });
+        break;
+
+      case 'BWBR_SET_MARKDOWN':
+        config.general.markdown = message.markdown;
+        _applyMarkdown(message.markdown);
+        alwaysLog(`마크다운 서식 ${message.markdown ? '활성화' : '비활성화'}`);
         sendResponse({ success: true });
         break;
 
@@ -1558,7 +1575,7 @@ ${rows.join('\n')}
     }
   }
 
-  // ── 메시지 스타일 변경 (시스템 가운데정렬 + 마크다운 렌더링) ──
+  // ── 메시지 스타일 (시스템 가운데정렬 / 마크다운 렌더링) ──
   const _MSG_STYLE_ID = 'bwbr-message-style-css';
   let _msgStyleEnabled = false;
   let _mdProcessing = false;         // 재귀 방지 플래그
@@ -1610,14 +1627,13 @@ ${rows.join('\n')}
     return /\*\*|(?<!\*)\*[^*]|__|~~|`[^`]+`|\([^|)]+\|[#루툴]|^#{1,3} /m.test(text);
   }
 
-  // DOM에 마크다운 적용 (rAF에서 실행)
+  // DOM에 마크다운 적용
   function _applyMarkdownToMessages() {
-    if (!_msgStyleEnabled || _mdProcessing) return;
+    if (!_markdownEnabled || _mdProcessing) return;
     _mdProcessing = true;
     const items = document.querySelectorAll('.MuiListItem-root[data-msg-id]');
     for (let i = items.length - 1; i >= 0; i--) {  // 최신 메시지 우선
       const item = items[i];
-      if (item.style.display === 'none') continue;
       const textEl = item.querySelector('.MuiListItemText-secondary');
       if (!textEl) continue;
       if (textEl.getAttribute('data-bwbr-md') === '1') continue;
@@ -1642,13 +1658,6 @@ ${rows.join('\n')}
     _mdProcessing = false;
   }
 
-  // rAF 디바운스 래퍼
-  function _scheduleMarkdown() {
-    if (!_msgStyleEnabled) return;
-    if (_mdRafId) cancelAnimationFrame(_mdRafId);
-    _mdRafId = requestAnimationFrame(_applyMarkdownToMessages);
-  }
-
   // 마크다운 해제
   function _removeMarkdownFromMessages() {
     const items = document.querySelectorAll('.MuiListItemText-secondary[data-bwbr-md]');
@@ -1658,15 +1667,17 @@ ${rows.join('\n')}
     _mdCache.clear();
   }
 
-  function _applyMessageStyle(enabled) {
-    _msgStyleEnabled = enabled;
-    let styleEl = document.getElementById(_MSG_STYLE_ID);
+  // ── 시스템 메시지 가운데 정렬 (CSS만) ──
+  const _SYS_CENTER_ID = 'bwbr-system-center-css';
+
+  function _applySystemCenter(enabled) {
+    let styleEl = document.getElementById(_SYS_CENTER_ID);
     if (enabled) {
       if (!styleEl) {
         styleEl = document.createElement('style');
-        styleEl.id = _MSG_STYLE_ID;
+        styleEl.id = _SYS_CENTER_ID;
         styleEl.textContent = `
-/* CE 메시지 스타일: 시스템 메시지 가운데 정렬 */
+/* CE: 시스템 메시지 가운데 정렬 */
 .MuiListItem-root[data-msg-type="system"] .MuiListItemText-root {
   text-align: center !important;
 }
@@ -1676,6 +1687,27 @@ ${rows.join('\n')}
 .MuiListItem-root[data-msg-type="system"] .MuiListItemText-primary {
   display: none !important;
 }
+`;
+        document.head.appendChild(styleEl);
+      }
+    } else {
+      if (styleEl) styleEl.remove();
+    }
+  }
+
+  // ── 마크다운 서식 ──
+  const _MD_STYLE_ID = 'bwbr-markdown-css';
+  let _markdownEnabled = false;
+
+  function _applyMarkdown(enabled) {
+    _markdownEnabled = enabled;
+    _msgStyleEnabled = enabled;  // 기존 변수 호환
+    let styleEl = document.getElementById(_MD_STYLE_ID);
+    if (enabled) {
+      if (!styleEl) {
+        styleEl = document.createElement('style');
+        styleEl.id = _MD_STYLE_ID;
+        styleEl.textContent = `
 /* CE 마크다운 루비 */
 .MuiListItemText-secondary ruby rt {
   font-size: 0.6em;
@@ -1706,13 +1738,19 @@ ${rows.join('\n')}
 `;
         document.head.appendChild(styleEl);
       }
-      _scheduleMarkdown();
-      document.addEventListener('bwbr-tags-applied', _scheduleMarkdown);
+      _applyMarkdownToMessages();
+      document.addEventListener('bwbr-tags-applied', _onTagsAppliedMarkdown);
     } else {
       if (styleEl) styleEl.remove();
       _removeMarkdownFromMessages();
-      document.removeEventListener('bwbr-tags-applied', _scheduleMarkdown);
+      document.removeEventListener('bwbr-tags-applied', _onTagsAppliedMarkdown);
     }
+  }
+
+  // 태깅 후 마크다운 적용 — 이미 처리된 건 스킵하므로 가벼움
+  function _onTagsAppliedMarkdown() {
+    if (!_markdownEnabled) return;
+    _applyMarkdownToMessages();
   }
 
   // ── 채팅 커맨드 도움말에 마크다운 섹션 주입 ──
@@ -1764,7 +1802,7 @@ ${rows.join('\n')}
         '',
         '단축키: Ctrl+B 굵게, Ctrl+I 기울임, Ctrl+U 밑줄, Ctrl+D 취소선',
         '',
-        '※ 설정 > 일반 > "메시지 스타일 변경" 토글 필요',
+        '※ 설정 > 일반 > "마크다운 서식" 토글 필요',
       ].join('\n');
 
       content.appendChild(hr);

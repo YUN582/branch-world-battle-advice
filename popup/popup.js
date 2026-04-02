@@ -26,7 +26,8 @@
       language: 'ko',
       standingScale: 1.0,
       chatBubbleScale: 1.0,
-      messageStyle: false
+      systemCenter: false,
+      markdown: false
     },
     selectors: {
       chatContainer: ['[class*="MuiList-root"]', '[class*="chat-log"]', '[class*="message-list"]', '[role="log"]', '[class*="scroll"]'],
@@ -209,7 +210,8 @@
     $('gen-chatBubbleScale').value = cfg.general.chatBubbleScale ?? 1.0;
     $('gen-chatBubbleScale-val').textContent = Math.round((cfg.general.chatBubbleScale ?? 1.0) * 100) + '%';
     $('toggle-debugMode').checked = cfg.general.debugMode;
-    $('toggle-messageStyle').checked = cfg.general.messageStyle || false;
+    $('toggle-systemCenter').checked = cfg.general.systemCenter || false;
+    $('toggle-markdown').checked = cfg.general.markdown || false;
 
     // ── 로컬 효과음 (커스텀 롤 사운드) ──
     loadCustomRollSounds();
@@ -233,7 +235,8 @@
     cfg.general.standingScale = parseFloat($('gen-standingScale').value) || 1.0;
     cfg.general.chatBubbleScale = parseFloat($('gen-chatBubbleScale').value) || 1.0;
     cfg.general.debugMode = $('toggle-debugMode').checked;
-    cfg.general.messageStyle = $('toggle-messageStyle').checked;
+    cfg.general.systemCenter = $('toggle-systemCenter').checked;
+    cfg.general.markdown = $('toggle-markdown').checked;
 
     // ── 전투 모듈 설정 (동적 패널 열려 있으면 수집, 아니면 현재 값 유지) ──
     if (_moduleSettingsOpen === 'branch-world') {
@@ -294,9 +297,14 @@
       sendToContent({ type: 'BWBR_SET_AUTO_COMPLETE', autoComplete: e.target.checked });
     });
 
-    // 메시지 스타일 토글 (즉시 적용)
-    $('toggle-messageStyle').addEventListener('change', (e) => {
-      sendToContent({ type: 'BWBR_SET_MESSAGE_STYLE', messageStyle: e.target.checked });
+    // 시스템 메시지 가운데 정렬 토글 (즉시 적용)
+    $('toggle-systemCenter').addEventListener('change', (e) => {
+      sendToContent({ type: 'BWBR_SET_SYSTEM_CENTER', systemCenter: e.target.checked });
+    });
+
+    // 마크다운 서식 토글 (즉시 적용)
+    $('toggle-markdown').addEventListener('change', (e) => {
+      sendToContent({ type: 'BWBR_SET_MARKDOWN', markdown: e.target.checked });
     });
 
     // 저장
