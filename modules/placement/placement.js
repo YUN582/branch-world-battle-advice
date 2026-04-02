@@ -2167,20 +2167,9 @@ function createDrawSettingsMenu() {
   colorSizeRow.appendChild(sizeGroup);
   menu.appendChild(colorSizeRow);
 
-  // ── 색상 히스토리 ──
-  var historyRow = document.createElement('div');
-  historyRow.className = 'bwbr-draw-color-history';
-  _drawColorHistoryEl = historyRow;
-  _updateColorHistoryUI(colorBtn);
-  menu.appendChild(historyRow);
-
-  // ── 브러쉬 모양 ──
-  var shapeRow = document.createElement('div');
-  shapeRow.style.cssText = 'display:flex;align-items:center;gap:6px;';
-  var shapeLabel = document.createElement('span');
-  shapeLabel.textContent = '모양';
-  shapeLabel.style.cssText = 'font-size:12px;color:rgba(255,255,255,0.7);min-width:32px;';
-  shapeRow.appendChild(shapeLabel);
+  // ── 브러쉬 모양 + 색상 히스토리 (한 줄) ──
+  var shapeHistoryRow = document.createElement('div');
+  shapeHistoryRow.style.cssText = 'display:flex;align-items:center;gap:4px;';
 
   var shapes = [
     { id: 'round', svg: '<circle cx="10" cy="10" r="7" fill="currentColor"/>' },
@@ -2190,26 +2179,41 @@ function createDrawSettingsMenu() {
   var shapeBtns = {};
   shapes.forEach(function(sh) {
     var btn = document.createElement('button');
-    btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 20 20">' + sh.svg + '</svg>';
-    btn.style.cssText = 'background:none;border:2px solid ' +
-      (sh.id === _drawSettings.brushShape ? 'rgba(100,181,246,0.9)' : 'rgba(255,255,255,0.15)') +
-      ';border-radius:4px;cursor:pointer;padding:3px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.8);';
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 20 20">' + sh.svg + '</svg>';
+    var isActive = sh.id === _drawSettings.brushShape;
+    btn.style.cssText = 'background:' + (isActive ? 'rgba(0,0,0,0.12)' : 'none') +
+      ';border:1.5px solid ' + (isActive ? 'rgba(66,133,244,0.8)' : 'rgba(0,0,0,0.15)') +
+      ';border-radius:4px;cursor:pointer;padding:3px;display:flex;align-items:center;justify-content:center;color:rgba(0,0,0,0.6);flex-shrink:0;';
+    function updateShapeStyles() {
+      Object.keys(shapeBtns).forEach(function(k) {
+        var active = k === _drawSettings.brushShape;
+        shapeBtns[k].style.borderColor = active ? 'rgba(66,133,244,0.8)' : 'rgba(0,0,0,0.15)';
+        shapeBtns[k].style.background = active ? 'rgba(0,0,0,0.12)' : 'none';
+      });
+    }
     btn.addEventListener('mouseenter', function() {
-      if (_drawSettings.brushShape !== sh.id) btn.style.borderColor = 'rgba(255,255,255,0.4)';
+      if (_drawSettings.brushShape !== sh.id) btn.style.borderColor = 'rgba(0,0,0,0.35)';
     });
     btn.addEventListener('mouseleave', function() {
-      if (_drawSettings.brushShape !== sh.id) btn.style.borderColor = 'rgba(255,255,255,0.15)';
+      if (_drawSettings.brushShape !== sh.id) btn.style.borderColor = 'rgba(0,0,0,0.15)';
     });
     btn.addEventListener('click', function() {
       _drawSettings.brushShape = sh.id;
-      Object.keys(shapeBtns).forEach(function(k) {
-        shapeBtns[k].style.borderColor = k === sh.id ? 'rgba(100,181,246,0.9)' : 'rgba(255,255,255,0.15)';
-      });
+      updateShapeStyles();
     });
     shapeBtns[sh.id] = btn;
-    shapeRow.appendChild(btn);
+    shapeHistoryRow.appendChild(btn);
   });
-  menu.appendChild(shapeRow);
+
+  // 색상 히스토리 (모양 버튼 오른쪽)
+  var historyRow = document.createElement('div');
+  historyRow.className = 'bwbr-draw-color-history';
+  historyRow.style.cssText += 'flex:1;min-width:0;justify-content:flex-end;';
+  _drawColorHistoryEl = historyRow;
+  _updateColorHistoryUI(colorBtn);
+  shapeHistoryRow.appendChild(historyRow);
+
+  menu.appendChild(shapeHistoryRow);
 
   // ── 투명도 ──
   var opacityGroup = document.createElement('div');
