@@ -100,12 +100,38 @@
     el.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
+  /* ── 마크다운 단축키 래핑 헬퍼 ──────────────────────── */
+  function _wrapSelection(el, prefix, suffix) {
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const val = el.value;
+    const selected = val.substring(start, end);
+    const newVal = val.substring(0, start) + prefix + selected + suffix + val.substring(end);
+    setNative(el, newVal);
+    // 커서를 래핑 안쪽에 배치
+    if (selected.length > 0) {
+      el.selectionStart = start + prefix.length;
+      el.selectionEnd = end + prefix.length;
+    } else {
+      el.selectionStart = el.selectionEnd = start + prefix.length;
+    }
+    el.focus();
+  }
+
   /* ── keydown 핸들러 (capture phase) ─────────────────── */
   document.addEventListener('keydown', (e) => {
     if (!enabled) return;
     if (!isChatInput(e.target)) return;
 
     const el = e.target;
+
+    /* ── 마크다운 단축키 (Ctrl+B/I/U/D) ──────────── */
+    if (e.ctrlKey && !e.shiftKey && !e.altKey) {
+      if (e.key === 'b' || e.key === 'B') { e.preventDefault(); _wrapSelection(el, '**', '**'); return; }
+      if (e.key === 'i' || e.key === 'I') { e.preventDefault(); _wrapSelection(el, '*', '*'); return; }
+      if (e.key === 'u' || e.key === 'U') { e.preventDefault(); _wrapSelection(el, '__', '__'); return; }
+      if (e.key === 'd' || e.key === 'D') { e.preventDefault(); _wrapSelection(el, '~~', '~~'); return; }
+    }
 
     /* ── # 자동완성 키 처리 ──────────────────────── */
     if (_hashActive && _hashInput === el) {
