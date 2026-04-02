@@ -183,12 +183,12 @@
     exportDiv.classList.add('bwbr-room-copy-section');
 
     const exportDesc = nativeTextDiv ? nativeTextDiv.cloneNode(false) : document.createElement('div');
-    exportDesc.textContent = '방 설정, 캐릭터, 스크린 패널 데이터를 JSON 파일로 저장합니다.';
+    exportDesc.textContent = '방 설정, 캐릭터, 스크린 패널, 장면, 컷인, 시나리오, 카드 덱, 세이브 데이터를 JSON 파일로 저장합니다.';
 
     const exportBtn = cloneNativeButton(nativeBtn, '내보내기');
     exportBtn.classList.remove('Mui-disabled');
     exportBtn.disabled = false;
-    exportBtn.addEventListener('click', handleExport);
+    exportBtn.addEventListener('click', handleExportWithDialog);
     exportDiv.appendChild(exportDesc);
     exportDiv.appendChild(exportBtn);
 
@@ -210,7 +210,7 @@
     importDiv.classList.add('bwbr-room-copy-section');
 
     const importDesc = nativeTextDiv ? nativeTextDiv.cloneNode(false) : document.createElement('div');
-    importDesc.textContent = '내보낸 JSON 파일을 현재 방에 가져옵니다. 기존 캐릭터/아이템은 유지되며 새로 추가됩니다.';
+    importDesc.textContent = '내보낸 JSON 파일을 현재 방에 가져옵니다. 기존 데이터는 유지되며 새로 추가됩니다.';
 
     const importBtn = cloneNativeButton(nativeBtn, '가져오기');
     importBtn.classList.remove('Mui-disabled');
@@ -268,17 +268,155 @@
 
   let _exportBusy = false;
 
-  function handleExport() {
+  /** 내보내기 카테고리 선택 다이얼로그를 표시한 뒤 실행합니다. */
+  function handleExportWithDialog() {
+    if (_exportBusy) return;
+
+    // 기존 다이얼로그 제거
+    const old = document.getElementById('bwbr-export-dialog');
+    if (old) old.remove();
+
+    // ── 오버레이 ──
+    const overlay = document.createElement('div');
+    overlay.id = 'bwbr-export-dialog';
+    overlay.style.cssText = `
+      position: fixed; inset: 0; z-index: 100000;
+      background: rgba(0,0,0,0.6);
+      display: flex; align-items: center; justify-content: center;
+    `;
+
+    // ── 다이얼로그 패널 ──
+    const panel = document.createElement('div');
+    panel.style.cssText = `
+      background: #1e1e1e; border-radius: 8px;
+      padding: 24px; width: 420px; max-height: 80vh;
+      overflow-y: auto; color: #fff; font-size: 14px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    `;
+
+    const title = document.createElement('h2');
+    title.style.cssText = 'margin: 0 0 16px; font-size: 18px; color: #ce93d8;';
+    title.textContent = '📦 내보낼 카테고리 선택';
+    panel.appendChild(title);
+
+    // 카테고리 정의
+    const EXPORT_CATS = [
+      { key: 'roomSettings', icon: '⚙️', label: '방 설정', desc: '배경, 전경, 그리드 등' },
+      { key: 'characters',   icon: '👤', label: '캐릭터', desc: '모든 캐릭터' },
+      { key: 'items',        icon: '🖼️', label: '스크린 패널', desc: '아이템/오브젝트' },
+      { key: 'scenes',       icon: '🎬', label: '장면', desc: '씬 (BGM 제외)' },
+      { key: 'effects',      icon: '✨', label: '컷인', desc: '이펙트 (음원 포함)' },
+      { key: 'notes',        icon: '📝', label: '시나리오 텍스트', desc: '노트' },
+      { key: 'decks',        icon: '🃏', label: '카드 덱', desc: '덱 데이터' },
+      { key: 'savedatas',    icon: '💾', label: '세이브 데이터', desc: '저장된 상태' },
+    ];
+
+    const catCheckboxes = {};
+
+    for (const cat of EXPORT_CATS) {
+      const row = document.createElement('label');
+      row.style.cssText = `
+        display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+        cursor: pointer; user-select: none; border-radius: 4px;
+      `;
+      row.addEventListener('mouseenter', () => { row.style.background = 'rgba(255,255,255,0.05)'; });
+      row.addEventListener('mouseleave', () => { row.style.background = ''; });
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = true;
+      cb.style.cssText = 'width: 16px; height: 16px; cursor: pointer; accent-color: #ce93d8;';
+      catCheckboxes[cat.key] = cb;
+
+      const iconSpan = document.createElement('span');
+      iconSpan.textContent = cat.icon;
+      iconSpan.style.cssText = 'font-size: 16px; width: 24px; text-align: center;';
+
+      const textWrap = document.createElement('div');
+      textWrap.style.cssText = 'flex: 1;';
+
+      const labelSpan = document.createElement('span');
+      labelSpan.textContent = cat.label;
+      labelSpan.style.cssText = 'font-weight: 500;';
+
+      const descSpan = document.createElement('span');
+      descSpan.textContent = ' — ' + cat.desc;
+      descSpan.style.cssText = 'color: #888; font-size: 12px;';
+
+      textWrap.appendChild(labelSpan);
+      textWrap.appendChild(descSpan);
+
+      row.appendChild(cb);
+      row.appendChild(iconSpan);
+      row.appendChild(textWrap);
+      panel.appendChild(row);
+    }
+
+    // ── 버튼 영역 ──
+    const btnArea = document.createElement('div');
+    btnArea.style.cssText = 'display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = '취소';
+    cancelBtn.type = 'button';
+    cancelBtn.style.cssText = `
+      padding: 8px 20px; border: 1px solid rgba(255,255,255,0.3); border-radius: 4px;
+      background: transparent; color: #fff; font-size: 14px; cursor: pointer;
+    `;
+    cancelBtn.addEventListener('click', () => overlay.remove());
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.textContent = '내보내기';
+    confirmBtn.type = 'button';
+    confirmBtn.style.cssText = `
+      padding: 8px 20px; border: none; border-radius: 4px;
+      background: #7b1fa2; color: #fff; font-size: 14px; cursor: pointer; font-weight: 500;
+    `;
+    confirmBtn.addEventListener('mouseenter', () => { confirmBtn.style.background = '#6a1b9a'; });
+    confirmBtn.addEventListener('mouseleave', () => { confirmBtn.style.background = '#7b1fa2'; });
+
+    confirmBtn.addEventListener('click', () => {
+      const categories = {};
+      let anySelected = false;
+      for (const cat of EXPORT_CATS) {
+        categories[cat.key] = catCheckboxes[cat.key].checked;
+        if (categories[cat.key]) anySelected = true;
+      }
+      if (!anySelected) {
+        showToast('⚠️ 내보낼 카테고리를 선택하세요', true);
+        return;
+      }
+      overlay.remove();
+      executeExport(categories);
+    });
+
+    btnArea.appendChild(cancelBtn);
+    btnArea.appendChild(confirmBtn);
+    panel.appendChild(btnArea);
+
+    overlay.appendChild(panel);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) overlay.remove();
+    });
+    document.body.appendChild(overlay);
+  }
+
+  /** 선택된 카테고리로 내보내기를 실행합니다. */
+  async function executeExport(categories) {
     if (_exportBusy) return;
     _exportBusy = true;
 
-    log('룸 데이터 내보내기 시작...');
+    log('룸 데이터 내보내기 시작...', categories);
+    showToast('📦 룸 데이터 내보내는 중...', false, 0);
 
-    const handler = (e) => {
-      window.removeEventListener('bwbr-room-export-result', handler);
+    try {
+      const result = await BWBR_Bridge.request(
+        'bwbr-room-export', 'bwbr-room-export-result', categories,
+        { sendAttr: 'data-bwbr-room-export', recvAttr: 'data-bwbr-room-export-result', timeout: 10000 }
+      );
+
       _exportBusy = false;
-
-      const result = e.detail;
+      clearToasts();
 
       if (!result || !result.success) {
         showToast('❌ 룸 데이터 내보내기 실패: ' + (result?.error || '알 수 없는 오류'), true);
@@ -292,7 +430,6 @@
       const a = document.createElement('a');
       a.href = url;
 
-      // 파일명: bwbr-room-{방이름}-{날짜}.json
       const safeName = (result.roomName || 'room')
         .replace(/[<>:"/\\|?*]/g, '_')
         .replace(/\s+/g, '_')
@@ -305,26 +442,26 @@
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      const charCount = result.data?.characters?.length || 0;
-      const itemCount = result.data?.items?.length || 0;
+      // 카운트 표시
+      const d = result.data;
+      const parts = [];
+      if (d.roomSettings) parts.push('방 설정');
+      if (d.characters?.length) parts.push(`캐릭터 ${d.characters.length}개`);
+      if (d.items?.length) parts.push(`아이템 ${d.items.length}개`);
+      if (d.scenes?.length) parts.push(`장면 ${d.scenes.length}개`);
+      if (d.effects?.length) parts.push(`컷인 ${d.effects.length}개`);
+      if (d.notes?.length) parts.push(`시나리오 ${d.notes.length}개`);
+      if (d.decks?.length) parts.push(`카드덱 ${d.decks.length}개`);
+      if (d.savedatas?.length) parts.push(`세이브 ${d.savedatas.length}개`);
 
-      log(`✅ 룸 데이터 내보내기 완료: ${a.download} (캐릭터 ${charCount}, 아이템 ${itemCount})`);
-      showToast(`📦 룸 데이터를 내보냈습니다 (캐릭터 ${charCount}개, 아이템 ${itemCount}개)`);
-    };
+      log(`✅ 룸 데이터 내보내기 완료: ${a.download}`);
+      showToast(`📦 룸 데이터를 내보냈습니다 (${parts.join(', ')})`);
 
-    // 5초 타임아웃
-    const timeout = setTimeout(() => {
-      window.removeEventListener('bwbr-room-export-result', handler);
+    } catch (err) {
       _exportBusy = false;
+      clearToasts();
       showToast('❌ 룸 데이터 내보내기 시간 초과', true);
-    }, 5000);
-
-    window.addEventListener('bwbr-room-export-result', (e) => {
-      clearTimeout(timeout);
-      handler(e);
-    }, { once: true });
-
-    window.dispatchEvent(new CustomEvent('bwbr-room-export'));
+    }
   }
 
   // ── 가져오기 핸들러 ─────────────────────────────────────
@@ -354,8 +491,8 @@
           return;
         }
 
-        // 기본 검증
-        if (!data.version || !data.roomSettings) {
+        // 기본 검증 — v1은 roomSettings 필수, v2는 version만 필수
+        if (!data.version) {
           showToast('❌ 유효하지 않은 룸 데이터 파일입니다', true);
           return;
         }
@@ -376,15 +513,22 @@
 
   /**
    * 가져올 데이터를 선별할 수 있는 모달 다이얼로그를 표시합니다.
-   * 체크박스로 방 설정 / 캐릭터(개별) / 아이템(개별)을 선택 가능합니다.
+   * v1: 방 설정 / 캐릭터(개별) / 아이템(개별)
+   * v2: + 장면(개별) / 컷인(개별) / 시나리오(개별) / 카드덱(개별) / 세이브(개별)
    */
   function showImportSelectionDialog(data, rawText) {
     // 기존 다이얼로그 제거
     const old = document.getElementById('bwbr-import-dialog');
     if (old) old.remove();
 
+    const isV2 = data.version >= 2;
     const charCount = data.characters?.length || 0;
     const itemCount = data.items?.length || 0;
+    const sceneCount = data.scenes?.length || 0;
+    const effectCount = data.effects?.length || 0;
+    const noteCount = data.notes?.length || 0;
+    const deckCount = data.decks?.length || 0;
+    const savedataCount = data.savedatas?.length || 0;
     const sourceName = data.roomName || '알 수 없음';
 
     // ── 오버레이 ──
@@ -414,18 +558,22 @@
     // 원본 정보
     const info = document.createElement('div');
     info.style.cssText = 'margin-bottom: 16px; color: #aaa; font-size: 13px;';
-    info.textContent = `원본 방: ${sourceName}`;
+    const versionLabel = isV2 ? 'v2' : 'v1';
+    info.textContent = `원본 방: ${sourceName} (${versionLabel})`;
     panel.appendChild(info);
 
     // ── 카테고리별 체크박스 ──
 
     // 1. 방 설정
-    const settingsSection = createCategorySection(
-      '⚙️ 방 설정',
-      '배경, 전경, 그리드, 필드 등의 방 설정을 덮어씁니다.',
-      null // 개별 항목 없음
-    );
-    panel.appendChild(settingsSection.container);
+    let settingsSection = null;
+    if (data.roomSettings) {
+      settingsSection = createCategorySection(
+        '⚙️ 방 설정',
+        '배경, 전경, 그리드, 필드 등의 방 설정을 덮어씁니다.',
+        null
+      );
+      panel.appendChild(settingsSection.container);
+    }
 
     // 2. 캐릭터
     let charCheckboxes = [];
@@ -465,10 +613,97 @@
       itemCheckboxes = itemSection.itemCheckboxes;
     }
 
+    // ── v2 추가 카테고리 ──
+
+    // 4. 장면
+    let sceneCheckboxes = [];
+    if (isV2 && sceneCount > 0) {
+      const sceneItems = data.scenes.map((s, i) => ({
+        label: s.name || `장면 #${i + 1}`,
+        sublabel: s.backgroundUrl ? '배경 있음' : '배경 없음',
+        index: i
+      }));
+      const sceneSection = createCategorySection(
+        `🎬 장면 (${sceneCount}개)`,
+        '선택한 장면을 현재 방에 추가합니다.',
+        sceneItems
+      );
+      panel.appendChild(sceneSection.container);
+      sceneCheckboxes = sceneSection.itemCheckboxes;
+    }
+
+    // 5. 컷인/이펙트
+    let effectCheckboxes = [];
+    if (isV2 && effectCount > 0) {
+      const effectItems = data.effects.map((eff, i) => ({
+        label: eff.name || `컷인 #${i + 1}`,
+        sublabel: eff.soundUrl ? '음원 포함' : '',
+        index: i
+      }));
+      const effectSection = createCategorySection(
+        `✨ 컷인 (${effectCount}개)`,
+        '선택한 컷인을 현재 방에 추가합니다.',
+        effectItems
+      );
+      panel.appendChild(effectSection.container);
+      effectCheckboxes = effectSection.itemCheckboxes;
+    }
+
+    // 6. 시나리오 텍스트
+    let noteCheckboxes = [];
+    if (isV2 && noteCount > 0) {
+      const noteItems = data.notes.map((n, i) => ({
+        label: n.name || `시나리오 #${i + 1}`,
+        sublabel: '',
+        index: i
+      }));
+      const noteSection = createCategorySection(
+        `📝 시나리오 텍스트 (${noteCount}개)`,
+        '선택한 시나리오를 현재 방에 추가합니다.',
+        noteItems
+      );
+      panel.appendChild(noteSection.container);
+      noteCheckboxes = noteSection.itemCheckboxes;
+    }
+
+    // 7. 카드 덱
+    let deckCheckboxes = [];
+    if (isV2 && deckCount > 0) {
+      const deckItems = data.decks.map((d, i) => ({
+        label: d.name || `덱 #${i + 1}`,
+        sublabel: '',
+        index: i
+      }));
+      const deckSection = createCategorySection(
+        `🃏 카드 덱 (${deckCount}개)`,
+        '선택한 카드 덱을 현재 방에 추가합니다.',
+        deckItems
+      );
+      panel.appendChild(deckSection.container);
+      deckCheckboxes = deckSection.itemCheckboxes;
+    }
+
+    // 8. 세이브 데이터
+    let savedataCheckboxes = [];
+    if (isV2 && savedataCount > 0) {
+      const sdItems = data.savedatas.map((sd, i) => ({
+        label: sd.name || `세이브 #${i + 1}`,
+        sublabel: '',
+        index: i
+      }));
+      const sdSection = createCategorySection(
+        `💾 세이브 데이터 (${savedataCount}개)`,
+        '선택한 세이브 데이터를 현재 방에 추가합니다.',
+        sdItems
+      );
+      panel.appendChild(sdSection.container);
+      savedataCheckboxes = sdSection.itemCheckboxes;
+    }
+
     // ── 안내 문구 ──
     const note = document.createElement('div');
     note.style.cssText = 'margin-top: 12px; padding: 8px 12px; background: rgba(255,255,255,0.05); border-radius: 4px; color: #aaa; font-size: 12px; line-height: 1.5;';
-    note.innerHTML = '※ 기존 캐릭터/아이템은 유지되고 새로 추가됩니다.<br>※ 방 설정을 선택하면 배경, 전경, 그리드 등이 가져온 데이터로 변경됩니다.';
+    note.innerHTML = '※ 기존 데이터는 유지되고 새로 추가됩니다.<br>※ 방 설정을 선택하면 배경, 전경, 그리드 등이 가져온 데이터로 변경됩니다.';
     panel.appendChild(note);
 
     // ── 버튼 영역 ──
@@ -495,7 +730,7 @@
     confirmBtn.addEventListener('mouseleave', () => { confirmBtn.style.background = '#1976d2'; });
 
     confirmBtn.addEventListener('click', () => {
-      const includeSettings = settingsSection.categoryCheckbox.checked;
+      const includeSettings = settingsSection ? settingsSection.categoryCheckbox.checked : false;
 
       // 선택된 캐릭터 필터링
       const selectedChars = [];
@@ -509,8 +744,33 @@
         if (cb.checked) selectedItems.push(data.items[i]);
       });
 
+      // v2 카테고리 필터링
+      const selectedScenes = [];
+      sceneCheckboxes.forEach((cb, i) => {
+        if (cb.checked) selectedScenes.push(data.scenes[i]);
+      });
+      const selectedEffects = [];
+      effectCheckboxes.forEach((cb, i) => {
+        if (cb.checked) selectedEffects.push(data.effects[i]);
+      });
+      const selectedNotes = [];
+      noteCheckboxes.forEach((cb, i) => {
+        if (cb.checked) selectedNotes.push(data.notes[i]);
+      });
+      const selectedDecks = [];
+      deckCheckboxes.forEach((cb, i) => {
+        if (cb.checked) selectedDecks.push(data.decks[i]);
+      });
+      const selectedSavedatas = [];
+      savedataCheckboxes.forEach((cb, i) => {
+        if (cb.checked) selectedSavedatas.push(data.savedatas[i]);
+      });
+
       // 아무것도 선택하지 않은 경우
-      if (!includeSettings && selectedChars.length === 0 && selectedItems.length === 0) {
+      const totalSelected = (includeSettings ? 1 : 0) + selectedChars.length + selectedItems.length
+        + selectedScenes.length + selectedEffects.length + selectedNotes.length
+        + selectedDecks.length + selectedSavedatas.length;
+      if (totalSelected === 0) {
         showToast('⚠️ 가져올 항목을 선택하세요', true);
         return;
       }
@@ -525,7 +785,12 @@
         roomName: data.roomName,
         roomSettings: includeSettings ? data.roomSettings : null,
         characters: selectedChars,
-        items: selectedItems
+        items: selectedItems,
+        scenes: selectedScenes,
+        effects: selectedEffects,
+        notes: selectedNotes,
+        decks: selectedDecks,
+        savedatas: selectedSavedatas
       };
 
       executeImport(filteredData);
@@ -666,6 +931,11 @@
       if (result.settingsUpdated) parts.push('방 설정');
       if (result.charCount > 0) parts.push(`캐릭터 ${result.charCount}개`);
       if (result.itemCount > 0) parts.push(`아이템 ${result.itemCount}개`);
+      if (result.sceneCount > 0) parts.push(`장면 ${result.sceneCount}개`);
+      if (result.effectCount > 0) parts.push(`컷인 ${result.effectCount}개`);
+      if (result.noteCount > 0) parts.push(`시나리오 ${result.noteCount}개`);
+      if (result.deckCount > 0) parts.push(`카드덱 ${result.deckCount}개`);
+      if (result.savedataCount > 0) parts.push(`세이브 ${result.savedataCount}개`);
       const summary = parts.join(', ');
       log(`✅ 룸 데이터 가져오기 완료 (${summary})`);
       showToast(`📥 룸 데이터를 가져왔습니다! (${summary})`);

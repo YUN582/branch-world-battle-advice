@@ -5462,10 +5462,16 @@
 
   window.addEventListener('bwbr-room-export', () => {
     const respond = (data) => {
-      window.dispatchEvent(new CustomEvent('bwbr-room-export-result', { detail: data }));
+      document.documentElement.setAttribute('data-bwbr-room-export-result', JSON.stringify(data));
+      window.dispatchEvent(new CustomEvent('bwbr-room-export-result'));
     };
 
     try {
+      // 카테고리 파라미터 읽기
+      const catsRaw = document.documentElement.getAttribute('data-bwbr-room-export');
+      document.documentElement.removeAttribute('data-bwbr-room-export');
+      const categories = catsRaw ? JSON.parse(catsRaw) : {};
+
       if (!reduxStore) {
         respond({ success: false, error: 'Redux Store 없음' });
         return;
@@ -5485,40 +5491,133 @@
         || document.title?.replace(/ - ココフォリア$/, '').replace(/ - 코코포리아$/, '')
         || 'room';
 
+      // 미디어 필드 제거 목록 (동영상 자동재생 방지)
+      const MEDIA_FIELDS = ['mediaUrl', 'mediaVolume', 'mediaName', 'mediaRef', 'mediaRepeat', 'mediaType', 'embedUrl'];
+
       // 방 설정 (entities.rooms.entities[roomId])
-      const roomSettings = roomEntity ? { ...roomEntity } : {};
+      let roomSettings = null;
+      if (categories.roomSettings !== false) {
+        roomSettings = roomEntity ? { ...roomEntity } : {};
+        // 미디어 필드 항상 제거
+        for (const f of MEDIA_FIELDS) delete roomSettings[f];
+      }
 
       // 캐릭터 (entities.roomCharacters)
-      const rc = state.entities?.roomCharacters;
       const characters = [];
-      if (rc?.ids?.length) {
-        for (const id of rc.ids) {
-          const c = rc.entities[id];
-          if (c) characters.push({ ...c });
+      if (categories.characters !== false) {
+        const rc = state.entities?.roomCharacters;
+        if (rc?.ids?.length) {
+          for (const id of rc.ids) {
+            const c = rc.entities[id];
+            if (c) characters.push({ ...c });
+          }
         }
       }
 
       // 아이템/스크린패널 (entities.roomItems)
-      const ri = state.entities?.roomItems;
       const items = [];
-      if (ri?.ids?.length) {
-        for (const id of ri.ids) {
-          const item = ri.entities[id];
-          if (item) items.push({ ...item });
+      if (categories.items !== false) {
+        const ri = state.entities?.roomItems;
+        if (ri?.ids?.length) {
+          for (const id of ri.ids) {
+            const item = ri.entities[id];
+            if (item) items.push({ ...item });
+          }
+        }
+      }
+
+      // 장면 (entities.roomScenes) — BGM/미디어 필드 제거
+      const SCENE_SOUND_FIELDS = ['soundUrl', 'soundVolume', 'soundName', 'soundRef', 'soundRepeat'];
+      const scenes = [];
+      if (categories.scenes !== false) {
+        const rs = state.entities?.roomScenes;
+        if (rs?.ids?.length) {
+          for (const id of rs.ids) {
+            const s = rs.entities[id];
+            if (s) {
+              const copy = { ...s };
+              for (const f of SCENE_SOUND_FIELDS) delete copy[f];
+              for (const f of MEDIA_FIELDS) delete copy[f];
+              scenes.push(copy);
+            }
+          }
+        }
+      }
+
+      // 컷인/이펙트 (entities.roomEffects) — 음원 URL 포함 유지
+      const effects = [];
+      if (categories.effects !== false) {
+        const re = state.entities?.roomEffects;
+        if (re?.ids?.length) {
+          for (const id of re.ids) {
+            const eff = re.entities[id];
+            if (eff) effects.push({ ...eff });
+          }
+        }
+      }
+
+      // 시나리오 텍스트 (entities.roomNotes)
+      const notes = [];
+      if (categories.notes !== false) {
+        const rn = state.entities?.roomNotes;
+        if (rn?.ids?.length) {
+          for (const id of rn.ids) {
+            const n = rn.entities[id];
+            if (n) notes.push({ ...n });
+          }
+        }
+      }
+
+      // 카드 덱 (entities.roomDecks)
+      const decks = [];
+      if (categories.decks !== false) {
+        const rd = state.entities?.roomDecks;
+        if (rd?.ids?.length) {
+          for (const id of rd.ids) {
+            const d = rd.entities[id];
+            if (d) decks.push({ ...d });
+          }
+        }
+      }
+
+      // 세이브 데이터 (entities.roomSavedatas)
+      const savedatas = [];
+      if (categories.savedatas !== false) {
+        const rsd = state.entities?.roomSavedatas;
+        if (rsd?.ids?.length) {
+          for (const id of rsd.ids) {
+            const sd = rsd.entities[id];
+            if (sd) savedatas.push({ ...sd });
+          }
         }
       }
 
       const exportData = {
-        version: 1,
+        version: 2,
         exportedAt: Date.now(),
         sourceRoomId: roomId,
         roomName: roomName,
         roomSettings: roomSettings,
         characters: characters,
-        items: items
+        items: items,
+        scenes: scenes,
+        effects: effects,
+        notes: notes,
+        decks: decks,
+        savedatas: savedatas
       };
 
-      console.log(`%c[CE]%c 📦 룸 데이터 내보내기: 방 설정 + 캐릭터 ${characters.length}개 + 아이템 ${items.length}개`,
+      const parts = [];
+      if (roomSettings) parts.push('방 설정');
+      if (characters.length) parts.push(`캐릭터 ${characters.length}`);
+      if (items.length) parts.push(`아이템 ${items.length}`);
+      if (scenes.length) parts.push(`장면 ${scenes.length}`);
+      if (effects.length) parts.push(`컷인 ${effects.length}`);
+      if (notes.length) parts.push(`시나리오 ${notes.length}`);
+      if (decks.length) parts.push(`카드덱 ${decks.length}`);
+      if (savedatas.length) parts.push(`세이브 ${savedatas.length}`);
+
+      console.log(`%c[CE]%c 📦 룸 데이터 내보내기: ${parts.join(', ')}`,
         'color: #ce93d8; font-weight: bold;', 'color: inherit;');
 
       respond({ success: true, data: exportData, roomName: roomName });
@@ -5597,9 +5696,11 @@
           'createdAt', 'plan', 'planExpiredAt',
           'premium', 'pro', 'proExpiredAt'
         ]);
+        // 미디어 필드 강제 제거 (동영상 자동재생 방지)
+        const mediaFieldsBlacklist = ['mediaUrl', 'mediaVolume', 'mediaName', 'mediaRef', 'mediaRepeat', 'mediaType', 'embedUrl'];
         const cleanSettings = {};
         for (const [key, value] of Object.entries(importData.roomSettings)) {
-          if (!roomSettingsBlacklist.has(key)) {
+          if (!roomSettingsBlacklist.has(key) && !mediaFieldsBlacklist.includes(key)) {
             cleanSettings[key] = value;
           }
         }
@@ -5656,10 +5757,102 @@
         console.log(`%c[CE]%c   아이템 ${itemCount}개 생성 완료`, 'color: #90caf9; font-weight: bold;', 'color: inherit;');
       }
 
+      // ── 4. 장면 복사 (v2) ──
+      let sceneCount = 0;
+      if (importData.scenes?.length) {
+        const scenesCol = sdk.collection(sdk.db, 'rooms', roomId, 'scenes');
+        const ops = [];
+        for (const scene of importData.scenes) {
+          const newId = _generateFirestoreId();
+          const sceneData = { ...scene };
+          delete sceneData._id;
+          delete sceneData.id;
+          sceneData.createdAt = Date.now();
+          sceneData.updatedAt = Date.now();
+          ops.push({ type: 'set', ref: sdk.doc(scenesCol, newId), data: sceneData });
+        }
+        sceneCount = await _batchCommit(sdk, ops);
+        console.log(`%c[CE]%c   장면 ${sceneCount}개 생성 완료`, 'color: #90caf9; font-weight: bold;', 'color: inherit;');
+      }
+
+      // ── 5. 컷인/이펙트 복사 (v2) ──
+      let effectCount = 0;
+      if (importData.effects?.length) {
+        const effectsCol = sdk.collection(sdk.db, 'rooms', roomId, 'effects');
+        const ops = [];
+        for (const eff of importData.effects) {
+          const newId = _generateFirestoreId();
+          const effData = { ...eff };
+          delete effData._id;
+          delete effData.id;
+          effData.createdAt = Date.now();
+          effData.updatedAt = Date.now();
+          ops.push({ type: 'set', ref: sdk.doc(effectsCol, newId), data: effData });
+        }
+        effectCount = await _batchCommit(sdk, ops);
+        console.log(`%c[CE]%c   컷인 ${effectCount}개 생성 완료`, 'color: #90caf9; font-weight: bold;', 'color: inherit;');
+      }
+
+      // ── 6. 시나리오 텍스트 복사 (v2) ──
+      let noteCount = 0;
+      if (importData.notes?.length) {
+        const notesCol = sdk.collection(sdk.db, 'rooms', roomId, 'notes');
+        const ops = [];
+        for (const note of importData.notes) {
+          const newId = _generateFirestoreId();
+          const noteData = { ...note };
+          delete noteData._id;
+          delete noteData.id;
+          noteData.createdAt = Date.now();
+          ops.push({ type: 'set', ref: sdk.doc(notesCol, newId), data: noteData });
+        }
+        noteCount = await _batchCommit(sdk, ops);
+        console.log(`%c[CE]%c   시나리오 ${noteCount}개 생성 완료`, 'color: #90caf9; font-weight: bold;', 'color: inherit;');
+      }
+
+      // ── 7. 카드 덱 복사 (v2) ──
+      let deckCount = 0;
+      if (importData.decks?.length) {
+        const decksCol = sdk.collection(sdk.db, 'rooms', roomId, 'decks');
+        const ops = [];
+        for (const deck of importData.decks) {
+          const newId = _generateFirestoreId();
+          const deckData = { ...deck };
+          delete deckData._id;
+          delete deckData.id;
+          deckData.createdAt = Date.now();
+          deckData.updatedAt = Date.now();
+          ops.push({ type: 'set', ref: sdk.doc(decksCol, newId), data: deckData });
+        }
+        deckCount = await _batchCommit(sdk, ops);
+        console.log(`%c[CE]%c   카드덱 ${deckCount}개 생성 완료`, 'color: #90caf9; font-weight: bold;', 'color: inherit;');
+      }
+
+      // ── 8. 세이브 데이터 복사 (v2) ──
+      let savedataCount = 0;
+      if (importData.savedatas?.length) {
+        const savedatasCol = sdk.collection(sdk.db, 'rooms', roomId, 'savedatas');
+        const ops = [];
+        for (const sd of importData.savedatas) {
+          const newId = _generateFirestoreId();
+          const sdData = { ...sd };
+          delete sdData._id;
+          delete sdData.id;
+          sdData.createdAt = Date.now();
+          sdData.updatedAt = Date.now();
+          ops.push({ type: 'set', ref: sdk.doc(savedatasCol, newId), data: sdData });
+        }
+        savedataCount = await _batchCommit(sdk, ops);
+        console.log(`%c[CE]%c   세이브 ${savedataCount}개 생성 완료`, 'color: #90caf9; font-weight: bold;', 'color: inherit;');
+      }
+
       console.log(`%c[CE]%c ✅ 룸 데이터 가져오기 완료!`,
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
 
-      respond({ success: true, settingsUpdated, charCount, itemCount });
+      respond({
+        success: true, settingsUpdated, charCount, itemCount,
+        sceneCount, effectCount, noteCount, deckCount, savedataCount
+      });
 
     } catch (err) {
       console.error('[CE] 룸 데이터 가져오기 오류:', err);
