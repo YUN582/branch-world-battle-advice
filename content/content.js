@@ -1730,41 +1730,42 @@ ${rows.join('\n')}
       // 이미 주입됐으면 스킵
       if (content.querySelector('.' + _MD_HELP_MARKER)) continue;
 
+      // 기존 섹션에서 클래스명 복사
+      const refHr = content.querySelector('hr');
+      const refH6 = content.querySelector('h6');
+      const refP = content.querySelector('p');
+
       // 구분선
       const hr = document.createElement('hr');
-      hr.className = 'MuiDivider-root MuiDivider-fullWidth';
-      hr.style.margin = '16px 0';
+      hr.className = refHr ? refHr.className : 'MuiDivider-root';
       hr.setAttribute('role', 'separator');
 
       // 제목
       const h6 = document.createElement('h6');
-      h6.className = 'MuiTypography-root MuiTypography-h6 MuiTypography-gutterBottom';
+      h6.className = refH6 ? refH6.className : 'MuiTypography-root MuiTypography-h6 MuiTypography-gutterBottom';
       h6.textContent = '마크다운 서식 (CE 확장)';
       h6.classList.add(_MD_HELP_MARKER);
 
-      // 본문
+      // 본문 — 입력할 문법을 그대로 보여줌
       const p = document.createElement('p');
-      p.className = 'MuiTypography-root MuiTypography-body2';
-      p.style.cssText = 'word-break:break-all;white-space:pre-wrap;';
-      p.innerHTML = [
-        '<strong>**굵게**</strong>',
-        '<em>*기울임*</em>',
-        '<span style="text-decoration:underline">__밑줄__</span>',
-        '<del>~~취소선~~</del>',
-        '<code style="background:rgba(255,255,255,0.1);padding:1px 4px;border-radius:3px">`코드`</code>',
+      p.className = refP ? refP.className : 'MuiTypography-root MuiTypography-body2';
+      p.textContent = [
+        '**굵게**',
+        '*기울임*',
+        '__밑줄__',
+        '~~취소선~~',
+        '`코드`',
         '',
-        '<span style="color:#FF6B6B">(텍스트|#FF6B6B)</span> — 색상 변경 (3~6자리 HEX)',
-        '<ruby>텍스트<rp>(</rp><rt>루비</rt><rp>)</rp></ruby> — (텍스트|루비:루비)',
-        '<span style="border-bottom:1px dotted currentColor;cursor:help">텍스트</span> — (텍스트|툴팁:설명)',
+        '(텍스트|#FF6B6B) — 색상 변경 (3~6자리 HEX)',
+        '(텍스트|루비:루비문자) — 루비(후리가나)',
+        '(텍스트|툴팁:설명내용) — 마우스 오버 시 설명 표시',
         '',
-        '<span style="font-size:1.5em;font-weight:700"># 크기 1</span>',
-        '<span style="font-size:1.3em;font-weight:700">## 크기 2</span>',
-        '<span style="font-size:1.1em;font-weight:700">### 크기 3</span>',
+        '# 크기 1 / ## 크기 2 / ### 크기 3',
         '',
         '단축키: Ctrl+B 굵게, Ctrl+I 기울임, Ctrl+U 밑줄, Ctrl+D 취소선',
         '',
-        '※ 설정 &gt; 일반 &gt; "메시지 스타일 변경" 토글 필요',
-      ].join('<br>');
+        '※ 설정 > 일반 > "메시지 스타일 변경" 토글 필요',
+      ].join('\n');
 
       content.appendChild(hr);
       content.appendChild(h6);
