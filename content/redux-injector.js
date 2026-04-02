@@ -1547,15 +1547,18 @@
     if (name && reduxStore) {
       try {
         const ents = reduxStore.getState().entities;
-        // 모든 엔티티 스토어를 순회하여 name으로 매칭되는 음악 아이템 찾기
-        for (const storeKey of Object.keys(ents)) {
+        const trimmed = name.trim();
+        // userMedia 우선 검색 (BGM/SE 미디어 파일이 여기에 저장됨)
+        const priorityStores = ['userMedia', 'roomEffects'];
+        const allKeys = Object.keys(ents);
+        const ordered = [...priorityStores.filter(k => allKeys.includes(k)), ...allKeys.filter(k => !priorityStores.includes(k))];
+        for (const storeKey of ordered) {
           const store = ents[storeKey];
           if (!store?.ids || !store?.entities) continue;
           for (const id of store.ids) {
             const item = store.entities[id];
             if (!item || !item.name) continue;
-            if (item.name.trim() === name.trim()) {
-              // url 또는 soundUrl 필드에서 오디오 URL 추출
+            if (item.name.trim() === trimmed) {
               const candidate = item.url || item.soundUrl || item.mediaUrl;
               if (candidate && typeof candidate === 'string') {
                 url = candidate;

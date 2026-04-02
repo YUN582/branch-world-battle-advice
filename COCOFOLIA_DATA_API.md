@@ -40,6 +40,7 @@
 14. [UI 디자인 시스템 (테마 규칙)](#14-ui-디자인-시스템-테마-규칙)
 15. [스크린 패널 설정 다이얼로그 구조](#15-스크린-패널-설정-다이얼로그-구조)
 16. [유저 파일 데이터 구조 (userFiles)](#16-유저-파일-데이터-구조-userfiles)
+17. [유저 미디어 데이터 구조 (userMedia) — BGM/SE 파일](#17-유저-미디어-데이터-구조-usermedia--bgmse-파일)
 
 ---
 
@@ -2679,7 +2680,7 @@ DIV.MuiButtonBase-root.MuiListItemButton-root.MuiListItemButton-dense
 | `roomScenes` | 장면 (9.2 참조) | `rooms/{roomId}/scenes/{sceneId}` |
 | `roomHistories` | 방 히스토리 | — |
 | `userFiles` | 유저 파일 (섹션 16 참조) | `users/{uid}/files/{id}` |
-| `userMedia` | 유저 미디어 | `users/{uid}/media/{id}` |
+| `userMedia` | 유저 미디어 (섹션 17 참조) | `users/{uid}/media/{id}` |
 | `userMediumDirectories` | 미디어 폴더 | `users/{uid}/mediumDirectories/{id}` |
 | `userHistories` | 유저 히스토리 | — |
 | `userSetting` | 유저 설정 | `users/{uid}/setting` |
@@ -3132,6 +3133,85 @@ users/{uid}/files/{fileId}
 const filesCol = sdk.collection(sdk.db, 'users', uid, 'files');
 const fileRef = sdk.doc(filesCol, fileId);
 await sdk.setDoc(fileRef, { dir: 'background', updatedAt: Date.now() }, { merge: true });
+```
+
+---
+
+## 17. 유저 미디어 데이터 구조 (userMedia) — BGM/SE 파일
+
+> 유저가 업로드한 오디오 미디어 파일은 `entities.userMedia`에 저장됩니다.
+> BGM 목록, SE 목록 등에서 사용되며 `dir` 필드로 카테고리 구분합니다.
+>
+> **기준**: 2026-04-03 (콘솔 진단)
+
+### 접근 방법
+
+```js
+const state = store.getState();
+const um = state.entities.userMedia;
+um.ids       // ['yi2Sw2X9att...', 'Pj5bhhZ...', ...]
+um.entities['미디어ID']
+```
+
+### 미디어 객체 키 (17개)
+
+```js
+{
+  _id: "Pj5bhhZFT975NIhZG9on",                    // Firestore 문서 ID
+  owner: "Az1rUAx4tw...",                           // 업로더 UID
+  roomId: "yY_xFCq7Y",                             // 업로드된 방 ID
+  dir: "bgm02",                                    // ⭐ 카테고리 디렉토리
+  name: "각성ㅣIllusions-18 - Illusions",            // 표시 이름 (BGM 편집 팝오버에 표시)
+  url: "https://firebasestorage.googleapis.com/...", // 재생 가능 오디오 URL
+  volume: 0.75,                                     // 기본 볼륨 (0~1)
+  loop: true,                                       // 반복 재생 여부
+  order: 3,                                         // 정렬 순서
+  contentType: "audio/mpeg",                        // MIME 타입
+  by: "",                                           // 출처/작곡자
+  size: 7712098,                                    // 파일 크기 (bytes, 문자열인 경우도 있음)
+  uploaded: true,                                   // 업로드 완료 여부
+  external: false,                                  // 외부 URL 여부
+  createdAt: 1634835300648,                         // 생성 시각 (ms)
+  updatedAt: 1634835306984                          // 수정 시각 (ms)
+}
+```
+
+### dir 필드 — 미디어 카테고리
+
+| 카테고리 | `dir` 값 | 비고 |
+|---------|----------|------|
+| BGM | `"bgm02"` | BGM 목록에 표시 |
+
+> 다른 `dir` 값은 추가 조사 필요.
+
+### URL 형태
+
+| 유형 | URL 패턴 | 비고 |
+|------|---------|------|
+| CDN | `https://storage.ccfolia-cdn.net/users/{uid}/media/{id}` | 최신 업로드 |
+| Firebase Storage | `https://firebasestorage.googleapis.com/v0/b/ccfolia-160aa.appspot.com/o/...` | 구형 업로드 |
+
+### 방 현재 재생 중 BGM (room 엔티티)
+
+```js
+const room = state.entities.rooms.entities[roomId];
+room.mediaName    // "푸른 요람 테마곡ㅣStill Here"  — 현재 BGM 이름
+room.mediaUrl     // "https://storage.ccfolia-cdn.net/..."  — 현재 BGM URL
+room.mediaRef     // null 또는 참조
+room.mediaType    // "file"
+room.mediaRepeat  // true  — 반복 재생
+room.mediaVolume  // 0.5  — 볼륨 (0~1)
+room.soundName    // ""  — 현재 SE 이름 (SE는 roomEffects에 저장)
+room.soundUrl     // null  — 현재 SE URL
+room.soundRef     // null
+room.soundRepeat  // true
+room.soundVolume  // 0
+```
+
+### Firestore 문서 경로
+
+```
+users/{uid}/media/{mediaId}
 ```
 
 ---
