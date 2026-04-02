@@ -1391,6 +1391,7 @@ var _drawSettings = {
   penSize: 4,             // 펜 굵기 (px)
   penColor: '#ffffff',    // 펜 색상
   penOpacity: 1.0,        // 펜 투명도 (0~1)
+  brushShape: 'round',    // 브러쉬 모양: 'round' | 'square' | 'triangle'
   sketchJitter: 0,        // 연필 떨림 (0=부드러움, 1~10=자글자글)
   widthVariation: 0,      // 자동 굵기 변화 (0=없음, 1~10)
   eraserMode: false,      // 지우개 모드
@@ -2173,6 +2174,43 @@ function createDrawSettingsMenu() {
   _updateColorHistoryUI(colorBtn);
   menu.appendChild(historyRow);
 
+  // ── 브러쉬 모양 ──
+  var shapeRow = document.createElement('div');
+  shapeRow.style.cssText = 'display:flex;align-items:center;gap:6px;';
+  var shapeLabel = document.createElement('span');
+  shapeLabel.textContent = '모양';
+  shapeLabel.style.cssText = 'font-size:12px;color:rgba(255,255,255,0.7);min-width:32px;';
+  shapeRow.appendChild(shapeLabel);
+
+  var shapes = [
+    { id: 'round', svg: '<circle cx="10" cy="10" r="7" fill="currentColor"/>' },
+    { id: 'square', svg: '<rect x="3" y="3" width="14" height="14" fill="currentColor"/>' },
+    { id: 'triangle', svg: '<polygon points="10,2 18,17 2,17" fill="currentColor"/>' }
+  ];
+  var shapeBtns = {};
+  shapes.forEach(function(sh) {
+    var btn = document.createElement('button');
+    btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 20 20">' + sh.svg + '</svg>';
+    btn.style.cssText = 'background:none;border:2px solid ' +
+      (sh.id === _drawSettings.brushShape ? 'rgba(100,181,246,0.9)' : 'rgba(255,255,255,0.15)') +
+      ';border-radius:4px;cursor:pointer;padding:3px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.8);';
+    btn.addEventListener('mouseenter', function() {
+      if (_drawSettings.brushShape !== sh.id) btn.style.borderColor = 'rgba(255,255,255,0.4)';
+    });
+    btn.addEventListener('mouseleave', function() {
+      if (_drawSettings.brushShape !== sh.id) btn.style.borderColor = 'rgba(255,255,255,0.15)';
+    });
+    btn.addEventListener('click', function() {
+      _drawSettings.brushShape = sh.id;
+      Object.keys(shapeBtns).forEach(function(k) {
+        shapeBtns[k].style.borderColor = k === sh.id ? 'rgba(100,181,246,0.9)' : 'rgba(255,255,255,0.15)';
+      });
+    });
+    shapeBtns[sh.id] = btn;
+    shapeRow.appendChild(btn);
+  });
+  menu.appendChild(shapeRow);
+
   // ── 투명도 ──
   var opacityGroup = document.createElement('div');
   opacityGroup.className = 'bwbr-draw-slider-group';
@@ -2478,6 +2516,7 @@ function onDrawMouseDown(e) {
     penSize: mapPenSize,
     penColor: _drawSettings.penColor,
     penOpacity: _drawSettings.penOpacity,
+    brushShape: _drawSettings.brushShape,
     sketchJitter: _drawSettings.sketchJitter,
     widthVariation: _drawSettings.widthVariation,
     isEraser: _drawSettings.eraserMode,
@@ -2536,6 +2575,7 @@ function onDrawMouseUp(e) {
       penSize: _drawCurrentStrokeSettings.penSize,
       penColor: _drawCurrentStrokeSettings.penColor,
       penOpacity: _drawCurrentStrokeSettings.penOpacity,
+      brushShape: _drawCurrentStrokeSettings.brushShape,
       outlineEnabled: _drawCurrentStrokeSettings.outlineEnabled,
       outlineSize: _drawCurrentStrokeSettings.outlineSize,
       outlineColor: _drawCurrentStrokeSettings.outlineColor,
@@ -2633,6 +2673,93 @@ function _drawVariableWidthPath(ctx, pts, widths) {
   }
 }
 
+// ── 브러쉬 모양별 스탬프 렌더링 ──
+
+// 경로를 따라 일정 간격으로 보간 포인트 생성 (간격 = size * spacing)
+function _interpolatePathPoints(pts, size, spacing) {
+  if (pts.length === 0) return [];
+  if (!spacing) spacing = 0.2;
+  var step = Math.max(0.5, size * spacing);
+  var result = [pts[0]];
+  var carry = 0;
+  for (var i = 1; i < pts.length; i++) {
+    var dx = pts[i].x - pts[i - 1].x;
+    var dy = pts[i].y - pts[i - 1].y;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist === 0) continue;
+    var nx = dx / dist, ny = dy / dist;
+    var pos = -carry;
+    while (pos + step <= dist) {
+      pos += step;
+      result.push({ x: pts[i - 1].x + nx * pos, y: pts[i - 1].y + ny * pos });
+    }
+    carry = dist - pos;
+  }
+  // 마지막 점 항상 포함
+  var last = pts[pts.length - 1];
+  var rl = result[result.length - 1];
+  if (Math.abs(rl.x - last.x) > 0.1 || Math.abs(rl.y - last.y) > 0.1) {
+    result.push(last);
+  }
+  return result;
+}
+
+// 네모 스탬프 (angle = 진행 방향 라디안, 0이면 축 정렬)
+function _stampSquare(ctx, x, y, size) {
+  var half = size / 2;
+  ctx.fillRect(x - half, y - half, size, size);
+}
+
+// 세모 스탬프 (정삼각형, 꼭짓점 위)
+function _stampTriangle(ctx, x, y, size) {
+  var half = size / 2;
+  var h = size * 0.866; // √3/2
+  var cy = y + (h / 3 - h / 2); // 중심 보정
+  ctx.beginPath();
+  ctx.moveTo(x, cy - h * 2 / 3);
+  ctx.lineTo(x + half, cy + h / 3);
+  ctx.lineTo(x - half, cy + h / 3);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// 비원형 브러쉬로 경로 렌더 (스탬프 방식)
+function _drawStampedPath(ctx, pts, size, shape, widths) {
+  if (pts.length === 0) return;
+  var stampFn = shape === 'square' ? _stampSquare : _stampTriangle;
+
+  if (widths) {
+    // 가변 굵기: 각 원본 점에 해당하는 굵기 사용, 보간 시 lerp
+    // 보간 없이 원본 점마다 스탬프 (가변 굵기는 점 간격이 이미 촘촘)
+    for (var i = 0; i < pts.length; i++) {
+      var w = widths[i] || size;
+      stampFn(ctx, pts[i].x, pts[i].y, w);
+    }
+    // 점 사이 보간 (빈틈 방지)
+    for (var i = 0; i < pts.length - 1; i++) {
+      var w1 = widths[i] || size, w2 = widths[i + 1] || size;
+      var dx = pts[i + 1].x - pts[i].x;
+      var dy = pts[i + 1].y - pts[i].y;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      var avgW = (w1 + w2) / 2;
+      var step = Math.max(0.5, avgW * 0.2);
+      var steps = Math.ceil(dist / step);
+      if (steps <= 1) continue;
+      for (var j = 1; j < steps; j++) {
+        var t = j / steps;
+        var w = w1 + (w2 - w1) * t;
+        stampFn(ctx, pts[i].x + dx * t, pts[i].y + dy * t, w);
+      }
+    }
+  } else {
+    // 고정 굵기: 경로를 따라 촘촘하게 보간
+    var interp = _interpolatePathPoints(pts, size, 0.2);
+    for (var i = 0; i < interp.length; i++) {
+      stampFn(ctx, interp[i].x, interp[i].y, size);
+    }
+  }
+}
+
 // 스트로크 하나를 ctx에 렌더 (펜 또는 윤곽선 전용)
 // mode: 'outline' | 'pen' | 'eraser'
 function _renderStrokePass(ctx, pts, stroke, lineWidth, mode) {
@@ -2647,12 +2774,20 @@ function _renderStrokePass(ctx, pts, stroke, lineWidth, mode) {
     ctx.strokeStyle = stroke.penColor;
     ctx.fillStyle = stroke.penColor;
   }
-  if (widths) {
-    _drawVariableWidthPath(ctx, pts, widths);
+
+  var shape = stroke.brushShape || 'round';
+  if (shape !== 'round' && mode !== 'eraser') {
+    // 비원형 브러쉬: 스탬프 렌더링
+    _drawStampedPath(ctx, pts, lineWidth, shape, widths);
   } else {
-    ctx.lineWidth = lineWidth;
-    _drawSmoothPath(ctx, pts);
-    ctx.stroke();
+    // 원형 브러쉬 또는 지우개: 기존 스트로크 렌더링
+    if (widths) {
+      _drawVariableWidthPath(ctx, pts, widths);
+    } else {
+      ctx.lineWidth = lineWidth;
+      _drawSmoothPath(ctx, pts);
+      ctx.stroke();
+    }
   }
 }
 
@@ -2671,6 +2806,7 @@ function _redrawAllStrokes() {
       penSize: _drawCurrentStrokeSettings.penSize,
       penColor: _drawCurrentStrokeSettings.penColor,
       penOpacity: _drawCurrentStrokeSettings.penOpacity,
+      brushShape: _drawCurrentStrokeSettings.brushShape,
       outlineEnabled: _drawCurrentStrokeSettings.outlineEnabled,
       outlineSize: _drawCurrentStrokeSettings.outlineSize,
       outlineColor: _drawCurrentStrokeSettings.outlineColor,
