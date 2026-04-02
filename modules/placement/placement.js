@@ -2707,8 +2707,8 @@ function _redrawAllStrokes() {
     return pts;
   }
 
-  if (needsSeparate) {
-    // 윤곽선/펜 알파가 다를 때: 2개 임시 캔버스 (시간순 처리)
+  if (hasOutlines) {
+    // 2캔버스: 윤곽선/펜 분리 → 지우개 윤곽선 보존 + 청크 경계 덧그려짐 방지
     var tmpOut = document.createElement('canvas');
     tmpOut.width = _drawCanvas.width; tmpOut.height = _drawCanvas.height;
     var tcO = tmpOut.getContext('2d');
@@ -2723,13 +2723,25 @@ function _redrawAllStrokes() {
       if (stroke.points.length === 0) return;
       var pts = toScreen(stroke);
       if (stroke.isEraser) {
-        var eraseW = (stroke.penSize + maxOutlineExtra) * scale;
-        tcO.globalCompositeOperation = 'destination-out';
-        _renderStrokePass(tcO, pts, stroke, eraseW, 'pen');
-        tcO.globalCompositeOperation = 'source-over';
+        // 펜 캔버스: 항상 전체 지움
         tcP.globalCompositeOperation = 'destination-out';
         _renderStrokePass(tcP, pts, stroke, stroke.penSize * scale, 'pen');
         tcP.globalCompositeOperation = 'source-over';
+        // 윤곽선 캔버스: 설정에 따라 처리
+        if (stroke.outlineEnabled) {
+          // 윤곽선 ON: 내부만 지워서 절단면에 윤곽선 링 보존
+          var innerW = stroke.penSize - stroke.outlineSize * 2;
+          if (innerW > 0) {
+            tcO.globalCompositeOperation = 'destination-out';
+            _renderStrokePass(tcO, pts, stroke, innerW * scale, 'pen');
+            tcO.globalCompositeOperation = 'source-over';
+          }
+        } else {
+          // 윤곽선 OFF: 윤곽선까지 완전히 지움
+          tcO.globalCompositeOperation = 'destination-out';
+          _renderStrokePass(tcO, pts, stroke, (stroke.penSize + maxOutlineExtra) * scale, 'pen');
+          tcO.globalCompositeOperation = 'source-over';
+        }
       } else {
         if (stroke.outlineEnabled) {
           _renderStrokePass(tcO, pts, stroke, (stroke.penSize + stroke.outlineSize * 2) * scale, 'outline');
@@ -2739,13 +2751,25 @@ function _redrawAllStrokes() {
     });
 
     _drawCtx.save();
-    _drawCtx.globalAlpha = outAlpha;
-    _drawCtx.drawImage(tmpOut, 0, 0);
-    _drawCtx.globalAlpha = penAlpha;
-    _drawCtx.drawImage(tmpPen, 0, 0);
+    if (needsSeparate) {
+      // 윤곽선/펜 알파가 다름: 각각 다른 알파로 합성
+      _drawCtx.globalAlpha = outAlpha;
+      _drawCtx.drawImage(tmpOut, 0, 0);
+      _drawCtx.globalAlpha = penAlpha;
+      _drawCtx.drawImage(tmpPen, 0, 0);
+    } else {
+      // 같은 알파: 먼저 병합 후 한 번에 합성 (알파 중첩 방지)
+      var merged = document.createElement('canvas');
+      merged.width = _drawCanvas.width; merged.height = _drawCanvas.height;
+      var mc = merged.getContext('2d');
+      mc.drawImage(tmpOut, 0, 0);
+      mc.drawImage(tmpPen, 0, 0);
+      _drawCtx.globalAlpha = penAlpha;
+      _drawCtx.drawImage(merged, 0, 0);
+    }
     _drawCtx.restore();
   } else {
-    // 단일 임시 캔버스 — 시간순 처리: 윤곽선→펜 2패스를 청크 단위로
+    // 윤곽선 없음: 단일 캔버스
     var tmp = document.createElement('canvas');
     tmp.width = _drawCanvas.width;
     tmp.height = _drawCanvas.height;
@@ -2753,36 +2777,17 @@ function _redrawAllStrokes() {
     tc.lineCap = 'round';
     tc.lineJoin = 'round';
 
-    // 청크: 연속된 일반 스트로크를 모아서 2패스 렌더, 지우개는 즉시 적용
-    var normalChunk = [];
-    function flushChunk() {
-      if (normalChunk.length === 0) return;
-      // 패스 1: 윤곽선
-      normalChunk.forEach(function(stroke) {
-        if (!stroke.outlineEnabled || stroke.pts.length === 0) return;
-        _renderStrokePass(tc, stroke.pts, stroke.stroke, (stroke.stroke.penSize + stroke.stroke.outlineSize * 2) * scale, 'outline');
-      });
-      // 패스 2: 펜
-      normalChunk.forEach(function(stroke) {
-        if (stroke.pts.length === 0) return;
-        _renderStrokePass(tc, stroke.pts, stroke.stroke, stroke.stroke.penSize * scale, 'pen');
-      });
-      normalChunk = [];
-    }
-
     allStrokes.forEach(function(stroke) {
       if (stroke.points.length === 0) return;
       var pts = toScreen(stroke);
       if (stroke.isEraser) {
-        flushChunk();
         tc.globalCompositeOperation = 'destination-out';
-        _renderStrokePass(tc, pts, stroke, (stroke.penSize + maxOutlineExtra) * scale, 'pen');
+        _renderStrokePass(tc, pts, stroke, stroke.penSize * scale, 'pen');
         tc.globalCompositeOperation = 'source-over';
       } else {
-        normalChunk.push({ pts: pts, stroke: stroke, outlineEnabled: stroke.outlineEnabled });
+        _renderStrokePass(tc, pts, stroke, stroke.penSize * scale, 'pen');
       }
     });
-    flushChunk();
 
     _drawCtx.save();
     _drawCtx.globalAlpha = penAlpha;
@@ -2986,7 +2991,7 @@ function finishDrawing() {
 }
 
 // 스트로크를 지정된 캔버스 컨텍스트에 렌더링 (재사용 가능)
-// 시간순 처리: 연속 일반 스트로크를 2패스 렌더 → 지우개 즉시 적용 → 반복
+// 윤곽선 있으면 2캔버스 분리, 없으면 단일 캔버스
 function _renderStrokesToCtx(ctx, strokes) {
   if (strokes.length === 0) return;
 
@@ -3012,7 +3017,8 @@ function _renderStrokesToCtx(ctx, strokes) {
     return pts;
   }
 
-  if (needsSeparate) {
+  if (hasOutlines) {
+    // 2캔버스: 윤곽선/펜 분리 → 지우개 윤곽선 보존 + 청크 경계 덧그려짐 방지
     var tmpOut = document.createElement('canvas');
     tmpOut.width = ctx.canvas.width; tmpOut.height = ctx.canvas.height;
     var tcO = tmpOut.getContext('2d');
@@ -3029,13 +3035,25 @@ function _renderStrokesToCtx(ctx, strokes) {
       if (stroke.points.length === 0) return;
       var pts = prepPts(stroke);
       if (stroke.isEraser) {
-        var eraseW = stroke.penSize + maxOutlineExtra;
-        tcO.globalCompositeOperation = 'destination-out';
-        _renderStrokePass(tcO, pts, stroke, eraseW, 'pen');
-        tcO.globalCompositeOperation = 'source-over';
+        // 펜 캔버스: 항상 전체 지움
         tcP.globalCompositeOperation = 'destination-out';
         _renderStrokePass(tcP, pts, stroke, stroke.penSize, 'pen');
         tcP.globalCompositeOperation = 'source-over';
+        // 윤곽선 캔버스: 설정에 따라 처리
+        if (stroke.outlineEnabled) {
+          // 윤곽선 ON: 내부만 지워서 절단면에 윤곽선 링 보존
+          var innerW = stroke.penSize - stroke.outlineSize * 2;
+          if (innerW > 0) {
+            tcO.globalCompositeOperation = 'destination-out';
+            _renderStrokePass(tcO, pts, stroke, innerW, 'pen');
+            tcO.globalCompositeOperation = 'source-over';
+          }
+        } else {
+          // 윤곽선 OFF: 윤곽선까지 완전히 지움
+          tcO.globalCompositeOperation = 'destination-out';
+          _renderStrokePass(tcO, pts, stroke, stroke.penSize + maxOutlineExtra, 'pen');
+          tcO.globalCompositeOperation = 'source-over';
+        }
       } else {
         if (stroke.outlineEnabled) {
           _renderStrokePass(tcO, pts, stroke, stroke.penSize + stroke.outlineSize * 2, 'outline');
@@ -3046,12 +3064,23 @@ function _renderStrokesToCtx(ctx, strokes) {
 
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.globalAlpha = outAlpha;
-    ctx.drawImage(tmpOut, 0, 0);
-    ctx.globalAlpha = penAlpha;
-    ctx.drawImage(tmpPen, 0, 0);
+    if (needsSeparate) {
+      ctx.globalAlpha = outAlpha;
+      ctx.drawImage(tmpOut, 0, 0);
+      ctx.globalAlpha = penAlpha;
+      ctx.drawImage(tmpPen, 0, 0);
+    } else {
+      var merged = document.createElement('canvas');
+      merged.width = ctx.canvas.width; merged.height = ctx.canvas.height;
+      var mc = merged.getContext('2d');
+      mc.drawImage(tmpOut, 0, 0);
+      mc.drawImage(tmpPen, 0, 0);
+      ctx.globalAlpha = penAlpha;
+      ctx.drawImage(merged, 0, 0);
+    }
     ctx.restore();
   } else {
+    // 윤곽선 없음: 단일 캔버스
     var tmp = document.createElement('canvas');
     tmp.width = ctx.canvas.width;
     tmp.height = ctx.canvas.height;
@@ -3060,33 +3089,17 @@ function _renderStrokesToCtx(ctx, strokes) {
     tc.lineCap = 'round';
     tc.lineJoin = 'round';
 
-    var normalChunk = [];
-    function flushChunk() {
-      if (normalChunk.length === 0) return;
-      normalChunk.forEach(function(item) {
-        if (!item.stroke.outlineEnabled || item.pts.length === 0) return;
-        _renderStrokePass(tc, item.pts, item.stroke, item.stroke.penSize + item.stroke.outlineSize * 2, 'outline');
-      });
-      normalChunk.forEach(function(item) {
-        if (item.pts.length === 0) return;
-        _renderStrokePass(tc, item.pts, item.stroke, item.stroke.penSize, 'pen');
-      });
-      normalChunk = [];
-    }
-
     strokes.forEach(function(stroke) {
       if (stroke.points.length === 0) return;
       var pts = prepPts(stroke);
       if (stroke.isEraser) {
-        flushChunk();
         tc.globalCompositeOperation = 'destination-out';
-        _renderStrokePass(tc, pts, stroke, stroke.penSize + maxOutlineExtra, 'pen');
+        _renderStrokePass(tc, pts, stroke, stroke.penSize, 'pen');
         tc.globalCompositeOperation = 'source-over';
       } else {
-        normalChunk.push({ pts: pts, stroke: stroke });
+        _renderStrokePass(tc, pts, stroke, stroke.penSize, 'pen');
       }
     });
-    flushChunk();
 
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
