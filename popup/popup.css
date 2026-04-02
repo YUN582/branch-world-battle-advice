@@ -157,7 +157,7 @@ body {
 }
 
 input[type="checkbox"]:checked + .toggle-slider {
-  background: #3a3a3a;
+  background: #2196F3;
 }
 
 input[type="checkbox"]:checked + .toggle-slider::after {
