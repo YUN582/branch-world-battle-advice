@@ -6343,25 +6343,10 @@
     }
   });
 
-  // ── MAIN world 삭제 추적 (onSnapshot 재삽입 방어) ──
-  const _mainDeletedMsgIds = new Set();
-
-  // Redux에서 삭제된 메시지 제거 (반복 호출 안전)
-  function _purgeDeletedFromRedux() {
-    if (_mainDeletedMsgIds.size === 0 || !reduxStore) return;
-    try {
-      const rm = reduxStore.getState().entities?.roomMessages;
-      if (!rm || !rm.ids) return;
-      for (const delId of _mainDeletedMsgIds) {
-        const idx = rm.ids.indexOf(delId);
-        if (idx !== -1) rm.ids.splice(idx, 1);
-        if (rm.entities?.[delId]) delete rm.entities[delId];
-      }
-    } catch(e) { /* ignore */ }
-  }
-
   /**
-   * bwbr-delete-message — 메시지 삭제 (Firestore deleteDoc)
+   * bwbr-delete-message — 메시지 삭제 (텍스트 비우기 방식)
+   * Firestore 문서를 삭제하지 않고 text/name/type/iconUrl 등을 비워서
+   * onSnapshot이 정상적으로 modified 이벤트를 발생시키도록 함.
    * payload: { msgId: string }
    * response: bwbr-delete-message-result { success, msgId, error? }
    */
@@ -6390,12 +6375,18 @@
       const msgCol = sdk.collection(sdk.db, 'rooms', roomId, 'messages');
       const msgRef = sdk.doc(msgCol, msgId);
 
-      await sdk.deleteDoc(msgRef);
+      // 텍스트를 비워서 빈 시스템 메시지로 변환 (문서 자체는 유지)
+      await sdk.setDoc(msgRef, {
+        text: '',
+        name: 'system',
+        type: 'system',
+        iconUrl: '',
+        color: '',
+        extend: {},
+        updatedAt: Date.now()
+      }, { merge: true });
 
-      // MAIN world 삭제 추적 Set에 등록 (태깅 시 해당 DOM 숨김용)
-      _mainDeletedMsgIds.add(msgId);
-
-      // 즉시 재태깅 → 삭제된 아이템 숨김
+      // 즉시 재태깅
       _tagMessageItems();
 
       respond({ success: true, msgId });
@@ -6409,11 +6400,9 @@
    * 메시지 DOM 태깅 — MuiListItem에 data-msg-id, data-msg-from, data-msg-type 주입
    * Redux roomMessages 순서와 DOM 순서를 매칭
    *
-   * 핵심: 삭제된 메시지를 channelMsgs에서 제외하면 React 리렌더 타이밍과
-   * 어긋나서 DOM↔Redux 1:1 매칭이 깨짐. 따라서:
    * 1) 모든 display:none 초기화 (React 요소 재사용 시 잔존 방지)
-   * 2) 삭제 ID 포함한 전체 channelMsgs로 태깅 (DOM과 순서 일치)
-   * 3) 태깅 후 삭제 ID를 가진 아이템만 display:none
+   * 2) 현재 채널 메시지 필터
+   * 3) DOM 순서와 Redux 순서 1:1 매칭
    */
   function _tagMessageItems() {
     if (!reduxStore) return;
@@ -6437,7 +6426,7 @@
     const chInfo = _detectCurrentChannel();
     const currentChannel = chInfo?.channel || '';
 
-    // 2) 현재 채널 메시지 필터 — 삭제 ID도 포함 (DOM과 순서 매칭 유지)
+    // 2) 현재 채널 메시지 필터
     const channelMsgs = [];
     for (let i = 0; i < rm.ids.length; i++) {
       const id = rm.ids[i];
@@ -6457,16 +6446,7 @@
       item.setAttribute('data-msg-type', msg.type || 'text');
     }
 
-    // 4) 삭제된 메시지 숨김 (태깅 후이므로 올바른 아이템에 적용)
-    if (_mainDeletedMsgIds.size > 0) {
-      for (let i = 0; i < len; i++) {
-        if (_mainDeletedMsgIds.has(channelMsgs[i]._id)) {
-          allItems[i].style.display = 'none';
-        }
-      }
-    }
-
-    // 5) 초과 DOM 아이템 숨김 (channelMsgs < DOM인 경우)
+    // 4) 초과 DOM 아이템 숨김 (channelMsgs < DOM인 경우)
     for (let i = len; i < allItems.length; i++) {
       allItems[i].style.display = 'none';
     }

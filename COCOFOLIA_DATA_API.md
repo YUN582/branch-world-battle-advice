@@ -1807,20 +1807,18 @@ btn top offset from LI top: 12.0
 | 네이티브 수정 버튼 | `.MuiListItem-root .MuiIconButton-root` |
 | 시스템 메시지 판별 | `.MuiListItem-root:not(:has(.MuiIconButton-root))` 또는 `.MuiListItemAvatar-root:not(:has(img))` |
 
-#### CE 메시지 수정/삭제 아키텍처 (2026-03-30 확인)
+#### CE 메시지 수정/삭제 아키텍처 (2026-04-02 갱신)
 
-##### 삭제 메커니즘
+##### 삭제 메커니즘 (텍스트 비우기 방식)
 
-- **Firestore**: `deleteDoc(rooms/{roomId}/messages/{msgId})` — 즉시 삭제
-- **onSnapshot 문제**: Firestore 리스너가 삭제된 문서를 잠깐 다시 Redux에 넣음 → "noname" 빈 메시지 렌더링
-- **해결**: MAIN world `_mainDeletedMsgIds` Set으로 삭제 ID 영구 추적
-  - `_purgeDeletedFromRedux()`: 태깅마다 Redux에서 재삽입된 삭제 메시지 제거
-  - `_tagMessageItems()`: channelMsgs 구성 시 삭제 ID 스킵, 초과 DOM은 `display:none`
-  - ISOLATED world `_deletedMsgIds`: DOM 수준 즉시 숨김 + 롤백용
+- **Firestore**: `setDoc(rooms/{roomId}/messages/{msgId}, { text:'', name:'system', type:'system', iconUrl:'', color:'', extend:{} }, { merge:true })` — 문서 유지, 내용만 비움
+- **onSnapshot 정상 동기화**: 문서가 삭제되지 않으므로 `modified` 이벤트 → Redux/React가 자연스럽게 리렌더
+- **삭제된 메시지 표시**: 빈 시스템 메시지로 렌더링 (아바타 없음, 텍스트 없음)
+- ISOLATED world `_deletedMsgIds`: DOM 수준 즉시 숨김 (setDoc 응답 전 UX 피드백용)
 
 ##### 태깅 동기화
 
-- **DOM ↔ Redux 1:1 매칭**: `_tagMessageItems()`에서 `display:none` 아이템 제외하고 매칭 (삭제된 DOM이 인덱스 방해 방지)
+- **DOM ↔ Redux 1:1 매칭**: `_tagMessageItems()`에서 전체 channelMsgs로 태깅 (DOM과 순서 일치)
 - **UL 교체 안전**: 2초 간격 setInterval로 `ul.MuiList-root` 교체 감지 → MutationObserver 자동 재연결
 - **이벤트 위임**: document 레벨 `mouseover`/`mouseout` (UL에 바인딩하면 React 교체 시 동작 안 함)
 - **`closest()` 주의**: `closest('ul > .MuiListItem-root')` 직접 자식 결합자는 동작 안 함 → 별도 체크 필요
@@ -1829,8 +1827,8 @@ btn top offset from LI top: 12.0
 
 | 이벤트 | 방향 | 용도 |
 |--------|------|------|
-| `bwbr-delete-message` | ISOLATED → MAIN | Firestore 삭제 요청 |
-| `bwbr-delete-message-result` | MAIN → ISOLATED | 삭제 결과 (success/error) |
+| `bwbr-delete-message` | ISOLATED → MAIN | Firestore 텍스트 비우기 요청 |
+| `bwbr-delete-message-result` | MAIN → ISOLATED | 삭제(비우기) 결과 (success/error) |
 | `bwbr-edit-message` | ISOLATED → MAIN | Firestore 수정 요청 |
 | `bwbr-edit-message-result` | MAIN → ISOLATED | 수정 결과 |
 | `bwbr-retag-messages` | ISOLATED → MAIN | 즉시 재태깅 요청 |
