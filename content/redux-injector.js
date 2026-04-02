@@ -5462,16 +5462,10 @@
 
   window.addEventListener('bwbr-room-export', () => {
     const respond = (data) => {
-      document.documentElement.setAttribute('data-bwbr-room-export-result', JSON.stringify(data));
-      window.dispatchEvent(new CustomEvent('bwbr-room-export-result'));
+      window.dispatchEvent(new CustomEvent('bwbr-room-export-result', { detail: data }));
     };
 
     try {
-      // 카테고리 파라미터 읽기
-      const catsRaw = document.documentElement.getAttribute('data-bwbr-room-export');
-      document.documentElement.removeAttribute('data-bwbr-room-export');
-      const categories = catsRaw ? JSON.parse(catsRaw) : {};
-
       if (!reduxStore) {
         respond({ success: false, error: 'Redux Store 없음' });
         return;
@@ -5491,133 +5485,40 @@
         || document.title?.replace(/ - ココフォリア$/, '').replace(/ - 코코포리아$/, '')
         || 'room';
 
-      // 미디어 필드 제거 목록 (동영상 자동재생 방지)
-      const MEDIA_FIELDS = ['mediaUrl', 'mediaVolume', 'mediaName', 'mediaRef', 'mediaRepeat', 'mediaType', 'embedUrl'];
-
       // 방 설정 (entities.rooms.entities[roomId])
-      let roomSettings = null;
-      if (categories.roomSettings !== false) {
-        roomSettings = roomEntity ? { ...roomEntity } : {};
-        // 미디어 필드 항상 제거
-        for (const f of MEDIA_FIELDS) delete roomSettings[f];
-      }
+      const roomSettings = roomEntity ? { ...roomEntity } : {};
 
       // 캐릭터 (entities.roomCharacters)
+      const rc = state.entities?.roomCharacters;
       const characters = [];
-      if (categories.characters !== false) {
-        const rc = state.entities?.roomCharacters;
-        if (rc?.ids?.length) {
-          for (const id of rc.ids) {
-            const c = rc.entities[id];
-            if (c) characters.push({ ...c });
-          }
+      if (rc?.ids?.length) {
+        for (const id of rc.ids) {
+          const c = rc.entities[id];
+          if (c) characters.push({ ...c });
         }
       }
 
       // 아이템/스크린패널 (entities.roomItems)
+      const ri = state.entities?.roomItems;
       const items = [];
-      if (categories.items !== false) {
-        const ri = state.entities?.roomItems;
-        if (ri?.ids?.length) {
-          for (const id of ri.ids) {
-            const item = ri.entities[id];
-            if (item) items.push({ ...item });
-          }
-        }
-      }
-
-      // 장면 (entities.roomScenes) — BGM/미디어 필드 제거
-      const SCENE_SOUND_FIELDS = ['soundUrl', 'soundVolume', 'soundName', 'soundRef', 'soundRepeat'];
-      const scenes = [];
-      if (categories.scenes !== false) {
-        const rs = state.entities?.roomScenes;
-        if (rs?.ids?.length) {
-          for (const id of rs.ids) {
-            const s = rs.entities[id];
-            if (s) {
-              const copy = { ...s };
-              for (const f of SCENE_SOUND_FIELDS) delete copy[f];
-              for (const f of MEDIA_FIELDS) delete copy[f];
-              scenes.push(copy);
-            }
-          }
-        }
-      }
-
-      // 컷인/이펙트 (entities.roomEffects) — 음원 URL 포함 유지
-      const effects = [];
-      if (categories.effects !== false) {
-        const re = state.entities?.roomEffects;
-        if (re?.ids?.length) {
-          for (const id of re.ids) {
-            const eff = re.entities[id];
-            if (eff) effects.push({ ...eff });
-          }
-        }
-      }
-
-      // 시나리오 텍스트 (entities.roomNotes)
-      const notes = [];
-      if (categories.notes !== false) {
-        const rn = state.entities?.roomNotes;
-        if (rn?.ids?.length) {
-          for (const id of rn.ids) {
-            const n = rn.entities[id];
-            if (n) notes.push({ ...n });
-          }
-        }
-      }
-
-      // 카드 덱 (entities.roomDecks)
-      const decks = [];
-      if (categories.decks !== false) {
-        const rd = state.entities?.roomDecks;
-        if (rd?.ids?.length) {
-          for (const id of rd.ids) {
-            const d = rd.entities[id];
-            if (d) decks.push({ ...d });
-          }
-        }
-      }
-
-      // 세이브 데이터 (entities.roomSavedatas)
-      const savedatas = [];
-      if (categories.savedatas !== false) {
-        const rsd = state.entities?.roomSavedatas;
-        if (rsd?.ids?.length) {
-          for (const id of rsd.ids) {
-            const sd = rsd.entities[id];
-            if (sd) savedatas.push({ ...sd });
-          }
+      if (ri?.ids?.length) {
+        for (const id of ri.ids) {
+          const item = ri.entities[id];
+          if (item) items.push({ ...item });
         }
       }
 
       const exportData = {
-        version: 2,
+        version: 1,
         exportedAt: Date.now(),
         sourceRoomId: roomId,
         roomName: roomName,
         roomSettings: roomSettings,
         characters: characters,
-        items: items,
-        scenes: scenes,
-        effects: effects,
-        notes: notes,
-        decks: decks,
-        savedatas: savedatas
+        items: items
       };
 
-      const parts = [];
-      if (roomSettings) parts.push('방 설정');
-      if (characters.length) parts.push(`캐릭터 ${characters.length}`);
-      if (items.length) parts.push(`아이템 ${items.length}`);
-      if (scenes.length) parts.push(`장면 ${scenes.length}`);
-      if (effects.length) parts.push(`컷인 ${effects.length}`);
-      if (notes.length) parts.push(`시나리오 ${notes.length}`);
-      if (decks.length) parts.push(`카드덱 ${decks.length}`);
-      if (savedatas.length) parts.push(`세이브 ${savedatas.length}`);
-
-      console.log(`%c[CE]%c 📦 룸 데이터 내보내기: ${parts.join(', ')}`,
+      console.log(`%c[CE]%c 📦 룸 데이터 내보내기: 방 설정 + 캐릭터 ${characters.length}개 + 아이템 ${items.length}개`,
         'color: #ce93d8; font-weight: bold;', 'color: inherit;');
 
       respond({ success: true, data: exportData, roomName: roomName });
@@ -5696,11 +5597,9 @@
           'createdAt', 'plan', 'planExpiredAt',
           'premium', 'pro', 'proExpiredAt'
         ]);
-        // 미디어 필드 강제 제거 (동영상 자동재생 방지)
-        const mediaFieldsBlacklist = ['mediaUrl', 'mediaVolume', 'mediaName', 'mediaRef', 'mediaRepeat', 'mediaType', 'embedUrl'];
         const cleanSettings = {};
         for (const [key, value] of Object.entries(importData.roomSettings)) {
-          if (!roomSettingsBlacklist.has(key) && !mediaFieldsBlacklist.includes(key)) {
+          if (!roomSettingsBlacklist.has(key)) {
             cleanSettings[key] = value;
           }
         }
@@ -5757,102 +5656,10 @@
         console.log(`%c[CE]%c   아이템 ${itemCount}개 생성 완료`, 'color: #90caf9; font-weight: bold;', 'color: inherit;');
       }
 
-      // ── 4. 장면 복사 (v2) ──
-      let sceneCount = 0;
-      if (importData.scenes?.length) {
-        const scenesCol = sdk.collection(sdk.db, 'rooms', roomId, 'scenes');
-        const ops = [];
-        for (const scene of importData.scenes) {
-          const newId = _generateFirestoreId();
-          const sceneData = { ...scene };
-          delete sceneData._id;
-          delete sceneData.id;
-          sceneData.createdAt = Date.now();
-          sceneData.updatedAt = Date.now();
-          ops.push({ type: 'set', ref: sdk.doc(scenesCol, newId), data: sceneData });
-        }
-        sceneCount = await _batchCommit(sdk, ops);
-        console.log(`%c[CE]%c   장면 ${sceneCount}개 생성 완료`, 'color: #90caf9; font-weight: bold;', 'color: inherit;');
-      }
-
-      // ── 5. 컷인/이펙트 복사 (v2) ──
-      let effectCount = 0;
-      if (importData.effects?.length) {
-        const effectsCol = sdk.collection(sdk.db, 'rooms', roomId, 'effects');
-        const ops = [];
-        for (const eff of importData.effects) {
-          const newId = _generateFirestoreId();
-          const effData = { ...eff };
-          delete effData._id;
-          delete effData.id;
-          effData.createdAt = Date.now();
-          effData.updatedAt = Date.now();
-          ops.push({ type: 'set', ref: sdk.doc(effectsCol, newId), data: effData });
-        }
-        effectCount = await _batchCommit(sdk, ops);
-        console.log(`%c[CE]%c   컷인 ${effectCount}개 생성 완료`, 'color: #90caf9; font-weight: bold;', 'color: inherit;');
-      }
-
-      // ── 6. 시나리오 텍스트 복사 (v2) ──
-      let noteCount = 0;
-      if (importData.notes?.length) {
-        const notesCol = sdk.collection(sdk.db, 'rooms', roomId, 'notes');
-        const ops = [];
-        for (const note of importData.notes) {
-          const newId = _generateFirestoreId();
-          const noteData = { ...note };
-          delete noteData._id;
-          delete noteData.id;
-          noteData.createdAt = Date.now();
-          ops.push({ type: 'set', ref: sdk.doc(notesCol, newId), data: noteData });
-        }
-        noteCount = await _batchCommit(sdk, ops);
-        console.log(`%c[CE]%c   시나리오 ${noteCount}개 생성 완료`, 'color: #90caf9; font-weight: bold;', 'color: inherit;');
-      }
-
-      // ── 7. 카드 덱 복사 (v2) ──
-      let deckCount = 0;
-      if (importData.decks?.length) {
-        const decksCol = sdk.collection(sdk.db, 'rooms', roomId, 'decks');
-        const ops = [];
-        for (const deck of importData.decks) {
-          const newId = _generateFirestoreId();
-          const deckData = { ...deck };
-          delete deckData._id;
-          delete deckData.id;
-          deckData.createdAt = Date.now();
-          deckData.updatedAt = Date.now();
-          ops.push({ type: 'set', ref: sdk.doc(decksCol, newId), data: deckData });
-        }
-        deckCount = await _batchCommit(sdk, ops);
-        console.log(`%c[CE]%c   카드덱 ${deckCount}개 생성 완료`, 'color: #90caf9; font-weight: bold;', 'color: inherit;');
-      }
-
-      // ── 8. 세이브 데이터 복사 (v2) ──
-      let savedataCount = 0;
-      if (importData.savedatas?.length) {
-        const savedatasCol = sdk.collection(sdk.db, 'rooms', roomId, 'savedatas');
-        const ops = [];
-        for (const sd of importData.savedatas) {
-          const newId = _generateFirestoreId();
-          const sdData = { ...sd };
-          delete sdData._id;
-          delete sdData.id;
-          sdData.createdAt = Date.now();
-          sdData.updatedAt = Date.now();
-          ops.push({ type: 'set', ref: sdk.doc(savedatasCol, newId), data: sdData });
-        }
-        savedataCount = await _batchCommit(sdk, ops);
-        console.log(`%c[CE]%c   세이브 ${savedataCount}개 생성 완료`, 'color: #90caf9; font-weight: bold;', 'color: inherit;');
-      }
-
       console.log(`%c[CE]%c ✅ 룸 데이터 가져오기 완료!`,
         'color: #4caf50; font-weight: bold;', 'color: inherit;');
 
-      respond({
-        success: true, settingsUpdated, charCount, itemCount,
-        sceneCount, effectCount, noteCount, deckCount, savedataCount
-      });
+      respond({ success: true, settingsUpdated, charCount, itemCount });
 
     } catch (err) {
       console.error('[CE] 룸 데이터 가져오기 오류:', err);
@@ -6343,10 +6150,25 @@
     }
   });
 
+  // ── MAIN world 삭제 추적 (onSnapshot 재삽입 방어) ──
+  const _mainDeletedMsgIds = new Set();
+
+  // Redux에서 삭제된 메시지 제거 (반복 호출 안전)
+  function _purgeDeletedFromRedux() {
+    if (_mainDeletedMsgIds.size === 0 || !reduxStore) return;
+    try {
+      const rm = reduxStore.getState().entities?.roomMessages;
+      if (!rm || !rm.ids) return;
+      for (const delId of _mainDeletedMsgIds) {
+        const idx = rm.ids.indexOf(delId);
+        if (idx !== -1) rm.ids.splice(idx, 1);
+        if (rm.entities?.[delId]) delete rm.entities[delId];
+      }
+    } catch(e) { /* ignore */ }
+  }
+
   /**
-   * bwbr-delete-message — 메시지 삭제 (텍스트 비우기 방식)
-   * Firestore 문서를 삭제하지 않고 text/name/type/iconUrl 등을 비워서
-   * onSnapshot이 정상적으로 modified 이벤트를 발생시키도록 함.
+   * bwbr-delete-message — 메시지 삭제 (Firestore deleteDoc)
    * payload: { msgId: string }
    * response: bwbr-delete-message-result { success, msgId, error? }
    */
@@ -6375,18 +6197,12 @@
       const msgCol = sdk.collection(sdk.db, 'rooms', roomId, 'messages');
       const msgRef = sdk.doc(msgCol, msgId);
 
-      // 텍스트를 비워서 빈 시스템 메시지로 변환 (문서 자체는 유지)
-      await sdk.setDoc(msgRef, {
-        text: '',
-        name: 'system',
-        type: 'system',
-        iconUrl: '',
-        color: '',
-        extend: {},
-        updatedAt: Date.now()
-      }, { merge: true });
+      await sdk.deleteDoc(msgRef);
 
-      // 즉시 재태깅
+      // MAIN world 삭제 추적 Set에 등록 (태깅 시 해당 DOM 숨김용)
+      _mainDeletedMsgIds.add(msgId);
+
+      // 즉시 재태깅 → 삭제된 아이템 숨김
       _tagMessageItems();
 
       respond({ success: true, msgId });
@@ -6400,9 +6216,11 @@
    * 메시지 DOM 태깅 — MuiListItem에 data-msg-id, data-msg-from, data-msg-type 주입
    * Redux roomMessages 순서와 DOM 순서를 매칭
    *
+   * 핵심: 삭제된 메시지를 channelMsgs에서 제외하면 React 리렌더 타이밍과
+   * 어긋나서 DOM↔Redux 1:1 매칭이 깨짐. 따라서:
    * 1) 모든 display:none 초기화 (React 요소 재사용 시 잔존 방지)
-   * 2) 현재 채널 메시지 필터
-   * 3) DOM 순서와 Redux 순서 1:1 매칭
+   * 2) 삭제 ID 포함한 전체 channelMsgs로 태깅 (DOM과 순서 일치)
+   * 3) 태깅 후 삭제 ID를 가진 아이템만 display:none
    */
   function _tagMessageItems() {
     if (!reduxStore) return;
@@ -6413,6 +6231,11 @@
     const allItems = msgList.querySelectorAll('.MuiListItem-root');
     if (allItems.length === 0) return;
 
+    // 1) 모든 inline display:none 초기화 (동기 실행이므로 리페인트 없음)
+    for (let j = 0; j < allItems.length; j++) {
+      allItems[j].style.display = '';
+    }
+
     const state = reduxStore.getState();
     const rm = state.entities?.roomMessages;
     if (!rm || !rm.ids || rm.ids.length === 0) return;
@@ -6421,7 +6244,7 @@
     const chInfo = _detectCurrentChannel();
     const currentChannel = chInfo?.channel || '';
 
-    // 2) 현재 채널 메시지 필터
+    // 2) 현재 채널 메시지 필터 — 삭제 ID도 포함 (DOM과 순서 매칭 유지)
     const channelMsgs = [];
     for (let i = 0; i < rm.ids.length; i++) {
       const id = rm.ids[i];
@@ -6431,7 +6254,7 @@
       channelMsgs.push(ent);
     }
 
-    // 3) DOM 순서와 Redux 순서 1:1 매칭 + 빈 메시지 숨김 (단일 루프)
+    // 3) DOM 순서와 Redux 순서 1:1 매칭 — 전체 재태깅
     const len = Math.min(allItems.length, channelMsgs.length);
     for (let i = 0; i < len; i++) {
       const item = allItems[i];
@@ -6439,23 +6262,20 @@
       item.setAttribute('data-msg-id', msg._id);
       item.setAttribute('data-msg-from', msg.from || '');
       item.setAttribute('data-msg-type', msg.type || 'text');
-      // CE가 비운 메시지면 숨김, 아니면 표시 복원
-      const shouldHide = msg.type === 'system' && msg.name === 'system' && msg.text === '';
-      item.style.display = shouldHide ? 'none' : '';
-      // 인접 구분선(hr/MuiDivider)도 같이 숨김/복원
-      const nextSib = item.nextElementSibling;
-      if (nextSib && (nextSib.tagName === 'HR' || nextSib.classList.contains('MuiDivider-root'))) {
-        nextSib.style.display = shouldHide ? 'none' : '';
+    }
+
+    // 4) 삭제된 메시지 숨김 (태깅 후이므로 올바른 아이템에 적용)
+    if (_mainDeletedMsgIds.size > 0) {
+      for (let i = 0; i < len; i++) {
+        if (_mainDeletedMsgIds.has(channelMsgs[i]._id)) {
+          allItems[i].style.display = 'none';
+        }
       }
     }
 
     // 5) 초과 DOM 아이템 숨김 (channelMsgs < DOM인 경우)
     for (let i = len; i < allItems.length; i++) {
       allItems[i].style.display = 'none';
-      const nextSib = allItems[i].nextElementSibling;
-      if (nextSib && (nextSib.tagName === 'HR' || nextSib.classList.contains('MuiDivider-root'))) {
-        nextSib.style.display = 'none';
-      }
     }
 
     // 내 UID도 documentElement에 설정 (ISOLATED world에서 접근용)
@@ -6511,12 +6331,12 @@
       });
     }
 
-    // 탭 전환 감지: tablist의 aria-selected 변경 시 즉시 재태깅 + rAF
+    // 탭 전환 감지: tablist의 aria-selected 변경 시 재태깅
     const tablist = document.querySelector('[role="tablist"]');
     if (tablist) {
       new MutationObserver(() => {
-        _tagMessageItems();
-        requestAnimationFrame(_tagMessageItems);
+        if (_msgTagTimer) clearTimeout(_msgTagTimer);
+        _msgTagTimer = setTimeout(_tagMessageItems, 200);
       }).observe(tablist, { attributes: true, subtree: true, attributeFilter: ['aria-selected'] });
     }
 
