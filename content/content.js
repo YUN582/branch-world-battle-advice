@@ -1589,10 +1589,6 @@ ${rows.join('\n')}
   padding-top: 0px !important;
   margin-top: -4px !important;
 }
-hr[data-msg-group-hr="cont"],
-.MuiDivider-root[data-msg-group-hr="cont"] {
-  display: none !important;
-}
 `;
         document.head.appendChild(styleEl);
       }

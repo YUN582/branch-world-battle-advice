@@ -6460,11 +6460,6 @@
           }
         }
         item.setAttribute('data-msg-group', isGroupCont ? 'cont' : 'start');
-        // 그룹 continuation의 앞 구분선도 data-msg-group-hr 마킹
-        const prevSib = item.previousElementSibling;
-        if (prevSib && (prevSib.tagName === 'HR' || prevSib.classList.contains('MuiDivider-root'))) {
-          prevSib.setAttribute('data-msg-group-hr', isGroupCont ? 'cont' : 'start');
-        }
       }
     }
 
@@ -6474,6 +6469,36 @@
       const nextSib = allItems[i].nextElementSibling;
       if (nextSib && (nextSib.tagName === 'HR' || nextSib.classList.contains('MuiDivider-root'))) {
         nextSib.style.display = 'none';
+      }
+    }
+
+    // 6) 그룹 continuation 구분선 숨김 — ListItem이 래퍼 div 안에 있을 수 있으므로
+    //    parentElement를 거슬러 올라가며 HR을 찾음
+    for (let i = 0; i < len; i++) {
+      const group = allItems[i].getAttribute('data-msg-group');
+      if (group === 'cont') {
+        let el = allItems[i];
+        for (let up = 0; up < 4; up++) {
+          const prev = el.previousElementSibling;
+          if (prev && (prev.tagName === 'HR' || prev.classList.contains('MuiDivider-root'))) {
+            prev.style.display = 'none';
+            break;
+          }
+          if (el.parentElement && el.parentElement !== msgList) el = el.parentElement;
+          else break;
+        }
+      } else if (group === 'start') {
+        // start 앞의 구분선은 복원 (hidden 메시지에 의해 숨겨진 것은 제외)
+        let el = allItems[i];
+        for (let up = 0; up < 4; up++) {
+          const prev = el.previousElementSibling;
+          if (prev && (prev.tagName === 'HR' || prev.classList.contains('MuiDivider-root'))) {
+            if (prev.style.display === 'none') prev.style.display = '';
+            break;
+          }
+          if (el.parentElement && el.parentElement !== msgList) el = el.parentElement;
+          else break;
+        }
       }
     }
 
