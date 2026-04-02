@@ -105,22 +105,7 @@
         padding: 4px 0;
         width: 100%;
       }
-      .bwbr-bgm-stop-btn {
-        width: 24px; height: 24px;
-        border: none; background: none;
-        cursor: pointer; padding: 0;
-        display: flex; align-items: center; justify-content: center;
-        color: rgba(255,255,255,0.5);
-        flex-shrink: 0;
-        transition: color 0.15s;
-      }
-      .bwbr-bgm-stop-btn:hover {
-        color: #fff;
-      }
-      .bwbr-bgm-stop-btn svg {
-        width: 18px; height: 18px;
-        fill: currentColor;
-      }
+
     `;
     document.head.appendChild(style);
   }
@@ -136,7 +121,7 @@
 
   const SVG_PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
   const SVG_PAUSE = '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
-  const SVG_STOP = '<svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>';
+
 
   // ── 플레이어 UI 빌드 ────────────────────────────────────
 
@@ -218,17 +203,9 @@
     const dur = _audio.duration || 0;
     timeEl.textContent = '0:00 / ' + formatTime(dur);
 
-    // 정지 버튼
-    const stopBtn = document.createElement('button');
-    stopBtn.className = 'bwbr-bgm-stop-btn';
-    stopBtn.type = 'button';
-    stopBtn.innerHTML = SVG_STOP;
-    stopBtn.title = '정지';
-
     player.appendChild(playBtn);
     player.appendChild(seekWrap);
     player.appendChild(timeEl);
-    player.appendChild(stopBtn);
 
     // ── 상태 관리 ──
 
@@ -268,18 +245,6 @@
       } else {
         _audio.pause();
       }
-    });
-
-    // Stop
-    stopBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (!_audio) return;
-      _audio.pause();
-      _audio.currentTime = 0;
-      track.style.width = '0%';
-      thumb.style.left = '0%';
-      timeEl.textContent = '0:00 / ' + formatTime(_audio.duration || 0);
     });
 
     _audio.addEventListener('ended', () => {
