@@ -6347,6 +6347,13 @@
       // 삭제 숨김: CSS가 .MuiListItemText-secondary:empty 기반으로 자동 처리
       // JS가 display를 건드리지 않으므로 MutationObserver 피드백 루프 불가능
 
+      // CSS 숨김 후 스크롤 보정: 콘텐츠가 컨테이너보다 짧으면 위로 스크롤
+      // → ccfolia의 "이전 메시지 로드" 트리거 (메시지 visibility 자체는 안 건드림)
+      const scrollParent = msgList.parentElement;
+      if (scrollParent && scrollParent.scrollHeight <= scrollParent.clientHeight + 10) {
+        scrollParent.scrollTop = 0;
+      }
+
       // overflow 마킹
       for (let i = 0; i < domOffset; i++) {
         allItems[i].setAttribute('data-bwbr-overflow', '1');
