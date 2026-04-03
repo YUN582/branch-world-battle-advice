@@ -1676,15 +1676,17 @@ ${rows.join('\n')}
       if (!styleEl) {
         styleEl = document.createElement('style');
         styleEl.id = _SYS_CENTER_ID;
+        // 순수 CSS 구조 셀렉터 — JS 태깅(data-msg-type) 불필요
+        // 시스템 메시지 = 아바타에 IMG 없음 → :not(:has(img))
         styleEl.textContent = `
-/* CE: 시스템 메시지 가운데 정렬 */
-.MuiListItem-root[data-msg-type="system"] .MuiListItemText-root {
+/* CE: 시스템 메시지 가운데 정렬 (순수 CSS, 태깅 불필요) */
+.MuiListItem-root:has(.MuiListItemAvatar-root:not(:has(img))) .MuiListItemText-root {
   text-align: center !important;
 }
-.MuiListItem-root[data-msg-type="system"] .MuiListItemAvatar-root {
+.MuiListItem-root:has(.MuiListItemAvatar-root:not(:has(img))) .MuiListItemAvatar-root {
   display: none !important;
 }
-.MuiListItem-root[data-msg-type="system"] .MuiListItemText-primary {
+.MuiListItem-root:has(.MuiListItemAvatar-root:not(:has(img))) .MuiListItemText-primary {
   display: none !important;
 }
 `;
