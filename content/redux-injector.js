@@ -6335,28 +6335,32 @@
           if (item.style.display !== 'none') {
             item.style.setProperty('display', 'none', 'important');
           }
-          // 인접 구분선 숨김 (앞뒤 모두)
-          const next = item.nextElementSibling;
-          if (next && !next.classList.contains('MuiListItem-root') &&
-              (next.tagName === 'HR' || next.classList.contains('MuiDivider-root'))) {
-            next.style.setProperty('display', 'none', 'important');
-          }
-          const prev = item.previousElementSibling;
-          if (prev && !prev.classList.contains('MuiListItem-root') &&
-              (prev.tagName === 'HR' || prev.classList.contains('MuiDivider-root'))) {
-            prev.style.setProperty('display', 'none', 'important');
-          }
         } else {
-          // 비삭제 아이템: 이전에 잘못 숨겨졌으면 복원
           if (item.style.display === 'none') {
             item.style.display = '';
           }
-          // 구분선도 복원 (이전 태깅에서 잘못 숨겨진 경우)
-          const next = item.nextElementSibling;
-          if (next && next.style.display === 'none' &&
-              !next.classList.contains('MuiListItem-root') &&
-              (next.tagName === 'HR' || next.classList.contains('MuiDivider-root'))) {
-            next.style.display = '';
+        }
+      }
+
+      // 구분선 별도 패스: 모든 아이템 visibility 확정 후 처리
+      // → 아이템 A(삭제)가 숨기고 아이템 B(정상)가 복원하는 진동 방지
+      const children = msgList.children;
+      for (let c = 0; c < children.length; c++) {
+        const el = children[c];
+        if (el.tagName !== 'HR' && !el.classList.contains('MuiDivider-root')) continue;
+        const prev = el.previousElementSibling;
+        const next = el.nextElementSibling;
+        const prevHidden = prev && prev.classList.contains('MuiListItem-root') &&
+                           prev.style.display === 'none';
+        const nextHidden = next && next.classList.contains('MuiListItem-root') &&
+                           next.style.display === 'none';
+        if (prevHidden || nextHidden) {
+          if (el.style.display !== 'none') {
+            el.style.setProperty('display', 'none', 'important');
+          }
+        } else {
+          if (el.style.display === 'none') {
+            el.style.display = '';
           }
         }
       }
