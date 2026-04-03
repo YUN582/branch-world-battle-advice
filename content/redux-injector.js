@@ -6283,6 +6283,7 @@
    */
   // ── CSS 기반 삭제 메시지 숨김 (React 충돌 방지) ──
   let _hideStyleEl = null;
+  let _hideCSS_cache = '';  // 캐싱: 동일 CSS일 때 textContent 갱신 방지 → restyle 루프 차단
   function _updateHideCSS() {
     if (!_hideStyleEl) {
       _hideStyleEl = document.createElement('style');
@@ -6307,15 +6308,23 @@
         }
       }
     }
-    if (rules.length === 0) {
-      _hideStyleEl.textContent = '';
-      return;
+    let newCSS = '';
+    if (rules.length > 0) {
+      const sel = rules.join(',\n');
+      const hide = `{ display: none !important; }`;
+      // 구분선: 삭제 메시지 뒤(+) + 앞(:has()) 모두 숨김
+      // :has()는 Chrome 105+ 지원 — "이 구분선 바로 뒤가 삭제 메시지인가?" 판별
+      const divAfter = rules.map(r => `${r} + hr, ${r} + .MuiDivider-root`).join(',\n');
+      const divBefore = rules.map(r => `hr:has(+ ${r}), .MuiDivider-root:has(+ ${r})`).join(',\n');
+      newCSS = `${sel} ${hide}\n${divAfter} ${hide}\n${divBefore} ${hide}`;
     }
-    const sel = rules.join(',\n');
-    // display:none — 레이아웃에서 완전히 제거 (visibility+height:0은 레이아웃 참여→밀림 발생)
-    // React DOM 트리는 유지됨 — display:none은 CSS만 변경, 노드 제거 아님
-    const hide = `{ display: none !important; }`;
-    _hideStyleEl.textContent = `${sel} ${hide}\n${rules.map(r => `${r} + hr, ${r} + .MuiDivider-root`).join(',\n')} ${hide}`;
+    // 캐싱: CSS가 실제로 변경될 때만 textContent 갱신
+    // 동일한 CSS로 textContent를 재설정하면 브라우저가 전체 리스트를 restyle →
+    // 레이아웃 변경 → MutationObserver 발동 → 재태깅 → 다시 restyle → 무한 루프
+    if (_hideCSS_cache !== newCSS) {
+      _hideCSS_cache = newCSS;
+      _hideStyleEl.textContent = newCSS;
+    }
   }
 
   function _tagMessageItems() {
