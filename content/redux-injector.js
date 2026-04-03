@@ -6218,7 +6218,7 @@
    * bwbr-delete-message — 메시지 삭제 (소프트 디리트: 빈 시스템 메시지로 전환)
    * 실제 삭제가 아니라 Firestore 문서를 빈 시스템으로 변환하여
    * 다른 클라이언트에도 onSnapshot ‘modified’ 이벤트가 전파되게 함.
-   * 모든 CE 클라이언트의 _updateHideCSS()가 빈 시스템 메시지를 감지→CSS 숨김.
+   * 모든 CE 클라이언트의 태깅 pass에서 빈 시스템 메시지를 감지→inline 숨김.
    *
    * payload: { msgId: string }
    * response: bwbr-delete-message-result { success, msgId, error? }
@@ -6248,9 +6248,10 @@
       const msgCol = sdk.collection(sdk.db, 'rooms', roomId, 'messages');
       const msgRef = sdk.doc(msgCol, msgId);
 
+      // 즉시 삭제 Set에 등록 (setDoc 완료 전에도 태깅이 이 ID를 숨김)
+      _mainDeletedMsgIds.add(msgId);
+
       // 소프트 디리트: 빈 시스템 메시지로 전환
-      // • deleteDoc은 ccfolia onSnapshot이 ‘removed’를 Redux에 반영 안 함 → 다른 PL에게 전파 안 됨
-      // • setDoc merge는 ‘modified’ 이벤트 → 모든 클라이언트 Redux 반영 → React 리렌더 → CSS 숨김
       await sdk.setDoc(msgRef, {
         text: '',
         type: 'system',
@@ -6258,134 +6259,132 @@
         iconUrl: ''
       }, { merge: true });
 
-      // MAIN world 삭제 추적 Set에 등록 (로컬 즉시 숨김)
-      _mainDeletedMsgIds.add(msgId);
-
-      // CSS 즉시 갱신 → 해당 아이템 즉시 숨김
-      _updateHideCSS();
-
       respond({ success: true, msgId });
     } catch (err) {
       console.error('[CE] 메시지 삭제 실패:', err);
+      _mainDeletedMsgIds.delete(msgId);  // 롤백
       respond({ success: false, error: err.message });
     }
   });
 
   /**
    * 메시지 DOM 태깅 — MuiListItem에 data-msg-id, data-msg-from, data-msg-type 주입
-   * Redux roomMessages 순서와 DOM 순서를 매칭
+   * Redux roomMessages 순서와 DOM 순서를 역방향 매칭
    *
-   * 핵심: 삭제된 메시지를 channelMsgs에서 제외하면 React 리렌더 타이밍과
-   * 어긋나서 DOM↔Redux 1:1 매칭이 깨짐. 따라서:
-   * 1) 모든 display:none 초기화 (React 요소 재사용 시 잔존 방지)
-   * 2) 삭제 ID 포함한 전체 channelMsgs로 태깅 (DOM과 순서 일치)
-   * 3) 태깅 후 삭제 ID를 가진 아이템만 display:none
+   * 삭제 숨김: <style> CSS가 아닌 inline style로 직접 적용
+   * → global restyle cascade 방지 → scroll oscillation 방지
+   * → Observer disconnect 중 적용하여 피드백 루프 차단
    */
-  // ── CSS 기반 삭제 메시지 숨김 (React 충돌 방지) ──
-  let _hideStyleEl = null;
-  let _hideCSS_cache = '';  // 캐싱: 동일 CSS일 때 textContent 갱신 방지 → restyle 루프 차단
-  function _updateHideCSS() {
-    if (!_hideStyleEl) {
-      _hideStyleEl = document.createElement('style');
-      _hideStyleEl.id = 'bwbr-hide-deleted-css';
-      document.head.appendChild(_hideStyleEl);
-    }
-    // 로컬 삭제 + Redux 빈 시스템 메시지(소프트 디리트) 모두 CSS 숨김
-    const rules = [];
-    for (const id of _mainDeletedMsgIds) {
-      rules.push(`[data-msg-id="${id}"]`);
-    }
-    if (reduxStore) {
-      const rm = reduxStore.getState().entities?.roomMessages;
-      if (rm && rm.ids) {
-        for (let i = 0; i < rm.ids.length; i++) {
-          const ent = rm.entities?.[rm.ids[i]];
-          if (ent && ent.text === '' && ent.name === 'system' && ent.type === 'system') {
-            if (!_mainDeletedMsgIds.has(ent._id)) {
-              rules.push(`[data-msg-id="${ent._id}"]`);
-            }
+  let _tagInProgress = false;
+
+  function _tagMessageItems() {
+    if (!reduxStore || _tagInProgress) return;
+    _tagInProgress = true;
+
+    // Observer 분리 — 태깅 중 DOM 변경이 observer 트리거하지 않도록
+    if (_msgTagObserver) _msgTagObserver.disconnect();
+
+    try {
+      const msgList = document.querySelector('ul.MuiList-root');
+      if (!msgList) return;
+
+      const allItems = msgList.querySelectorAll('.MuiListItem-root');
+      if (allItems.length === 0) return;
+
+      const state = reduxStore.getState();
+      const rm = state.entities?.roomMessages;
+      if (!rm || !rm.ids || rm.ids.length === 0) return;
+
+      const chInfo = _detectCurrentChannel();
+      const currentChannel = chInfo?.channel || '';
+
+      // 숨길 메시지 ID 수집 (로컬 삭제 + Redux 빈 시스템 메시지)
+      const hideIds = new Set(_mainDeletedMsgIds);
+      for (let i = 0; i < rm.ids.length; i++) {
+        const ent = rm.entities?.[rm.ids[i]];
+        if (ent && ent.text === '' && ent.name === 'system' && ent.type === 'system') {
+          hideIds.add(ent._id);
+        }
+      }
+
+      // 현재 채널 메시지 전체 (소프트 디리트 포함 — DOM 매칭 유지)
+      const channelMsgs = [];
+      for (let i = 0; i < rm.ids.length; i++) {
+        const id = rm.ids[i];
+        const ent = rm.entities?.[id];
+        if (!ent) continue;
+        if (currentChannel && ent.channel && ent.channel !== currentChannel) continue;
+        channelMsgs.push(ent);
+      }
+
+      // 역방향 매칭: 최신(하단) → 과거(상단)
+      const len = Math.min(allItems.length, channelMsgs.length);
+      const domOffset = allItems.length - len;
+      const msgOffset = channelMsgs.length - len;
+
+      for (let i = 0; i < len; i++) {
+        const item = allItems[domOffset + i];
+        const msg = channelMsgs[msgOffset + i];
+        item.setAttribute('data-msg-id', msg._id);
+        item.setAttribute('data-msg-from', msg.from || '');
+        item.setAttribute('data-msg-type', msg.type || 'text');
+        item.removeAttribute('data-bwbr-overflow');
+
+        // inline 숨김: CSS <style> 대신 직접 적용 (global restyle cascade 방지)
+        if (hideIds.has(msg._id)) {
+          if (item.style.display !== 'none') {
+            item.style.setProperty('display', 'none', 'important');
+          }
+          // 인접 구분선 숨김 (앞뒤 모두)
+          const next = item.nextElementSibling;
+          if (next && !next.classList.contains('MuiListItem-root') &&
+              (next.tagName === 'HR' || next.classList.contains('MuiDivider-root'))) {
+            next.style.setProperty('display', 'none', 'important');
+          }
+          const prev = item.previousElementSibling;
+          if (prev && !prev.classList.contains('MuiListItem-root') &&
+              (prev.tagName === 'HR' || prev.classList.contains('MuiDivider-root'))) {
+            prev.style.setProperty('display', 'none', 'important');
+          }
+        } else {
+          // 비삭제 아이템: 이전에 잘못 숨겨졌으면 복원
+          if (item.style.display === 'none') {
+            item.style.display = '';
+          }
+          // 구분선도 복원 (이전 태깅에서 잘못 숨겨진 경우)
+          const next = item.nextElementSibling;
+          if (next && next.style.display === 'none' &&
+              !next.classList.contains('MuiListItem-root') &&
+              (next.tagName === 'HR' || next.classList.contains('MuiDivider-root'))) {
+            next.style.display = '';
           }
         }
       }
+
+      // overflow 마킹
+      for (let i = 0; i < domOffset; i++) {
+        allItems[i].setAttribute('data-bwbr-overflow', '1');
+      }
+
+      // UID
+      const myUid = state.app?.state?.uid || state.app?.user?.uid || '';
+      if (myUid && document.documentElement.getAttribute('data-bwbr-my-uid') !== myUid) {
+        document.documentElement.setAttribute('data-bwbr-my-uid', myUid);
+      }
+
+      document.dispatchEvent(new CustomEvent('bwbr-tags-applied'));
+    } finally {
+      _tagInProgress = false;
+      // Observer 재연결: 2프레임 후 (브라우저 restyle/reflow 완전 완료 대기)
+      // → 우리 변경에 의한 DOM 부작용이 observer에 잡히지 않음
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (_msgTagObserver && _watchedMsgList) {
+            _msgTagObserver.observe(_watchedMsgList, { childList: true, subtree: true });
+          }
+        });
+      });
     }
-    let newCSS = '';
-    if (rules.length > 0) {
-      const sel = rules.join(',\n');
-      const hide = `{ display: none !important; }`;
-      // 구분선: 삭제 메시지 뒤(+) + 앞(:has()) 모두 숨김
-      // :has()는 Chrome 105+ 지원 — "이 구분선 바로 뒤가 삭제 메시지인가?" 판별
-      const divAfter = rules.map(r => `${r} + hr, ${r} + .MuiDivider-root`).join(',\n');
-      const divBefore = rules.map(r => `hr:has(+ ${r}), .MuiDivider-root:has(+ ${r})`).join(',\n');
-      newCSS = `${sel} ${hide}\n${divAfter} ${hide}\n${divBefore} ${hide}`;
-    }
-    // 캐싱: CSS가 실제로 변경될 때만 textContent 갱신
-    // 동일한 CSS로 textContent를 재설정하면 브라우저가 전체 리스트를 restyle →
-    // 레이아웃 변경 → MutationObserver 발동 → 재태깅 → 다시 restyle → 무한 루프
-    if (_hideCSS_cache !== newCSS) {
-      _hideCSS_cache = newCSS;
-      _hideStyleEl.textContent = newCSS;
-    }
-  }
-
-  function _tagMessageItems() {
-    if (!reduxStore) return;
-
-    const msgList = document.querySelector('ul.MuiList-root');
-    if (!msgList) return;
-
-    const allItems = msgList.querySelectorAll('.MuiListItem-root');
-    if (allItems.length === 0) return;
-
-    const state = reduxStore.getState();
-    const rm = state.entities?.roomMessages;
-    if (!rm || !rm.ids || rm.ids.length === 0) return;
-
-    // 현재 채널 감지
-    const chInfo = _detectCurrentChannel();
-    const currentChannel = chInfo?.channel || '';
-
-    // 현재 채널 메시지 필터 — 소프트 디리트 포함 (DOM과 순서 매칭 유지)
-    // ccfolia는 빈 시스템 메시지도 DOM에 렌더링하므로 제외하면 오프셋 불일치
-    const channelMsgs = [];
-    for (let i = 0; i < rm.ids.length; i++) {
-      const id = rm.ids[i];
-      const ent = rm.entities?.[id];
-      if (!ent) continue;
-      if (currentChannel && ent.channel && ent.channel !== currentChannel) continue;
-      channelMsgs.push(ent);
-    }
-
-    // 태깅: 뒤(최신)에서 앞(과거)으로 역방향 매칭
-    // → DOM 아이템 수 ≠ Redux 메시지 수일 때 최신(스크롤 하단) 메시지가 항상 정확히 매칭됨
-    // 가상화/윈도잉으로 DOM이 부분 렌더링되더라도 최신 메시지 타입이 틀리지 않음
-    const len = Math.min(allItems.length, channelMsgs.length);
-    const domOffset = allItems.length - len;   // DOM 앞쪽 초과분 (overflow)
-    const msgOffset = channelMsgs.length - len; // Redux 앞쪽 건너뛸 분량
-    for (let i = 0; i < len; i++) {
-      const item = allItems[domOffset + i];
-      const msg = channelMsgs[msgOffset + i];
-      item.setAttribute('data-msg-id', msg._id);
-      item.setAttribute('data-msg-from', msg.from || '');
-      item.setAttribute('data-msg-type', msg.type || 'text');
-      item.removeAttribute('data-bwbr-overflow');
-    }
-
-    // 초과 DOM 아이템 마킹 (DOM 앞쪽 — 매칭 안 된 오래된 항목)
-    for (let i = 0; i < domOffset; i++) {
-      allItems[i].setAttribute('data-bwbr-overflow', '1');
-    }
-
-    // CSS 기반 삭제 숨김 규칙 갱신
-    _updateHideCSS();
-
-    // 내 UID도 documentElement에 설정 (ISOLATED world에서 접근용)
-    const myUid = state.app?.state?.uid || state.app?.user?.uid || '';
-    if (myUid && document.documentElement.getAttribute('data-bwbr-my-uid') !== myUid) {
-      document.documentElement.setAttribute('data-bwbr-my-uid', myUid);
-    }
-
-    // ISOLATED world에 태깅 완료 알림
-    document.dispatchEvent(new CustomEvent('bwbr-tags-applied'));
   }
 
   // 메시지 태깅 MutationObserver 설정
@@ -6411,8 +6410,9 @@
 
     _msgTagObserver = new MutationObserver(() => {
       // 디바운스: 짧은 시간 내 여러 변경을 한 번에 처리
+      // 250ms — 너무 짧으면 스크롤 중 과도한 태깅 → 렉
       if (_msgTagTimer) clearTimeout(_msgTagTimer);
-      _msgTagTimer = setTimeout(_tagMessageItems, 150);
+      _msgTagTimer = setTimeout(_tagMessageItems, 250);
     });
 
     _msgTagObserver.observe(msgList, { childList: true, subtree: true });
