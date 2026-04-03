@@ -6289,20 +6289,32 @@
       _hideStyleEl.id = 'bwbr-hide-deleted-css';
       document.head.appendChild(_hideStyleEl);
     }
-    // 로컬에서 삭제한 메시지만 CSS로 즉시 숨김 (React 리렌더 전 시각 피드백)
-    // Redux의 빈 시스템 메시지 스캔은 제거 — ccfolia가 렌더링 안 하므로 CSS 불필요
+    // 로컬 삭제 + Redux 빈 시스템 메시지(소프트 디리트) 모두 CSS 숨김
     const rules = [];
     for (const id of _mainDeletedMsgIds) {
       rules.push(`[data-msg-id="${id}"]`);
+    }
+    if (reduxStore) {
+      const rm = reduxStore.getState().entities?.roomMessages;
+      if (rm && rm.ids) {
+        for (let i = 0; i < rm.ids.length; i++) {
+          const ent = rm.entities?.[rm.ids[i]];
+          if (ent && ent.text === '' && ent.name === 'system' && ent.type === 'system') {
+            if (!_mainDeletedMsgIds.has(ent._id)) {
+              rules.push(`[data-msg-id="${ent._id}"]`);
+            }
+          }
+        }
+      }
     }
     if (rules.length === 0) {
       _hideStyleEl.textContent = '';
       return;
     }
     const sel = rules.join(',\n');
-    // visibility:hidden + height:0 — React의 DOM 트리는 유지하되 시각적으로 숨김
-    // overflow 아이템은 숨기지 않음 — 스크롤 시 DOM 불일치로 height:0 토글되면 목록 들썩임 발생
-    const hide = `{ visibility: hidden !important; height: 0 !important; min-height: 0 !important; overflow: hidden !important; padding: 0 !important; margin: 0 !important; }`;
+    // display:none — 레이아웃에서 완전히 제거 (visibility+height:0은 레이아웃 참여→밀림 발생)
+    // React DOM 트리는 유지됨 — display:none은 CSS만 변경, 노드 제거 아님
+    const hide = `{ display: none !important; }`;
     _hideStyleEl.textContent = `${sel} ${hide}\n${rules.map(r => `${r} + hr, ${r} + .MuiDivider-root`).join(',\n')} ${hide}`;
   }
 
@@ -6323,16 +6335,14 @@
     const chInfo = _detectCurrentChannel();
     const currentChannel = chInfo?.channel || '';
 
-    // 현재 채널 메시지 필터
-    // 소프트 디리트된 빈 시스템 메시지는 제외 — ccfolia가 DOM에 렌더링하지 않으므로
-    // 포함하면 DOM/Redux 오프셋이 밀려서 다른 메시지가 잘못된 ID로 태깅→숨겨짐
+    // 현재 채널 메시지 필터 — 소프트 디리트 포함 (DOM과 순서 매칭 유지)
+    // ccfolia는 빈 시스템 메시지도 DOM에 렌더링하므로 제외하면 오프셋 불일치
     const channelMsgs = [];
     for (let i = 0; i < rm.ids.length; i++) {
       const id = rm.ids[i];
       const ent = rm.entities?.[id];
       if (!ent) continue;
       if (currentChannel && ent.channel && ent.channel !== currentChannel) continue;
-      if (ent.text === '' && ent.name === 'system' && ent.type === 'system') continue;
       channelMsgs.push(ent);
     }
 
