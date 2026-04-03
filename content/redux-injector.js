@@ -6290,9 +6290,9 @@
     // 빈 시스템 메시지: MuiListItemText-secondary가 :empty인 ListItem
     // 구분선: 숨겨진 ListItem 바로 뒤 HR/Divider (+로 체이닝)
     s.textContent = [
-      'ul.MuiList-root>.MuiListItem-root:has(>.MuiListItemText-root>.MuiListItemText-secondary:empty){display:none!important}',
-      'ul.MuiList-root>.MuiListItem-root:has(>.MuiListItemText-root>.MuiListItemText-secondary:empty)+hr{display:none!important}',
-      'ul.MuiList-root>.MuiListItem-root:has(>.MuiListItemText-root>.MuiListItemText-secondary:empty)+.MuiDivider-root{display:none!important}'
+      '.MuiListItem-root:has(.MuiListItemText-secondary:empty){display:none!important}',
+      '.MuiListItem-root:has(.MuiListItemText-secondary:empty)+hr{display:none!important}',
+      '.MuiListItem-root:has(.MuiListItemText-secondary:empty)+.MuiDivider-root{display:none!important}'
     ].join('');
     (document.head || document.documentElement).appendChild(s);
   }
