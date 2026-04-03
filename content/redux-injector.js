@@ -6271,15 +6271,29 @@
    * 메시지 DOM 태깅 — MuiListItem에 data-msg-id, data-msg-from, data-msg-type 주입
    * Redux roomMessages 순서와 DOM 순서를 역방향 매칭
    *
-   * 삭제 숨김: <style> CSS가 아닌 inline style로 직접 적용
-   * → global restyle cascade 방지 → scroll oscillation 방지
-   * → Observer disconnect 중 적용하여 피드백 루프 차단
+   * 삭제 숨김: data-bwbr-hidden 속성 + 정적 CSS 규칙
+   * → JS oscillation 원천 차단, React 리렌더에도 속성 유지
+   * → 구분선은 CSS adjacent sibling selector로 자동 처리
    */
   let _tagInProgress = false;
 
   function _tagMessageItems() {
     if (!reduxStore || _tagInProgress) return;
     _tagInProgress = true;
+
+    // 정적 CSS 규칙 lazy inject (한 번만)
+    if (!document.getElementById('bwbr-hide-style')) {
+      const s = document.createElement('style');
+      s.id = 'bwbr-hide-style';
+      s.textContent = '[data-bwbr-hidden]{display:none!important}' +
+        '[data-bwbr-hidden]+hr,[data-bwbr-hidden]+.MuiDivider-root,' +
+        '[data-bwbr-hidden]+li.MuiDivider-root{display:none!important}';
+      (document.head || document.documentElement).appendChild(s);
+      // 이전 버전 inline style 잔여 정리
+      document.querySelectorAll('ul.MuiList-root hr, ul.MuiList-root .MuiDivider-root').forEach(el => {
+        if (el.style.display === 'none') el.style.display = '';
+      });
+    }
 
     // Observer 분리 — 태깅 중 DOM 변경이 observer 트리거하지 않도록
     if (_msgTagObserver) _msgTagObserver.disconnect();
@@ -6330,40 +6344,23 @@
         item.setAttribute('data-msg-type', msg.type || 'text');
         item.removeAttribute('data-bwbr-overflow');
 
-        // inline 숨김: CSS <style> 대신 직접 적용 (global restyle cascade 방지)
+        // 삭제 숨김: data-bwbr-hidden 속성 설정 → 정적 CSS가 display:none 처리
         if (hideIds.has(msg._id)) {
-          if (item.style.display !== 'none') {
-            item.style.setProperty('display', 'none', 'important');
+          if (!item.hasAttribute('data-bwbr-hidden')) {
+            item.setAttribute('data-bwbr-hidden', '1');
           }
         } else {
+          if (item.hasAttribute('data-bwbr-hidden')) {
+            item.removeAttribute('data-bwbr-hidden');
+          }
+          // 이전 버전 inline style 잔여 정리
           if (item.style.display === 'none') {
             item.style.display = '';
           }
         }
       }
 
-      // 구분선 별도 패스: 모든 아이템 visibility 확정 후 처리
-      // → 아이템 A(삭제)가 숨기고 아이템 B(정상)가 복원하는 진동 방지
-      const children = msgList.children;
-      for (let c = 0; c < children.length; c++) {
-        const el = children[c];
-        if (el.tagName !== 'HR' && !el.classList.contains('MuiDivider-root')) continue;
-        const prev = el.previousElementSibling;
-        const next = el.nextElementSibling;
-        const prevHidden = prev && prev.classList.contains('MuiListItem-root') &&
-                           prev.style.display === 'none';
-        const nextHidden = next && next.classList.contains('MuiListItem-root') &&
-                           next.style.display === 'none';
-        if (prevHidden || nextHidden) {
-          if (el.style.display !== 'none') {
-            el.style.setProperty('display', 'none', 'important');
-          }
-        } else {
-          if (el.style.display === 'none') {
-            el.style.display = '';
-          }
-        }
-      }
+      // 구분선: CSS [data-bwbr-hidden]+hr/divider 규칙이 자동 처리 (JS 불필요)
 
       // overflow 마킹
       for (let i = 0; i < domOffset; i++) {

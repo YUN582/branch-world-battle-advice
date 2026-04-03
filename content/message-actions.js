@@ -258,18 +258,13 @@
   // ── 삭제 실행 (확인 없이 즉시) ──
   function _doDelete(listItem, msgId) {
     _deletedMsgIds.add(msgId);
-    listItem.style.display = 'none';
-    // 인접 구분선도 즉시 숨김 (React 리렌더 전 시각 피드백)
-    var nextEl = listItem.nextElementSibling;
-    if (nextEl && (nextEl.tagName === 'HR' || nextEl.classList.contains('MuiDivider-root'))) {
-      nextEl.style.display = 'none';
-    }
+    listItem.setAttribute('data-bwbr-hidden', '1');
     _removeActions();
     _sendToMain('bwbr-delete-message', { msgId: msgId }).then(function(res) {
       if (!res || !res.success) {
         // 삭제 실패 → 복원
         _deletedMsgIds.delete(msgId);
-        listItem.style.display = '';
+        listItem.removeAttribute('data-bwbr-hidden');
       }
     });
   }
@@ -302,7 +297,7 @@
 
     if (!msgId) return;
     // 삭제된 메시지면 숨기기
-    if (_deletedMsgIds.has(msgId)) { listItem.style.display = 'none'; return; }
+    if (_deletedMsgIds.has(msgId)) { listItem.setAttribute('data-bwbr-hidden', '1'); return; }
 
     var myUid = _getMyUid();
     if (!myUid) return;
@@ -351,11 +346,8 @@
     var items = msgList.querySelectorAll('.MuiListItem-root[data-msg-id]');
     for (var i = 0; i < items.length; i++) {
       if (_deletedMsgIds.has(items[i].getAttribute('data-msg-id'))) {
-        items[i].style.display = 'none';
-        // 인접 구분선도 숨김
-        var nextEl = items[i].nextElementSibling;
-        if (nextEl && (nextEl.tagName === 'HR' || nextEl.classList.contains('MuiDivider-root'))) {
-          nextEl.style.display = 'none';
+        if (!items[i].hasAttribute('data-bwbr-hidden')) {
+          items[i].setAttribute('data-bwbr-hidden', '1');
         }
       }
     }
