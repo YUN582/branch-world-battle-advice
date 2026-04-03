@@ -6289,22 +6289,11 @@
       _hideStyleEl.id = 'bwbr-hide-deleted-css';
       document.head.appendChild(_hideStyleEl);
     }
+    // 로컬에서 삭제한 메시지만 CSS로 즉시 숨김 (React 리렌더 전 시각 피드백)
+    // Redux의 빈 시스템 메시지 스캔은 제거 — ccfolia가 렌더링 안 하므로 CSS 불필요
     const rules = [];
     for (const id of _mainDeletedMsgIds) {
       rules.push(`[data-msg-id="${id}"]`);
-    }
-    if (reduxStore) {
-      const rm = reduxStore.getState().entities?.roomMessages;
-      if (rm && rm.ids) {
-        for (let i = 0; i < rm.ids.length; i++) {
-          const ent = rm.entities?.[rm.ids[i]];
-          if (ent && ent.text === '' && ent.name === 'system' && ent.type === 'system') {
-            if (!_mainDeletedMsgIds.has(ent._id)) {
-              rules.push(`[data-msg-id="${ent._id}"]`);
-            }
-          }
-        }
-      }
     }
     if (rules.length === 0) {
       _hideStyleEl.textContent = '';
@@ -6334,13 +6323,16 @@
     const chInfo = _detectCurrentChannel();
     const currentChannel = chInfo?.channel || '';
 
-    // 현재 채널 메시지 필터 — 삭제 ID도 포함 (DOM과 순서 매칭 유지)
+    // 현재 채널 메시지 필터
+    // 소프트 디리트된 빈 시스템 메시지는 제외 — ccfolia가 DOM에 렌더링하지 않으므로
+    // 포함하면 DOM/Redux 오프셋이 밀려서 다른 메시지가 잘못된 ID로 태깅→숨겨짐
     const channelMsgs = [];
     for (let i = 0; i < rm.ids.length; i++) {
       const id = rm.ids[i];
       const ent = rm.entities?.[id];
       if (!ent) continue;
       if (currentChannel && ent.channel && ent.channel !== currentChannel) continue;
+      if (ent.text === '' && ent.name === 'system' && ent.type === 'system') continue;
       channelMsgs.push(ent);
     }
 
