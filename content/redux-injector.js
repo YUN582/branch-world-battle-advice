@@ -6251,11 +6251,14 @@
       // 즉시 삭제 Set에 등록 (setDoc 완료 전에도 태깅이 이 ID를 숨김)
       _mainDeletedMsgIds.add(msgId);
 
-      // 소프트 디리트: 빈 시스템 메시지로 전환
+      // 소프트 디리트: 빈 시스템 메시지로 전환하되, 고유 이름 부여
+      // 이유: ccfolia는 같은 name의 연속된 시스템 메시지를 1개의 DOM 요소(MuiListItem)로 묶어버림(그룹화).
+      // 이로 인해 DOM 개수와 Redux 개수가 엇갈리며 엉뚱한 메시지가 숨겨지거나 빨려들어가는 진동 버그가 발생함.
+      // 고유 name을 주면 묶임 현상이 원천 차단되어 1:1 역방향 매칭이 완벽하게 유지됨.
       await sdk.setDoc(msgRef, {
         text: '',
         type: 'system',
-        name: 'system',
+        name: `deleted_${msgId}`,
         iconUrl: ''
       }, { merge: true });
 
@@ -6316,7 +6319,7 @@
       const hideIds = new Set(_mainDeletedMsgIds);
       for (let i = 0; i < rm.ids.length; i++) {
         const ent = rm.entities?.[rm.ids[i]];
-        if (ent && ent.text === '' && ent.name === 'system' && ent.type === 'system') {
+        if (ent && ent.text === '' && ent.type === 'system') { // name 필터 제거 (unique name 대응)
           hideIds.add(ent._id);
         }
       }
