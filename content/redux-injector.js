@@ -6281,21 +6281,21 @@
     if (!reduxStore || _tagInProgress) return;
     _tagInProgress = true;
 
-    // 정적 CSS 규칙 lazy inject (한 번만)
-    if (!document.getElementById('bwbr-hide-style')) {
-      const s = document.createElement('style');
-      s.id = 'bwbr-hide-style';
-      // MuiListItem-root와 구분선 모두 data-bwbr-hidden으로 제어
-      s.textContent = `
-        /* JS에서 속성 부여한 경우 무조건 숨김 */
-        [data-bwbr-hidden] {
-          display: none !important;
-        }
-      `;
-      (document.head || document.documentElement).appendChild(s);
-      // 이전 버전 inline style 잔여 정리
+    // 정적 CSS 규칙 — 항상 최신 상태 보장 (이전 버전 잔여 스타일 덮어쓰기)
+    const _HIDE_CSS = '[data-bwbr-hidden]{display:none!important}' +
+      '[data-bwbr-hidden]+hr,[data-bwbr-hidden]+.MuiDivider-root{display:none!important}' +
+      'hr:has(+[data-bwbr-hidden]),.MuiDivider-root:has(+[data-bwbr-hidden]){display:none!important}';
+    let _hideEl = document.getElementById('bwbr-hide-style');
+    if (!_hideEl) {
+      _hideEl = document.createElement('style');
+      _hideEl.id = 'bwbr-hide-style';
+      (document.head || document.documentElement).appendChild(_hideEl);
+    }
+    if (_hideEl.textContent !== _HIDE_CSS) {
+      _hideEl.textContent = _HIDE_CSS;
+      // 이전 버전 inline style 잔여 정리 (한 번만 실행됨)
       document.querySelectorAll('ul.MuiList-root hr, ul.MuiList-root .MuiDivider-root').forEach(el => {
-        if (el.style.display === 'none') el.style.display = '';
+        el.style.removeProperty('display');
       });
     }
 
@@ -6354,49 +6354,17 @@
             item.setAttribute('data-bwbr-hidden', '1');
           }
         } else {
-          // 비삭제 메시지
           if (item.hasAttribute('data-bwbr-hidden')) {
             item.removeAttribute('data-bwbr-hidden');
           }
+          // 이전 버전 inline style 잔여 정리
           if (item.style.display === 'none') {
             item.style.display = '';
           }
         }
       }
 
-      // **핵심 수정**: 구분선 연쇄 처리를 JS로 수행
-      // CSS `+` 선택자는 형제-바로다음 에만 동작. 빈 시스템 메세지가 여럿일 때
-      // `(hidden A), (hr), (hidden B), (hr), (C)` 이면
-      // `A + hr` (숨김). 그 다음 `B`가 이어짐. `B + hr` (숨김). 이론상 맞으나
-      // 렌더링된 트리 구조에 따라 (MuiListItem-root 안에 여러 hr 등) CSS가 안 먹힐 수 있음
-      // 따라서 JS로 명확하게 hr을 찾아서 숨김 상태 동기화
-      const children = msgList.children;
-      let hideNextDivider = false;
-
-      for (let c = 0; c < children.length; c++) {
-        const el = children[c];
-        const isDivider = el.tagName === 'HR' || el.classList.contains('MuiDivider-root');
-        const isItem = el.classList.contains('MuiListItem-root');
-
-        if (isItem) {
-          // 다음 구분선을 숨겨야 하는 상황 갱신
-          hideNextDivider = el.hasAttribute('data-bwbr-hidden');
-        } else if (isDivider) {
-          // 이전 항목이 숨김이었거나, 이 구분선의 다음 항목이 숨김일 경우 숨김
-          const nextEl = el.nextElementSibling;
-          const nextIsHiddenItem = nextEl && nextEl.classList.contains('MuiListItem-root') && nextEl.hasAttribute('data-bwbr-hidden');
-
-          if (hideNextDivider || nextIsHiddenItem) {
-            if (!el.hasAttribute('data-bwbr-hidden')) {
-              el.setAttribute('data-bwbr-hidden', '1');
-            }
-          } else {
-            if (el.hasAttribute('data-bwbr-hidden')) {
-              el.removeAttribute('data-bwbr-hidden');
-            }
-          }
-        }
-      }
+      // 구분선: CSS [data-bwbr-hidden]+hr/divider 규칙이 자동 처리 (JS 불필요)
 
       // overflow 마킹
       for (let i = 0; i < domOffset; i++) {
