@@ -570,8 +570,6 @@
 
     return allMessages.filter(function(m, idx) {
       m._origIdx = idx; // preserve original index for preview click-to-exclude
-      // 소프트 삭제된 빈 시스템 메시지 물리적 배제
-      if (m.text === '' && m.type === 'system') return false;
       // 개별 제외
       if (settings.excludedIndices[idx]) return false;
 

@@ -6251,14 +6251,11 @@
       // 즉시 삭제 Set에 등록 (setDoc 완료 전에도 태깅이 이 ID를 숨김)
       _mainDeletedMsgIds.add(msgId);
 
-      // 소프트 디리트: 빈 시스템 메시지로 전환하되, 고유 이름 부여
-      // 이유: ccfolia는 같은 name의 연속된 시스템 메시지를 1개의 DOM 요소(MuiListItem)로 묶어버림(그룹화).
-      // 이로 인해 DOM 개수와 Redux 개수가 엇갈리며 엉뚱한 메시지가 숨겨지거나 빨려들어가는 진동 버그가 발생함.
-      // 고유 name을 주면 묶임 현상이 원천 차단되어 1:1 역방향 매칭이 완벽하게 유지됨.
+      // 소프트 디리트: 빈 시스템 메시지로 전환
       await sdk.setDoc(msgRef, {
         text: '',
         type: 'system',
-        name: `deleted_${msgId}`,
+        name: 'system',
         iconUrl: ''
       }, { merge: true });
 
@@ -6288,9 +6285,13 @@
     if (!document.getElementById('bwbr-hide-style')) {
       const s = document.createElement('style');
       s.id = 'bwbr-hide-style';
-      s.textContent = '[data-bwbr-hidden]{display:none!important}' +
-        '[data-bwbr-hidden]+hr,[data-bwbr-hidden]+.MuiDivider-root,' +
-        '[data-bwbr-hidden]+li.MuiDivider-root{display:none!important}';
+      // MuiListItem-root와 구분선 모두 data-bwbr-hidden으로 제어
+      s.textContent = `
+        /* JS에서 속성 부여한 경우 무조건 숨김 */
+        [data-bwbr-hidden] {
+          display: none !important;
+        }
+      `;
       (document.head || document.documentElement).appendChild(s);
       // 이전 버전 inline style 잔여 정리
       document.querySelectorAll('ul.MuiList-root hr, ul.MuiList-root .MuiDivider-root').forEach(el => {
@@ -6319,7 +6320,7 @@
       const hideIds = new Set(_mainDeletedMsgIds);
       for (let i = 0; i < rm.ids.length; i++) {
         const ent = rm.entities?.[rm.ids[i]];
-        if (ent && ent.text === '' && ent.type === 'system') { // name 필터 제거 (unique name 대응)
+        if (ent && ent.text === '' && ent.name === 'system' && ent.type === 'system') {
           hideIds.add(ent._id);
         }
       }
@@ -6353,17 +6354,49 @@
             item.setAttribute('data-bwbr-hidden', '1');
           }
         } else {
+          // 비삭제 메시지
           if (item.hasAttribute('data-bwbr-hidden')) {
             item.removeAttribute('data-bwbr-hidden');
           }
-          // 이전 버전 inline style 잔여 정리
           if (item.style.display === 'none') {
             item.style.display = '';
           }
         }
       }
 
-      // 구분선: CSS [data-bwbr-hidden]+hr/divider 규칙이 자동 처리 (JS 불필요)
+      // **핵심 수정**: 구분선 연쇄 처리를 JS로 수행
+      // CSS `+` 선택자는 형제-바로다음 에만 동작. 빈 시스템 메세지가 여럿일 때
+      // `(hidden A), (hr), (hidden B), (hr), (C)` 이면
+      // `A + hr` (숨김). 그 다음 `B`가 이어짐. `B + hr` (숨김). 이론상 맞으나
+      // 렌더링된 트리 구조에 따라 (MuiListItem-root 안에 여러 hr 등) CSS가 안 먹힐 수 있음
+      // 따라서 JS로 명확하게 hr을 찾아서 숨김 상태 동기화
+      const children = msgList.children;
+      let hideNextDivider = false;
+
+      for (let c = 0; c < children.length; c++) {
+        const el = children[c];
+        const isDivider = el.tagName === 'HR' || el.classList.contains('MuiDivider-root');
+        const isItem = el.classList.contains('MuiListItem-root');
+
+        if (isItem) {
+          // 다음 구분선을 숨겨야 하는 상황 갱신
+          hideNextDivider = el.hasAttribute('data-bwbr-hidden');
+        } else if (isDivider) {
+          // 이전 항목이 숨김이었거나, 이 구분선의 다음 항목이 숨김일 경우 숨김
+          const nextEl = el.nextElementSibling;
+          const nextIsHiddenItem = nextEl && nextEl.classList.contains('MuiListItem-root') && nextEl.hasAttribute('data-bwbr-hidden');
+
+          if (hideNextDivider || nextIsHiddenItem) {
+            if (!el.hasAttribute('data-bwbr-hidden')) {
+              el.setAttribute('data-bwbr-hidden', '1');
+            }
+          } else {
+            if (el.hasAttribute('data-bwbr-hidden')) {
+              el.removeAttribute('data-bwbr-hidden');
+            }
+          }
+        }
+      }
 
       // overflow 마킹
       for (let i = 0; i < domOffset; i++) {
