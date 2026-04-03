@@ -6281,10 +6281,10 @@
     if (!reduxStore || _tagInProgress) return;
     _tagInProgress = true;
 
-    // 정적 CSS 규칙 — 항상 최신 상태 보장 (이전 버전 잔여 스타일 덮어쓰기)
-    const _HIDE_CSS = '[data-bwbr-hidden]{display:none!important}' +
-      '[data-bwbr-hidden]+hr,[data-bwbr-hidden]+.MuiDivider-root{display:none!important}' +
-      'hr:has(+[data-bwbr-hidden]),.MuiDivider-root:has(+[data-bwbr-hidden]){display:none!important}';
+    // 정적 CSS — 최소한의 규칙만 (셀렉터 부작용 방지)
+    // CSS + / :has() 셀렉터는 Chrome repaint 피드백 루프를 일으킬 수 있으므로 사용하지 않음
+    // 구분선은 JS 별도 패스에서 data-bwbr-hidden 속성으로 처리
+    const _HIDE_CSS = '[data-bwbr-hidden]{display:none!important}';
     let _hideEl = document.getElementById('bwbr-hide-style');
     if (!_hideEl) {
       _hideEl = document.createElement('style');
@@ -6293,10 +6293,6 @@
     }
     if (_hideEl.textContent !== _HIDE_CSS) {
       _hideEl.textContent = _HIDE_CSS;
-      // 이전 버전 inline style 잔여 정리 (한 번만 실행됨)
-      document.querySelectorAll('ul.MuiList-root hr, ul.MuiList-root .MuiDivider-root').forEach(el => {
-        el.style.removeProperty('display');
-      });
     }
 
     // Observer 분리 — 태깅 중 DOM 변경이 observer 트리거하지 않도록
@@ -6364,7 +6360,27 @@
         }
       }
 
-      // 구분선: CSS [data-bwbr-hidden]+hr/divider 규칙이 자동 처리 (JS 불필요)
+      // 구분선 별도 패스: 모든 아이템 속성 확정 후 처리
+      // hasAttribute 체크 = 결정론적 (computed style과 달리 타이밍 무관)
+      const children = msgList.children;
+      for (let c = 0; c < children.length; c++) {
+        const el = children[c];
+        if (el.classList.contains('MuiListItem-root')) continue;
+        if (el.tagName !== 'HR' && !el.classList.contains('MuiDivider-root')) continue;
+        const prev = el.previousElementSibling;
+        const next = el.nextElementSibling;
+        const adjHidden = (prev && prev.hasAttribute('data-bwbr-hidden')) ||
+                          (next && next.hasAttribute('data-bwbr-hidden'));
+        if (adjHidden) {
+          if (!el.hasAttribute('data-bwbr-hidden')) {
+            el.setAttribute('data-bwbr-hidden', '1');
+          }
+        } else {
+          if (el.hasAttribute('data-bwbr-hidden')) {
+            el.removeAttribute('data-bwbr-hidden');
+          }
+        }
+      }
 
       // overflow 마킹
       for (let i = 0; i < domOffset; i++) {
