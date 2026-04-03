@@ -6271,29 +6271,37 @@
    * 메시지 DOM 태깅 — MuiListItem에 data-msg-id, data-msg-from, data-msg-type 주입
    * Redux roomMessages 순서와 DOM 순서를 역방향 매칭
    *
-   * 삭제 숨김: data-bwbr-hidden 속성 + 정적 CSS 규칙
-   * → JS oscillation 원천 차단, React 리렌더에도 속성 유지
-   * → 구분선은 CSS adjacent sibling selector로 자동 처리
+   * 삭제 숨김: 순수 CSS 사전 처리 (JS DOM 조작 없음)
+   * 소프트 딜리트 → Firestore text:'' → ccfolia 렌더 → .MuiListItemText-secondary:empty
+   * → CSS 구조 셀렉터가 자동 display:none (진동 원리적 불가능)
    */
   let _tagInProgress = false;
+
+  // 빈 시스템 메시지 숨김 CSS — 한 번만 주입, JS가 DOM을 절대 건드리지 않음
+  let _hideStyleInjected = false;
+  function _ensureHideCSS() {
+    if (_hideStyleInjected) return;
+    _hideStyleInjected = true;
+    // 기존 스타일 제거 (이전 버전 잔여)
+    const old = document.getElementById('bwbr-hide-style');
+    if (old) old.remove();
+    const s = document.createElement('style');
+    s.id = 'bwbr-hide-style';
+    // 빈 시스템 메시지: MuiListItemText-secondary가 :empty인 ListItem
+    // 구분선: 숨겨진 ListItem 바로 뒤 HR/Divider (+로 체이닝)
+    s.textContent = [
+      'ul.MuiList-root>.MuiListItem-root:has(>.MuiListItemText-root>.MuiListItemText-secondary:empty){display:none!important}',
+      'ul.MuiList-root>.MuiListItem-root:has(>.MuiListItemText-root>.MuiListItemText-secondary:empty)+hr{display:none!important}',
+      'ul.MuiList-root>.MuiListItem-root:has(>.MuiListItemText-root>.MuiListItemText-secondary:empty)+.MuiDivider-root{display:none!important}'
+    ].join('');
+    (document.head || document.documentElement).appendChild(s);
+  }
 
   function _tagMessageItems() {
     if (!reduxStore || _tagInProgress) return;
     _tagInProgress = true;
 
-    // 정적 CSS — 최소한의 규칙만 (셀렉터 부작용 방지)
-    // CSS + / :has() 셀렉터는 Chrome repaint 피드백 루프를 일으킬 수 있으므로 사용하지 않음
-    // 구분선은 JS 별도 패스에서 data-bwbr-hidden 속성으로 처리
-    const _HIDE_CSS = '[data-bwbr-hidden]{display:none!important}';
-    let _hideEl = document.getElementById('bwbr-hide-style');
-    if (!_hideEl) {
-      _hideEl = document.createElement('style');
-      _hideEl.id = 'bwbr-hide-style';
-      (document.head || document.documentElement).appendChild(_hideEl);
-    }
-    if (_hideEl.textContent !== _HIDE_CSS) {
-      _hideEl.textContent = _HIDE_CSS;
-    }
+    _ensureHideCSS();
 
     // Observer 분리 — 태깅 중 DOM 변경이 observer 트리거하지 않도록
     if (_msgTagObserver) _msgTagObserver.disconnect();
@@ -6311,15 +6319,6 @@
 
       const chInfo = _detectCurrentChannel();
       const currentChannel = chInfo?.channel || '';
-
-      // 숨길 메시지 ID 수집 (로컬 삭제 + Redux 빈 시스템 메시지)
-      const hideIds = new Set(_mainDeletedMsgIds);
-      for (let i = 0; i < rm.ids.length; i++) {
-        const ent = rm.entities?.[rm.ids[i]];
-        if (ent && ent.text === '' && ent.name === 'system' && ent.type === 'system') {
-          hideIds.add(ent._id);
-        }
-      }
 
       // 현재 채널 메시지 전체 (소프트 디리트 포함 — DOM 매칭 유지)
       const channelMsgs = [];
@@ -6343,44 +6342,10 @@
         item.setAttribute('data-msg-from', msg.from || '');
         item.setAttribute('data-msg-type', msg.type || 'text');
         item.removeAttribute('data-bwbr-overflow');
-
-        // 삭제 숨김: data-bwbr-hidden 속성 설정 → 정적 CSS가 display:none 처리
-        if (hideIds.has(msg._id)) {
-          if (!item.hasAttribute('data-bwbr-hidden')) {
-            item.setAttribute('data-bwbr-hidden', '1');
-          }
-        } else {
-          if (item.hasAttribute('data-bwbr-hidden')) {
-            item.removeAttribute('data-bwbr-hidden');
-          }
-          // 이전 버전 inline style 잔여 정리
-          if (item.style.display === 'none') {
-            item.style.display = '';
-          }
-        }
       }
 
-      // 구분선 별도 패스: 모든 아이템 속성 확정 후 처리
-      // hasAttribute 체크 = 결정론적 (computed style과 달리 타이밍 무관)
-      const children = msgList.children;
-      for (let c = 0; c < children.length; c++) {
-        const el = children[c];
-        if (el.classList.contains('MuiListItem-root')) continue;
-        if (el.tagName !== 'HR' && !el.classList.contains('MuiDivider-root')) continue;
-        const prev = el.previousElementSibling;
-        const next = el.nextElementSibling;
-        const adjHidden = (prev && prev.hasAttribute('data-bwbr-hidden')) ||
-                          (next && next.hasAttribute('data-bwbr-hidden'));
-        if (adjHidden) {
-          if (!el.hasAttribute('data-bwbr-hidden')) {
-            el.setAttribute('data-bwbr-hidden', '1');
-          }
-        } else {
-          if (el.hasAttribute('data-bwbr-hidden')) {
-            el.removeAttribute('data-bwbr-hidden');
-          }
-        }
-      }
+      // 삭제 숨김: CSS가 .MuiListItemText-secondary:empty 기반으로 자동 처리
+      // JS가 display를 건드리지 않으므로 MutationObserver 피드백 루프 불가능
 
       // overflow 마킹
       for (let i = 0; i < domOffset; i++) {

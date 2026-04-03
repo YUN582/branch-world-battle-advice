@@ -258,13 +258,16 @@
   // ── 삭제 실행 (확인 없이 즉시) ──
   function _doDelete(listItem, msgId) {
     _deletedMsgIds.add(msgId);
-    listItem.setAttribute('data-bwbr-hidden', '1');
+    // 즉시 시각 피드백: secondary 텍스트를 비워서 CSS :empty 셀렉터 매치 → 자동 숨김
+    var sec = listItem.querySelector('.MuiListItemText-secondary');
+    var prevText = sec ? sec.textContent : '';
+    if (sec) sec.textContent = '';
     _removeActions();
     _sendToMain('bwbr-delete-message', { msgId: msgId }).then(function(res) {
       if (!res || !res.success) {
         // 삭제 실패 → 복원
         _deletedMsgIds.delete(msgId);
-        listItem.removeAttribute('data-bwbr-hidden');
+        if (sec) sec.textContent = prevText;
       }
     });
   }
@@ -297,7 +300,7 @@
 
     if (!msgId) return;
     // 삭제된 메시지면 숨기기
-    if (_deletedMsgIds.has(msgId)) { listItem.setAttribute('data-bwbr-hidden', '1'); return; }
+    if (_deletedMsgIds.has(msgId)) { return; } // CSS가 이미 숨김 처리
 
     var myUid = _getMyUid();
     if (!myUid) return;
@@ -341,14 +344,14 @@
   }
 
   // ── 삭제된 메시지 DOM 숨김 (탭 전환/리렌더 시) ──
+  // CSS :empty 셀렉터가 자동 처리하므로, 여기서는 secondary 텍스트만 비워줌
   function _hideDeletedMessages(msgList) {
     if (_deletedMsgIds.size === 0) return;
     var items = msgList.querySelectorAll('.MuiListItem-root[data-msg-id]');
     for (var i = 0; i < items.length; i++) {
       if (_deletedMsgIds.has(items[i].getAttribute('data-msg-id'))) {
-        if (!items[i].hasAttribute('data-bwbr-hidden')) {
-          items[i].setAttribute('data-bwbr-hidden', '1');
-        }
+        var sec = items[i].querySelector('.MuiListItemText-secondary');
+        if (sec && sec.textContent !== '') sec.textContent = '';
       }
     }
   }
