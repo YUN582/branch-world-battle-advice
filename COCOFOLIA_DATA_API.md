@@ -3333,3 +3333,38 @@ ccfolia-160aa.appspot.com
 | 파일 경로 형식 | `users/{uid}/files/{sha256_of_blob}` |
 | 인증 방식 | Bearer token (Firebase ID Token from IndexedDB) |
 | SDK 사용 여부 | ❌ (webpack에 Storage SDK 없음, Cloud Function 경유) |
+
+---
+
+## 19. BGM 드로어 DOM 구조 (v2026.04 확인)
+
+### 드로어 계층
+```
+.MuiDrawer-root.MuiDrawer-modal (role="presentation")
+ └─ .MuiPaper-root.MuiPaper-elevation
+     ├─ <header> — 툴바
+     │   └─ .MuiToolbar-root
+     │       ├─ .MuiButtonGroup-root — [업로드 | 라이브러리PRO | Sound Master | Select Multi]
+     │       ├─ .sc-cnyrnb — 검색?
+     │       └─ button × 2 — 닫기 등
+     ├─ .MuiTabs-root — 폴더 탭 (COC, 가지세계 등)
+     ├─ .MuiDialogContent-root — BGM 목록
+     │   └─ .MuiList-root.MuiList-padding
+     │       └─ div × N — 각 BGM 아이템 (MuiListItemButton-root)
+     ├─ <div> "To pick up a draggab" — DnD 안내
+     ├─ <div role="status"> — 상태
+     └─ .MuiPaper-root — 하단 편집 폼
+         └─ <form> — name 입력 + 저장/삭제 버튼
+```
+
+### BGM 파일 업로드 경로
+
+| 경로 | 메커니즘 |
+|------|---------|
+| **"업로드" 버튼** | `input[type="file"][accept="audio/*,.mp3,.wav"][multiple]` → `change` 이벤트 |
+| **드래그&드롭** | React 내부에서 직접 처리 (DOM drop 이벤트 버블링 차단됨) |
+
+- file input 위치: `<INPUT> → <DIV> → DIV.sc-LvPkz → DIV#root` (드로어 밖, 앱 루트 레벨)
+- file input은 `display: none` 상태이며, "업로드" 버튼 클릭 시 `.click()` 호출
+- D&D 시 `drop` 이벤트가 document까지 전파되지 않음 (React synthetic event 내부 처리)
+- D&D는 file input의 `change` 이벤트를 경유하지 않음 (별도 업로드 로직)
