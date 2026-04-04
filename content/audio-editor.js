@@ -35,7 +35,7 @@
     s.textContent = `
       /* === MUI 디자인 토큰 === */
       :root {
-        --ae-bg-paper: rgba(44, 44, 44, 0.87);
+        --ae-bg-paper: rgb(44, 44, 44);
         --ae-bg-appbar: rgb(33, 33, 33);
         --ae-bg-body: rgb(32, 32, 32);
         --ae-primary: rgb(33, 150, 243);
@@ -101,19 +101,20 @@
 
       /* === 파일 정보 === */
       .bwbr-ae-file-info {
-        padding: 12px 24px; display: flex; gap: 16px; flex-wrap: wrap;
+        padding: 12px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
         font-size: 12px; color: var(--ae-text-disabled);
         letter-spacing: 0.4px;
         border-bottom: 1px solid var(--ae-divider);
       }
-      .bwbr-ae-file-info span { white-space: nowrap; }
+      .bwbr-ae-file-info span { white-space: nowrap; display: inline-flex; align-items: center; }
+      .bwbr-ae-file-info .filename { color: var(--ae-text-secondary); font-weight: 500; }
       .bwbr-ae-file-info .warn { color: #ff9800; font-weight: 600; }
       .bwbr-ae-file-info .ok { color: #4caf50; }
 
       /* === 파형 캔버스 === */
       .bwbr-ae-waveform-wrap {
         position: relative; margin: 16px 24px; height: ${WAVEFORM_HEIGHT}px;
-        background: ${WAVEFORM_COLORS.bg}; border-radius: 4px; overflow: hidden;
+        background: transparent; border-radius: 4px; overflow: hidden;
         cursor: crosshair; user-select: none; touch-action: none;
       }
       .bwbr-ae-waveform-wrap canvas {
@@ -176,16 +177,16 @@
         gap: 4px; padding: 8px 24px; flex-wrap: wrap;
       }
       .bwbr-ae-tool-btn {
-        background: transparent; border: none;
-        color: var(--ae-text-secondary); padding: 6px 8px; border-radius: 4px;
+        background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12);
+        color: var(--ae-text-secondary); padding: 6px 10px; border-radius: 4px;
         font-size: 13px; font-weight: 500; font-family: var(--ae-font);
         letter-spacing: 0.4px; cursor: pointer;
         display: inline-flex; align-items: center; gap: 5px;
         min-width: 0;
-        transition: background-color 0.25s var(--ae-ease), color 0.25s var(--ae-ease);
+        transition: background-color 0.25s var(--ae-ease), color 0.25s var(--ae-ease), border-color 0.25s var(--ae-ease);
       }
-      .bwbr-ae-tool-btn:hover { background: rgba(255,255,255,0.08); color: var(--ae-text); }
-      .bwbr-ae-tool-btn:active { background: rgba(255,255,255,0.12); }
+      .bwbr-ae-tool-btn:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); color: var(--ae-text); }
+      .bwbr-ae-tool-btn:active { background: rgba(255,255,255,0.14); }
       .bwbr-ae-tool-btn:disabled { color: var(--ae-text-disabled); opacity: 0.38; cursor: default; }
       .bwbr-ae-tool-btn .icon { display: inline-flex; align-items: center; }
       .bwbr-ae-tool-btn .icon svg { width: 16px; height: 16px; }
@@ -218,9 +219,9 @@
         padding: 8px 24px 16px;
       }
       .bwbr-ae-size-info {
-        font-size: 12px; color: var(--ae-text-disabled); letter-spacing: 0.4px;
+        font-size: 13px; color: var(--ae-text-secondary); letter-spacing: 0.4px;
       }
-      .bwbr-ae-size-info .size { font-weight: 600; }
+      .bwbr-ae-size-info .size { font-weight: 600; color: var(--ae-text); }
       .bwbr-ae-size-info .over { color: #ff9800; }
       .bwbr-ae-footer-btns { display: flex; gap: 8px; }
       /* MUI Button-text 스타일 */
@@ -529,10 +530,6 @@
     const numBins = peaks.length;
 
     ctx.clearRect(0, 0, w, h);
-
-    // 배경
-    ctx.fillStyle = WAVEFORM_COLORS.bg;
-    ctx.fillRect(0, 0, w, h);
 
     // 그리드 (시간 눈금)
     ctx.strokeStyle = WAVEFORM_COLORS.grid;
@@ -856,7 +853,7 @@
       const iDisk = _si('<path d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6zM15 9H7V5h8v4z"/>');
 
       fileInfoEl.innerHTML = `
-        <span>${iFile} ${s.file.name}</span>
+        <span class="filename">${iFile} ${s.file.name}</span>
         <span>${iClock} ${formatTime(duration)} (원본 ${formatTime(buf.duration)})</span>
         <span>${iWave} ${buf.sampleRate}Hz ${buf.numberOfChannels}ch</span>
         <span class="${overLimit ? 'warn' : 'ok'}">
