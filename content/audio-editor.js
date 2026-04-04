@@ -689,54 +689,42 @@
   }
 
   /**
-   * MP3 파일 바이너리 슬라이스 — 프레임 단위로 구간 추출
-   * @param {ArrayBuffer} ab - 원본 MP3 파일의 ArrayBuffer
-   * @param {number} trimStart - 시작 비율 (0~1)
-   * @param {number} trimEnd - 끝 비율 (0~1)
-   * @returns {Blob|null} 트림된 MP3 Blob, 또는 실패 시 null
+   * MP3 프레임 파서 — 모든 프레임의 위치/크기/시간 정보를 반환
+   * @param {ArrayBuffer} ab - MP3 파일의 ArrayBuffer
+   * @returns {{frames: Array, totalDuration: number, bytes: Uint8Array}|null}
    */
-  function sliceMp3Binary(ab, trimStart, trimEnd) {
+  function _parseMp3Frames(ab) {
     const bytes = new Uint8Array(ab);
     const frames = [];
     let pos = 0;
 
     // ID3v2 태그 스킵
-    if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) { // 'ID3'
+    if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) {
       const flags = bytes[5];
       let tagSize = (bytes[6] << 21) | (bytes[7] << 14) | (bytes[8] << 7) | bytes[9];
-      if (flags & 0x10) tagSize += 10; // footer
+      if (flags & 0x10) tagSize += 10;
       pos = 10 + tagSize;
     }
 
-    // MPEG 프레임 비트레이트 테이블 (MPEG1 Layer3)
     const bitrateTable = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0];
     const srTable = [44100, 48000, 32000, 0];
 
-    // 프레임 파싱
     let totalDuration = 0;
     while (pos < bytes.length - 4) {
-      // 동기 워드 찾기: 0xFF 0xE0+ (11비트)
-      if (bytes[pos] !== 0xFF || (bytes[pos + 1] & 0xE0) !== 0xE0) {
-        pos++;
-        continue;
-      }
+      if (bytes[pos] !== 0xFF || (bytes[pos + 1] & 0xE0) !== 0xE0) { pos++; continue; }
 
-      const b1 = bytes[pos + 1];
-      const b2 = bytes[pos + 2];
-
-      const mpegVer = (b1 >> 3) & 0x03;   // 3=MPEG1, 2=MPEG2, 0=MPEG2.5
-      const layer = (b1 >> 1) & 0x03;      // 1=Layer3
+      const b1 = bytes[pos + 1], b2 = bytes[pos + 2];
+      const mpegVer = (b1 >> 3) & 0x03;
+      const layer = (b1 >> 1) & 0x03;
       const brIdx = (b2 >> 4) & 0x0F;
       const srIdx = (b2 >> 2) & 0x03;
       const padding = (b2 >> 1) & 0x01;
 
-      // MPEG1 Layer3만 지원 (가장 일반적)
       if (mpegVer === 3 && layer === 1 && brIdx > 0 && brIdx < 15 && srIdx < 3) {
         const bitrate = bitrateTable[brIdx] * 1000;
         const sampleRate = srTable[srIdx];
         const frameSize = Math.floor(144 * bitrate / sampleRate) + padding;
-        const frameDuration = 1152 / sampleRate; // MPEG1 Layer3 = 1152 samples/frame
-
+        const frameDuration = 1152 / sampleRate;
         if (pos + frameSize <= bytes.length) {
           frames.push({ offset: pos, size: frameSize, time: totalDuration, duration: frameDuration });
           totalDuration += frameDuration;
@@ -745,16 +733,13 @@
         }
       }
 
-      // MPEG2/2.5 Layer3 지원
       if ((mpegVer === 2 || mpegVer === 0) && layer === 1 && brIdx > 0 && brIdx < 15 && srIdx < 3) {
         const mp2BrTable = [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0];
         const mp2SrTable = mpegVer === 2 ? [22050, 24000, 16000, 0] : [11025, 12000, 8000, 0];
         const bitrate = mp2BrTable[brIdx] * 1000;
         const sampleRate = mp2SrTable[srIdx];
-        const samplesPerFrame = 576;
         const frameSize = Math.floor(72 * bitrate / sampleRate) + padding;
-        const frameDuration = samplesPerFrame / sampleRate;
-
+        const frameDuration = 576 / sampleRate;
         if (pos + frameSize <= bytes.length) {
           frames.push({ offset: pos, size: frameSize, time: totalDuration, duration: frameDuration });
           totalDuration += frameDuration;
@@ -762,30 +747,38 @@
           continue;
         }
       }
-
       pos++;
     }
 
     if (frames.length === 0 || totalDuration === 0) return null;
+    return { frames, totalDuration, bytes };
+  }
 
-    // 트림 범위 (시간 기준)
-    const startTime = trimStart * totalDuration;
-    const endTime = trimEnd * totalDuration;
-
-    // 해당 구간의 프레임만 추출
-    const slicedFrames = frames.filter(f => f.time + f.duration > startTime && f.time < endTime);
-    if (slicedFrames.length === 0) return null;
-
-    // 프레임 데이터 합치기
-    const totalSize = slicedFrames.reduce((sum, f) => sum + f.size, 0);
+  /** MP3 프레임들을 바이트로 합쳐 Blob 생성 */
+  function _mp3FramesToBlob(bytes, selectedFrames) {
+    if (selectedFrames.length === 0) return null;
+    const totalSize = selectedFrames.reduce((sum, f) => sum + f.size, 0);
     const result = new Uint8Array(totalSize);
     let writePos = 0;
-    for (const f of slicedFrames) {
+    for (const f of selectedFrames) {
       result.set(bytes.subarray(f.offset, f.offset + f.size), writePos);
       writePos += f.size;
     }
-
     return new Blob([result], { type: 'audio/mpeg' });
+  }
+
+  /**
+   * MP3 파일 바이너리 슬라이스 — 프레임 단위로 구간 추출
+   */
+  function sliceMp3Binary(ab, trimStart, trimEnd) {
+    const parsed = _parseMp3Frames(ab);
+    if (!parsed) return null;
+    const { frames, totalDuration, bytes } = parsed;
+
+    const startTime = trimStart * totalDuration;
+    const endTime = trimEnd * totalDuration;
+    const slicedFrames = frames.filter(f => f.time + f.duration > startTime && f.time < endTime);
+    return _mp3FramesToBlob(bytes, slicedFrames);
   }
 
   /**
@@ -811,6 +804,158 @@
     }
 
     return null; // 지원하지 않는 포맷
+  }
+
+  // ── 바이너리 리전 시스템 (무손실 컷편집) ─────────────────
+
+  /**
+   * 현재 버퍼 비율(0~1) → 원본 버퍼 비율(0~1) 매핑
+   * @param {Array<{start:number,end:number}>} regions - 원본 비율 기준 리전 목록
+   * @param {number} ratio - 현재 버퍼에서의 비율 (0~1)
+   * @returns {number} 원본 비율
+   */
+  function _mapToOriginal(regions, ratio) {
+    if (!regions) return ratio;
+    const lengths = regions.map(r => r.end - r.start);
+    const total = lengths.reduce((a, b) => a + b, 0);
+    if (total === 0) return 0;
+    let target = ratio * total;
+    for (let i = 0; i < regions.length; i++) {
+      const len = lengths[i];
+      if (target <= len + 1e-12) return regions[i].start + target;
+      target -= len;
+    }
+    return regions[regions.length - 1].end;
+  }
+
+  /**
+   * 리전에서 [cutStart, cutEnd] 구간 제거 (원본 비율 기준)
+   */
+  function _regionsCut(regions, cutStart, cutEnd) {
+    const result = [];
+    for (const r of regions) {
+      if (r.end <= cutStart || r.start >= cutEnd) {
+        result.push({ start: r.start, end: r.end });
+      } else if (r.start < cutStart && r.end > cutEnd) {
+        result.push({ start: r.start, end: cutStart });
+        result.push({ start: cutEnd, end: r.end });
+      } else if (r.start < cutStart) {
+        result.push({ start: r.start, end: cutStart });
+      } else if (r.end > cutEnd) {
+        result.push({ start: cutEnd, end: r.end });
+      }
+    }
+    return result;
+  }
+
+  /**
+   * 리전에서 [keepStart, keepEnd] 구간만 남기기 (원본 비율 기준)
+   */
+  function _regionsSlice(regions, keepStart, keepEnd) {
+    const result = [];
+    for (const r of regions) {
+      const s = Math.max(r.start, keepStart);
+      const e = Math.min(r.end, keepEnd);
+      if (s < e) result.push({ start: s, end: e });
+    }
+    return result;
+  }
+
+  /** 현재 리전 가져오기 (null이면 전체) */
+  function _getRegions(s) {
+    return s.binaryRegions || [{ start: 0, end: 1 }];
+  }
+
+  /**
+   * 원본 파일에서 여러 리전을 바이너리로 이어붙여 Blob 생성 (무손실)
+   * @param {File} file - 원본 오디오 파일
+   * @param {Array<{start:number,end:number}>} regions - 원본 비율 기준 리전 목록
+   * @returns {Promise<Blob|null>}
+   */
+  async function binarySpliceRegions(file, regions) {
+    if (!regions || regions.length === 0) return null;
+    const ab = await file.arrayBuffer();
+    const ext = file.name.toLowerCase();
+    const mime = file.type.toLowerCase();
+
+    // MP3
+    if (mime === 'audio/mpeg' || mime === 'audio/mp3' || ext.endsWith('.mp3')) {
+      const parsed = _parseMp3Frames(ab);
+      if (!parsed) return null;
+      const { frames, totalDuration, bytes } = parsed;
+      const selectedFrames = [];
+      for (const region of regions) {
+        const startTime = region.start * totalDuration;
+        const endTime = region.end * totalDuration;
+        for (const f of frames) {
+          if (f.time + f.duration > startTime && f.time < endTime) {
+            selectedFrames.push(f);
+          }
+        }
+      }
+      return _mp3FramesToBlob(bytes, selectedFrames);
+    }
+
+    // WAV
+    if (mime === 'audio/wav' || mime === 'audio/x-wav' || ext.endsWith('.wav')) {
+      const v = new DataView(ab);
+      if (v.getUint32(0) !== 0x52494646 || v.getUint32(8) !== 0x57415645) return null;
+
+      let fmtOffset = -1, fmtSize = 0, dataOffset = -1, dataSize = 0;
+      let pos = 12;
+      while (pos < ab.byteLength - 8) {
+        const id = v.getUint32(pos);
+        const size = v.getUint32(pos + 4, true);
+        if (id === 0x666D7420) { fmtOffset = pos; fmtSize = size; }
+        else if (id === 0x64617461) { dataOffset = pos + 8; dataSize = size; break; }
+        pos += 8 + size;
+        if (pos % 2 !== 0) pos++;
+      }
+      if (fmtOffset < 0 || dataOffset < 0) return null;
+
+      const numCh = v.getUint16(fmtOffset + 10, true);
+      const bitsPerSample = v.getUint16(fmtOffset + 22, true);
+      const blockAlign = numCh * (bitsPerSample / 8);
+      const totalSamples = Math.floor(dataSize / blockAlign);
+
+      // 각 리전의 PCM 데이터 추출
+      const chunks = [];
+      let newDataSize = 0;
+      for (const region of regions) {
+        const startSample = Math.floor(region.start * totalSamples);
+        const endSample = Math.floor(region.end * totalSamples);
+        const len = (endSample - startSample) * blockAlign;
+        if (len > 0) {
+          chunks.push(new Uint8Array(ab, dataOffset + startSample * blockAlign, len));
+          newDataSize += len;
+        }
+      }
+      if (newDataSize === 0) return null;
+
+      // 새 WAV 파일 조립
+      const fmtChunkData = new Uint8Array(ab, fmtOffset + 8, fmtSize);
+      const out = new ArrayBuffer(44 + newDataSize);
+      const ov = new DataView(out);
+      _wavWriteStr(ov, 0, 'RIFF');
+      ov.setUint32(4, 36 + newDataSize, true);
+      _wavWriteStr(ov, 8, 'WAVE');
+      _wavWriteStr(ov, 12, 'fmt ');
+      ov.setUint32(16, fmtSize, true);
+      new Uint8Array(out, 20, fmtSize).set(fmtChunkData);
+      const dOff = 20 + fmtSize;
+      _wavWriteStr(ov, dOff, 'data');
+      ov.setUint32(dOff + 4, newDataSize, true);
+
+      let writePos = dOff + 8;
+      for (const chunk of chunks) {
+        new Uint8Array(out, writePos, chunk.length).set(chunk);
+        writePos += chunk.length;
+      }
+
+      return new Blob([out], { type: 'audio/wav' });
+    }
+
+    return null;
   }
 
   // ── 인코딩: AudioBuffer → Blob ──────────────────────────
@@ -986,6 +1131,7 @@
         trimEnd: 1,
         history: [], // undo 스택
         editedBuffer: null, // 편집된 버퍼
+        binaryRegions: null, // 무손실 바이너리 리전 [{start, end}] (0~1 원본 비율)
       });
     }
 
@@ -1477,6 +1623,11 @@
           const startSample = Math.floor(lo * buf.length);
           const endSample = Math.floor(hi * buf.length);
           pushHistory(s);
+          // 바이너리 리전 업데이트
+          const rT = _getRegions(s);
+          const origLoT = _mapToOriginal(rT, lo);
+          const origHiT = _mapToOriginal(rT, hi);
+          s.binaryRegions = _regionsSlice(rT, origLoT, origHiT);
           s.editedBuffer = sliceBuffer(buf, startSample, endSample);
           s.trimStart = 0; s.trimEnd = 1;
           clearSelection();
@@ -1489,6 +1640,11 @@
           const startSample = Math.floor(lo * buf.length);
           const endSample = Math.floor(hi * buf.length);
           pushHistory(s);
+          // 바이너리 리전 업데이트
+          const rC = _getRegions(s);
+          const origLoC = _mapToOriginal(rC, lo);
+          const origHiC = _mapToOriginal(rC, hi);
+          s.binaryRegions = _regionsCut(rC, origLoC, origHiC);
           s.editedBuffer = removeSection(buf, startSample, endSample);
           s.trimStart = 0; s.trimEnd = 1;
           clearSelection();
@@ -1498,6 +1654,10 @@
           if (s.trimStart <= 0) return;
           const startSample = Math.floor(s.trimStart * buf.length);
           pushHistory(s);
+          // 바이너리 리전 업데이트
+          const rL = _getRegions(s);
+          const origStartL = _mapToOriginal(rL, s.trimStart);
+          s.binaryRegions = _regionsSlice(rL, origStartL, rL[rL.length - 1].end);
           s.editedBuffer = sliceBuffer(buf, startSample, buf.length);
           s.trimStart = 0; s.trimEnd = 1;
           clearSelection();
@@ -1507,6 +1667,10 @@
           if (s.trimEnd >= 1) return;
           const endSample = Math.floor(s.trimEnd * buf.length);
           pushHistory(s);
+          // 바이너리 리전 업데이트
+          const rR = _getRegions(s);
+          const origEndR = _mapToOriginal(rR, s.trimEnd);
+          s.binaryRegions = _regionsSlice(rR, rR[0].start, origEndR);
           s.editedBuffer = sliceBuffer(buf, 0, endSample);
           s.trimStart = 0; s.trimEnd = 1;
           clearSelection();
@@ -1518,6 +1682,7 @@
           s.editedBuffer = prev.editedBuffer;
           s.trimStart = prev.trimStart;
           s.trimEnd = prev.trimEnd;
+          s.binaryRegions = prev.binaryRegions;
           clearSelection();
           break;
         }
@@ -1525,6 +1690,7 @@
           if (!s.editedBuffer && s.trimStart === 0 && s.trimEnd === 1) return;
           pushHistory(s);
           s.editedBuffer = null;
+          s.binaryRegions = null;
           s.trimStart = 0; s.trimEnd = 1;
           clearSelection();
           break;
@@ -1541,6 +1707,7 @@
         editedBuffer: s.editedBuffer,
         trimStart: s.trimStart,
         trimEnd: s.trimEnd,
+        binaryRegions: s.binaryRegions ? s.binaryRegions.map(r => ({...r})) : null,
       });
       // 히스토리 최대 20개
       if (s.history.length > 20) s.history.shift();
@@ -1627,29 +1794,53 @@
             }
 
           } else if (wasEdited) {
-            // ── cut 등 편집한 경우: 원본 포맷 유지 (MP3→MP3, WAV→WAV) ──
-            const buf = s.editedBuffer;
-            let finalBuf = buf;
-            if (s.trimStart > 0 || s.trimEnd < 1) {
-              const startSample = Math.floor(s.trimStart * buf.length);
-              const endSample = Math.floor(s.trimEnd * buf.length);
-              finalBuf = sliceBuffer(buf, startSample, endSample);
+            // ── 편집한 경우: 바이너리 리전 우선 (무손실), 실패 시 FFmpeg 폴백 ──
+
+            // 트림 핸들이 추가로 적용됐다면 리전에 반영
+            let finalRegions = s.binaryRegions;
+            if (finalRegions && (s.trimStart > 0 || s.trimEnd < 1)) {
+              const origTS = _mapToOriginal(finalRegions, s.trimStart);
+              const origTE = _mapToOriginal(finalRegions, s.trimEnd);
+              finalRegions = _regionsSlice(finalRegions, origTS, origTE);
             }
 
             const fmt = _getAudioFormat(s.file);
-            if (fmt === 'mp3') {
-              // MP3 원본 → AudioBuffer → FFmpeg → MP3
-              pgText.textContent = `${s.file.name} MP3 인코딩 중...`;
-              resultBlob = await _ffmpegEncodeBuffer(finalBuf, 'mp3', {
-                onProgress: (p) => { pgFill.style.width = ((i + 0.3 + p * 0.4) / fileStates.length * 100) + '%'; },
-                onStatus: (msg) => { pgText.textContent = msg; },
-              });
-              console.log(`[AE] 편집됨(MP3): ${s.file.name} | buf: sr=${finalBuf.sampleRate} ch=${finalBuf.numberOfChannels} dur=${finalBuf.duration.toFixed(1)}s | MP3=${formatSize(resultBlob.size)}`);
-            } else {
-              // WAV 원본 → AudioBuffer → WAV
-              pgText.textContent = `${s.file.name} 변환 중...`;
-              resultBlob = audioBufferToWav(finalBuf);
-              console.log(`[AE] 편집됨(WAV): ${s.file.name} | buf: sr=${finalBuf.sampleRate} ch=${finalBuf.numberOfChannels} dur=${finalBuf.duration.toFixed(1)}s | WAV=${formatSize(resultBlob.size)}`);
+            let editDuration = 0;
+
+            // 바이너리 리전 + 지원 포맷 → 무손실 바이너리 스플라이스
+            if (finalRegions && (fmt === 'mp3' || fmt === 'wav')) {
+              pgText.textContent = `${s.file.name} 무손실 편집 중...`;
+              resultBlob = await binarySpliceRegions(s.file, finalRegions);
+              if (resultBlob) {
+                editDuration = finalRegions.reduce((sum, r) => sum + (r.end - r.start), 0) * s.buffer.duration;
+                console.log(`[AE] 바이너리 스플라이스 성공: ${s.file.name} | ${formatSize(s.file.size)} → ${formatSize(resultBlob.size)} (${resultBlob.type}) | regions=${finalRegions.length}`);
+              }
+            }
+
+            // 바이너리 실패 시 → FFmpeg/WAV 폴백
+            if (!resultBlob) {
+              console.log(`[AE] 바이너리 스플라이스 불가, FFmpeg 폴백: ${s.file.name}`);
+              const buf = s.editedBuffer;
+              let finalBuf = buf;
+              if (s.trimStart > 0 || s.trimEnd < 1) {
+                const startSample = Math.floor(s.trimStart * buf.length);
+                const endSample = Math.floor(s.trimEnd * buf.length);
+                finalBuf = sliceBuffer(buf, startSample, endSample);
+              }
+              editDuration = finalBuf.duration;
+
+              if (fmt === 'mp3') {
+                pgText.textContent = `${s.file.name} MP3 인코딩 중...`;
+                resultBlob = await _ffmpegEncodeBuffer(finalBuf, 'mp3', {
+                  onProgress: (p) => { pgFill.style.width = ((i + 0.3 + p * 0.4) / fileStates.length * 100) + '%'; },
+                  onStatus: (msg) => { pgText.textContent = msg; },
+                });
+                console.log(`[AE] 편집됨(MP3 폴백): ${s.file.name} | ${formatSize(resultBlob.size)}`);
+              } else {
+                pgText.textContent = `${s.file.name} 변환 중...`;
+                resultBlob = audioBufferToWav(finalBuf);
+                console.log(`[AE] 편집됨(WAV 폴백): ${s.file.name} | ${formatSize(resultBlob.size)}`);
+              }
             }
             pgFill.style.width = ((i + 0.7) / fileStates.length * 100) + '%';
 
@@ -1658,7 +1849,7 @@
               pgText.textContent = `${s.file.name} 압축 중... (${formatSize(resultBlob.size)} → 10MB 이하)`;
               const blobAB = await resultBlob.arrayBuffer();
               const ext = resultBlob.type.includes('wav') ? 'wav' : 'mp3';
-              resultBlob = await _ffmpegCompressFile(blobAB, ext, MAX_FILE_SIZE, finalBuf.duration, {
+              resultBlob = await _ffmpegCompressFile(blobAB, ext, MAX_FILE_SIZE, editDuration, {
                 onProgress: (p) => { pgFill.style.width = ((i + 0.7 + p * 0.3) / fileStates.length * 100) + '%'; },
                 onStatus: (msg) => { pgText.textContent = msg; },
               });
