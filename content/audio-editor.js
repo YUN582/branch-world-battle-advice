@@ -1340,6 +1340,32 @@
       openEditor(files, input);
     }, true); // capture phase에서 먼저 잡아야 함
 
+    // 2) drop 이벤트 인터셉트 (드래그 앤 드롭 경로)
+    document.addEventListener('drop', (e) => {
+      if (_editorOpen) return; // 에디터가 이미 열려있으면 무시
+      if (!e.dataTransfer || !e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
+
+      // 오디오 파일만 필터링
+      const audioFiles = [...e.dataTransfer.files].filter(f => f.type.startsWith('audio/'));
+      if (audioFiles.length === 0) return;
+
+      // MUI Drawer 또는 Dialog 안에서의 드롭인지 확인
+      const dropTarget = e.target;
+      const modal = dropTarget.closest?.('.MuiDrawer-root') || dropTarget.closest?.('.MuiDialog-root');
+      if (!modal) return;
+
+      // 모달 안 또는 페이지 전체에서 audio file input 찾기 (편집 후 재주입용)
+      const audioInput = modal.querySelector('input[type="file"][accept*="audio"]')
+        || document.querySelector('input[type="file"][accept*="audio"]');
+      if (!audioInput) return;
+
+      // 인터셉트!
+      e.stopImmediatePropagation();
+      e.preventDefault();
+
+      openEditor(audioFiles, audioInput);
+    }, true); // capture phase
+
   }
 
   // ── 초기화 ──────────────────────────────────────────────
