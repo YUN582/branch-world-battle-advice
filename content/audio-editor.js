@@ -565,7 +565,7 @@
     // 헤더
     const header = document.createElement('div');
     header.className = 'bwbr-ae-header';
-    header.innerHTML = `<h3>🎵 오디오 편집기</h3>`;
+    header.innerHTML = `<h3><svg style="width:16px;height:16px;vertical-align:-2px;margin-right:4px" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="2.5"/><circle cx="12" cy="10" r="2.5"/><path d="M7.5 12V4.5l7-2V10"/></svg>오디오 편집기</h3>`;
     const closeBtn = document.createElement('button');
     closeBtn.className = 'bwbr-ae-close';
     closeBtn.textContent = '✕';
@@ -790,12 +790,18 @@
       const overLimit = estSize > MAX_FILE_SIZE;
       const duration = getEditedDuration();
 
+      const _si = (d) => `<svg style="width:12px;height:12px;vertical-align:-1px;margin-right:3px;opacity:0.5" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+      const iFile = _si('<path d="M3 2h5l3 3v7H3z"/><path d="M8 2v3h3"/>');
+      const iClock = _si('<circle cx="7" cy="7" r="5"/><path d="M7 4.5V7l2 1.5"/>');
+      const iWave = _si('<path d="M1 7h2l1.5-3 2 6 2-6L10 7h3"/>');
+      const iDisk = _si('<path d="M3 2h8v10H3z"/><rect x="5" y="2" width="4" height="3" rx="0.5"/><rect x="5" y="8" width="4" height="2" rx="0.5"/>');
+
       fileInfoEl.innerHTML = `
-        <span>📁 ${s.file.name}</span>
-        <span>⏱ ${formatTime(duration)} (원본 ${formatTime(buf.duration)})</span>
-        <span>🎵 ${buf.sampleRate}Hz ${buf.numberOfChannels}ch</span>
+        <span>${iFile} ${s.file.name}</span>
+        <span>${iClock} ${formatTime(duration)} (원본 ${formatTime(buf.duration)})</span>
+        <span>${iWave} ${buf.sampleRate}Hz ${buf.numberOfChannels}ch</span>
         <span class="${overLimit ? 'warn' : 'ok'}">
-          💾 약 ${formatSize(estSize)} ${overLimit ? '⚠ (10MB 초과 → 자동 압축)' : '✓'}
+          ${iDisk} 약 ${formatSize(estSize)} ${overLimit ? '⚠ (10MB 초과 → 자동 압축)' : '✓'}
         </span>
       `;
 
