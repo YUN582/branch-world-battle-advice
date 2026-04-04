@@ -1677,16 +1677,28 @@ ${rows.join('\n')}
         styleEl = document.createElement('style');
         styleEl.id = _SYS_CENTER_ID;
         // data-msg-type="system" 태깅 기반 — 채팅 메시지에만 적용 (BGM 등 다른 리스트 영향 없음)
+        // visibility:hidden + size 0으로 레이아웃 높이 변경 없이 숨김 (display:none은 scrollHeight 변동 → 진동 유발)
         styleEl.textContent = `
 /* CE: 시스템 메시지 가운데 정렬 */
 [data-msg-type="system"] .MuiListItemText-root {
   text-align: center !important;
 }
 [data-msg-type="system"] .MuiListItemAvatar-root {
-  display: none !important;
+  visibility: hidden !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
 }
 [data-msg-type="system"] .MuiListItemText-primary {
-  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 0 !important;
+  font-size: 0 !important;
 }
 `;
         document.head.appendChild(styleEl);
