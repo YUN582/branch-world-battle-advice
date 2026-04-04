@@ -261,7 +261,7 @@
     } : null;
 
     await _ffmpegWrite(inputName, new Uint8Array(inputAB));
-    await _ffmpegExec(['-i', inputName, '-b:a', `${targetBitrate}`, '-y', outputName]);
+    await _ffmpegExec(['-i', inputName, '-vn', '-b:a', `${targetBitrate}`, '-y', outputName]);
     const outData = await _ffmpegRead(outputName);
 
     await _ffmpegDelete(inputName);
@@ -518,8 +518,97 @@
       .bwbr-ae-tab .size {
         margin-left: 6px; font-size: 11px; opacity: 0.5;
       }
+
+      /* === 토스트 알림 === */
+      .bwbr-ae-toast-container {
+        position: fixed; bottom: 24px; right: 24px; z-index: 100000;
+        display: flex; flex-direction: column-reverse; gap: 8px;
+        pointer-events: none; font-family: var(--ae-font);
+      }
+      .bwbr-ae-toast {
+        background: var(--ae-bg-appbar); color: var(--ae-text);
+        border-radius: 8px; padding: 12px 16px;
+        box-shadow: var(--ae-shadow-4);
+        min-width: 280px; max-width: 380px;
+        pointer-events: auto;
+        transform: translateX(120%);
+        transition: transform 0.3s var(--ae-ease), opacity 0.2s var(--ae-ease);
+        opacity: 0;
+      }
+      .bwbr-ae-toast.show { transform: translateX(0); opacity: 1; }
+      .bwbr-ae-toast-title {
+        font-size: 13px; font-weight: 500;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        margin-bottom: 8px;
+      }
+      .bwbr-ae-toast-bar {
+        height: 4px; border-radius: 2px; background: rgba(255,255,255,0.1);
+        overflow: hidden;
+      }
+      .bwbr-ae-toast-bar-fill {
+        height: 100%; background: var(--ae-primary);
+        border-radius: 2px; width: 0%;
+        transition: width 0.3s var(--ae-ease);
+      }
+      .bwbr-ae-toast-status {
+        font-size: 11px; color: var(--ae-text-secondary);
+        margin-top: 4px;
+      }
     `;
     document.head.appendChild(s);
+  }
+
+  // ── 토스트 알림 ──────────────────────────────────────────
+
+  let _toastContainer = null;
+
+  function _ensureToastContainer() {
+    if (_toastContainer && document.body.contains(_toastContainer)) return _toastContainer;
+    _toastContainer = document.createElement('div');
+    _toastContainer.className = 'bwbr-ae-toast-container';
+    document.body.appendChild(_toastContainer);
+    return _toastContainer;
+  }
+
+  /**
+   * 프로그래스 토스트 표시
+   * @param {string} title - 표시할 제목 (파일명 등)
+   * @returns {{ setProgress: (ratio: number) => void, setStatus: (text: string) => void, close: () => void }}
+   */
+  function showProgressToast(title) {
+    injectStyles();
+    const container = _ensureToastContainer();
+    const el = document.createElement('div');
+    el.className = 'bwbr-ae-toast';
+    el.innerHTML = `
+      <div class="bwbr-ae-toast-title">🎵 ${_escHtml(title)}</div>
+      <div class="bwbr-ae-toast-bar"><div class="bwbr-ae-toast-bar-fill"></div></div>
+      <div class="bwbr-ae-toast-status">준비 중...</div>
+    `;
+    container.appendChild(el);
+    requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('show')));
+
+    const barFill = el.querySelector('.bwbr-ae-toast-bar-fill');
+    const statusEl = el.querySelector('.bwbr-ae-toast-status');
+
+    return {
+      setProgress(ratio) {
+        barFill.style.width = Math.round(Math.min(ratio, 1) * 100) + '%';
+      },
+      setStatus(text) {
+        statusEl.textContent = text;
+      },
+      close() {
+        el.classList.remove('show');
+        setTimeout(() => el.remove(), 350);
+      }
+    };
+  }
+
+  function _escHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
   }
 
   // ── 유틸리티 ─────────────────────────────────────────────
@@ -2052,20 +2141,32 @@
       if (file.size > MAX_FILE_SIZE) {
         const ext = _getAudioFormat(file);
         if (ext === 'mp3' || ext === 'wav') {
-          // FFmpeg로 압축
-          const fileAB = await file.arrayBuffer();
-          const actx = new AudioContext();
-          const buf = await actx.decodeAudioData(fileAB.slice(0));
-          actx.close();
-          console.log(`[AE] 직접 압축: ${file.name} (${formatSize(file.size)} → 10MB 이하)`);
-          const blob = await _ffmpegCompressFile(fileAB, ext, MAX_FILE_SIZE, buf.duration, {
-            onStatus: (msg) => console.log(`[AE] ${msg}`),
-          });
-          const newName = file.name.replace(/\.[^.]+$/, '') + (blob.type.includes('wav') ? '.wav' : '.mp3');
-          resultFiles.push(new File([blob], newName, { type: blob.type }));
-          console.log(`[AE] 압축 완료: ${newName} (${formatSize(blob.size)})`);
+          const toast = showProgressToast(file.name);
+          toast.setStatus(`압축 준비 중... (${formatSize(file.size)} → 10MB 이하)`);
+          try {
+            const fileAB = await file.arrayBuffer();
+            const actx = new AudioContext();
+            const buf = await actx.decodeAudioData(fileAB.slice(0));
+            actx.close();
+            toast.setStatus('FFmpeg 압축 중...');
+            console.log(`[AE] 직접 압축: ${file.name} (${formatSize(file.size)} → 10MB 이하)`);
+            const blob = await _ffmpegCompressFile(fileAB, ext, MAX_FILE_SIZE, buf.duration, {
+              onStatus: (msg) => { console.log(`[AE] ${msg}`); toast.setStatus(msg); },
+              onProgress: (p) => toast.setProgress(p),
+            });
+            const newName = file.name.replace(/\.[^.]+$/, '') + (blob.type.includes('wav') ? '.wav' : '.mp3');
+            resultFiles.push(new File([blob], newName, { type: blob.type }));
+            toast.setProgress(1);
+            toast.setStatus(`완료! ${formatSize(blob.size)}`);
+            console.log(`[AE] 압축 완료: ${newName} (${formatSize(blob.size)})`);
+            setTimeout(() => toast.close(), 2000);
+          } catch (e) {
+            console.error('[AE] 직접 압축 실패:', e);
+            toast.setStatus('압축 실패!');
+            setTimeout(() => toast.close(), 3000);
+            resultFiles.push(file); // 실패 시 원본 통과
+          }
         } else {
-          // 알 수 없는 포맷 → 그냥 통과
           resultFiles.push(file);
         }
       } else {
