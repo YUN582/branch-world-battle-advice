@@ -33,37 +33,78 @@
     const s = document.createElement('style');
     s.id = 'bwbr-audio-editor-style';
     s.textContent = `
-      /* === 에디터 오버레이 === */
+      /* === MUI 디자인 토큰 === */
+      :root {
+        --ae-bg-paper: rgba(44, 44, 44, 0.87);
+        --ae-bg-appbar: rgb(33, 33, 33);
+        --ae-bg-body: rgb(32, 32, 32);
+        --ae-primary: rgb(33, 150, 243);
+        --ae-primary-light: rgb(144, 202, 249);
+        --ae-error: rgb(220, 0, 78);
+        --ae-text: rgb(255, 255, 255);
+        --ae-text-secondary: rgba(255, 255, 255, 0.7);
+        --ae-text-disabled: rgba(255, 255, 255, 0.5);
+        --ae-divider: rgba(255, 255, 255, 0.08);
+        --ae-border: rgba(255, 255, 255, 0.23);
+        --ae-backdrop: rgba(0, 0, 0, 0.5);
+        --ae-shadow-24: 0 11px 15px -7px rgba(0,0,0,.2), 0 24px 38px 3px rgba(0,0,0,.14), 0 9px 46px 8px rgba(0,0,0,.12);
+        --ae-shadow-4: 0 2px 4px -1px rgba(0,0,0,.2), 0 4px 5px rgba(0,0,0,.14), 0 1px 10px rgba(0,0,0,.12);
+        --ae-ease: cubic-bezier(0.4, 0, 0.2, 1);
+        --ae-font: Roboto, Helvetica, Arial, sans-serif;
+      }
+
+      /* === 백드롭 오버레이 === */
       .bwbr-ae-overlay {
         position: fixed; inset: 0; z-index: 99999;
-        background: rgba(0,0,0,0.7);
+        background: var(--ae-backdrop);
         display: flex; align-items: center; justify-content: center;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-family: var(--ae-font);
+        opacity: 0; transition: opacity 0.225s var(--ae-ease);
       }
+      .bwbr-ae-overlay.open { opacity: 1; }
+
+      /* === Dialog (MUI Paper elevation-24) === */
       .bwbr-ae-dialog {
-        background: #1e1e2e; color: #e0e0e0;
-        border-radius: 12px; width: 960px; max-width: 95vw;
-        max-height: 90vh; overflow-y: auto;
-        box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        background: var(--ae-bg-paper); color: var(--ae-text);
+        border-radius: 4px; width: 960px; max-width: calc(100% - 64px);
+        max-height: calc(100% - 64px); overflow-y: auto;
+        box-shadow: var(--ae-shadow-24);
+        transform: scale(0.75); opacity: 0;
+        transition: transform 0.225s var(--ae-ease), opacity 0.15s var(--ae-ease);
       }
+      .bwbr-ae-overlay.open .bwbr-ae-dialog {
+        transform: scale(1); opacity: 1;
+      }
+
+      /* === AppBar 헤더 (MUI Dialog AppBar — sticky, elevation-4) === */
       .bwbr-ae-header {
+        position: sticky; top: 0; z-index: 1;
         display: flex; align-items: center; justify-content: space-between;
-        padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.08);
+        padding: 0 24px; min-height: 64px;
+        background: var(--ae-bg-appbar);
+        box-shadow: var(--ae-shadow-4);
       }
       .bwbr-ae-header h3 {
-        margin: 0; font-size: 16px; font-weight: 600; color: #fff;
+        margin: 0; font-size: 16px; font-weight: 400;
+        letter-spacing: 0.15px; line-height: 24px; color: var(--ae-text);
+        display: flex; align-items: center;
       }
+      /* 닫기 버튼 (MUI IconButton sizeLarge edgeEnd) */
       .bwbr-ae-close {
-        background: none; border: none; color: rgba(255,255,255,0.5);
-        font-size: 20px; cursor: pointer; padding: 4px 8px; border-radius: 4px;
+        background: none; border: none; color: var(--ae-text);
+        width: 48px; height: 48px; border-radius: 50%;
+        font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+        margin: 0 -12px 0 0;
+        transition: background-color 0.15s var(--ae-ease);
       }
-      .bwbr-ae-close:hover { background: rgba(255,255,255,0.1); color: #fff; }
+      .bwbr-ae-close:hover { background: rgba(255,255,255,0.08); }
 
       /* === 파일 정보 === */
       .bwbr-ae-file-info {
-        padding: 12px 20px; display: flex; gap: 16px; flex-wrap: wrap;
-        font-size: 12px; color: rgba(255,255,255,0.5);
-        border-bottom: 1px solid rgba(255,255,255,0.05);
+        padding: 12px 24px; display: flex; gap: 16px; flex-wrap: wrap;
+        font-size: 12px; color: var(--ae-text-disabled);
+        letter-spacing: 0.4px;
+        border-bottom: 1px solid var(--ae-divider);
       }
       .bwbr-ae-file-info span { white-space: nowrap; }
       .bwbr-ae-file-info .warn { color: #ff9800; font-weight: 600; }
@@ -71,14 +112,13 @@
 
       /* === 파형 캔버스 === */
       .bwbr-ae-waveform-wrap {
-        position: relative; margin: 16px 20px; height: ${WAVEFORM_HEIGHT}px;
-        background: ${WAVEFORM_COLORS.bg}; border-radius: 8px; overflow: hidden;
+        position: relative; margin: 16px 24px; height: ${WAVEFORM_HEIGHT}px;
+        background: ${WAVEFORM_COLORS.bg}; border-radius: 4px; overflow: hidden;
         cursor: crosshair; user-select: none; touch-action: none;
       }
       .bwbr-ae-waveform-wrap canvas {
         display: block; width: 100%; height: 100%;
       }
-      /* 선택 영역 오버레이 */
       .bwbr-ae-selection {
         position: absolute; top: 0; bottom: 0;
         background: ${WAVEFORM_COLORS.selection};
@@ -86,13 +126,11 @@
         border-right: 2px solid ${WAVEFORM_COLORS.selectionBorder};
         pointer-events: none;
       }
-      /* 재생 커서 */
       .bwbr-ae-cursor {
         position: absolute; top: 0; bottom: 0; width: 2px;
         background: ${WAVEFORM_COLORS.cursor};
         pointer-events: none; transform: translateX(-1px);
       }
-      /* 트림 핸들 */
       .bwbr-ae-handle {
         position: absolute; top: 0; bottom: 0; width: 8px;
         cursor: ew-resize; z-index: 2;
@@ -111,101 +149,118 @@
       .bwbr-ae-time-labels {
         position: relative;
         display: flex; justify-content: space-between;
-        margin: 0 20px; padding: 2px 0 0; font-size: 11px; color: rgba(255,255,255,0.35);
-        font-family: 'Roboto Mono', monospace;
+        margin: 0 24px; padding: 4px 0 0; font-size: 12px; color: var(--ae-text-disabled);
+        font-family: var(--ae-font); letter-spacing: 0.4px;
       }
       .bwbr-ae-cursor-time {
-        position: absolute; top: 0; transform: translateX(-50%);
-        color: #fff; font-size: 11px;
-        font-family: 'Roboto Mono', monospace;
+        position: absolute; top: 4px; transform: translateX(-50%);
+        color: var(--ae-text); font-size: 12px;
+        font-family: var(--ae-font); letter-spacing: 0.4px;
         white-space: nowrap; pointer-events: none;
       }
 
-      /* === 스페이스바 힌트 === */
+      /* === Space 힌트 === */
       .bwbr-ae-spacebar-hint {
-        padding: 4px 20px; font-size: 11px; color: rgba(255,255,255,0.25);
-        text-align: center;
+        padding: 6px 24px; font-size: 12px; color: var(--ae-text-disabled);
+        text-align: center; letter-spacing: 0.4px;
       }
       .bwbr-ae-spacebar-hint kbd {
-        display: inline-block; padding: 1px 6px; border-radius: 3px;
-        background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15);
-        font-family: inherit; font-size: 10px; color: rgba(255,255,255,0.4);
+        display: inline-block; padding: 1px 6px; border-radius: 4px;
+        background: rgba(255,255,255,0.06); border: 1px solid var(--ae-border);
+        font-family: var(--ae-font); font-size: 11px; color: var(--ae-text-secondary);
       }
 
-      /* === 편집 도구 === */
+      /* === 편집 도구 (MUI Button-text 스타일) === */
       .bwbr-ae-tools {
         display: flex; align-items: center; justify-content: center;
-        gap: 6px; padding: 8px 20px; flex-wrap: wrap;
+        gap: 4px; padding: 8px 24px; flex-wrap: wrap;
       }
       .bwbr-ae-tool-btn {
-        background: none; border: 1px solid rgba(255,255,255,0.1);
-        color: rgba(255,255,255,0.6); padding: 5px 12px; border-radius: 5px;
-        font-size: 12px; cursor: pointer; transition: all 0.15s;
+        background: transparent; border: none;
+        color: var(--ae-text-secondary); padding: 6px 8px; border-radius: 4px;
+        font-size: 13px; font-weight: 500; font-family: var(--ae-font);
+        letter-spacing: 0.4px; cursor: pointer;
+        display: inline-flex; align-items: center; gap: 5px;
+        min-width: 0;
+        transition: background-color 0.25s var(--ae-ease), color 0.25s var(--ae-ease);
       }
-      .bwbr-ae-tool-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
-      .bwbr-ae-tool-btn:disabled { opacity: 0.3; cursor: default; }
-      .bwbr-ae-tool-btn .icon { display: inline-flex; align-items: center; margin-right: 5px; vertical-align: -1px; }
-      .bwbr-ae-tool-btn .icon svg { width: 13px; height: 13px; }
+      .bwbr-ae-tool-btn:hover { background: rgba(255,255,255,0.08); color: var(--ae-text); }
+      .bwbr-ae-tool-btn:active { background: rgba(255,255,255,0.12); }
+      .bwbr-ae-tool-btn:disabled { color: var(--ae-text-disabled); opacity: 0.38; cursor: default; }
+      .bwbr-ae-tool-btn .icon { display: inline-flex; align-items: center; }
+      .bwbr-ae-tool-btn .icon svg { width: 16px; height: 16px; }
+      /* 구분 — 되돌리기/복원 그룹 */
+      .bwbr-ae-tool-sep {
+        width: 1px; height: 20px; background: var(--ae-divider); margin: 0 4px;
+      }
 
-      /* === 프로그레스 === */
+      /* === 프로그레스 (MUI LinearProgress) === */
       .bwbr-ae-progress-wrap {
-        padding: 16px 20px; display: none;
+        padding: 16px 24px; display: none;
       }
       .bwbr-ae-progress-wrap.active { display: block; }
       .bwbr-ae-progress-bar {
-        height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px;
+        height: 4px; background: rgba(33,150,243,0.2); border-radius: 2px;
         overflow: hidden;
       }
       .bwbr-ae-progress-fill {
-        height: 100%; background: #2196f3; border-radius: 2px;
-        transition: width 0.2s;
+        height: 100%; background: var(--ae-primary); border-radius: 2px;
+        transition: width 0.3s var(--ae-ease);
       }
       .bwbr-ae-progress-text {
-        font-size: 12px; color: rgba(255,255,255,0.5);
-        margin-top: 6px; text-align: center;
+        font-size: 12px; color: var(--ae-text-disabled);
+        margin-top: 8px; text-align: center; letter-spacing: 0.4px;
       }
 
-      /* === 하단 액션 === */
+      /* === 하단 액션 (MUI DialogActions) === */
       .bwbr-ae-footer {
         display: flex; align-items: center; justify-content: space-between;
-        padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.08);
+        padding: 8px 24px 16px;
       }
       .bwbr-ae-size-info {
-        font-size: 12px; color: rgba(255,255,255,0.4);
+        font-size: 12px; color: var(--ae-text-disabled); letter-spacing: 0.4px;
       }
       .bwbr-ae-size-info .size { font-weight: 600; }
       .bwbr-ae-size-info .over { color: #ff9800; }
       .bwbr-ae-footer-btns { display: flex; gap: 8px; }
+      /* MUI Button-text 스타일 */
       .bwbr-ae-btn {
-        background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12);
-        color: #e0e0e0; padding: 6px 14px; border-radius: 6px;
-        font-size: 13px; cursor: pointer; white-space: nowrap;
-        transition: background 0.15s;
+        background: transparent; border: none;
+        color: var(--ae-primary); padding: 6px 8px; border-radius: 4px;
+        font-size: 14px; font-weight: 700; font-family: var(--ae-font);
+        letter-spacing: 0.4px; line-height: 24.5px;
+        cursor: pointer; white-space: nowrap; min-width: 64px;
+        text-transform: uppercase;
+        transition: background-color 0.25s var(--ae-ease);
       }
-      .bwbr-ae-btn:hover { background: rgba(255,255,255,0.15); }
-      .bwbr-ae-btn:disabled { opacity: 0.35; cursor: default; }
+      .bwbr-ae-btn:hover { background: rgba(33,150,243,0.08); }
+      .bwbr-ae-btn:disabled { color: var(--ae-text-disabled); opacity: 0.38; cursor: default; }
       .bwbr-ae-btn.primary {
-        background: #2196f3; border-color: #2196f3; color: #fff;
+        color: var(--ae-primary);
       }
-      .bwbr-ae-btn.primary:hover { background: #1e88e5; }
+      .bwbr-ae-btn.primary:hover { background: rgba(33,150,243,0.08); }
+      .bwbr-ae-btn.cancel { color: var(--ae-text-secondary); }
+      .bwbr-ae-btn.cancel:hover { background: rgba(255,255,255,0.08); }
 
-      /* 멀티 파일 편집 탭 */
+      /* === 멀티 파일 탭 (MUI Tabs) === */
       .bwbr-ae-tabs {
-        display: flex; gap: 0; padding: 0 20px;
-        border-bottom: 1px solid rgba(255,255,255,0.08);
+        display: flex; gap: 0; padding: 0 24px;
+        border-bottom: 1px solid var(--ae-divider);
         overflow-x: auto;
       }
       .bwbr-ae-tab {
-        padding: 8px 16px; font-size: 12px; cursor: pointer;
-        color: rgba(255,255,255,0.5); border-bottom: 2px solid transparent;
-        white-space: nowrap; transition: all 0.15s;
+        padding: 12px 16px; font-size: 14px; font-weight: 700; cursor: pointer;
+        color: var(--ae-text); border-bottom: 2px solid transparent;
+        white-space: nowrap; letter-spacing: 0.4px;
+        font-family: var(--ae-font);
+        transition: color 0.25s var(--ae-ease), border-color 0.3s var(--ae-ease);
       }
-      .bwbr-ae-tab:hover { color: rgba(255,255,255,0.8); }
+      .bwbr-ae-tab:hover { color: var(--ae-primary-light); }
       .bwbr-ae-tab.active {
-        color: #2196f3; border-bottom-color: #2196f3;
+        color: var(--ae-primary); border-bottom-color: rgb(245, 0, 87);
       }
       .bwbr-ae-tab .size {
-        margin-left: 6px; font-size: 10px; opacity: 0.6;
+        margin-left: 6px; font-size: 11px; opacity: 0.5;
       }
     `;
     document.head.appendChild(s);
@@ -636,11 +691,11 @@
     tools.className = 'bwbr-ae-tools';
 
     const _I = {
-      trimSel: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 3a1 1 0 0 1 1 1v7h4V4a1 1 0 1 1 2 0v16a1 1 0 1 1-2 0v-7h-4v7a1 1 0 1 1-2 0V4a1 1 0 0 1 1-1z"/></svg>',
-      cutSel:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.7 5.3a1 1 0 0 0-1.4 1.4L10.6 12l-5.3 5.3a1 1 0 1 0 1.4 1.4L12 13.4l5.3 5.3a1 1 0 0 0 1.4-1.4L13.4 12l5.3-5.3a1 1 0 0 0-1.4-1.4L12 10.6 6.7 5.3z"/></svg>',
-      trimL:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4a1 1 0 0 1 1 1v14a1 1 0 1 1-2 0V5a1 1 0 0 1 1-1zm4.3 7L6.6 9.3a1 1 0 0 1 1.4-1.4l3.7 3.7a1 1 0 0 1 0 1.4L8 16.7a1 1 0 0 1-1.4-1.4L8.3 13H20a1 1 0 1 0 0-2H8.3z"/></svg>',
-      trimR:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 4a1 1 0 0 1 1 1v14a1 1 0 1 1-2 0V5a1 1 0 0 1 1-1zm-4.3 7l1.7-1.7a1 1 0 0 0-1.4-1.4L12.3 11.6a1 1 0 0 0 0 1.4L16 16.7a1 1 0 0 0 1.4-1.4L15.7 13H4a1 1 0 1 1 0-2h11.7z"/></svg>',
-      undo:    '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7.7 8H14a5 5 0 0 1 0 10h-3a1 1 0 1 1 0-2h3a3 3 0 1 0 0-6H7.7l1.6 1.6a1 1 0 0 1-1.4 1.4l-3.4-3.4a1 1 0 0 1 0-1.4l3.4-3.4a1 1 0 1 1 1.4 1.4L7.7 8z"/></svg>',
+      trimSel: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 15h2V7c0-1.1-.9-2-2-2H9v2h8v8zM7 17V1H5v4H1v2h4v10c0 1.1.9 2 2 2h10v4h2v-4h4v-2H7z"/></svg>',
+      cutSel:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>',
+      trimL:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="4" x2="5" y2="20"/><polyline points="9,8 5,12 9,16"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+      trimR:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="4" x2="19" y2="20"/><polyline points="15,8 19,12 15,16"/><line x1="19" y1="12" x2="5" y2="12"/></svg>',
+      undo:    '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.5 8c-2.6 0-5 1-6.9 2.6L2 7v9h9l-3.6-3.6c1.4-1.2 3.2-2 5.1-2 3.5 0 6.5 2.3 7.5 5.5l2.4-.8C21.1 11.4 17.1 8 12.5 8z"/></svg>',
       reset:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.6 6.4A8 8 0 0 0 4.1 11H2l3.3 3.3L8.6 11H6.1a6 6 0 0 1 10.2-3.3l1.3-1.3zM18.7 9.7L15.4 13h2.5a6 6 0 0 1-10.2 3.3l-1.3 1.3A8 8 0 0 0 19.9 13H22l-3.3-3.3z"/></svg>'
     };
     const btnTrimSel = _makeToolBtn(_I.trimSel, '선택 구간만 남기기', 'trimSel');
@@ -650,7 +705,9 @@
     const btnUndo = _makeToolBtn(_I.undo, '되돌리기', 'undo');
     const btnReset = _makeToolBtn(_I.reset, '원본 복원', 'reset');
 
-    tools.append(btnTrimSel, btnCutSel, btnTrimLeft, btnTrimRight, btnUndo, btnReset);
+    const sep = document.createElement('div');
+    sep.className = 'bwbr-ae-tool-sep';
+    tools.append(btnTrimSel, btnCutSel, btnTrimLeft, btnTrimRight, sep, btnUndo, btnReset);
     dialog.appendChild(tools);
 
     // 프로그레스
@@ -671,7 +728,7 @@
     const footerBtns = document.createElement('div');
     footerBtns.className = 'bwbr-ae-footer-btns';
     const btnCancel = document.createElement('button');
-    btnCancel.className = 'bwbr-ae-btn';
+    btnCancel.className = 'bwbr-ae-btn cancel';
     btnCancel.textContent = '취소';
     btnCancel.onclick = closeEditor;
     const btnConfirm = document.createElement('button');
@@ -682,6 +739,8 @@
     dialog.appendChild(footer);
 
     document.body.appendChild(overlay);
+    // MUI 오픈 애니메이션 — rAF로 1프레임 뒤 .open 클래스 추가
+    requestAnimationFrame(() => requestAnimationFrame(() => overlay.classList.add('open')));
 
     // ── 상태 ──
 
@@ -1221,7 +1280,11 @@
       if (_audioCtx) { _audioCtx.close(); _audioCtx = null; }
       if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
       document.removeEventListener('keydown', onKeydown, true);
-      overlay.remove();
+      // MUI 닫기 애니메이션
+      overlay.classList.remove('open');
+      overlay.addEventListener('transitionend', () => {
+        overlay.remove();
+      }, { once: true });
       _editorOpen = false;
       _currentFileInput = null;
       _pendingFiles = null;
