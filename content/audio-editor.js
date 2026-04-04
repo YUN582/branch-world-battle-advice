@@ -26,6 +26,10 @@
   let _pendingFiles = null; // 원본 파일 리스트
   let _currentFileInput = null; // 인터셉트한 file input 참조
 
+  // ── 설정 ─────────────────────────────────────────────────
+  let _autoResize = true;   // 음원 크기 자동 조절
+  let _audioEditor = true;  // 음원 편집기
+
   // ── FFmpeg WASM ──────────────────────────────────────────
 
   let _ffmpegWorker = null;
@@ -1053,8 +1057,6 @@
     });
   }
 
-  // _encodeWithBitrate 제거됨 — FFmpeg WASM으로 대체 (_ffmpegEncodeBuffer, _ffmpegCompressFile)
-
   // ── 파형 렌더러 ──────────────────────────────────────────
 
   function drawWaveform(canvas, peaks, trimStart, trimEnd, selStart, selEnd) {
@@ -1911,13 +1913,7 @@
 
     // ── file input에 결과 주입 ──
 
-    function injectFilesToInput(input, files) {
-      input.dataset.bwbrEditorInjected = '1';
-      const dt = new DataTransfer();
-      for (const f of files) dt.items.add(f);
-      input.files = dt.files;
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-    }
+    // (injectFilesToInput은 모듈 레벨에 정의됨)
 
     // ── 에디터 닫기 ──
 
@@ -1963,6 +1959,16 @@
     await loadCurrentFile();
   }
 
+  // ── file input에 결과 주입 ────────────────────────────────
+
+  function injectFilesToInput(input, files) {
+    input.dataset.bwbrEditorInjected = '1';
+    const dt = new DataTransfer();
+    for (const f of files) dt.items.add(f);
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
   // ── 인터셉트 설치 ────────────────────────────────────────
 
   function installIntercept() {
@@ -1983,6 +1989,9 @@
         return;
       }
 
+      // 둘 다 꺼져있으면 인터셉트 안 함
+      if (!_autoResize && !_audioEditor) return;
+
       // 이벤트 가로채기
       e.stopImmediatePropagation();
       e.preventDefault();
@@ -1991,8 +2000,13 @@
       // input 값 초기화 (코코포리아가 처리하지 못하게)
       input.value = '';
 
-      // 에디터 열기
-      openEditor(files, input);
+      // 편집기 설정에 따라 분기
+      if (_audioEditor) {
+        openEditor(files, input);
+      } else {
+        // autoResize만 켜진 경우: 직접 처리
+        handleDirectImport(files, input);
+      }
     }, true); // capture phase에서 먼저 잡아야 함
 
     // 2) drop 이벤트 인터셉트 (드래그 앤 드롭 경로)
@@ -2003,6 +2017,9 @@
       // 오디오 파일만 필터링
       const audioFiles = [...e.dataTransfer.files].filter(f => f.type.startsWith('audio/'));
       if (audioFiles.length === 0) return;
+
+      // 둘 다 꺼져있으면 인터셉트 안 함
+      if (!_autoResize && !_audioEditor) return;
 
       // MUI Drawer 또는 Dialog 안에서의 드롭인지 확인
       const dropTarget = e.target;
@@ -2018,15 +2035,76 @@
       e.stopImmediatePropagation();
       e.preventDefault();
 
-      openEditor(audioFiles, audioInput);
+      if (_audioEditor) {
+        openEditor(audioFiles, audioInput);
+      } else {
+        handleDirectImport(audioFiles, audioInput);
+      }
     }, true); // capture phase
 
   }
 
+  // ── 편집기 없이 직접 처리 (autoResize만 켜진 경우) ─────
+
+  async function handleDirectImport(files, fileInput) {
+    const resultFiles = [];
+    for (const file of files) {
+      if (file.size > MAX_FILE_SIZE) {
+        const ext = _getAudioFormat(file);
+        if (ext === 'mp3' || ext === 'wav') {
+          // FFmpeg로 압축
+          const fileAB = await file.arrayBuffer();
+          const actx = new AudioContext();
+          const buf = await actx.decodeAudioData(fileAB.slice(0));
+          actx.close();
+          console.log(`[AE] 직접 압축: ${file.name} (${formatSize(file.size)} → 10MB 이하)`);
+          const blob = await _ffmpegCompressFile(fileAB, ext, MAX_FILE_SIZE, buf.duration, {
+            onStatus: (msg) => console.log(`[AE] ${msg}`),
+          });
+          const newName = file.name.replace(/\.[^.]+$/, '') + (blob.type.includes('wav') ? '.wav' : '.mp3');
+          resultFiles.push(new File([blob], newName, { type: blob.type }));
+          console.log(`[AE] 압축 완료: ${newName} (${formatSize(blob.size)})`);
+        } else {
+          // 알 수 없는 포맷 → 그냥 통과
+          resultFiles.push(file);
+        }
+      } else {
+        resultFiles.push(file);
+      }
+    }
+    injectFilesToInput(fileInput, resultFiles);
+  }
+
   // ── 초기화 ──────────────────────────────────────────────
 
+  function loadSettings() {
+    chrome.storage.sync.get(['bwbr_core'], (result) => {
+      const core = result.bwbr_core;
+      if (core?.general) {
+        _autoResize = core.general.autoResize !== false;
+        _audioEditor = core.general.audioEditor !== false;
+      }
+    });
+  }
+
   function init() {
+    loadSettings();
     installIntercept();
+
+    // 팝업에서 실시간 설정 변경 수신
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message.type === 'BWBR_SET_AUDIO_SETTINGS') {
+        _autoResize = message.autoResize !== false;
+        _audioEditor = message.audioEditor !== false;
+        // autoResize 꺼지면 편집기도 꺼야 함
+        if (!_autoResize) _audioEditor = false;
+      }
+      if (message.type === 'BWBR_UPDATE_CONFIG' && message.config?.general) {
+        _autoResize = message.config.general.autoResize !== false;
+        _audioEditor = message.config.general.audioEditor !== false;
+        if (!_autoResize) _audioEditor = false;
+      }
+    });
   }
 
   if (document.body) {

@@ -37,6 +37,8 @@ window.BWBR_CORE_DEFAULTS = {
     sfxVolume: 0.45,            // 확장 프로그램 효과음 볼륨 (0~1)
     siteVolume: 1.0,            // 코코포리아 사이트 음량 (0~1)
     betterSoundbar: true,       // 더 나은 사운드바 (MUI Slider → 경량 슬라이더 교체)
+    autoResize: true,            // 음원 크기 자동 조절 (10MB 초과 시 FFmpeg 압축)
+    audioEditor: true,           // 음원 편집기 (autoResize 활성화 시에만 사용 가능)
     language: 'ko',             // UI 언어
     standingScale: 1.0,         // 대화창 내 스탠딩 이미지 확대 배율 (0.5~3.0)
     chatBubbleScale: 1.0,       // 대화창(말풍선) 전체 확대 배율 (0.5~3.0)

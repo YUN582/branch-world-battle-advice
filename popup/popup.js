@@ -23,6 +23,8 @@
       sfxVolume: 0.45,
       siteVolume: 1.0,
       betterSoundbar: true,
+      autoResize: true,
+      audioEditor: true,
       language: 'ko',
       standingScale: 1.0,
       chatBubbleScale: 1.0,
@@ -196,6 +198,16 @@
 
   // ── UI ↔ 데이터 매핑 ────────────────────────────────────
 
+  /** 음원 편집기 토글 상태 동기화 (autoResize 꺼지면 편집기도 비활성화) */
+  function _syncAudioEditorState() {
+    const resizeOn = $('toggle-autoResize').checked;
+    const editorToggle = $('toggle-audioEditor');
+    const editorGroup = $('audioEditor-group');
+    editorToggle.disabled = !resizeOn;
+    if (!resizeOn) editorToggle.checked = false;
+    if (editorGroup) editorGroup.style.opacity = resizeOn ? '1' : '0.5';
+  }
+
   /** 설정 데이터로 UI 필드를 채웁니다 */
   function populateUI(cfg) {
     // ── 일반 탭 (항상 존재) ──
@@ -205,6 +217,10 @@
     $('toggle-autoComplete').checked = cfg.general.autoComplete !== false;
     $('toggle-charShortcuts').checked = cfg.general.charShortcuts !== false;
     $('toggle-betterSoundbar').checked = cfg.general.betterSoundbar !== false;
+    $('toggle-autoResize').checked = cfg.general.autoResize !== false;
+    $('toggle-audioEditor').checked = cfg.general.audioEditor !== false;
+    // 음원 편집기는 음원 크기 자동 조절이 켜져 있어야만 활성화 가능
+    _syncAudioEditorState();
     $('gen-standingScale').value = cfg.general.standingScale ?? 1.0;
     $('gen-standingScale-val').textContent = Math.round((cfg.general.standingScale ?? 1.0) * 100) + '%';
     $('gen-chatBubbleScale').value = cfg.general.chatBubbleScale ?? 1.0;
@@ -232,6 +248,8 @@
     cfg.general.autoComplete = $('toggle-autoComplete').checked;
     cfg.general.charShortcuts = $('toggle-charShortcuts').checked;
     cfg.general.betterSoundbar = $('toggle-betterSoundbar').checked;
+    cfg.general.autoResize = $('toggle-autoResize').checked;
+    cfg.general.audioEditor = $('toggle-audioEditor').checked;
     cfg.general.standingScale = parseFloat($('gen-standingScale').value) || 1.0;
     cfg.general.chatBubbleScale = parseFloat($('gen-chatBubbleScale').value) || 1.0;
     cfg.general.debugMode = $('toggle-debugMode').checked;
@@ -290,6 +308,17 @@
     // 더 나은 사운드바 토글 (즉시 적용)
     $('toggle-betterSoundbar').addEventListener('change', (e) => {
       sendToContent({ type: 'BWBR_SET_BETTER_SOUNDBAR', betterSoundbar: e.target.checked });
+    });
+
+    // 음원 크기 자동 조절 토글 (즉시 적용)
+    $('toggle-autoResize').addEventListener('change', (e) => {
+      _syncAudioEditorState();
+      sendToContent({ type: 'BWBR_SET_AUDIO_SETTINGS', autoResize: e.target.checked, audioEditor: $('toggle-audioEditor').checked });
+    });
+
+    // 음원 편집기 토글 (즉시 적용)
+    $('toggle-audioEditor').addEventListener('change', (e) => {
+      sendToContent({ type: 'BWBR_SET_AUDIO_SETTINGS', autoResize: $('toggle-autoResize').checked, audioEditor: e.target.checked });
     });
 
     // 자동완성 토글 (즉시 적용)
