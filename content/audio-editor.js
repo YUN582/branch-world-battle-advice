@@ -92,6 +92,14 @@
         background: ${WAVEFORM_COLORS.cursor};
         pointer-events: none; transform: translateX(-1px);
       }
+      /* 커서 시간 라벨 */
+      .bwbr-ae-cursor-time {
+        position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+        margin-top: 3px; padding: 1px 5px; border-radius: 3px;
+        background: rgba(255,255,255,0.15); color: #fff;
+        font-size: 10px; font-family: 'Roboto Mono', monospace;
+        white-space: nowrap; pointer-events: none;
+      }
       /* 트림 핸들 */
       .bwbr-ae-handle {
         position: absolute; top: 0; bottom: 0; width: 8px;
@@ -114,38 +122,15 @@
         font-family: 'Roboto Mono', monospace;
       }
 
-      /* === 컨트롤 바 === */
-      .bwbr-ae-controls {
-        display: flex; align-items: center; gap: 8px;
-        padding: 12px 20px; border-bottom: 1px solid rgba(255,255,255,0.05);
-      }
-      .bwbr-ae-btn {
-        background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12);
-        color: #e0e0e0; padding: 6px 14px; border-radius: 6px;
-        font-size: 13px; cursor: pointer; white-space: nowrap;
-        transition: background 0.15s;
-      }
-      .bwbr-ae-btn:hover { background: rgba(255,255,255,0.15); }
-      .bwbr-ae-btn:disabled { opacity: 0.35; cursor: default; }
-      .bwbr-ae-btn.primary {
-        background: #2196f3; border-color: #2196f3; color: #fff;
-      }
-      .bwbr-ae-btn.primary:hover { background: #1e88e5; }
-      .bwbr-ae-btn.danger { color: #ef5350; border-color: rgba(239,83,80,0.3); }
-      .bwbr-ae-btn.danger:hover { background: rgba(239,83,80,0.12); }
-      .bwbr-ae-play-btn {
-        width: 36px; height: 36px; border-radius: 50%;
-        background: #2196f3; border: none; color: #fff;
-        display: flex; align-items: center; justify-content: center;
-        cursor: pointer; flex-shrink: 0;
-      }
-      .bwbr-ae-play-btn:hover { background: #1e88e5; }
-      .bwbr-ae-play-btn svg { width: 18px; height: 18px; fill: currentColor; }
-      .bwbr-ae-spacer { flex: 1; }
-      .bwbr-ae-time-display {
-        font-size: 12px; color: rgba(255,255,255,0.6);
-        font-family: 'Roboto Mono', monospace; min-width: 100px;
+      /* === 스페이스바 힌트 === */
+      .bwbr-ae-spacebar-hint {
+        padding: 4px 20px; font-size: 11px; color: rgba(255,255,255,0.25);
         text-align: center;
+      }
+      .bwbr-ae-spacebar-hint kbd {
+        display: inline-block; padding: 1px 6px; border-radius: 3px;
+        background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15);
+        font-family: inherit; font-size: 10px; color: rgba(255,255,255,0.4);
       }
 
       /* === 편집 도구 === */
@@ -191,6 +176,18 @@
       .bwbr-ae-size-info .size { font-weight: 600; }
       .bwbr-ae-size-info .over { color: #ff9800; }
       .bwbr-ae-footer-btns { display: flex; gap: 8px; }
+      .bwbr-ae-btn {
+        background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12);
+        color: #e0e0e0; padding: 6px 14px; border-radius: 6px;
+        font-size: 13px; cursor: pointer; white-space: nowrap;
+        transition: background 0.15s;
+      }
+      .bwbr-ae-btn:hover { background: rgba(255,255,255,0.15); }
+      .bwbr-ae-btn:disabled { opacity: 0.35; cursor: default; }
+      .bwbr-ae-btn.primary {
+        background: #2196f3; border-color: #2196f3; color: #fff;
+      }
+      .bwbr-ae-btn.primary:hover { background: #1e88e5; }
 
       /* 멀티 파일 편집 탭 */
       .bwbr-ae-tabs {
@@ -605,6 +602,10 @@
     const cursorDiv = document.createElement('div');
     cursorDiv.className = 'bwbr-ae-cursor';
     cursorDiv.style.left = '0%';
+    const cursorTimeLabel = document.createElement('div');
+    cursorTimeLabel.className = 'bwbr-ae-cursor-time';
+    cursorTimeLabel.textContent = '0:00';
+    cursorDiv.appendChild(cursorTimeLabel);
     waveWrap.appendChild(cursorDiv);
 
     // 트림 핸들
@@ -623,25 +624,11 @@
     timeLabels.innerHTML = '<span>0:00</span><span>0:00</span>';
     dialog.appendChild(timeLabels);
 
-    // 컨트롤 바
-    const controls = document.createElement('div');
-    controls.className = 'bwbr-ae-controls';
-
-    const playBtn = document.createElement('button');
-    playBtn.className = 'bwbr-ae-play-btn';
-    playBtn.innerHTML = SVG_PLAY;
-    controls.appendChild(playBtn);
-
-    const timeDisplay = document.createElement('div');
-    timeDisplay.className = 'bwbr-ae-time-display';
-    timeDisplay.textContent = '0:00 / 0:00';
-    controls.appendChild(timeDisplay);
-
-    const spacer = document.createElement('div');
-    spacer.className = 'bwbr-ae-spacer';
-    controls.appendChild(spacer);
-
-    dialog.appendChild(controls);
+    // 스페이스바 힌트 + 편집 도구
+    const spaceHint = document.createElement('div');
+    spaceHint.className = 'bwbr-ae-spacebar-hint';
+    spaceHint.innerHTML = '<kbd>Space</kbd> 재생 / 일시정지';
+    dialog.appendChild(spaceHint);
 
     // 편집 도구
     const tools = document.createElement('div');
@@ -863,13 +850,12 @@
         if (_playing) {
           _playing = false;
           _pausedAt = 0;
-          playBtn.innerHTML = SVG_PLAY;
           cursorDiv.style.left = (_playTrimStart * 100) + '%';
+          cursorTimeLabel.textContent = formatTime(0);
           if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
         }
       };
 
-      playBtn.innerHTML = SVG_PAUSE;
       _updateCursor();
     }
 
@@ -883,7 +869,6 @@
         _pausedAt = _audioCtx.currentTime - _startedAt;
       }
       _playing = false;
-      playBtn.innerHTML = SVG_PLAY;
       if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
     }
 
@@ -898,8 +883,7 @@
       const pct = offset / buf.duration;
       cursorDiv.style.left = (clamp(pct, 0, 1) * 100) + '%';
 
-      const trimDur = (s.trimEnd - s.trimStart) * buf.duration;
-      timeDisplay.textContent = formatTime(elapsed) + ' / ' + formatTime(trimDur);
+      cursorTimeLabel.textContent = formatTime(elapsed);
 
       _rafId = requestAnimationFrame(_updateCursor);
     }
@@ -933,13 +917,10 @@
 
       _pausedAt = newPausedAt;
       cursorDiv.style.left = (clamped * 100) + '%';
-      const trimDur = (s.trimEnd - s.trimStart) * buf.duration;
-      timeDisplay.textContent = formatTime(_pausedAt) + ' / ' + formatTime(trimDur);
+      cursorTimeLabel.textContent = formatTime(newPausedAt);
 
       if (wasPlaying) {
         startPlayback();
-      } else {
-        playBtn.innerHTML = SVG_PLAY;
       }
     }
 
@@ -1028,6 +1009,7 @@
       stopPlayback();
       _pausedAt = 0;
       cursorDiv.style.left = '0%';
+      cursorTimeLabel.textContent = '0:00';
 
       switch (action) {
         case 'trimSel': { // 선택 구간만 남기기
@@ -1120,12 +1102,6 @@
       btnTrimRight.disabled = s.trimEnd >= 1;
       btnUndo.disabled = s.history.length === 0;
       btnReset.disabled = !s.editedBuffer && s.trimStart === 0 && s.trimEnd === 1;
-
-      const buf = getEffectiveBuffer();
-      if (buf) {
-        const trimDur = (s.trimEnd - s.trimStart) * buf.duration;
-        timeDisplay.textContent = '0:00 / ' + formatTime(trimDur);
-      }
     }
 
     // ── 확정 & 임포트 ──
@@ -1235,7 +1211,7 @@
     }
 
     // ── 재생 버튼 ──
-    playBtn.addEventListener('click', togglePlayback);
+    // (제거됨 — 스페이스바로 조작)
 
     // ── 키보드 단축키 ──
     function onKeydown(e) {
