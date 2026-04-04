@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Ccofolia Extension",
-  "version": "1.5.93",
+  "version": "1.5.94",
   "description": "코코포리아 GM 보조 확장 프로그램 — 전투 자동화, 채팅 보조, 모듈 시스템",
   "permissions": [
     "storage",
@@ -92,6 +92,7 @@
       "resources": [
         "sounds/*",
         "modules/*",
+        "lib/*",
         "content/site-volume-page.js",
         "content/redux-injector.js",
         "content/midpan-main.js"

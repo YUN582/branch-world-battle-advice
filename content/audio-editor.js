@@ -26,6 +26,259 @@
   let _pendingFiles = null; // 원본 파일 리스트
   let _currentFileInput = null; // 인터셉트한 file input 참조
 
+  // ── FFmpeg WASM ──────────────────────────────────────────
+
+  let _ffmpegWorker = null;
+  let _ffmpegReady = false;
+  let _ffmpegMsgId = 0;
+  const _ffmpegResolves = {};
+  const _ffmpegRejects = {};
+  let _ffmpegProgressCb = null;
+
+  /** FFmpeg Worker 코드 (Blob Worker로 실행) */
+  const _FFMPEG_WORKER_CODE = `
+    let ffmpeg = null;
+    self.onmessage = async ({ data: { id, type, data } }) => {
+      try {
+        switch (type) {
+          case 'LOAD': {
+            const first = !ffmpeg;
+            importScripts(data.coreURL);
+            ffmpeg = await self.createFFmpegCore({
+              mainScriptUrlOrBlob: data.coreURL + '#' + btoa(JSON.stringify({
+                wasmURL: data.wasmURL, workerURL: ''
+              }))
+            });
+            ffmpeg.setLogger(d => self.postMessage({ type: 'LOG', data: d }));
+            ffmpeg.setProgress(d => self.postMessage({ type: 'PROGRESS', data: d }));
+            self.postMessage({ id, type: 'LOAD', data: first });
+            break;
+          }
+          case 'EXEC': {
+            ffmpeg.setTimeout(data.timeout || -1);
+            ffmpeg.exec(...data.args);
+            const ret = ffmpeg.ret;
+            ffmpeg.reset();
+            self.postMessage({ id, type: 'EXEC', data: ret });
+            break;
+          }
+          case 'WRITE': {
+            ffmpeg.FS.writeFile(data.path, data.data);
+            self.postMessage({ id, type: 'WRITE', data: true });
+            break;
+          }
+          case 'READ': {
+            const result = ffmpeg.FS.readFile(data.path, { encoding: 'binary' });
+            self.postMessage({ id, type: 'READ', data: result }, [result.buffer]);
+            break;
+          }
+          case 'DELETE': {
+            try { ffmpeg.FS.unlink(data.path); } catch(e) {}
+            self.postMessage({ id, type: 'DELETE', data: true });
+            break;
+          }
+        }
+      } catch (e) {
+        self.postMessage({ id, type: 'ERROR', data: e.toString() });
+      }
+    };
+  `;
+
+  /** FFmpeg Worker에 메시지 전송 (Promise 기반) */
+  function _sendFFmpegMsg(type, data, transfer = []) {
+    return new Promise((resolve, reject) => {
+      const id = _ffmpegMsgId++;
+      _ffmpegResolves[id] = resolve;
+      _ffmpegRejects[id] = reject;
+      _ffmpegWorker.postMessage({ id, type, data }, transfer);
+    });
+  }
+
+  /**
+   * FFmpeg WASM 초기화 (lazy load)
+   * content script에서 extension 리소스를 fetch → Blob URL 생성 → Blob Worker 실행
+   */
+  async function _initFFmpeg(onStatus) {
+    if (_ffmpegReady) return;
+
+    onStatus?.('FFmpeg 코어 로딩 중...');
+    console.log('[AE][FFmpeg] 코어 파일 로딩 시작...');
+
+    // extension 번들에서 코어 파일 fetch → Blob URL
+    const coreJSURL = chrome.runtime.getURL('lib/ffmpeg-core.js');
+    const coreWASMURL = chrome.runtime.getURL('lib/ffmpeg-core.wasm');
+
+    const [coreText, wasmAB] = await Promise.all([
+      fetch(coreJSURL).then(r => r.text()),
+      fetch(coreWASMURL).then(r => r.arrayBuffer())
+    ]);
+    console.log(`[AE][FFmpeg] 코어 로드 완료: JS=${(coreText.length / 1024).toFixed(0)}KB, WASM=${(wasmAB.byteLength / 1024 / 1024).toFixed(1)}MB`);
+
+    const coreBlobURL = URL.createObjectURL(new Blob([coreText], { type: 'text/javascript' }));
+    const wasmBlobURL = URL.createObjectURL(new Blob([wasmAB], { type: 'application/wasm' }));
+
+    // Blob Worker 생성
+    const workerBlob = new Blob([_FFMPEG_WORKER_CODE], { type: 'text/javascript' });
+    _ffmpegWorker = new Worker(URL.createObjectURL(workerBlob));
+
+    _ffmpegWorker.onmessage = ({ data: { id, type, data } }) => {
+      if (type === 'LOG') {
+        if (data?.type === 'stderr' && data.message) {
+          console.log('[AE][FFmpeg]', data.message);
+        }
+        return;
+      }
+      if (type === 'PROGRESS') {
+        _ffmpegProgressCb?.(data);
+        return;
+      }
+      if (type === 'ERROR') {
+        console.error('[AE][FFmpeg] ERROR:', data);
+        _ffmpegRejects[id]?.(new Error(data));
+      } else {
+        _ffmpegResolves[id]?.(data);
+      }
+      delete _ffmpegResolves[id];
+      delete _ffmpegRejects[id];
+    };
+
+    onStatus?.('FFmpeg WASM 초기화 중...');
+    await _sendFFmpegMsg('LOAD', { coreURL: coreBlobURL, wasmURL: wasmBlobURL });
+    _ffmpegReady = true;
+    console.log('[AE][FFmpeg] 초기화 완료!');
+  }
+
+  /** FFmpeg 명령 실행 */
+  async function _ffmpegExec(args) {
+    const ret = await _sendFFmpegMsg('EXEC', { args, timeout: -1 });
+    if (ret !== 0) throw new Error(`FFmpeg exited with code ${ret}`);
+    return ret;
+  }
+
+  /** FFmpeg 가상 FS에 파일 쓰기 */
+  async function _ffmpegWrite(path, data) {
+    const u8 = data instanceof Uint8Array ? data : new Uint8Array(data);
+    return _sendFFmpegMsg('WRITE', { path, data: u8 }, [u8.buffer]);
+  }
+
+  /** FFmpeg 가상 FS에서 파일 읽기 → Uint8Array */
+  async function _ffmpegRead(path) {
+    return _sendFFmpegMsg('READ', { path });
+  }
+
+  /** FFmpeg 가상 FS에서 파일 삭제 */
+  async function _ffmpegDelete(path) {
+    return _sendFFmpegMsg('DELETE', { path });
+  }
+
+  /**
+   * AudioBuffer → 지정 포맷 Blob (FFmpeg 사용)
+   * @param {AudioBuffer} buffer
+   * @param {'mp3'|'wav'} format - 출력 포맷
+   * @param {object} opts - { bitrate?: number (bps), onProgress?: fn, onStatus?: fn }
+   * @returns {Promise<Blob>}
+   */
+  async function _ffmpegEncodeBuffer(buffer, format, opts = {}) {
+    const { bitrate, onProgress, onStatus } = opts;
+
+    await _initFFmpeg(onStatus);
+
+    // AudioBuffer → WAV (메모리상)
+    const wavBlob = audioBufferToWav(buffer);
+    const wavAB = await wavBlob.arrayBuffer();
+
+    const inputName = 'input.wav';
+    const outputName = `output.${format}`;
+
+    // FFmpeg args
+    const args = ['-i', inputName];
+    if (format === 'mp3') {
+      if (bitrate) {
+        args.push('-b:a', `${bitrate}`);
+      } else {
+        args.push('-q:a', '2'); // VBR ~190kbps, 고음질
+      }
+    }
+    args.push('-y', outputName);
+
+    // Progress callback
+    const duration = buffer.duration;
+    _ffmpegProgressCb = onProgress ? (p) => {
+      if (p.progress >= 0) onProgress(Math.min(p.progress, 0.99));
+      else if (p.time > 0 && duration > 0) onProgress(Math.min(p.time / duration / 1000000, 0.99));
+    } : null;
+
+    console.log(`[AE][FFmpeg] encode: ${format} ${bitrate ? bitrate + 'bps' : 'VBR q2'} | dur=${duration.toFixed(1)}s`);
+
+    await _ffmpegWrite(inputName, new Uint8Array(wavAB));
+    await _ffmpegExec(args);
+    const outData = await _ffmpegRead(outputName);
+
+    // cleanup
+    await _ffmpegDelete(inputName);
+    await _ffmpegDelete(outputName);
+    _ffmpegProgressCb = null;
+
+    const mimeMap = { mp3: 'audio/mpeg', wav: 'audio/wav' };
+    const blob = new Blob([outData], { type: mimeMap[format] || 'audio/mpeg' });
+    console.log(`[AE][FFmpeg] 인코딩 완료: ${format} ${formatSize(blob.size)}`);
+    onProgress?.(1);
+    return blob;
+  }
+
+  /**
+   * 원본 파일 데이터를 FFmpeg로 재인코딩 (비트레이트 낮춰서 압축)
+   * @param {ArrayBuffer} inputAB - 원본 파일 바이너리
+   * @param {string} inputExt - 'mp3' 또는 'wav'
+   * @param {number} targetSize - 목표 파일 크기 (bytes)
+   * @param {number} duration - 오디오 길이 (초)
+   * @param {object} opts - { onProgress?: fn, onStatus?: fn }
+   * @returns {Promise<Blob>}
+   */
+  async function _ffmpegCompressFile(inputAB, inputExt, targetSize, duration, opts = {}) {
+    const { onProgress, onStatus } = opts;
+
+    await _initFFmpeg(onStatus);
+
+    const inputName = `input.${inputExt}`;
+    const outputName = 'output.mp3'; // 압축은 항상 MP3로
+
+    // 목표 비트레이트 계산 (파일 크기에 맞추기)
+    const targetBitrate = clamp(
+      Math.floor((targetSize * 8) / duration * 0.90), // 90% 여유
+      32000, 320000
+    );
+
+    console.log(`[AE][FFmpeg] compress: ${inputExt}→mp3 | target=${formatSize(targetSize)} bitrate=${(targetBitrate/1000).toFixed(0)}kbps dur=${duration.toFixed(1)}s`);
+
+    _ffmpegProgressCb = onProgress ? (p) => {
+      if (p.progress >= 0) onProgress(Math.min(p.progress, 0.99));
+      else if (p.time > 0 && duration > 0) onProgress(Math.min(p.time / duration / 1000000, 0.99));
+    } : null;
+
+    await _ffmpegWrite(inputName, new Uint8Array(inputAB));
+    await _ffmpegExec(['-i', inputName, '-b:a', `${targetBitrate}`, '-y', outputName]);
+    const outData = await _ffmpegRead(outputName);
+
+    await _ffmpegDelete(inputName);
+    await _ffmpegDelete(outputName);
+    _ffmpegProgressCb = null;
+
+    const blob = new Blob([outData], { type: 'audio/mpeg' });
+    console.log(`[AE][FFmpeg] 압축 완료: ${formatSize(blob.size)} (목표: ${formatSize(targetSize)})`);
+    onProgress?.(1);
+    return blob;
+  }
+
+  /** 파일 확장자에서 포맷 추출 */
+  function _getAudioFormat(file) {
+    const name = file.name.toLowerCase();
+    const mime = file.type.toLowerCase();
+    if (mime === 'audio/mpeg' || mime === 'audio/mp3' || name.endsWith('.mp3')) return 'mp3';
+    if (mime === 'audio/wav' || mime === 'audio/x-wav' || name.endsWith('.wav')) return 'wav';
+    return 'unknown';
+  }
+
   // ── 스타일 주입 ──────────────────────────────────────────
 
   function injectStyles() {
@@ -618,10 +871,10 @@
   function _wavDataSize(sr, ch, length) { return 44 + length * ch * 2; }
 
   /**
-   * AudioBuffer → 10MB 이하 Blob 변환
-   * 1) WAV 그대로 (즉시)
+   * AudioBuffer → 10MB 이하 Blob 변환 (FFmpeg 사용)
+   * 1) WAV 그대로 (즉시, WAV가 10MB 이하인 경우)
    * 2) 모노 WAV (거의 즉시)
-   * 3) Opus/WebM 인코딩 (원본 sampleRate 유지, 고음질)
+   * 3) FFmpeg → MP3 인코딩 (CPU 속도, 비트레이트 자동 계산)
    */
   async function compressToFit(buffer, targetSize, onProgress) {
     if (onProgress) onProgress(0);
@@ -642,68 +895,20 @@
       }
     }
 
-    // 3) Opus/WebM — 원본 sampleRate 유지, 고음질
+    // 3) FFmpeg → MP3 인코딩
     if (onProgress) onProgress(0.05);
     const bitrate = clamp(
-      Math.floor((targetSize * 8) / buffer.duration * 0.88),
-      24000, 320000
+      Math.floor((targetSize * 8) / buffer.duration * 0.90),
+      32000, 320000
     );
-    return await _encodeWithBitrate(buffer, bitrate, onProgress);
-  }
-
-  /** 지정 비트레이트로 인코딩 (MediaRecorder — 실시간 속도, 최후수단) */
-  async function _encodeWithBitrate(buffer, bitrate, onProgress) {
-    const ctx = new OfflineAudioContext(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
-    const src = ctx.createBufferSource();
-    src.buffer = buffer;
-    src.connect(ctx.destination);
-    src.start();
-    const rendered = await ctx.startRendering();
-
-    const streamCtx = new AudioContext({ sampleRate: rendered.sampleRate });
-    const streamBuf = streamCtx.createBuffer(rendered.numberOfChannels, rendered.length, rendered.sampleRate);
-    for (let c = 0; c < rendered.numberOfChannels; c++) {
-      streamBuf.getChannelData(c).set(rendered.getChannelData(c));
-    }
-    const streamSrc = streamCtx.createBufferSource();
-    streamSrc.buffer = streamBuf;
-    const dest = streamCtx.createMediaStreamDestination();
-    streamSrc.connect(dest);
-
-    return new Promise((resolve, reject) => {
-      const chunks = [];
-      let recorder;
-      try {
-        recorder = new MediaRecorder(dest.stream, { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: bitrate });
-      } catch {
-        try {
-          recorder = new MediaRecorder(dest.stream, { mimeType: 'audio/webm', audioBitsPerSecond: bitrate });
-        } catch {
-          streamCtx.close();
-          reject(new Error('MediaRecorder not supported'));
-          return;
-        }
-      }
-      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
-      recorder.onstop = () => { streamCtx.close(); resolve(new Blob(chunks, { type: recorder.mimeType })); };
-      recorder.onerror = (e) => { streamCtx.close(); reject(e.error || new Error('Recording failed')); };
-
-      const totalMs = streamBuf.duration * 1000;
-      const t0 = Date.now();
-      let iv;
-      if (onProgress) {
-        iv = setInterval(() => onProgress(clamp((Date.now() - t0) / totalMs, 0, 0.95)), 100);
-      }
-      streamSrc.start();
-      recorder.start();
-      setTimeout(() => {
-        if (iv) clearInterval(iv);
-        if (onProgress) onProgress(1);
-        if (recorder.state === 'recording') recorder.stop();
-        streamSrc.stop?.();
-      }, totalMs + 300);
+    return await _ffmpegEncodeBuffer(buffer, 'mp3', {
+      bitrate,
+      onProgress,
+      onStatus: (msg) => console.log('[AE]', msg),
     });
   }
+
+  // _encodeWithBitrate 제거됨 — FFmpeg WASM으로 대체 (_ffmpegEncodeBuffer, _ffmpegCompressFile)
 
   // ── 파형 렌더러 ──────────────────────────────────────────
 
@@ -1388,31 +1593,40 @@
             if (resultBlob) {
               console.log(`[AE] 바이너리 슬라이스 성공: ${s.file.name} | ${formatSize(s.file.size)} → ${formatSize(resultBlob.size)} (${resultBlob.type})`);
             } else {
-              // 바이너리 슬라이스 실패 시 AudioBuffer 기반 폴백
-              console.log(`[AE] 바이너리 슬라이스 미지원 포맷, AudioBuffer 폴백: ${s.file.name}`);
+              // 바이너리 슬라이스 미지원 포맷 → FFmpeg/WAV 폴백
+              console.log(`[AE] 바이너리 슬라이스 미지원 포맷, 폴백: ${s.file.name}`);
+              const fmt = _getAudioFormat(s.file);
               const buf = s.buffer;
               const startSample = Math.floor(s.trimStart * buf.length);
               const endSample = Math.floor(s.trimEnd * buf.length);
               const finalBuf = sliceBuffer(buf, startSample, endSample);
-              resultBlob = audioBufferToWav(finalBuf);
+              if (fmt === 'mp3') {
+                // WAV 임시 → FFmpeg → MP3
+                pgText.textContent = `${s.file.name} MP3 인코딩 중...`;
+                resultBlob = await _ffmpegEncodeBuffer(finalBuf, 'mp3', {
+                  onProgress: (p) => { pgFill.style.width = ((i + 0.5 * p) / fileStates.length * 100) + '%'; },
+                  onStatus: (msg) => { pgText.textContent = msg; },
+                });
+              } else {
+                resultBlob = audioBufferToWav(finalBuf);
+              }
             }
             pgFill.style.width = ((i + 0.5) / fileStates.length * 100) + '%';
 
-            // 10MB 초과 시 압축
+            // 10MB 초과 시 FFmpeg 압축
             if (resultBlob.size > MAX_FILE_SIZE) {
               pgText.textContent = `${s.file.name} 압축 중... (${formatSize(resultBlob.size)} → 10MB 이하)`;
-              const buf = s.buffer;
-              const startSample = Math.floor(s.trimStart * buf.length);
-              const endSample = Math.floor(s.trimEnd * buf.length);
-              const finalBuf = sliceBuffer(buf, startSample, endSample);
-              resultBlob = await compressToFit(finalBuf, MAX_FILE_SIZE, (p) => {
-                pgFill.style.width = ((i + 0.5 + p * 0.5) / fileStates.length * 100) + '%';
+              const blobAB = await resultBlob.arrayBuffer();
+              const ext = resultBlob.type.includes('wav') ? 'wav' : 'mp3';
+              resultBlob = await _ffmpegCompressFile(blobAB, ext, MAX_FILE_SIZE, s.buffer.duration, {
+                onProgress: (p) => { pgFill.style.width = ((i + 0.5 + p * 0.5) / fileStates.length * 100) + '%'; },
+                onStatus: (msg) => { pgText.textContent = msg; },
               });
               console.log(`[AE] 압축 결과: ${formatSize(resultBlob.size)} (${resultBlob.type})`);
             }
 
           } else if (wasEdited) {
-            // ── cut 등 편집한 경우: AudioBuffer → WAV ──
+            // ── cut 등 편집한 경우: 원본 포맷 유지 (MP3→MP3, WAV→WAV) ──
             const buf = s.editedBuffer;
             let finalBuf = buf;
             if (s.trimStart > 0 || s.trimEnd < 1) {
@@ -1420,28 +1634,53 @@
               const endSample = Math.floor(s.trimEnd * buf.length);
               finalBuf = sliceBuffer(buf, startSample, endSample);
             }
-            pgText.textContent = `${s.file.name} 변환 중...`;
-            resultBlob = audioBufferToWav(finalBuf);
-            console.log(`[AE] 편집됨: ${s.file.name} | buf: sr=${finalBuf.sampleRate} ch=${finalBuf.numberOfChannels} len=${finalBuf.length} dur=${finalBuf.duration.toFixed(1)}s | WAV=${formatSize(resultBlob.size)}`);
-            pgFill.style.width = ((i + 0.3) / fileStates.length * 100) + '%';
 
+            const fmt = _getAudioFormat(s.file);
+            if (fmt === 'mp3') {
+              // MP3 원본 → AudioBuffer → FFmpeg → MP3
+              pgText.textContent = `${s.file.name} MP3 인코딩 중...`;
+              resultBlob = await _ffmpegEncodeBuffer(finalBuf, 'mp3', {
+                onProgress: (p) => { pgFill.style.width = ((i + 0.3 + p * 0.4) / fileStates.length * 100) + '%'; },
+                onStatus: (msg) => { pgText.textContent = msg; },
+              });
+              console.log(`[AE] 편집됨(MP3): ${s.file.name} | buf: sr=${finalBuf.sampleRate} ch=${finalBuf.numberOfChannels} dur=${finalBuf.duration.toFixed(1)}s | MP3=${formatSize(resultBlob.size)}`);
+            } else {
+              // WAV 원본 → AudioBuffer → WAV
+              pgText.textContent = `${s.file.name} 변환 중...`;
+              resultBlob = audioBufferToWav(finalBuf);
+              console.log(`[AE] 편집됨(WAV): ${s.file.name} | buf: sr=${finalBuf.sampleRate} ch=${finalBuf.numberOfChannels} dur=${finalBuf.duration.toFixed(1)}s | WAV=${formatSize(resultBlob.size)}`);
+            }
+            pgFill.style.width = ((i + 0.7) / fileStates.length * 100) + '%';
+
+            // 10MB 초과 시 FFmpeg 압축
             if (resultBlob.size > MAX_FILE_SIZE) {
               pgText.textContent = `${s.file.name} 압축 중... (${formatSize(resultBlob.size)} → 10MB 이하)`;
-              console.log(`[AE] 압축 시작: WAV ${formatSize(resultBlob.size)} → 10MB 이하`);
-              resultBlob = await compressToFit(finalBuf, MAX_FILE_SIZE, (p) => {
-                pgFill.style.width = ((i + 0.3 + p * 0.7) / fileStates.length * 100) + '%';
+              const blobAB = await resultBlob.arrayBuffer();
+              const ext = resultBlob.type.includes('wav') ? 'wav' : 'mp3';
+              resultBlob = await _ffmpegCompressFile(blobAB, ext, MAX_FILE_SIZE, finalBuf.duration, {
+                onProgress: (p) => { pgFill.style.width = ((i + 0.7 + p * 0.3) / fileStates.length * 100) + '%'; },
+                onStatus: (msg) => { pgText.textContent = msg; },
               });
               console.log(`[AE] 압축 결과: ${formatSize(resultBlob.size)} (${resultBlob.type})`);
             }
 
           } else {
-            // ── 편집 없음: 원본 그대로 또는 압축 ──
+            // ── 편집 없음: 원본 그대로 또는 FFmpeg 압축 ──
             if (s.file.size > MAX_FILE_SIZE) {
-              const buf = s.buffer;
               pgText.textContent = `${s.file.name} 압축 중... (${formatSize(s.file.size)} → 10MB 이하)`;
-              resultBlob = await compressToFit(buf, MAX_FILE_SIZE, (p) => {
-                pgFill.style.width = ((i + p) / fileStates.length * 100) + '%';
-              });
+              const fileAB = await s.file.arrayBuffer();
+              const ext = _getAudioFormat(s.file);
+              if (ext === 'mp3' || ext === 'wav') {
+                resultBlob = await _ffmpegCompressFile(fileAB, ext, MAX_FILE_SIZE, s.buffer.duration, {
+                  onProgress: (p) => { pgFill.style.width = ((i + p) / fileStates.length * 100) + '%'; },
+                  onStatus: (msg) => { pgText.textContent = msg; },
+                });
+              } else {
+                // 알 수 없는 포맷 → AudioBuffer 기반 compressToFit
+                resultBlob = await compressToFit(s.buffer, MAX_FILE_SIZE, (p) => {
+                  pgFill.style.width = ((i + p) / fileStates.length * 100) + '%';
+                });
+              }
             } else {
               resultBlob = s.file;
             }
