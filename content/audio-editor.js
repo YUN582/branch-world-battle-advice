@@ -111,7 +111,7 @@
       .bwbr-ae-time-labels {
         position: relative;
         display: flex; justify-content: space-between;
-        padding: 2px 20px 0; font-size: 11px; color: rgba(255,255,255,0.35);
+        margin: 0 20px; padding: 2px 0 0; font-size: 11px; color: rgba(255,255,255,0.35);
         font-family: 'Roboto Mono', monospace;
       }
       .bwbr-ae-cursor-time {
@@ -144,7 +144,8 @@
       }
       .bwbr-ae-tool-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
       .bwbr-ae-tool-btn:disabled { opacity: 0.3; cursor: default; }
-      .bwbr-ae-tool-btn .icon { margin-right: 4px; }
+      .bwbr-ae-tool-btn .icon { display: inline-flex; align-items: center; margin-right: 5px; vertical-align: -1px; }
+      .bwbr-ae-tool-btn .icon svg { width: 13px; height: 13px; }
 
       /* === 프로그레스 === */
       .bwbr-ae-progress-wrap {
@@ -634,12 +635,20 @@
     const tools = document.createElement('div');
     tools.className = 'bwbr-ae-tools';
 
-    const btnTrimSel = _makeToolBtn('✂️', '선택 구간만 남기기', 'trimSel');
-    const btnCutSel = _makeToolBtn('🗑️', '선택 구간 제거', 'cutSel');
-    const btnTrimLeft = _makeToolBtn('◁|', '트림 시작점까지 자르기', 'trimL');
-    const btnTrimRight = _makeToolBtn('|▷', '트림 끝점부터 자르기', 'trimR');
-    const btnUndo = _makeToolBtn('↩️', '되돌리기', 'undo');
-    const btnReset = _makeToolBtn('🔄', '원본 복원', 'reset');
+    const _I = {
+      trimSel: '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M4.5 3v8M9.5 3v8M4.5 7h5"/></svg>',
+      cutSel:  '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M4 4l6 6M10 4l-6 6"/></svg>',
+      trimL:   '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v8"/><path d="M2 7h8M5 4.5L2 7l3 2.5"/></svg>',
+      trimR:   '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3v8"/><path d="M4 7h8M9 4.5l3 2.5-3 2.5"/></svg>',
+      undo:    '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h5a3.5 3.5 0 0 1 0 7H6.5"/><path d="M5.5 2.5L3 5l2.5 2.5"/></svg>',
+      reset:   '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7a4.5 4.5 0 0 1 8-2.8"/><path d="M11.5 7a4.5 4.5 0 0 1-8 2.8"/><path d="M10.5 2v2.5H8"/><path d="M3.5 12V9.5H6"/></svg>'
+    };
+    const btnTrimSel = _makeToolBtn(_I.trimSel, '선택 구간만 남기기', 'trimSel');
+    const btnCutSel = _makeToolBtn(_I.cutSel, '선택 구간 제거', 'cutSel');
+    const btnTrimLeft = _makeToolBtn(_I.trimL, '트림 시작점까지 자르기', 'trimL');
+    const btnTrimRight = _makeToolBtn(_I.trimR, '트림 끝점부터 자르기', 'trimR');
+    const btnUndo = _makeToolBtn(_I.undo, '되돌리기', 'undo');
+    const btnReset = _makeToolBtn(_I.reset, '원본 복원', 'reset');
 
     tools.append(btnTrimSel, btnCutSel, btnTrimLeft, btnTrimRight, btnUndo, btnReset);
     dialog.appendChild(tools);
