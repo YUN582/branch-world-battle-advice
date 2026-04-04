@@ -196,7 +196,7 @@
       if (bitrate) {
         args.push('-b:a', `${bitrate}`);
       } else {
-        args.push('-q:a', '2'); // VBR ~190kbps, 고음질
+        args.push('-b:a', '320k'); // 최고 품질 CBR, 10MB 초과 시 압축 단계에서 조절
       }
     }
     args.push('-y', outputName);
@@ -208,7 +208,7 @@
       else if (p.time > 0 && duration > 0) onProgress(Math.min(p.time / duration / 1000000, 0.99));
     } : null;
 
-    console.log(`[AE][FFmpeg] encode: ${format} ${bitrate ? bitrate + 'bps' : 'VBR q2'} | dur=${duration.toFixed(1)}s`);
+    console.log(`[AE][FFmpeg] encode: ${format} ${bitrate ? bitrate + 'bps' : 'CBR 320k'} | dur=${duration.toFixed(1)}s`);
 
     await _ffmpegWrite(inputName, new Uint8Array(wavAB));
     await _ffmpegExec(args);
@@ -245,7 +245,7 @@
 
     // 목표 비트레이트 계산 (파일 크기에 맞추기)
     const targetBitrate = clamp(
-      Math.floor((targetSize * 8) / duration * 0.90), // 90% 여유
+      Math.floor((targetSize * 8) / duration * 0.95), // 5% 여유
       32000, 320000
     );
 
@@ -1618,7 +1618,8 @@
               pgText.textContent = `${s.file.name} 압축 중... (${formatSize(resultBlob.size)} → 10MB 이하)`;
               const blobAB = await resultBlob.arrayBuffer();
               const ext = resultBlob.type.includes('wav') ? 'wav' : 'mp3';
-              resultBlob = await _ffmpegCompressFile(blobAB, ext, MAX_FILE_SIZE, s.buffer.duration, {
+              const trimmedDuration = (s.trimEnd - s.trimStart) * s.buffer.duration;
+              resultBlob = await _ffmpegCompressFile(blobAB, ext, MAX_FILE_SIZE, trimmedDuration, {
                 onProgress: (p) => { pgFill.style.width = ((i + 0.5 + p * 0.5) / fileStates.length * 100) + '%'; },
                 onStatus: (msg) => { pgText.textContent = msg; },
               });
