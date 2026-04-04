@@ -1676,14 +1676,17 @@ ${rows.join('\n')}
       if (!styleEl) {
         styleEl = document.createElement('style');
         styleEl.id = _SYS_CENTER_ID;
-        // data-msg-type="system" 태깅 기반 — 채팅 메시지에만 적용 (BGM 등 다른 리스트 영향 없음)
-        // visibility:hidden + size 0으로 레이아웃 높이 변경 없이 숨김 (display:none은 scrollHeight 변동 → 진동 유발)
+        // 순수 CSS 구조 셀렉터 — JS 태깅 불필요, 사전적 적용
+        // :has(.MuiListItemText-secondary) = 채팅 메시지만 (BGM 리스트는 secondary 없음)
+        // :not(:has(.MuiListItemAvatar-root img)) = 시스템 메시지 (아바타 img 없음)
+        // visibility:hidden으로 레이아웃 높이 유지 (display:none은 scrollHeight 변동 → 진동)
+        const sel = '.MuiListItem-root:has(.MuiListItemText-secondary):not(:has(.MuiListItemAvatar-root img))';
         styleEl.textContent = `
-/* CE: 시스템 메시지 가운데 정렬 */
-[data-msg-type="system"] .MuiListItemText-root {
+/* CE: 시스템 메시지 가운데 정렬 (순수 CSS, 태깅 불필요) */
+${sel} .MuiListItemText-root {
   text-align: center !important;
 }
-[data-msg-type="system"] .MuiListItemAvatar-root {
+${sel} .MuiListItemAvatar-root {
   visibility: hidden !important;
   width: 0 !important;
   min-width: 0 !important;
@@ -1691,7 +1694,7 @@ ${rows.join('\n')}
   margin: 0 !important;
   overflow: hidden !important;
 }
-[data-msg-type="system"] .MuiListItemText-primary {
+${sel} .MuiListItemText-primary {
   visibility: hidden !important;
   height: 0 !important;
   overflow: hidden !important;
