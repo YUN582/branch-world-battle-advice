@@ -218,7 +218,7 @@
         font-size: 13px; color: var(--ae-text-secondary); letter-spacing: 0.4px;
         display: flex; align-items: center;
       }
-      .bwbr-ae-size-info .size { font-weight: 600; color: var(--ae-text); }
+      .bwbr-ae-size-info .size { margin-left: 4px; color: var(--ae-text); }
       .bwbr-ae-size-info .size.ok { color: #4caf50; }
       .bwbr-ae-size-info .size.over { color: #ff9800; }
       .bwbr-ae-footer-btns { display: flex; gap: 8px; }
@@ -856,8 +856,8 @@
 
       sizeInfo.innerHTML = `
         ${iDisk}
-        원본: <span class="size">${formatSize(s.file.size)}</span> →
-        예상: <span class="size ${overLimit ? 'over' : 'ok'}">${formatSize(estSize)}</span>
+        원본 <span class="size">${formatSize(s.file.size)}</span> →
+        예상 <span class="size ${overLimit ? 'over' : 'ok'}">${formatSize(estSize)}</span>
         ${overLimit ? ' (자동 압축 예정)' : ''}
       `;
     }
