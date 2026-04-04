@@ -174,7 +174,7 @@
       /* === 편집 도구 (MUI Button-text 스타일) === */
       .bwbr-ae-tools {
         display: flex; align-items: center; justify-content: center;
-        gap: 4px; padding: 8px 24px; flex-wrap: wrap;
+        gap: 8px; padding: 8px 24px; flex-wrap: wrap;
       }
       .bwbr-ae-tool-btn {
         background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12);
@@ -190,10 +190,6 @@
       .bwbr-ae-tool-btn:disabled { color: var(--ae-text-disabled); opacity: 0.38; cursor: default; }
       .bwbr-ae-tool-btn .icon { display: inline-flex; align-items: center; }
       .bwbr-ae-tool-btn .icon svg { width: 16px; height: 16px; }
-      /* 구분 — 되돌리기/복원 그룹 */
-      .bwbr-ae-tool-sep {
-        width: 1px; height: 20px; background: var(--ae-divider); margin: 0 4px;
-      }
 
       /* === 프로그레스 (MUI LinearProgress) === */
       .bwbr-ae-progress-wrap {
@@ -220,9 +216,11 @@
       }
       .bwbr-ae-size-info {
         font-size: 13px; color: var(--ae-text-secondary); letter-spacing: 0.4px;
+        display: flex; align-items: center;
       }
       .bwbr-ae-size-info .size { font-weight: 600; color: var(--ae-text); }
-      .bwbr-ae-size-info .over { color: #ff9800; }
+      .bwbr-ae-size-info .size.ok { color: #4caf50; }
+      .bwbr-ae-size-info .size.over { color: #ff9800; }
       .bwbr-ae-footer-btns { display: flex; gap: 8px; }
       /* MUI Button-text 스타일 */
       .bwbr-ae-btn {
@@ -702,9 +700,7 @@
     const btnUndo = _makeToolBtn(_I.undo, '되돌리기', 'undo');
     const btnReset = _makeToolBtn(_I.reset, '원본 복원', 'reset');
 
-    const sep = document.createElement('div');
-    sep.className = 'bwbr-ae-tool-sep';
-    tools.append(btnTrimSel, btnCutSel, btnTrimLeft, btnTrimRight, sep, btnUndo, btnReset);
+    tools.append(btnTrimSel, btnCutSel, btnTrimLeft, btnTrimRight, btnUndo, btnReset);
     dialog.appendChild(tools);
 
     // 프로그레스
@@ -856,14 +852,12 @@
         <span class="filename">${iFile} ${s.file.name}</span>
         <span>${iClock} ${formatTime(duration)} (원본 ${formatTime(buf.duration)})</span>
         <span>${iWave} ${buf.sampleRate}Hz ${buf.numberOfChannels}ch</span>
-        <span class="${overLimit ? 'warn' : 'ok'}">
-          ${iDisk} 약 ${formatSize(estSize)} ${overLimit ? '⚠ (10MB 초과 → 자동 압축)' : '✓'}
-        </span>
       `;
 
       sizeInfo.innerHTML = `
+        ${iDisk}
         원본: <span class="size">${formatSize(s.file.size)}</span> →
-        예상: <span class="size ${overLimit ? 'over' : ''}">${formatSize(estSize)}</span>
+        예상: <span class="size ${overLimit ? 'over' : 'ok'}">${formatSize(estSize)}</span>
         ${overLimit ? ' (자동 압축 예정)' : ''}
       `;
     }
