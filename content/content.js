@@ -1676,17 +1676,16 @@ ${rows.join('\n')}
       if (!styleEl) {
         styleEl = document.createElement('style');
         styleEl.id = _SYS_CENTER_ID;
-        // 순수 CSS 구조 셀렉터 — JS 태깅(data-msg-type) 불필요
-        // 시스템 메시지 = 아바타에 IMG 없는 ListItem
+        // data-msg-type="system" 태깅 기반 — 채팅 메시지에만 적용 (BGM 등 다른 리스트 영향 없음)
         styleEl.textContent = `
-/* CE: 시스템 메시지 가운데 정렬 (순수 CSS, 태깅 불필요) */
-.MuiListItem-root:not(:has(.MuiListItemAvatar-root img)) .MuiListItemText-root {
+/* CE: 시스템 메시지 가운데 정렬 */
+[data-msg-type="system"] .MuiListItemText-root {
   text-align: center !important;
 }
-.MuiListItem-root:not(:has(.MuiListItemAvatar-root img)) .MuiListItemAvatar-root {
+[data-msg-type="system"] .MuiListItemAvatar-root {
   display: none !important;
 }
-.MuiListItem-root:not(:has(.MuiListItemAvatar-root img)) .MuiListItemText-primary {
+[data-msg-type="system"] .MuiListItemText-primary {
   display: none !important;
 }
 `;
