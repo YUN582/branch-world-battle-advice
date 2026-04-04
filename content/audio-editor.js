@@ -8,7 +8,7 @@
 
   // ── 상수 ─────────────────────────────────────────────────
   const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-  const WAVEFORM_HEIGHT = 100;
+  const WAVEFORM_HEIGHT = 160;
   const WAVEFORM_COLORS = {
     bg: '#1a1a2e',
     wave: '#2196f3',
@@ -42,7 +42,7 @@
       }
       .bwbr-ae-dialog {
         background: #1e1e2e; color: #e0e0e0;
-        border-radius: 12px; width: 720px; max-width: 95vw;
+        border-radius: 12px; width: 960px; max-width: 95vw;
         max-height: 90vh; overflow-y: auto;
         box-shadow: 0 20px 60px rgba(0,0,0,0.5);
       }
@@ -192,22 +192,6 @@
       .bwbr-ae-size-info .over { color: #ff9800; }
       .bwbr-ae-footer-btns { display: flex; gap: 8px; }
 
-      /* === D&D 오버레이 === */
-      .bwbr-ae-dropzone {
-        position: absolute; inset: 0; z-index: 10;
-        display: none; align-items: center; justify-content: center;
-        background: rgba(33,150,243,0.08);
-        border: 2px dashed rgba(33,150,243,0.4);
-        border-radius: 8px; pointer-events: all;
-      }
-      .bwbr-ae-dropzone.active {
-        display: flex;
-      }
-      .bwbr-ae-dropzone-text {
-        color: #2196f3; font-size: 14px; font-weight: 500;
-        pointer-events: none;
-      }
-
       /* 멀티 파일 편집 탭 */
       .bwbr-ae-tabs {
         display: flex; gap: 0; padding: 0 20px;
@@ -328,54 +312,122 @@
 
   // ── 인코딩: AudioBuffer → Blob ──────────────────────────
 
-  /**
-   * AudioBuffer를 Opus/WebM으로 인코딩. targetSize가 지정되면 이진탐색으로 최적 비트레이트 탐색.
-   * @param {AudioBuffer} buffer
-   * @param {number|null} targetSize - 목표 바이트 (null이면 기본 128kbps)
-   * @param {function} onProgress - (0~1)
-   * @returns {Promise<Blob>}
-   */
-  async function encodeAudioBuffer(buffer, targetSize, onProgress) {
-    const duration = buffer.duration;
+  /** DataView에 문자열 쓰기 (WAV 헤더용) */
+  function _wavWriteStr(view, offset, str) {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  }
 
-    // 비트레이트 계산. targetSize가 있으면 그에 맞춤
-    let bitrate;
-    if (targetSize) {
-      // 비트 = bytes * 8, bps = bits / seconds
-      bitrate = Math.floor((targetSize * 8) / duration * 0.92); // 약간 여유
-      bitrate = clamp(bitrate, 16000, 320000);
-    } else {
-      bitrate = 128000;
+  /** AudioBuffer → WAV Blob (즉시 변환, 인코딩 불필요) */
+  function audioBufferToWav(buffer) {
+    const numCh = buffer.numberOfChannels;
+    const sr = buffer.sampleRate;
+    const len = buffer.length;
+    const bps = 2; // 16-bit
+    const dataSize = len * numCh * bps;
+    const ab = new ArrayBuffer(44 + dataSize);
+    const v = new DataView(ab);
+
+    _wavWriteStr(v, 0, 'RIFF');
+    v.setUint32(4, 36 + dataSize, true);
+    _wavWriteStr(v, 8, 'WAVE');
+    _wavWriteStr(v, 12, 'fmt ');
+    v.setUint32(16, 16, true);
+    v.setUint16(20, 1, true);
+    v.setUint16(22, numCh, true);
+    v.setUint32(24, sr, true);
+    v.setUint32(28, sr * numCh * bps, true);
+    v.setUint16(32, numCh * bps, true);
+    v.setUint16(34, 16, true);
+    _wavWriteStr(v, 36, 'data');
+    v.setUint32(40, dataSize, true);
+
+    let off = 44;
+    for (let i = 0; i < len; i++) {
+      for (let c = 0; c < numCh; c++) {
+        const s = Math.max(-1, Math.min(1, buffer.getChannelData(c)[i]));
+        v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        off += 2;
+      }
+    }
+    return new Blob([ab], { type: 'audio/wav' });
+  }
+
+  /** AudioBuffer 리샘플 + 다운믹스 (OfflineAudioContext — 거의 즉시) */
+  async function resampleBuffer(buffer, targetRate, mono) {
+    const ch = mono ? 1 : buffer.numberOfChannels;
+    const newLen = Math.ceil(buffer.length * targetRate / buffer.sampleRate);
+    const off = new OfflineAudioContext(ch, newLen, targetRate);
+    const src = off.createBufferSource();
+    src.buffer = buffer;
+    src.connect(off.destination);
+    src.start();
+    return await off.startRendering();
+  }
+
+  /** WAV 예상 바이트 수 */
+  function _wavDataSize(sr, ch, length) { return 44 + length * ch * 2; }
+
+  /**
+   * AudioBuffer → 10MB 이하 Blob 변환
+   * 1) WAV 그대로 (즉시)
+   * 2) 모노 WAV (거의 즉시)
+   * 3) 모노 + 다운샘플 WAV (거의 즉시)
+   * 4) 최후수단: MediaRecorder 단일 패스 (실시간 속도)
+   */
+  async function compressToFit(buffer, targetSize, onProgress) {
+    if (onProgress) onProgress(0);
+
+    // 1) 원본 그대로 WAV
+    if (_wavDataSize(buffer.sampleRate, buffer.numberOfChannels, buffer.length) <= targetSize) {
+      if (onProgress) onProgress(1);
+      return audioBufferToWav(buffer);
     }
 
+    // 2) 모노 WAV
+    if (buffer.numberOfChannels > 1) {
+      if (_wavDataSize(buffer.sampleRate, 1, buffer.length) <= targetSize) {
+        if (onProgress) onProgress(0.3);
+        const mono = await resampleBuffer(buffer, buffer.sampleRate, true);
+        if (onProgress) onProgress(1);
+        return audioBufferToWav(mono);
+      }
+    }
+
+    // 3) 모노 + 다운샘플 WAV
+    for (const rate of [22050, 16000, 11025, 8000]) {
+      if (rate >= buffer.sampleRate) continue;
+      const newLen = Math.ceil(buffer.length * rate / buffer.sampleRate);
+      if (_wavDataSize(rate, 1, newLen) <= targetSize) {
+        if (onProgress) onProgress(0.3);
+        const r = await resampleBuffer(buffer, rate, true);
+        if (onProgress) onProgress(1);
+        return audioBufferToWav(r);
+      }
+    }
+
+    // 4) 최후수단: MediaRecorder 단일 패스 (Opus/WebM)
+    if (onProgress) onProgress(0.05);
+    const bitrate = clamp(
+      Math.floor((targetSize * 8) / buffer.duration * 0.88),
+      24000, 320000
+    );
     return await _encodeWithBitrate(buffer, bitrate, onProgress);
   }
 
-  /** 지정 비트레이트로 인코딩 */
+  /** 지정 비트레이트로 인코딩 (MediaRecorder — 실시간 속도, 최후수단) */
   async function _encodeWithBitrate(buffer, bitrate, onProgress) {
-    // OfflineAudioContext로 렌더링
-    const ctx = new OfflineAudioContext(
-      buffer.numberOfChannels,
-      buffer.length,
-      buffer.sampleRate
-    );
+    const ctx = new OfflineAudioContext(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
     const src = ctx.createBufferSource();
     src.buffer = buffer;
     src.connect(ctx.destination);
     src.start();
     const rendered = await ctx.startRendering();
 
-    // 렌더된 AudioBuffer → MediaStream
     const streamCtx = new AudioContext({ sampleRate: rendered.sampleRate });
-    const streamBuf = streamCtx.createBuffer(
-      rendered.numberOfChannels,
-      rendered.length,
-      rendered.sampleRate
-    );
+    const streamBuf = streamCtx.createBuffer(rendered.numberOfChannels, rendered.length, rendered.sampleRate);
     for (let c = 0; c < rendered.numberOfChannels; c++) {
       streamBuf.getChannelData(c).set(rendered.getChannelData(c));
     }
-
     const streamSrc = streamCtx.createBufferSource();
     streamSrc.buffer = streamBuf;
     const dest = streamCtx.createMediaStreamDestination();
@@ -384,108 +436,36 @@
     return new Promise((resolve, reject) => {
       const chunks = [];
       let recorder;
-
       try {
-        recorder = new MediaRecorder(dest.stream, {
-          mimeType: 'audio/webm;codecs=opus',
-          audioBitsPerSecond: bitrate,
-        });
-      } catch (e) {
-        // 폴백: 기본 설정
+        recorder = new MediaRecorder(dest.stream, { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: bitrate });
+      } catch {
         try {
-          recorder = new MediaRecorder(dest.stream, {
-            mimeType: 'audio/webm',
-            audioBitsPerSecond: bitrate,
-          });
-        } catch (e2) {
+          recorder = new MediaRecorder(dest.stream, { mimeType: 'audio/webm', audioBitsPerSecond: bitrate });
+        } catch {
           streamCtx.close();
-          reject(new Error('MediaRecorder not supported for audio'));
+          reject(new Error('MediaRecorder not supported'));
           return;
         }
       }
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+      recorder.onstop = () => { streamCtx.close(); resolve(new Blob(chunks, { type: recorder.mimeType })); };
+      recorder.onerror = (e) => { streamCtx.close(); reject(e.error || new Error('Recording failed')); };
 
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
-      };
-
-      recorder.onstop = () => {
-        streamCtx.close();
-        const blob = new Blob(chunks, { type: recorder.mimeType });
-        if (onProgress) onProgress(1);
-        resolve(blob);
-      };
-
-      recorder.onerror = (e) => {
-        streamCtx.close();
-        reject(e.error || new Error('Recording failed'));
-      };
-
-      // 진행률 시뮬레이션
       const totalMs = streamBuf.duration * 1000;
-      const startTime = Date.now();
-      let progressIv;
+      const t0 = Date.now();
+      let iv;
       if (onProgress) {
-        progressIv = setInterval(() => {
-          const elapsed = Date.now() - startTime;
-          onProgress(clamp(elapsed / totalMs, 0, 0.95));
-        }, 100);
+        iv = setInterval(() => onProgress(clamp((Date.now() - t0) / totalMs, 0, 0.95)), 100);
       }
-
       streamSrc.start();
       recorder.start();
-
-      // buffer 길이 + 200ms 여유 후 중지
       setTimeout(() => {
-        if (progressIv) clearInterval(progressIv);
+        if (iv) clearInterval(iv);
+        if (onProgress) onProgress(1);
         if (recorder.state === 'recording') recorder.stop();
         streamSrc.stop?.();
-      }, totalMs + 200);
+      }, totalMs + 300);
     });
-  }
-
-  /**
-   * 10MB 이하로 자동 압축 (이진 탐색)
-   */
-  async function autoCompress(buffer, originalFile, onProgress) {
-    // 1) 먼저 원본 크기가 10MB 이하인지 확인
-    if (originalFile.size <= MAX_FILE_SIZE) {
-      if (onProgress) onProgress(1);
-      return originalFile; // 압축 불필요
-    }
-
-    // 2) 이진 탐색으로 적절한 비트레이트 찾기
-    const duration = buffer.duration;
-    let lo = 32000;
-    let hi = Math.min(320000, Math.floor((MAX_FILE_SIZE * 8) / duration * 0.95));
-    let bestBlob = null;
-    let attempts = 0;
-    const maxAttempts = 5;
-
-    if (onProgress) onProgress(0);
-
-    while (attempts < maxAttempts && hi - lo > 4000) {
-      const mid = Math.floor((lo + hi) / 2);
-      const progress = attempts / maxAttempts;
-      if (onProgress) onProgress(progress * 0.9);
-
-      const blob = await _encodeWithBitrate(buffer, mid, null);
-
-      if (blob.size <= MAX_FILE_SIZE) {
-        bestBlob = blob;
-        lo = mid + 1; // 더 높은 비트레이트 시도 가능
-      } else {
-        hi = mid - 1; // 비트레이트 낮춰야 함
-      }
-      attempts++;
-    }
-
-    // 최종: bestBlob이 없으면 lo로 한 번 더
-    if (!bestBlob) {
-      bestBlob = await _encodeWithBitrate(buffer, lo, null);
-    }
-
-    if (onProgress) onProgress(1);
-    return bestBlob;
   }
 
   // ── 파형 렌더러 ──────────────────────────────────────────
@@ -717,7 +697,8 @@
     let _rafId = null;
     let _selStart = null;
     let _selEnd = null;
-    let _dragging = null; // 'select' | 'handleL' | 'handleR' | null
+    let _dragging = null; // 'pending' | 'select' | 'handleL' | 'handleR' | null
+    let _dragStartPos = null;
 
     // ── 헬퍼 함수들 ──
 
@@ -927,17 +908,29 @@
       return clamp((e.clientX - rect.left) / rect.width, 0, 1);
     }
 
+    /** 클릭한 위치로 재생 시크 */
+    function seekToPosition(pos) {
+      const s = st();
+      const buf = getEffectiveBuffer();
+      if (!buf) return;
+      const clamped = clamp(pos, s.trimStart, s.trimEnd);
+      _pausedAt = (clamped - s.trimStart) * buf.duration;
+      cursorDiv.style.left = (clamped * 100) + '%';
+      const trimDur = (s.trimEnd - s.trimStart) * buf.duration;
+      timeDisplay.textContent = formatTime(_pausedAt) + ' / ' + formatTime(trimDur);
+      if (_playing) {
+        stopPlayback();
+        startPlayback();
+      }
+    }
+
     waveWrap.addEventListener('pointerdown', (e) => {
       if (e.target === handleL || e.target === handleR) return;
       if (e.button !== 0) return;
       e.preventDefault();
       waveWrap.setPointerCapture(e.pointerId);
-
-      _selStart = posFromEvent(e);
-      _selEnd = _selStart;
-      _dragging = 'select';
-      selDiv.style.display = 'block';
-      updateSelectionUI();
+      _dragStartPos = posFromEvent(e);
+      _dragging = 'pending';
     });
 
     handleL.addEventListener('pointerdown', (e) => {
@@ -957,7 +950,15 @@
       const pos = posFromEvent(e);
       const s = st();
 
-      if (_dragging === 'select') {
+      if (_dragging === 'pending') {
+        if (Math.abs(pos - _dragStartPos) > 0.005) {
+          _dragging = 'select';
+          _selStart = _dragStartPos;
+          _selEnd = pos;
+          selDiv.style.display = 'block';
+          updateSelectionUI();
+        }
+      } else if (_dragging === 'select') {
         _selEnd = pos;
         updateSelectionUI();
       } else if (_dragging === 'handleL') {
@@ -971,12 +972,15 @@
       }
     });
 
-    waveWrap.addEventListener('pointerup', () => {
-      if (_dragging === 'select') {
-        // 선택이 너무 작으면 해제
+    waveWrap.addEventListener('pointerup', (e) => {
+      const wasDrag = _dragging;
+      if (wasDrag === 'pending') {
+        // 드래그 없이 클릭 → 시크
+        seekToPosition(posFromEvent(e));
+        clearSelection();
+      } else if (wasDrag === 'select') {
         if (_selStart !== null && _selEnd !== null && Math.abs(_selEnd - _selStart) < 0.005) {
-          _selStart = null; _selEnd = null;
-          selDiv.style.display = 'none';
+          clearSelection();
         }
       }
       _dragging = null;
@@ -1130,31 +1134,25 @@
           }
 
           // 예상 크기 검사
-          // 편집된 결과를 먼저 Blob으로 만들어야 함
+          // 편집된 결과를 Blob으로 변환 (WAV 우선 — 즉시)
           let resultBlob;
-
-          // 편집이 있었으면 무조건 재인코딩
           const wasEdited = s.editedBuffer || s.trimStart > 0 || s.trimEnd < 1;
 
           if (wasEdited) {
-            // 먼저 기본 비트레이트로 인코딩해서 크기 확인
-            pgText.textContent = `${s.file.name} 인코딩 중...`;
-            resultBlob = await encodeAudioBuffer(finalBuf, null, (p) => {
-              pgFill.style.width = ((i + p * 0.5) / fileStates.length * 100) + '%';
-            });
+            pgText.textContent = `${s.file.name} 변환 중...`;
+            resultBlob = audioBufferToWav(finalBuf);
+            pgFill.style.width = ((i + 0.3) / fileStates.length * 100) + '%';
 
-            // 10MB 초과면 압축
             if (resultBlob.size > MAX_FILE_SIZE) {
               pgText.textContent = `${s.file.name} 압축 중... (${formatSize(resultBlob.size)} → 10MB 이하)`;
-              resultBlob = await autoCompress(finalBuf, resultBlob, (p) => {
-                pgFill.style.width = ((i + 0.5 + p * 0.5) / fileStates.length * 100) + '%';
+              resultBlob = await compressToFit(finalBuf, MAX_FILE_SIZE, (p) => {
+                pgFill.style.width = ((i + 0.3 + p * 0.7) / fileStates.length * 100) + '%';
               });
             }
           } else {
-            // 편집 없음 — 원본이 10MB 넘으면 압축
             if (s.file.size > MAX_FILE_SIZE) {
               pgText.textContent = `${s.file.name} 압축 중... (${formatSize(s.file.size)} → 10MB 이하)`;
-              resultBlob = await autoCompress(finalBuf, s.file, (p) => {
+              resultBlob = await compressToFit(finalBuf, MAX_FILE_SIZE, (p) => {
                 pgFill.style.width = ((i + p) / fileStates.length * 100) + '%';
               });
             } else {
@@ -1163,13 +1161,15 @@
           }
 
           // Blob → File 객체로 변환
-          const ext = wasEdited ? '.webm' : s.file.name.split('.').pop();
-          const fileName = wasEdited
-            ? s.file.name.replace(/\.[^.]+$/, '') + '.webm'
-            : s.file.name;
-          const resultFile = new File([resultBlob], fileName, {
-            type: resultBlob.type || 'audio/webm',
-          });
+          let fileName;
+          if (resultBlob === s.file) {
+            fileName = s.file.name;
+          } else if (resultBlob.type === 'audio/wav') {
+            fileName = s.file.name.replace(/\.[^.]+$/, '') + '.wav';
+          } else {
+            fileName = s.file.name.replace(/\.[^.]+$/, '') + '.webm';
+          }
+          const resultFile = new File([resultBlob], fileName, { type: resultBlob.type });
           resultFiles.push(resultFile);
         }
 
@@ -1271,89 +1271,6 @@
       openEditor(files, input);
     }, true); // capture phase에서 먼저 잡아야 함
 
-    // 2) D&D 인터셉트 — BGM 드로어 위에 드롭존 오버레이
-    installDndIntercept();
-  }
-
-  function installDndIntercept() {
-    let _dragCounter = 0;
-    let _dropzoneOverlay = null;
-
-    // 드래그가 BGM 드로어 영역 안인지 확인
-    function findBgmDrawer() {
-      return document.querySelector('.MuiDrawer-modal .MuiDialogContent-root');
-    }
-
-    document.addEventListener('dragenter', (e) => {
-      // 오디오 파일이 드래그되고 있는지 확인
-      if (!e.dataTransfer?.types?.includes('Files')) return;
-
-      // BGM 드로어가 열려있는지 확인
-      const drawer = findBgmDrawer();
-      if (!drawer) return;
-
-      _dragCounter++;
-      if (_dragCounter === 1 && !_dropzoneOverlay) {
-        _dropzoneOverlay = createDropzone(drawer);
-      }
-    }, true);
-
-    document.addEventListener('dragleave', (e) => {
-      _dragCounter--;
-      if (_dragCounter <= 0) {
-        _dragCounter = 0;
-        removeDropzone();
-      }
-    }, true);
-
-    document.addEventListener('dragover', (e) => {
-      if (_dropzoneOverlay) {
-        e.preventDefault(); // 드롭을 허용하기 위해 필수
-      }
-    }, true);
-
-    document.addEventListener('drop', (e) => {
-      _dragCounter = 0;
-
-      if (!_dropzoneOverlay) return;
-      removeDropzone();
-
-      const files = e.dataTransfer?.files;
-      if (!files || files.length === 0) return;
-
-      // 오디오 파일만 필터
-      const audioFiles = [...files].filter(f =>
-        f.type.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|flac|webm|aac|wma)$/i.test(f.name)
-      );
-      if (audioFiles.length === 0) return;
-
-      // 네이티브 drop 방지
-      e.preventDefault();
-      e.stopImmediatePropagation();
-
-      // file input 찾기
-      const fileInput = document.querySelector('input[type="file"][accept*="audio"]');
-      if (!fileInput) return;
-
-      openEditor(audioFiles, fileInput);
-    }, true);
-
-    function createDropzone(container) {
-      const dz = document.createElement('div');
-      dz.className = 'bwbr-ae-dropzone active';
-      dz.innerHTML = '<div class="bwbr-ae-dropzone-text">🎵 여기에 놓으면 편집기가 열립니다</div>';
-      const parent = container.closest('.MuiPaper-root') || container;
-      parent.style.position = 'relative';
-      parent.appendChild(dz);
-      return dz;
-    }
-
-    function removeDropzone() {
-      if (_dropzoneOverlay) {
-        _dropzoneOverlay.remove();
-        _dropzoneOverlay = null;
-      }
-    }
   }
 
   // ── 초기화 ──────────────────────────────────────────────
