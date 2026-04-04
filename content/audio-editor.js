@@ -875,6 +875,7 @@
 
     function stopPlayback() {
       if (_sourceNode) {
+        _sourceNode.onended = null; // 비동기 onended 발동 방지
         try { _sourceNode.stop(); } catch {}
         _sourceNode = null;
       }
@@ -921,7 +922,11 @@
       // 재생 중이면: 소스만 정지하고 _pausedAt 덤어쓰기 방지
       const wasPlaying = _playing;
       if (wasPlaying) {
-        if (_sourceNode) { try { _sourceNode.stop(); } catch {} _sourceNode = null; }
+        if (_sourceNode) {
+          _sourceNode.onended = null; // 비동기 onended 발동 방지
+          try { _sourceNode.stop(); } catch {}
+          _sourceNode = null;
+        }
         _playing = false;
         if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
       }
