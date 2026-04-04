@@ -92,14 +92,6 @@
         background: ${WAVEFORM_COLORS.cursor};
         pointer-events: none; transform: translateX(-1px);
       }
-      /* 커서 시간 라벨 */
-      .bwbr-ae-cursor-time {
-        position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
-        margin-top: 3px; padding: 1px 5px; border-radius: 3px;
-        background: rgba(255,255,255,0.15); color: #fff;
-        font-size: 10px; font-family: 'Roboto Mono', monospace;
-        white-space: nowrap; pointer-events: none;
-      }
       /* 트림 핸들 */
       .bwbr-ae-handle {
         position: absolute; top: 0; bottom: 0; width: 8px;
@@ -117,9 +109,16 @@
 
       /* 시간 라벨 */
       .bwbr-ae-time-labels {
+        position: relative;
         display: flex; justify-content: space-between;
         padding: 2px 20px 0; font-size: 11px; color: rgba(255,255,255,0.35);
         font-family: 'Roboto Mono', monospace;
+      }
+      .bwbr-ae-cursor-time {
+        position: absolute; top: 0; transform: translateX(-50%);
+        color: #fff; font-size: 11px;
+        font-family: 'Roboto Mono', monospace;
+        white-space: nowrap; pointer-events: none;
       }
 
       /* === 스페이스바 힌트 === */
@@ -135,8 +134,8 @@
 
       /* === 편집 도구 === */
       .bwbr-ae-tools {
-        display: flex; align-items: center; gap: 6px;
-        padding: 8px 20px;
+        display: flex; align-items: center; justify-content: center;
+        gap: 6px; padding: 8px 20px; flex-wrap: wrap;
       }
       .bwbr-ae-tool-btn {
         background: none; border: 1px solid rgba(255,255,255,0.1);
@@ -602,10 +601,6 @@
     const cursorDiv = document.createElement('div');
     cursorDiv.className = 'bwbr-ae-cursor';
     cursorDiv.style.left = '0%';
-    const cursorTimeLabel = document.createElement('div');
-    cursorTimeLabel.className = 'bwbr-ae-cursor-time';
-    cursorTimeLabel.textContent = '0:00';
-    cursorDiv.appendChild(cursorTimeLabel);
     waveWrap.appendChild(cursorDiv);
 
     // 트림 핸들
@@ -622,6 +617,11 @@
     const timeLabels = document.createElement('div');
     timeLabels.className = 'bwbr-ae-time-labels';
     timeLabels.innerHTML = '<span>0:00</span><span>0:00</span>';
+    const cursorTimeLabel = document.createElement('div');
+    cursorTimeLabel.className = 'bwbr-ae-cursor-time';
+    cursorTimeLabel.textContent = '0:00';
+    cursorTimeLabel.style.left = '0%';
+    timeLabels.appendChild(cursorTimeLabel);
     dialog.appendChild(timeLabels);
 
     // 스페이스바 힌트 + 편집 도구
@@ -700,6 +700,13 @@
     }
 
     function st() { return fileStates[activeIdx]; }
+
+    /** 커서 + 시간 라벨 위치/텍스트 동기화 */
+    function setCursorPos(pctStr, timeStr) {
+      cursorDiv.style.left = pctStr;
+      cursorTimeLabel.style.left = pctStr;
+      if (timeStr !== undefined) cursorTimeLabel.textContent = timeStr;
+    }
 
     function getEffectiveBuffer() {
       const s = st();
@@ -850,8 +857,7 @@
         if (_playing) {
           _playing = false;
           _pausedAt = 0;
-          cursorDiv.style.left = (_playTrimStart * 100) + '%';
-          cursorTimeLabel.textContent = formatTime(0);
+          setCursorPos((_playTrimStart * 100) + '%', formatTime(0));
           if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
         }
       };
@@ -881,9 +887,7 @@
       const elapsed = _audioCtx.currentTime - _startedAt;
       const offset = _playTrimStart * buf.duration + elapsed;
       const pct = offset / buf.duration;
-      cursorDiv.style.left = (clamp(pct, 0, 1) * 100) + '%';
-
-      cursorTimeLabel.textContent = formatTime(elapsed);
+      setCursorPos((clamp(pct, 0, 1) * 100) + '%', formatTime(elapsed));
 
       _rafId = requestAnimationFrame(_updateCursor);
     }
@@ -916,8 +920,7 @@
       }
 
       _pausedAt = newPausedAt;
-      cursorDiv.style.left = (clamped * 100) + '%';
-      cursorTimeLabel.textContent = formatTime(newPausedAt);
+      setCursorPos((clamped * 100) + '%', formatTime(newPausedAt));
 
       if (wasPlaying) {
         startPlayback();
@@ -1008,8 +1011,7 @@
 
       stopPlayback();
       _pausedAt = 0;
-      cursorDiv.style.left = '0%';
-      cursorTimeLabel.textContent = '0:00';
+      setCursorPos('0%', '0:00');
 
       switch (action) {
         case 'trimSel': { // 선택 구간만 남기기
