@@ -361,6 +361,205 @@
     return newBuf;
   }
 
+  // ── 바이너리 슬라이스 (무손실 트림) ──────────────────────
+
+  /**
+   * WAV 파일 바이너리 슬라이스 — 원본 PCM 데이터에서 구간만 잘라 새 WAV 생성
+   * @param {ArrayBuffer} ab - 원본 WAV 파일의 ArrayBuffer
+   * @param {number} trimStart - 시작 비율 (0~1)
+   * @param {number} trimEnd - 끝 비율 (0~1)
+   * @returns {Blob|null} 트림된 WAV Blob, 또는 실패 시 null
+   */
+  function sliceWavBinary(ab, trimStart, trimEnd) {
+    const v = new DataView(ab);
+    // RIFF 헤더 확인
+    if (v.getUint32(0) !== 0x52494646) return null; // 'RIFF'
+    if (v.getUint32(8) !== 0x57415645) return null; // 'WAVE'
+
+    // 청크 탐색 — fmt 와 data 찾기
+    let fmtOffset = -1, fmtSize = 0;
+    let dataOffset = -1, dataSize = 0;
+    let pos = 12;
+    while (pos < ab.byteLength - 8) {
+      const id = v.getUint32(pos);
+      const size = v.getUint32(pos + 4, true);
+      if (id === 0x666D7420) { // 'fmt '
+        fmtOffset = pos;
+        fmtSize = size;
+      } else if (id === 0x64617461) { // 'data'
+        dataOffset = pos + 8;
+        dataSize = size;
+        break;
+      }
+      pos += 8 + size;
+      if (pos % 2 !== 0) pos++; // 패딩
+    }
+    if (fmtOffset < 0 || dataOffset < 0) return null;
+
+    // fmt 청크에서 정보 추출
+    const numCh = v.getUint16(fmtOffset + 10, true);
+    const sr = v.getUint32(fmtOffset + 12, true);
+    const bitsPerSample = v.getUint16(fmtOffset + 22, true);
+    const blockAlign = numCh * (bitsPerSample / 8);
+    const totalSamples = Math.floor(dataSize / blockAlign);
+
+    // 트림 범위 계산 (샘플 단위)
+    const startSample = Math.floor(trimStart * totalSamples);
+    const endSample = Math.floor(trimEnd * totalSamples);
+    const newSamples = endSample - startSample;
+    if (newSamples <= 0) return null;
+
+    const newDataSize = newSamples * blockAlign;
+    const startByte = dataOffset + startSample * blockAlign;
+
+    // 새 WAV 구성: 헤더(44) + 트림된 데이터
+    const out = new ArrayBuffer(44 + newDataSize);
+    const ov = new DataView(out);
+    const fmtChunkData = new Uint8Array(ab, fmtOffset + 8, fmtSize);
+
+    _wavWriteStr(ov, 0, 'RIFF');
+    ov.setUint32(4, 36 + newDataSize, true);
+    _wavWriteStr(ov, 8, 'WAVE');
+    _wavWriteStr(ov, 12, 'fmt ');
+    ov.setUint32(16, fmtSize, true);
+    new Uint8Array(out, 20, fmtSize).set(fmtChunkData);
+    const dataChunkOff = 20 + fmtSize;
+    _wavWriteStr(ov, dataChunkOff, 'data');
+    ov.setUint32(dataChunkOff + 4, newDataSize, true);
+
+    // PCM 데이터 복사
+    new Uint8Array(out, dataChunkOff + 8, newDataSize).set(
+      new Uint8Array(ab, startByte, newDataSize)
+    );
+
+    return new Blob([out], { type: 'audio/wav' });
+  }
+
+  /**
+   * MP3 파일 바이너리 슬라이스 — 프레임 단위로 구간 추출
+   * @param {ArrayBuffer} ab - 원본 MP3 파일의 ArrayBuffer
+   * @param {number} trimStart - 시작 비율 (0~1)
+   * @param {number} trimEnd - 끝 비율 (0~1)
+   * @returns {Blob|null} 트림된 MP3 Blob, 또는 실패 시 null
+   */
+  function sliceMp3Binary(ab, trimStart, trimEnd) {
+    const bytes = new Uint8Array(ab);
+    const frames = [];
+    let pos = 0;
+
+    // ID3v2 태그 스킵
+    if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) { // 'ID3'
+      const flags = bytes[5];
+      let tagSize = (bytes[6] << 21) | (bytes[7] << 14) | (bytes[8] << 7) | bytes[9];
+      if (flags & 0x10) tagSize += 10; // footer
+      pos = 10 + tagSize;
+    }
+
+    // MPEG 프레임 비트레이트 테이블 (MPEG1 Layer3)
+    const bitrateTable = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0];
+    const srTable = [44100, 48000, 32000, 0];
+
+    // 프레임 파싱
+    let totalDuration = 0;
+    while (pos < bytes.length - 4) {
+      // 동기 워드 찾기: 0xFF 0xE0+ (11비트)
+      if (bytes[pos] !== 0xFF || (bytes[pos + 1] & 0xE0) !== 0xE0) {
+        pos++;
+        continue;
+      }
+
+      const b1 = bytes[pos + 1];
+      const b2 = bytes[pos + 2];
+
+      const mpegVer = (b1 >> 3) & 0x03;   // 3=MPEG1, 2=MPEG2, 0=MPEG2.5
+      const layer = (b1 >> 1) & 0x03;      // 1=Layer3
+      const brIdx = (b2 >> 4) & 0x0F;
+      const srIdx = (b2 >> 2) & 0x03;
+      const padding = (b2 >> 1) & 0x01;
+
+      // MPEG1 Layer3만 지원 (가장 일반적)
+      if (mpegVer === 3 && layer === 1 && brIdx > 0 && brIdx < 15 && srIdx < 3) {
+        const bitrate = bitrateTable[brIdx] * 1000;
+        const sampleRate = srTable[srIdx];
+        const frameSize = Math.floor(144 * bitrate / sampleRate) + padding;
+        const frameDuration = 1152 / sampleRate; // MPEG1 Layer3 = 1152 samples/frame
+
+        if (pos + frameSize <= bytes.length) {
+          frames.push({ offset: pos, size: frameSize, time: totalDuration, duration: frameDuration });
+          totalDuration += frameDuration;
+          pos += frameSize;
+          continue;
+        }
+      }
+
+      // MPEG2/2.5 Layer3 지원
+      if ((mpegVer === 2 || mpegVer === 0) && layer === 1 && brIdx > 0 && brIdx < 15 && srIdx < 3) {
+        const mp2BrTable = [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0];
+        const mp2SrTable = mpegVer === 2 ? [22050, 24000, 16000, 0] : [11025, 12000, 8000, 0];
+        const bitrate = mp2BrTable[brIdx] * 1000;
+        const sampleRate = mp2SrTable[srIdx];
+        const samplesPerFrame = 576;
+        const frameSize = Math.floor(72 * bitrate / sampleRate) + padding;
+        const frameDuration = samplesPerFrame / sampleRate;
+
+        if (pos + frameSize <= bytes.length) {
+          frames.push({ offset: pos, size: frameSize, time: totalDuration, duration: frameDuration });
+          totalDuration += frameDuration;
+          pos += frameSize;
+          continue;
+        }
+      }
+
+      pos++;
+    }
+
+    if (frames.length === 0 || totalDuration === 0) return null;
+
+    // 트림 범위 (시간 기준)
+    const startTime = trimStart * totalDuration;
+    const endTime = trimEnd * totalDuration;
+
+    // 해당 구간의 프레임만 추출
+    const slicedFrames = frames.filter(f => f.time + f.duration > startTime && f.time < endTime);
+    if (slicedFrames.length === 0) return null;
+
+    // 프레임 데이터 합치기
+    const totalSize = slicedFrames.reduce((sum, f) => sum + f.size, 0);
+    const result = new Uint8Array(totalSize);
+    let writePos = 0;
+    for (const f of slicedFrames) {
+      result.set(bytes.subarray(f.offset, f.offset + f.size), writePos);
+      writePos += f.size;
+    }
+
+    return new Blob([result], { type: 'audio/mpeg' });
+  }
+
+  /**
+   * 원본 파일을 바이너리 레벨에서 트림 (무손실, 즉시)
+   * @param {File} file - 원본 오디오 파일
+   * @param {number} trimStart - 시작 비율 (0~1)
+   * @param {number} trimEnd - 끝 비율 (0~1)
+   * @returns {Promise<Blob|null>} 트림된 Blob, 또는 지원 불가 시 null
+   */
+  async function binarySlice(file, trimStart, trimEnd) {
+    const ab = await file.arrayBuffer();
+    const ext = file.name.toLowerCase();
+    const mime = file.type.toLowerCase();
+
+    // WAV
+    if (mime === 'audio/wav' || mime === 'audio/x-wav' || ext.endsWith('.wav')) {
+      return sliceWavBinary(ab, trimStart, trimEnd);
+    }
+
+    // MP3
+    if (mime === 'audio/mpeg' || mime === 'audio/mp3' || ext.endsWith('.mp3')) {
+      return sliceMp3Binary(ab, trimStart, trimEnd);
+    }
+
+    return null; // 지원하지 않는 포맷
+  }
+
   // ── 인코딩: AudioBuffer → Blob ──────────────────────────
 
   /** DataView에 문자열 쓰기 (WAV 헤더용) */
@@ -422,8 +621,7 @@
    * AudioBuffer → 10MB 이하 Blob 변환
    * 1) WAV 그대로 (즉시)
    * 2) 모노 WAV (거의 즉시)
-   * 3) 모노 + 다운샘플 WAV (거의 즉시)
-   * 4) 최후수단: MediaRecorder 단일 패스 (실시간 속도)
+   * 3) Opus/WebM 인코딩 (원본 sampleRate 유지, 고음질)
    */
   async function compressToFit(buffer, targetSize, onProgress) {
     if (onProgress) onProgress(0);
@@ -444,19 +642,7 @@
       }
     }
 
-    // 3) 모노 + 다운샘플 WAV
-    for (const rate of [22050, 16000, 11025, 8000]) {
-      if (rate >= buffer.sampleRate) continue;
-      const newLen = Math.ceil(buffer.length * rate / buffer.sampleRate);
-      if (_wavDataSize(rate, 1, newLen) <= targetSize) {
-        if (onProgress) onProgress(0.3);
-        const r = await resampleBuffer(buffer, rate, true);
-        if (onProgress) onProgress(1);
-        return audioBufferToWav(r);
-      }
-    }
-
-    // 4) 최후수단: MediaRecorder 단일 패스 (Opus/WebM)
+    // 3) Opus/WebM — 원본 sampleRate 유지, 고음질
     if (onProgress) onProgress(0.05);
     const bitrate = clamp(
       Math.floor((targetSize * 8) / buffer.duration * 0.88),
@@ -1190,34 +1376,70 @@
 
           pgText.textContent = `${s.file.name} 처리 중... (${i + 1}/${fileStates.length})`;
 
-          // 트림 적용
-          let finalBuf = buf;
-          if (s.trimStart > 0 || s.trimEnd < 1) {
-            const startSample = Math.floor(s.trimStart * buf.length);
-            const endSample = Math.floor(s.trimEnd * buf.length);
-            finalBuf = sliceBuffer(buf, startSample, endSample);
-          }
+          const trimOnly = !s.editedBuffer && (s.trimStart > 0 || s.trimEnd < 1);
+          const wasEdited = !!s.editedBuffer;
 
-          // 예상 크기 검사
-          // 편집된 결과를 Blob으로 변환 (WAV 우선 — 즉시)
           let resultBlob;
-          const wasEdited = s.editedBuffer || s.trimStart > 0 || s.trimEnd < 1;
 
-          if (wasEdited) {
+          if (trimOnly) {
+            // ── 트림만 한 경우: 바이너리 슬라이스 (무손실, 즉시) ──
+            pgText.textContent = `${s.file.name} 트림 중... (무손실)`;
+            resultBlob = await binarySlice(s.file, s.trimStart, s.trimEnd);
+            if (resultBlob) {
+              console.log(`[AE] 바이너리 슬라이스 성공: ${s.file.name} | ${formatSize(s.file.size)} → ${formatSize(resultBlob.size)} (${resultBlob.type})`);
+            } else {
+              // 바이너리 슬라이스 실패 시 AudioBuffer 기반 폴백
+              console.log(`[AE] 바이너리 슬라이스 미지원 포맷, AudioBuffer 폴백: ${s.file.name}`);
+              const buf = s.buffer;
+              const startSample = Math.floor(s.trimStart * buf.length);
+              const endSample = Math.floor(s.trimEnd * buf.length);
+              const finalBuf = sliceBuffer(buf, startSample, endSample);
+              resultBlob = audioBufferToWav(finalBuf);
+            }
+            pgFill.style.width = ((i + 0.5) / fileStates.length * 100) + '%';
+
+            // 10MB 초과 시 압축
+            if (resultBlob.size > MAX_FILE_SIZE) {
+              pgText.textContent = `${s.file.name} 압축 중... (${formatSize(resultBlob.size)} → 10MB 이하)`;
+              const buf = s.buffer;
+              const startSample = Math.floor(s.trimStart * buf.length);
+              const endSample = Math.floor(s.trimEnd * buf.length);
+              const finalBuf = sliceBuffer(buf, startSample, endSample);
+              resultBlob = await compressToFit(finalBuf, MAX_FILE_SIZE, (p) => {
+                pgFill.style.width = ((i + 0.5 + p * 0.5) / fileStates.length * 100) + '%';
+              });
+              console.log(`[AE] 압축 결과: ${formatSize(resultBlob.size)} (${resultBlob.type})`);
+            }
+
+          } else if (wasEdited) {
+            // ── cut 등 편집한 경우: AudioBuffer → WAV ──
+            const buf = s.editedBuffer;
+            let finalBuf = buf;
+            if (s.trimStart > 0 || s.trimEnd < 1) {
+              const startSample = Math.floor(s.trimStart * buf.length);
+              const endSample = Math.floor(s.trimEnd * buf.length);
+              finalBuf = sliceBuffer(buf, startSample, endSample);
+            }
             pgText.textContent = `${s.file.name} 변환 중...`;
             resultBlob = audioBufferToWav(finalBuf);
+            console.log(`[AE] 편집됨: ${s.file.name} | buf: sr=${finalBuf.sampleRate} ch=${finalBuf.numberOfChannels} len=${finalBuf.length} dur=${finalBuf.duration.toFixed(1)}s | WAV=${formatSize(resultBlob.size)}`);
             pgFill.style.width = ((i + 0.3) / fileStates.length * 100) + '%';
 
             if (resultBlob.size > MAX_FILE_SIZE) {
               pgText.textContent = `${s.file.name} 압축 중... (${formatSize(resultBlob.size)} → 10MB 이하)`;
+              console.log(`[AE] 압축 시작: WAV ${formatSize(resultBlob.size)} → 10MB 이하`);
               resultBlob = await compressToFit(finalBuf, MAX_FILE_SIZE, (p) => {
                 pgFill.style.width = ((i + 0.3 + p * 0.7) / fileStates.length * 100) + '%';
               });
+              console.log(`[AE] 압축 결과: ${formatSize(resultBlob.size)} (${resultBlob.type})`);
             }
+
           } else {
+            // ── 편집 없음: 원본 그대로 또는 압축 ──
             if (s.file.size > MAX_FILE_SIZE) {
+              const buf = s.buffer;
               pgText.textContent = `${s.file.name} 압축 중... (${formatSize(s.file.size)} → 10MB 이하)`;
-              resultBlob = await compressToFit(finalBuf, MAX_FILE_SIZE, (p) => {
+              resultBlob = await compressToFit(buf, MAX_FILE_SIZE, (p) => {
                 pgFill.style.width = ((i + p) / fileStates.length * 100) + '%';
               });
             } else {
@@ -1229,7 +1451,9 @@
           let fileName;
           if (resultBlob === s.file) {
             fileName = s.file.name;
-          } else if (resultBlob.type === 'audio/wav') {
+          } else if (resultBlob.type === 'audio/mpeg' || resultBlob.type === 'audio/mp3') {
+            fileName = s.file.name.replace(/\.[^.]+$/, '') + '.mp3';
+          } else if (resultBlob.type === 'audio/wav' || resultBlob.type === 'audio/x-wav') {
             fileName = s.file.name.replace(/\.[^.]+$/, '') + '.wav';
           } else {
             fileName = s.file.name.replace(/\.[^.]+$/, '') + '.webm';
