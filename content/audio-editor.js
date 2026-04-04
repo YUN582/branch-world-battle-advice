@@ -699,6 +699,7 @@
     let _selEnd = null;
     let _dragging = null; // 'pending' | 'select' | 'handleL' | 'handleR' | null
     let _dragStartPos = null;
+    let _playTrimStart = 0; // 재생 시작 시점의 trimStart (커서 위치 계산용)
 
     // ── 헬퍼 함수들 ──
 
@@ -853,6 +854,7 @@
 
       if (playDuration <= 0) { _pausedAt = 0; return; }
 
+      _playTrimStart = s.trimStart;
       _sourceNode.start(0, startOffset, playDuration);
       _startedAt = _audioCtx.currentTime - _pausedAt;
       _playing = true;
@@ -862,7 +864,7 @@
           _playing = false;
           _pausedAt = 0;
           playBtn.innerHTML = SVG_PLAY;
-          cursorDiv.style.left = (s.trimStart * 100) + '%';
+          cursorDiv.style.left = (_playTrimStart * 100) + '%';
           if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
         }
       };
@@ -887,11 +889,11 @@
     function _updateCursor() {
       if (!_playing || !_audioCtx) return;
       const buf = getEffectiveBuffer();
-      const s = st();
       if (!buf) return;
+      const s = st();
 
       const elapsed = _audioCtx.currentTime - _startedAt;
-      const offset = s.trimStart * buf.duration + elapsed;
+      const offset = _playTrimStart * buf.duration + elapsed;
       const pct = offset / buf.duration;
       cursorDiv.style.left = (clamp(pct, 0, 1) * 100) + '%';
 
@@ -914,13 +916,25 @@
       const buf = getEffectiveBuffer();
       if (!buf) return;
       const clamped = clamp(pos, s.trimStart, s.trimEnd);
-      _pausedAt = (clamped - s.trimStart) * buf.duration;
+      const newPausedAt = (clamped - s.trimStart) * buf.duration;
+
+      // 재생 중이면: 소스만 정지하고 _pausedAt 덤어쓰기 방지
+      const wasPlaying = _playing;
+      if (wasPlaying) {
+        if (_sourceNode) { try { _sourceNode.stop(); } catch {} _sourceNode = null; }
+        _playing = false;
+        if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
+      }
+
+      _pausedAt = newPausedAt;
       cursorDiv.style.left = (clamped * 100) + '%';
       const trimDur = (s.trimEnd - s.trimStart) * buf.duration;
       timeDisplay.textContent = formatTime(_pausedAt) + ' / ' + formatTime(trimDur);
-      if (_playing) {
-        stopPlayback();
+
+      if (wasPlaying) {
         startPlayback();
+      } else {
+        playBtn.innerHTML = SVG_PLAY;
       }
     }
 
@@ -935,12 +949,14 @@
 
     handleL.addEventListener('pointerdown', (e) => {
       e.preventDefault(); e.stopPropagation();
+      if (_playing) stopPlayback();
       waveWrap.setPointerCapture(e.pointerId);
       _dragging = 'handleL';
     });
 
     handleR.addEventListener('pointerdown', (e) => {
       e.preventDefault(); e.stopPropagation();
+      if (_playing) stopPlayback();
       waveWrap.setPointerCapture(e.pointerId);
       _dragging = 'handleR';
     });
@@ -1006,6 +1022,7 @@
 
       stopPlayback();
       _pausedAt = 0;
+      cursorDiv.style.left = '0%';
 
       switch (action) {
         case 'trimSel': { // 선택 구간만 남기기
