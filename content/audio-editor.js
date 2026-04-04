@@ -565,7 +565,7 @@
     // 헤더
     const header = document.createElement('div');
     header.className = 'bwbr-ae-header';
-    header.innerHTML = `<h3><svg style="width:16px;height:16px;vertical-align:-2px;margin-right:4px" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="2.5"/><circle cx="12" cy="10" r="2.5"/><path d="M7.5 12V4.5l7-2V10"/></svg>오디오 편집기</h3>`;
+    header.innerHTML = `<h3><svg style="width:16px;height:16px;vertical-align:-2px;margin-right:4px" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg>오디오 편집기</h3>`;
     const closeBtn = document.createElement('button');
     closeBtn.className = 'bwbr-ae-close';
     closeBtn.textContent = '✕';
@@ -636,12 +636,12 @@
     tools.className = 'bwbr-ae-tools';
 
     const _I = {
-      trimSel: '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M4.5 3v8M9.5 3v8M4.5 7h5"/></svg>',
-      cutSel:  '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M4 4l6 6M10 4l-6 6"/></svg>',
-      trimL:   '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v8"/><path d="M2 7h8M5 4.5L2 7l3 2.5"/></svg>',
-      trimR:   '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3v8"/><path d="M4 7h8M9 4.5l3 2.5-3 2.5"/></svg>',
-      undo:    '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h5a3.5 3.5 0 0 1 0 7H6.5"/><path d="M5.5 2.5L3 5l2.5 2.5"/></svg>',
-      reset:   '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7a4.5 4.5 0 0 1 8-2.8"/><path d="M11.5 7a4.5 4.5 0 0 1-8 2.8"/><path d="M10.5 2v2.5H8"/><path d="M3.5 12V9.5H6"/></svg>'
+      trimSel: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 3a1 1 0 0 1 1 1v7h4V4a1 1 0 1 1 2 0v16a1 1 0 1 1-2 0v-7h-4v7a1 1 0 1 1-2 0V4a1 1 0 0 1 1-1z"/></svg>',
+      cutSel:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.7 5.3a1 1 0 0 0-1.4 1.4L10.6 12l-5.3 5.3a1 1 0 1 0 1.4 1.4L12 13.4l5.3 5.3a1 1 0 0 0 1.4-1.4L13.4 12l5.3-5.3a1 1 0 0 0-1.4-1.4L12 10.6 6.7 5.3z"/></svg>',
+      trimL:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4a1 1 0 0 1 1 1v14a1 1 0 1 1-2 0V5a1 1 0 0 1 1-1zm4.3 7L6.6 9.3a1 1 0 0 1 1.4-1.4l3.7 3.7a1 1 0 0 1 0 1.4L8 16.7a1 1 0 0 1-1.4-1.4L8.3 13H20a1 1 0 1 0 0-2H8.3z"/></svg>',
+      trimR:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 4a1 1 0 0 1 1 1v14a1 1 0 1 1-2 0V5a1 1 0 0 1 1-1zm-4.3 7l1.7-1.7a1 1 0 0 0-1.4-1.4L12.3 11.6a1 1 0 0 0 0 1.4L16 16.7a1 1 0 0 0 1.4-1.4L15.7 13H4a1 1 0 1 1 0-2h11.7z"/></svg>',
+      undo:    '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7.7 8H14a5 5 0 0 1 0 10h-3a1 1 0 1 1 0-2h3a3 3 0 1 0 0-6H7.7l1.6 1.6a1 1 0 0 1-1.4 1.4l-3.4-3.4a1 1 0 0 1 0-1.4l3.4-3.4a1 1 0 1 1 1.4 1.4L7.7 8z"/></svg>',
+      reset:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.6 6.4A8 8 0 0 0 4.1 11H2l3.3 3.3L8.6 11H6.1a6 6 0 0 1 10.2-3.3l1.3-1.3zM18.7 9.7L15.4 13h2.5a6 6 0 0 1-10.2 3.3l-1.3 1.3A8 8 0 0 0 19.9 13H22l-3.3-3.3z"/></svg>'
     };
     const btnTrimSel = _makeToolBtn(_I.trimSel, '선택 구간만 남기기', 'trimSel');
     const btnCutSel = _makeToolBtn(_I.cutSel, '선택 구간 제거', 'cutSel');
@@ -790,11 +790,11 @@
       const overLimit = estSize > MAX_FILE_SIZE;
       const duration = getEditedDuration();
 
-      const _si = (d) => `<svg style="width:12px;height:12px;vertical-align:-1px;margin-right:3px;opacity:0.5" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
-      const iFile = _si('<path d="M3 2h5l3 3v7H3z"/><path d="M8 2v3h3"/>');
-      const iClock = _si('<circle cx="7" cy="7" r="5"/><path d="M7 4.5V7l2 1.5"/>');
-      const iWave = _si('<path d="M1 7h2l1.5-3 2 6 2-6L10 7h3"/>');
-      const iDisk = _si('<path d="M3 2h8v10H3z"/><rect x="5" y="2" width="4" height="3" rx="0.5"/><rect x="5" y="8" width="4" height="2" rx="0.5"/>');
+      const _si = (d) => `<svg style="width:12px;height:12px;vertical-align:-1px;margin-right:3px;opacity:0.5" viewBox="0 0 24 24" fill="currentColor">${d}</svg>`;
+      const iFile = _si('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 2l5 5h-5V4z"/>');
+      const iClock = _si('<path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 11h-2V7h2v4h3v2h-3z"/>');
+      const iWave = _si('<path d="M12 3a1 1 0 0 1 1 1v16a1 1 0 1 1-2 0V4a1 1 0 0 1 1-1zM8 7a1 1 0 0 1 1 1v8a1 1 0 1 1-2 0V8a1 1 0 0 1 1-1zM16 7a1 1 0 0 1 1 1v8a1 1 0 1 1-2 0V8a1 1 0 0 1 1-1zM4 9.5a1 1 0 0 1 1 1v3a1 1 0 1 1-2 0v-3a1 1 0 0 1 1-1zM20 9.5a1 1 0 0 1 1 1v3a1 1 0 1 1-2 0v-3a1 1 0 0 1 1-1z"/>');
+      const iDisk = _si('<path d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6zM15 9H7V5h8v4z"/>');
 
       fileInfoEl.innerHTML = `
         <span>${iFile} ${s.file.name}</span>
