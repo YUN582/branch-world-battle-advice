@@ -1629,6 +1629,8 @@ var _shapeMergeMode = false;       // true=연속(병합), false=개별(기본)
 var _shapeMergeBuffer = [];        // { mapCoords, shapeType, settings(복제) } 배열
 var _shapeMergeCanvas = null;      // 화면 위 프리뷰 캔버스 (fixed overlay)
 var _shapeMergeCtx = null;         // 프리뷰 캔버스 context
+var _shapeMergeCachedImg = null;   // 캐시된 병합 렌더 이미지 (Image 객체)
+var _shapeMergeCachedBounds = null; // { minX, minY, totalW, totalH } 타일 좌표
 
 
 // ── DOM 요소 ────────────────────────────────────────────────────
@@ -2660,6 +2662,8 @@ function _removeShapeMergeCanvas() {
 
 function _cleanupShapeMerge() {
   _shapeMergeBuffer = [];
+  _shapeMergeCachedImg = null;
+  _shapeMergeCachedBounds = null;
   _removeShapeMergeCanvas();
 }
 
@@ -2680,27 +2684,20 @@ function _addShapeToMergeBuffer(screenRect) {
   // 스탬프 미리보기용 dataUrl 갱신
   _shapePendingDataUrl = _renderShapeDataUrl(mapCoords);
 
+  _rebuildShapeMergeCache();
   _redrawShapeMergePreview();
   updateConfirmBar();
 }
 
-// 프리뷰 캔버스에 모든 버퍼 도형 그리기
-function _redrawShapeMergePreview() {
-  if (!_shapeMergeCanvas || !_shapeMergeCtx) return;
-  // 캔버스 리사이즈 (창 크기 변경 대응)
-  if (_shapeMergeCanvas.width !== window.innerWidth || _shapeMergeCanvas.height !== window.innerHeight) {
-    _shapeMergeCanvas.width = window.innerWidth;
-    _shapeMergeCanvas.height = window.innerHeight;
-  }
-  _shapeMergeCtx.clearRect(0, 0, _shapeMergeCanvas.width, _shapeMergeCanvas.height);
-
-  var origin = getMapOriginOnScreen();
-  var zoom = getZoomScale();
-  if (!origin || !zoom) return;
-
+// 버퍼 내용으로 고해상도 캐시 이미지 생성 (도형 추가/삭제 시에만 호출)
+function _rebuildShapeMergeCache() {
+  _shapeMergeCachedImg = null;
+  _shapeMergeCachedBounds = null;
   if (_shapeMergeBuffer.length === 0) return;
 
-  // 전체 바운딩 박스 (타일 좌표) + 스트로크/지터 패딩
+  var compositeRatio = COMPOSITE_PX_PER_TILE / CELL_PX; // 2
+
+  // 바운딩 박스 (타일 좌표) + 패딩
   var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   _shapeMergeBuffer.forEach(function(entry) {
     var mc = entry.mapCoords;
@@ -2714,36 +2711,56 @@ function _redrawShapeMergePreview() {
   var totalH = maxY - minY;
   if (totalW <= 0 || totalH <= 0) return;
 
-  // 오프스크린 캔버스에 병합 렌더링 (화면 해상도)
-  var drawScale = CELL_PX * zoom;
-  var cw = Math.ceil(totalW * drawScale);
-  var ch = Math.ceil(totalH * drawScale);
-  var offscreen = document.createElement('canvas');
-  offscreen.width = cw; offscreen.height = ch;
-  var offCtx = offscreen.getContext('2d');
+  var cw = Math.ceil(totalW * COMPOSITE_PX_PER_TILE);
+  var ch = Math.ceil(totalH * COMPOSITE_PX_PER_TILE);
+  var canvas = document.createElement('canvas');
+  canvas.width = cw; canvas.height = ch;
+  var ctx = canvas.getContext('2d');
 
   var entries = _shapeMergeBuffer.map(function(entry) {
     var mc = entry.mapCoords;
     var scaledSettings = {};
     for (var k in entry.settings) scaledSettings[k] = entry.settings[k];
-    scaledSettings.strokeSize = (entry.settings.strokeSize || 0) * zoom;
-    scaledSettings.cornerRadius = (entry.settings.cornerRadius || 0) * zoom;
-    scaledSettings.sketchJitter = (entry.settings.sketchJitter || 0) * zoom;
+    scaledSettings.strokeSize = (entry.settings.strokeSize || 0) * compositeRatio;
+    scaledSettings.cornerRadius = (entry.settings.cornerRadius || 0) * compositeRatio;
+    scaledSettings.sketchJitter = (entry.settings.sketchJitter || 0) * compositeRatio;
     return {
       shapeType: entry.shapeType,
-      relX: (mc.x - minX) * drawScale,
-      relY: (mc.y - minY) * drawScale,
-      drawW: mc.width * drawScale,
-      drawH: mc.height * drawScale,
+      relX: (mc.x - minX) * COMPOSITE_PX_PER_TILE,
+      relY: (mc.y - minY) * COMPOSITE_PX_PER_TILE,
+      drawW: mc.width * COMPOSITE_PX_PER_TILE,
+      drawH: mc.height * COMPOSITE_PX_PER_TILE,
       scaledSettings: scaledSettings
     };
   });
-  _renderMergedShapesToCtx(offCtx, cw, ch, entries);
+  _renderMergedShapesToCtx(ctx, cw, ch, entries);
 
-  // 화면 위치에 결과 이미지 배치
-  var screenX = origin.x + minX * CELL_PX * zoom;
-  var screenY = origin.y + minY * CELL_PX * zoom;
-  _shapeMergeCtx.drawImage(offscreen, screenX, screenY);
+  _shapeMergeCachedBounds = { minX: minX, minY: minY, totalW: totalW, totalH: totalH };
+  var img = new Image();
+  img.src = canvas.toDataURL('image/png');
+  _shapeMergeCachedImg = img;
+}
+
+// 프리뷰 캔버스에 캐시 이미지 배치 (줌/패닝 시 경량 호출)
+function _redrawShapeMergePreview() {
+  if (!_shapeMergeCanvas || !_shapeMergeCtx) return;
+  if (_shapeMergeCanvas.width !== window.innerWidth || _shapeMergeCanvas.height !== window.innerHeight) {
+    _shapeMergeCanvas.width = window.innerWidth;
+    _shapeMergeCanvas.height = window.innerHeight;
+  }
+  _shapeMergeCtx.clearRect(0, 0, _shapeMergeCanvas.width, _shapeMergeCanvas.height);
+  if (!_shapeMergeCachedImg || !_shapeMergeCachedBounds) return;
+
+  var origin = getMapOriginOnScreen();
+  var zoom = getZoomScale();
+  if (!origin || !zoom) return;
+
+  var b = _shapeMergeCachedBounds;
+  var screenX = origin.x + b.minX * CELL_PX * zoom;
+  var screenY = origin.y + b.minY * CELL_PX * zoom;
+  var screenW = b.totalW * CELL_PX * zoom;
+  var screenH = b.totalH * CELL_PX * zoom;
+  _shapeMergeCtx.drawImage(_shapeMergeCachedImg, screenX, screenY, screenW, screenH);
 }
 
 // 병합 렌더링 공통: 여러 도형을 윤곽선 병합 방식으로 ctx에 그리기
@@ -2813,6 +2830,8 @@ function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
 // 버퍼 비우기
 function _clearShapeMergeBuffer() {
   _shapeMergeBuffer = [];
+  _shapeMergeCachedImg = null;
+  _shapeMergeCachedBounds = null;
   _redrawShapeMergePreview();
   updateConfirmBar();
 }
@@ -2889,6 +2908,8 @@ function _finishShapeMerge() {
 
   // 5. 버퍼 초기화 (연속 모드는 유지)
   _shapeMergeBuffer = [];
+  _shapeMergeCachedImg = null;
+  _shapeMergeCachedBounds = null;
   _redrawShapeMergePreview();
   updateConfirmBar();
 }
