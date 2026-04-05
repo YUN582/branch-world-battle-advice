@@ -62,7 +62,7 @@
   var _totalWaypointDist = 0; // 이미 소비된 이동 거리
   var _helpPanel = null;      // 전투 모드 도움말 패널
   var _helpTrackRAF = null;
-  var _helpLastLeft = null;
+  var _helpTrackTarget = null; // rAF가 추적할 실제 DOM 엘리먼트
 
   // ------------------------------------------------
   //  1. Zoom container finder
@@ -1023,7 +1023,7 @@
   }
 
   function _syncCombatHelpPosition() {
-    if (!_helpPanel) return;
+    if (!_helpTrackTarget) return;
     var paper = _findDrawerPaper();
     var newLeft;
     if (!paper) {
@@ -1031,18 +1031,15 @@
     } else {
       newLeft = Math.round(paper.getBoundingClientRect().left);
     }
-    if (newLeft !== _helpLastLeft) {
-      _helpLastLeft = newLeft;
-      _helpPanel.style.left = newLeft + 'px';
-    }
+    _helpTrackTarget.style.left = newLeft + 'px';
   }
 
-  function _startCombatHelpTracking() {
-    if (_helpTrackRAF) return;
-    _helpLastLeft = null;
+  function _startCombatHelpTracking(el) {
+    _stopCombatHelpTracking();
+    _helpTrackTarget = el;
     function track() {
       _syncCombatHelpPosition();
-      if (_helpPanel) {
+      if (_helpTrackTarget) {
         _helpTrackRAF = requestAnimationFrame(track);
       }
     }
@@ -1054,7 +1051,10 @@
       cancelAnimationFrame(_helpTrackRAF);
       _helpTrackRAF = null;
     }
-    _helpLastLeft = null;
+    if (_helpTrackTarget && _helpTrackTarget.parentNode) {
+      _helpTrackTarget.parentNode.removeChild(_helpTrackTarget);
+    }
+    _helpTrackTarget = null;
   }
 
   function showHelpPanel() {
@@ -1065,7 +1065,7 @@
 
     _helpPanel.style.cssText =
       'position:fixed;top:140px;left:100vw;' +
-      'transform:translateX(-100%);' +
+      'transform:translateX(0);' +
       'z-index:10;width:220px;' +
       'background:rgba(30,30,30,0.92);color:#eee;' +
       'border-radius:8px 0 0 8px;' +
@@ -1075,7 +1075,7 @@
       'pointer-events:auto;' +
       'border:1px solid rgba(255,255,255,0.1);border-right:none;' +
       'opacity:0;overflow:hidden;box-sizing:border-box;' +
-      'transition:left 0.225s cubic-bezier(0,0,0.2,1), opacity 0.3s ease, width 0.35s cubic-bezier(0.2,0.8,0.3,1);';
+      'transition:transform 0.35s cubic-bezier(0.22,1,0.36,1), opacity 0.3s ease, width 0.35s cubic-bezier(0.2,0.8,0.3,1);';
 
     _helpPanel.innerHTML =
       '<div id="bwbr-help-content" style="padding:14px 18px;white-space:nowrap;' +
@@ -1096,7 +1096,7 @@
       'opacity:0;pointer-events:none;transition:opacity 0.25s;">⚔️ 전투</div>';
 
     document.body.appendChild(_helpPanel);
-    _startCombatHelpTracking();
+    _startCombatHelpTracking(_helpPanel);
 
     // 클릭으로 접기/펼치기
     _helpPanel.addEventListener('click', function () {
@@ -1107,10 +1107,12 @@
       }
     });
 
+    // 슬라이드 인: translateX(0) → translateX(-100%) + 페이드인
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
         if (_helpPanel) {
           _helpPanel.style.opacity = '1';
+          _helpPanel.style.transform = 'translateX(-100%)';
         }
       });
     });
@@ -1144,12 +1146,15 @@
   }
 
   function hideHelpPanel() {
-    _stopCombatHelpTracking();
     if (!_helpPanel) return;
+    // 슬라이드 아웃: translateX(-100%) → translateX(0) + 페이드아웃
     _helpPanel.style.opacity = '0';
-    var panel = _helpPanel;
+    _helpPanel.style.transform = 'translateX(0)';
     _helpPanel = null;
-    setTimeout(function () { panel.remove(); }, 450);
+    // rAF 추적은 애니메이션 끝날 때까지 유지 (left 동기화)
+    setTimeout(function () {
+      _stopCombatHelpTracking();
+    }, 400);
   }
 
   // ------------------------------------------------
