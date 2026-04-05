@@ -1728,31 +1728,48 @@ function togglePlacementMode() {
 
 var _placementHelp = null;
 var _helpPaperObserver = null;
+var _helpTrackRAF = null;
 
 function _findChatPaper() {
-  return document.querySelector('.MuiDrawer-paperAnchorDockedRight')
-    || document.querySelector('.MuiDrawer-paperAnchorRight')
-    || document.querySelector('.MuiDrawer-paper');
+  // 채팅 패널(첫 번째 drawer)만 선택 — 두 번째 drawer는 다른 패널
+  var papers = document.querySelectorAll('.MuiDrawer-paperAnchorDockedRight');
+  if (papers.length > 0) return papers[0];
+  papers = document.querySelectorAll('.MuiDrawer-paperAnchorRight');
+  if (papers.length > 0) return papers[0];
+  papers = document.querySelectorAll('.MuiDrawer-paper');
+  if (papers.length > 0) return papers[0];
+  return null;
 }
 
-function _attachHelpToPaper(paper) {
-  if (_placementHelp && _placementHelp.parentNode) return; // 이미 붙어 있음
+function _syncHelpPosition() {
   if (!_placementHelp) return;
+  var paper = _findChatPaper();
+  if (!paper) {
+    // paper 없으면 화면 밖으로
+    _placementHelp.style.left = '100vw';
+    return;
+  }
+  var rect = paper.getBoundingClientRect();
+  // paper의 왼쪽 모서리에 맞춤 (도움말은 translateX(-100%)로 왼쪽 바깥에 표시)
+  _placementHelp.style.left = rect.left + 'px';
+}
 
-  // paper가 absolute 자식을 수용할 수 있도록
-  var cs = getComputedStyle(paper);
-  if (cs.position === 'static') paper.style.position = 'relative';
+function _startHelpTracking() {
+  if (_helpTrackRAF) return;
+  function track() {
+    _syncHelpPosition();
+    if (_placementHelp) {
+      _helpTrackRAF = requestAnimationFrame(track);
+    }
+  }
+  _helpTrackRAF = requestAnimationFrame(track);
+}
 
-  paper.appendChild(_placementHelp);
-
-  requestAnimationFrame(function () {
-    requestAnimationFrame(function () {
-      if (_placementHelp) {
-        _placementHelp.style.opacity = '1';
-        _placementHelp.style.transform = 'translateX(-100%)';
-      }
-    });
-  });
+function _stopHelpTracking() {
+  if (_helpTrackRAF) {
+    cancelAnimationFrame(_helpTrackRAF);
+    _helpTrackRAF = null;
+  }
 }
 
 function showPlacementHelp() {
@@ -1761,7 +1778,7 @@ function showPlacementHelp() {
   _placementHelp = document.createElement('div');
   _placementHelp.id = 'bwbr-placement-help';
   _placementHelp.style.cssText =
-    'position:absolute;top:140px;left:0;' +
+    'position:fixed;top:140px;left:100vw;' +
     'transform:translateX(0);' +
     'z-index:10;width:250px;' +
     'background:rgba(255,255,255,0.96);color:#333;' +
@@ -1772,7 +1789,7 @@ function showPlacementHelp() {
     'pointer-events:auto;' +
     'border:1px solid rgba(0,0,0,0.08);border-right:none;' +
     'opacity:0;overflow:hidden;box-sizing:border-box;' +
-    'transition:transform 0.4s cubic-bezier(0.22,1,0.36,1), opacity 0.3s ease, width 0.35s cubic-bezier(0.2,0.8,0.3,1);';
+    'transition:opacity 0.3s ease, width 0.35s cubic-bezier(0.2,0.8,0.3,1);';
 
   _placementHelp.innerHTML =
     '<div id="bwbr-place-help-content" style="padding:14px 18px;white-space:nowrap;transition:opacity 0.25s;">' +
@@ -1809,13 +1826,18 @@ function showPlacementHelp() {
     }
   });
 
-  // paper 찾아서 붙이기 (없으면 MutationObserver로 대기)
-  var paper = _findChatPaper();
-  if (paper) {
-    _attachHelpToPaper(paper);
-  } else {
-    _waitForPaper();
-  }
+  // body에 붙이고 rAF로 paper 위치 추적
+  document.body.appendChild(_placementHelp);
+  _startHelpTracking();
+
+  requestAnimationFrame(function () {
+    requestAnimationFrame(function () {
+      if (_placementHelp) {
+        _placementHelp.style.opacity = '1';
+        _placementHelp.style.transform = 'translateX(-100%)';
+      }
+    });
+  });
 
   // 3초 후 자동 접기
   // setTimeout(function () { collapsePlacementHelp(); }, 3000); // 사용자 요청으로 툴팁 자동 닫힘 제거
@@ -1846,6 +1868,7 @@ function expandPlacementHelp() {
 }
 
 function hidePlacementHelp() {
+  _stopHelpTracking();
   if (_helpPaperObserver) {
     _helpPaperObserver.disconnect();
     _helpPaperObserver = null;
@@ -1859,16 +1882,7 @@ function hidePlacementHelp() {
 }
 
 function _waitForPaper() {
-  if (_helpPaperObserver) return;
-  _helpPaperObserver = new MutationObserver(function () {
-    var paper = _findChatPaper();
-    if (paper && _placementHelp && !_placementHelp.parentNode) {
-      _attachHelpToPaper(paper);
-      _helpPaperObserver.disconnect();
-      _helpPaperObserver = null;
-    }
-  });
-  _helpPaperObserver.observe(document.body, { childList: true, subtree: true });
+  // rAF 추적 방식이므로 별도 observer 불필요
 }
 
 
