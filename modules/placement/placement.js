@@ -2007,11 +2007,14 @@ function createToolbar() {
   _toolbar.appendChild(sep);
 
   // 서브 도구 버튼 (개별 48x48 버튼)
+  // 툴바는 flex-direction: column-reverse이므로 DOM 마지막 = 시각적 최상단
+  // 원하는 시각 순서(위→아래): 그리기→텍스트→도형→이미지
+  // → DOM 순서(먼저→나중): 이미지→도형→텍스트→그리기
   var tools = [
-    { id: 'draw',  label: '그리기 (D)', icon: TOOL_ICONS.draw },
-    { id: 'text',  label: '텍스트 (T)', icon: TOOL_ICONS.text },
+    { id: 'image', label: '이미지 (I)', icon: TOOL_ICONS.image },
     { id: 'shape', label: '도형 (S)', icon: TOOL_ICONS.shape },
-    { id: 'image', label: '이미지 (I)', icon: TOOL_ICONS.image }
+    { id: 'text',  label: '텍스트 (T)', icon: TOOL_ICONS.text },
+    { id: 'draw',  label: '그리기 (D)', icon: TOOL_ICONS.draw }
   ];
 
   tools.forEach(function (tool) {
