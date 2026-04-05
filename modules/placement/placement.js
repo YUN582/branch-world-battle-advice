@@ -2468,7 +2468,8 @@ function createShapeSettingsMenu() {
   return menu;
 }
 
-function _createShapeSlider(label, min, max, value, unit, onChange) {
+function _createShapeSlider(label, min, max, value, unit, onChange, opts) {
+  opts = opts || {};
   var grp = document.createElement('div');
   grp.className = 'bwbr-shape-slider-group';
   var hdr = document.createElement('div');
@@ -2476,7 +2477,8 @@ function _createShapeSlider(label, min, max, value, unit, onChange) {
   var lbl = document.createElement('span');
   lbl.textContent = label;
   var val = document.createElement('span');
-  val.textContent = value + unit;
+  var _formatVal = function(v) { return (opts.zeroText && v === 0) ? opts.zeroText : v + unit; };
+  val.textContent = _formatVal(value);
   hdr.appendChild(lbl);
   hdr.appendChild(val);
   grp.appendChild(hdr);
@@ -2489,7 +2491,7 @@ function _createShapeSlider(label, min, max, value, unit, onChange) {
   slider.value = value;
   slider.addEventListener('input', function() {
     var v = parseInt(slider.value);
-    val.textContent = v + unit;
+    val.textContent = _formatVal(v);
     onChange(v);
   });
   grp.appendChild(slider);
@@ -2527,7 +2529,7 @@ function _updateShapeExtraOptions() {
   // 공통: 스케치 떨림 (모든 도형)
   var sketchGrp = _createShapeSlider('떨림', 0, 10, _shapeSettings.sketchJitter, '', function(v) {
     _shapeSettings.sketchJitter = v;
-  });
+  }, { zeroText: '없음' });
   container.appendChild(sketchGrp);
 }
 
