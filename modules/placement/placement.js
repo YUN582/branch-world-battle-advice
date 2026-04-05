@@ -2628,6 +2628,12 @@ function createDrawSettingsMenu() {
   notice.innerHTML = '오버레이에서 자유롭게 그리세요.<br>Shift+드래그: 직선 · 완료 버튼으로 확정';
   menu.appendChild(notice);
 
+  // ── 채우기 섹션 라벨 ──
+  var fillLabel = document.createElement('div');
+  fillLabel.className = 'bwbr-shape-section-label';
+  fillLabel.textContent = '채우기';
+  menu.appendChild(fillLabel);
+
   // ── 색상 + 투명도 (한 줄) ──
   var colorOpRow = document.createElement('div');
   colorOpRow.className = 'bwbr-draw-compact-row';
@@ -2776,11 +2782,6 @@ function createDrawSettingsMenu() {
   varGroup.appendChild(varHeader);
   varGroup.appendChild(varSlider);
   menu.appendChild(varGroup);
-
-  // ── 구분선 ──
-  var sep = document.createElement('div');
-  sep.className = 'bwbr-draw-section-sep';
-  menu.appendChild(sep);
 
   // ── 윤곽선 섹션 (토글 없음, 항상 노출, 굵기 0=비활성) ──
   var outlineLabel = document.createElement('div');
@@ -5274,7 +5275,7 @@ function createOverlay() {
   _overlay.addEventListener('pointermove', onOverlayMouseMove);
   _overlay.addEventListener('pointerup', onOverlayMouseUp);
 
-  // 휠 줌 패스스루: 오버레이 아래 요소에 전달
+  // 휠 줌 패스스루: 오버레이 아래 요소에 전달 + 줌 캐시 갱신
   _overlay.addEventListener('wheel', function(e) {
     _overlay.style.pointerEvents = 'none';
     var below = document.elementFromPoint(e.clientX, e.clientY);
@@ -5282,6 +5283,12 @@ function createOverlay() {
     if (below) {
       below.dispatchEvent(new WheelEvent(e.type, e));
     }
+    // ccfolia가 transform을 업데이트한 뒤 캐시 갱신 + 스탬프 미리보기 동기화
+    _invalidateZoomCache();
+    requestAnimationFrame(function() {
+      _invalidateZoomCache();
+      _updateStampPreview(e.clientX, e.clientY);
+    });
   }, { passive: true });
 }
 
@@ -5393,26 +5400,31 @@ function onOverlayMouseMove(e) {
     return;
   }
   // 스탬프 미리보기: 드래그 중이 아닐 때 이전 크기로 커서 위치에 표시 (이미지/도형)
-  // 타일 단위로 저장된 크기를 현재 줌에 맞게 화면 px 변환
-  if (_state.mode === 'edit') {
-    var isImageStamp = _state.lastStampSize && _state.currentTool === 'image' && _state.pendingImage;
-    var isShapeStamp = _shapeLastStampSize && _state.currentTool === 'shape' && _shapePendingDataUrl;
-    if (isImageStamp || isShapeStamp) {
-      var stampTiles = isImageStamp ? _state.lastStampSize : _shapeLastStampSize;
-      var zoom = getZoomScale();
-      var sw = stampTiles.tw * CELL_PX * zoom;
-      var sh = stampTiles.th * CELL_PX * zoom;
-      var imgSrc = isImageStamp ? _state.pendingImage.dataUrl : _shapePendingDataUrl;
-      _preview.style.left = (e.clientX - sw / 2) + 'px';
-      _preview.style.top = (e.clientY - sh / 2) + 'px';
-      _preview.style.width = sw + 'px';
-      _preview.style.height = sh + 'px';
-      _preview.style.transform = '';
-      if (!_preview.classList.contains('bwbr-placement-preview--visible')) {
-        _preview.classList.add('bwbr-placement-preview--visible');
-        _preview.innerHTML = '<img src="' + imgSrc + '" alt="">';
-      }
-    }
+  _updateStampPreview(e.clientX, e.clientY);
+}
+
+// 스탬프 미리보기 크기/위치 업데이트 (줌 변경 시에도 호출)
+var _lastStampMouse = { x: 0, y: 0 };
+function _updateStampPreview(cx, cy) {
+  if (cx != null) { _lastStampMouse.x = cx; _lastStampMouse.y = cy; }
+  else { cx = _lastStampMouse.x; cy = _lastStampMouse.y; }
+  if (_state.mode !== 'edit' || _state.placing) return;
+  var isImageStamp = _state.lastStampSize && _state.currentTool === 'image' && _state.pendingImage;
+  var isShapeStamp = _shapeLastStampSize && _state.currentTool === 'shape' && _shapePendingDataUrl;
+  if (!isImageStamp && !isShapeStamp) return;
+  var stampTiles = isImageStamp ? _state.lastStampSize : _shapeLastStampSize;
+  var zoom = getZoomScale();
+  var sw = stampTiles.tw * CELL_PX * zoom;
+  var sh = stampTiles.th * CELL_PX * zoom;
+  var imgSrc = isImageStamp ? _state.pendingImage.dataUrl : _shapePendingDataUrl;
+  _preview.style.left = (cx - sw / 2) + 'px';
+  _preview.style.top = (cy - sh / 2) + 'px';
+  _preview.style.width = sw + 'px';
+  _preview.style.height = sh + 'px';
+  _preview.style.transform = '';
+  if (!_preview.classList.contains('bwbr-placement-preview--visible')) {
+    _preview.classList.add('bwbr-placement-preview--visible');
+    _preview.innerHTML = '<img src="' + imgSrc + '" alt="">';
   }
 }
 
@@ -7079,13 +7091,32 @@ function getZoomContainer() {
   return m ? m.parentElement : null;
 }
 
+var _cachedZoom = 1;
+var _zoomDirty = true;
+
 function getZoomScale() {
-  var zoomEl = getZoomContainer();
-  if (!zoomEl) return 1;
-  var t = getComputedStyle(zoomEl).transform;
-  if (!t || t === 'none') return 1;
-  var m = t.match(/matrix\(([^,]+)/);
-  return m ? parseFloat(m[1]) : 1;
+  if (_zoomDirty) {
+    var zoomEl = getZoomContainer();
+    if (zoomEl) {
+      var t = zoomEl.style.transform || '';
+      var m = t.match(/matrix\(([^,]+)/);
+      if (m) { _cachedZoom = parseFloat(m[1]); }
+      else {
+        var ct = getComputedStyle(zoomEl).transform;
+        if (ct && ct !== 'none') {
+          var cm = ct.match(/matrix\(([^,]+)/);
+          if (cm) _cachedZoom = parseFloat(cm[1]);
+          else _cachedZoom = 1;
+        } else { _cachedZoom = 1; }
+      }
+    } else { _cachedZoom = 1; }
+    _zoomDirty = false;
+  }
+  return _cachedZoom;
+}
+
+function _invalidateZoomCache() {
+  _zoomDirty = true;
 }
 
 // 필드 영역(채팅 드로어 제외) 가로 중앙 px 계산
