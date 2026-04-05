@@ -2670,7 +2670,7 @@ function _cleanupShapeMerge() {
 }
 
 // 연속 모드: 도형을 버퍼에 추가
-function _addShapeToMergeBuffer(screenRect) {
+function _addShapeToMergeBuffer(screenRect, angle) {
   var mapCoords = screenToMapCoords(screenRect);
   if (!mapCoords) return;
   // 설정 복제 (현재 시점의 설정 스냅샷)
@@ -2684,7 +2684,8 @@ function _addShapeToMergeBuffer(screenRect) {
   _shapeMergeBuffer.push({
     mapCoords: mapCoords,
     shapeType: _shapeSettings.shapeType,
-    settings: settingsCopy
+    settings: settingsCopy,
+    angle: angle || 0
   });
 
   // 스탬프 미리보기용 dataUrl 갱신
@@ -2747,7 +2748,8 @@ function _rebuildShapeMergeCache() {
       relY: (mc.y - minY) * COMPOSITE_PX_PER_TILE,
       drawW: mc.width * COMPOSITE_PX_PER_TILE,
       drawH: mc.height * COMPOSITE_PX_PER_TILE,
-      scaledSettings: scaledSettings
+      scaledSettings: scaledSettings,
+      angle: entry.angle || 0
     };
   });
   _renderMergedShapesToCtx(ctx, cw, ch, entries);
@@ -2786,15 +2788,31 @@ function _redrawShapeMergePreview() {
 
 // 병합 렌더링 공통: 여러 도형을 윤곽선 병합 방식으로 ctx에 그리기
 // 각 도형의 stroke에서 "다른 도형의 fill 영역"만 제거 → 자기 fill 위의 stroke는 보존
-// entries: [{ shapeType, relX, relY, drawW, drawH, scaledSettings }]
+// entries: [{ shapeType, relX, relY, drawW, drawH, scaledSettings, angle }]
 function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
+
+  // 각도 반영 래퍼: angle이 있으면 도형 중심 기준 회전하여 렌더
+  function renderRotated(c, e, settings) {
+    if (e.angle) {
+      c.save();
+      var cx = e.relX + e.drawW / 2;
+      var cy = e.relY + e.drawH / 2;
+      c.translate(cx, cy);
+      c.rotate(e.angle * Math.PI / 180);
+      _renderShapeToCtx(c, e.shapeType, -e.drawW / 2, -e.drawH / 2, e.drawW, e.drawH, settings);
+      c.restore();
+    } else {
+      _renderShapeToCtx(c, e.shapeType, e.relX, e.relY, e.drawW, e.drawH, settings);
+    }
+  }
+
   var hasStroke = entries.some(function(e) {
     return e.scaledSettings.strokeSize > 0 && e.scaledSettings.strokeOpacity > 0;
   });
 
   if (!hasStroke) {
     entries.forEach(function(e) {
-      _renderShapeToCtx(ctx, e.shapeType, e.relX, e.relY, e.drawW, e.drawH, e.scaledSettings);
+      renderRotated(ctx, e, e.scaledSettings);
     });
     return;
   }
@@ -2806,7 +2824,7 @@ function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
       var fillOnly = {};
       for (var k in s) fillOnly[k] = s[k];
       fillOnly.strokeSize = 0;
-      _renderShapeToCtx(ctx, e.shapeType, e.relX, e.relY, e.drawW, e.drawH, fillOnly);
+      renderRotated(ctx, e, fillOnly);
     }
   });
 
@@ -2825,7 +2843,7 @@ function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
     var strokeOnly = {};
     for (var k in s) strokeOnly[k] = s[k];
     strokeOnly.fillOpacity = 0;
-    _renderShapeToCtx(tCtx, e.shapeType, e.relX, e.relY, e.drawW, e.drawH, strokeOnly);
+    renderRotated(tCtx, e, strokeOnly);
 
     // 다른 도형의 fill로 destination-out (자기 fill은 안 건드림)
     tCtx.globalCompositeOperation = 'destination-out';
@@ -2838,7 +2856,7 @@ function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
         for (var k2 in sj) fillMask[k2] = sj[k2];
         fillMask.strokeSize = 0;
         fillMask.fillOpacity = 1;
-        _renderShapeToCtx(tCtx, ej.shapeType, ej.relX, ej.relY, ej.drawW, ej.drawH, fillMask);
+        renderRotated(tCtx, ej, fillMask);
       }
     }
     tCtx.globalCompositeOperation = 'source-over';
@@ -2858,6 +2876,15 @@ function _clearShapeMergeBuffer() {
   updateConfirmBar();
 }
 
+// 연속 모드 Undo: 마지막 도형 하나 제거
+function _undoShapeMerge() {
+  if (_shapeMergeBuffer.length === 0) return;
+  _shapeMergeBuffer.pop();
+  _rebuildShapeMergeCache();
+  _redrawShapeMergePreview();
+  updateConfirmBar();
+}
+
 // 병합 완료: 모든 버퍼 도형 → 하나의 PNG → 스테이징
 function _finishShapeMerge() {
   if (_shapeMergeBuffer.length === 0) return;
@@ -2866,6 +2893,7 @@ function _finishShapeMerge() {
 
   // 1. 전체 바운딩 박스 (타일 좌표) 계산
   var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  var pureMinX = Infinity, pureMinY = Infinity, pureMaxX = -Infinity, pureMaxY = -Infinity;
   _shapeMergeBuffer.forEach(function(entry) {
     var mc = entry.mapCoords;
     // 스트로크 + 스케치 떨림 패딩 (타일 단위)
@@ -2874,6 +2902,11 @@ function _finishShapeMerge() {
     if (mc.y - padTiles < minY) minY = mc.y - padTiles;
     if (mc.x + mc.width + padTiles > maxX) maxX = mc.x + mc.width + padTiles;
     if (mc.y + mc.height + padTiles > maxY) maxY = mc.y + mc.height + padTiles;
+    // 패딩 미포함 (순수 도형 영역)
+    if (mc.x < pureMinX) pureMinX = mc.x;
+    if (mc.y < pureMinY) pureMinY = mc.y;
+    if (mc.x + mc.width > pureMaxX) pureMaxX = mc.x + mc.width;
+    if (mc.y + mc.height > pureMaxY) pureMaxY = mc.y + mc.height;
   });
 
   var totalW = maxX - minX;
@@ -2902,18 +2935,19 @@ function _finishShapeMerge() {
       relY: (mc.y - minY) * COMPOSITE_PX_PER_TILE,
       drawW: mc.width * COMPOSITE_PX_PER_TILE,
       drawH: mc.height * COMPOSITE_PX_PER_TILE,
-      scaledSettings: scaledSettings
+      scaledSettings: scaledSettings,
+      angle: entry.angle || 0
     };
   });
   _renderMergedShapesToCtx(ctx, cw, ch, entries);
 
   var dataUrl = canvas.toDataURL('image/png');
 
-  // 4. 단일 오브젝트로 스테이징
+  // 4. 단일 오브젝트로 스테이징 (순수 도형 영역 기준 — 그리드 정렬)
   readSettingsFromDOM();
   var obj = {
     id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
-    mapCoords: { x: minX, y: minY, width: totalW, height: totalH },
+    mapCoords: { x: pureMinX, y: pureMinY, width: pureMaxX - pureMinX, height: pureMaxY - pureMinY },
     angle: 0,
     imageDataUrl: dataUrl,
     settings: {
@@ -3328,7 +3362,7 @@ function _renderShapeDataUrl(mapCoords) {
 function _stageShapeObject(screenRect, initialAngle) {
   // 연속(병합) 모드: 버퍼에 추가
   if (_shapeMergeMode) {
-    _addShapeToMergeBuffer(screenRect);
+    _addShapeToMergeBuffer(screenRect, initialAngle);
     // 스탬프 모드 유지를 위해 크기 저장
     var mc = screenToMapCoords(screenRect);
     if (mc) {
@@ -8108,7 +8142,13 @@ function setupKeyboard() {
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
       if (e.key === 'z' || e.key === 'Z' || e.code === 'KeyZ') {
         e.preventDefault(); e.stopImmediatePropagation();
-        if (_state.currentTool === 'draw' && _drawCanvas) { undoDrawStroke(); } else { undo(); }
+        if (_state.currentTool === 'draw' && _drawCanvas) {
+          undoDrawStroke();
+        } else if (_shapeMergeMode && _shapeMergeBuffer.length > 0) {
+          _undoShapeMerge();
+        } else {
+          undo();
+        }
         return;
       }
       if (e.key === 'c' || e.key === 'C') {
