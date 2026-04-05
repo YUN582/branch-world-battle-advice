@@ -2461,17 +2461,6 @@ function createShapeSettingsMenu() {
   });
   menu.appendChild(strokeSizeGrp);
 
-  // ── 스케치 떨림 (0 = 없음, 연필 질감 효과) ──
-  var sketchLabel = document.createElement('div');
-  sketchLabel.className = 'bwbr-shape-section-label';
-  sketchLabel.textContent = '스케치';
-  menu.appendChild(sketchLabel);
-
-  var sketchGrp = _createShapeSlider('떨림', 0, 10, _shapeSettings.sketchJitter, '', function(v) {
-    _shapeSettings.sketchJitter = v;
-  });
-  menu.appendChild(sketchGrp);
-
   // 초기 추가 옵션 렌더
   _updateShapeExtraOptions();
 
@@ -2533,6 +2522,12 @@ function _updateShapeExtraOptions() {
     });
     container.appendChild(diGrp);
   }
+
+  // 공통: 스케치 떨림 (모든 도형)
+  var sketchGrp = _createShapeSlider('떨림', 0, 10, _shapeSettings.sketchJitter, '', function(v) {
+    _shapeSettings.sketchJitter = v;
+  });
+  container.appendChild(sketchGrp);
 }
 
 
@@ -2832,9 +2827,21 @@ function _renderSketchShapeToCtx(ctx, type, x, y, w, h, settings) {
   if (pathArrays.length === 0) return;
 
   // jitter 적용 (도형 전용 자연스러운 jitter)
-  var jitteredArrays = pathArrays.map(function(pts) {
-    return _applyShapeJitter(pts, jitter * 1.2);
-  });
+  var jitteredArrays;
+  if (type === 'donut' && pathArrays.length === 2) {
+    // 도넛: 내부 원은 jitter를 내경 크기에 비례해서 제한
+    var innerRatio = settings.donutInnerRatio || 0.5;
+    var gap = (1 - innerRatio) * Math.min(w, h) / 2; // 외부~내부 사이 간격
+    var innerJitter = Math.min(jitter * 1.2, gap * 0.25); // 간격의 25%까지만
+    jitteredArrays = [
+      _applyShapeJitter(pathArrays[0], jitter * 1.2),
+      _applyShapeJitter(pathArrays[1], innerJitter)
+    ];
+  } else {
+    jitteredArrays = pathArrays.map(function(pts) {
+      return _applyShapeJitter(pts, jitter * 1.2);
+    });
+  }
 
   // Fill
   if (settings.fillOpacity > 0) {
