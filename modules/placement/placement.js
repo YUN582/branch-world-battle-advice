@@ -611,7 +611,7 @@ body.bwbr-placement-noselect .bwbr-text-editor * {
 
 .bwbr-place-confirm-bar {
   position: fixed;
-  bottom: 24px;
+  bottom: 20px;
   left: 50%;
   transform: translateX(-50%) translateY(calc(100% + 30px));
   /* left는 JS에서 필드 영역 기준으로 재계산됨 */
@@ -1924,11 +1924,8 @@ function activateMode(mode, skipToolRestore) {
     Object.keys(_subToolButtons).forEach(function(k) {
       _subToolButtons[k].classList.remove('bwbr-place-tool-btn--active');
     });
-    // 선택 모드: 설정 패널 닫기
+    // 선택 모드: 설정 패널 닫기 (자식 메뉴는 숨기지 않음 — opacity 트랜지션이 시각적으로 처리)
     _settingsPanel.classList.remove('bwbr-place-settings--open');
-    if (_imageSourceMenu) _imageSourceMenu.style.display = 'none';
-    if (_textSettingsMenu) _textSettingsMenu.style.display = 'none';
-    if (_drawSettingsMenu) _drawSettingsMenu.style.display = 'none';
     // 그리기 중이면 스트로크 자동 완료
     if (_drawStrokes && _drawStrokes.length > 0) {
       finishDrawing();
@@ -1984,10 +1981,7 @@ function setSubTool(toolId) {
     _state.currentTool = null;
     _overlay.classList.remove('bwbr-placement-overlay--active');
     _settingsPanel.classList.remove('bwbr-place-settings--open');
-    if (_imageSourceMenu) _imageSourceMenu.style.display = 'none';
-    if (_textSettingsMenu) _textSettingsMenu.style.display = 'none';
-    if (_shapeSettingsMenu) _shapeSettingsMenu.style.display = 'none';
-    if (_drawSettingsMenu) _drawSettingsMenu.style.display = 'none';
+    // 자식 메뉴 display:none 제거 — opacity 트랜지션 중 빈 패널 노출 방지
     cleanupShapeState();
     updatePlacementCursor();
     return;
