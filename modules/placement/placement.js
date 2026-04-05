@@ -2766,7 +2766,7 @@ function _redrawShapeMergePreview() {
   _shapeMergeCtx.clearRect(0, 0, _shapeMergeCanvas.width, _shapeMergeCanvas.height);
 
   var origin = getMapOriginOnScreen();
-  var zoom = getCurrentZoom();
+  var zoom = getZoomScale();
   if (!origin || !zoom) return;
 
   _shapeMergeBuffer.forEach(function(entry) {
