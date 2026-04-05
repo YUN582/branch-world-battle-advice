@@ -666,6 +666,12 @@ body.bwbr-placement-noselect .bwbr-text-editor * {
   background: #2196f3;
 }
 
+.bwbr-place-confirm-btn:disabled {
+  background: #ccc;
+  color: #fff;
+  cursor: default;
+}
+
 /* ── 확인 설정 다이얼로그 ──────────────────────── */
 
 .bwbr-place-confirm-dialog-overlay {
@@ -1179,7 +1185,7 @@ body.bwbr-placement-noselect .bwbr-text-editor * {
 
 .bwbr-draw-finish-bar {
   position: fixed;
-  bottom: 76px;
+  bottom: 88px;
   transform: translateX(-50%);
   z-index: 105;
   display: flex;
@@ -1621,6 +1627,7 @@ var _imageGridSep = null;
 var _textSettingsMenu = null;
 var _confirmBar = null;
 var _stagedCountEl = null;
+var _confirmBtnEl = null;
 var _confirmDialogOverlay = null;
 var _confirmDialogEls = {};
 
@@ -5719,6 +5726,11 @@ function clearAllStaged() {
   _state.stagedObjects = [];
   _state.selectedStagedIds = [];
   document.querySelectorAll('.bwbr-staged-item').forEach(function (el) { el.remove(); });
+  // 그리기 모드일 때 획도 함께 삭제
+  if (_drawCanvas && _drawStrokes.length > 0) {
+    _drawStrokes = [];
+    _redrawAllStrokes();
+  }
   updateConfirmBar();
 }
 
@@ -6661,14 +6673,14 @@ function createConfirmBar() {
   _stagedCountEl.className = 'bwbr-place-staged-count';
   _stagedCountEl.textContent = '0개';
 
-  var confirmBtn = document.createElement('button');
-  confirmBtn.className = 'bwbr-place-confirm-bar-btn bwbr-place-confirm-btn';
-  confirmBtn.textContent = '✓ 확인';
-  confirmBtn.addEventListener('click', showConfirmDialog);
+  _confirmBtnEl = document.createElement('button');
+  _confirmBtnEl.className = 'bwbr-place-confirm-bar-btn bwbr-place-confirm-btn';
+  _confirmBtnEl.textContent = '✓ 확인';
+  _confirmBtnEl.addEventListener('click', showConfirmDialog);
 
   _confirmBar.appendChild(cancelBtn);
   _confirmBar.appendChild(_stagedCountEl);
-  _confirmBar.appendChild(confirmBtn);
+  _confirmBar.appendChild(_confirmBtnEl);
 
   document.body.appendChild(_confirmBar);
 }
@@ -6681,6 +6693,9 @@ function updateConfirmBar() {
   var count = _state.stagedObjects.length;
   _confirmBar.classList.add('bwbr-place-confirm-bar--visible');
   _stagedCountEl.textContent = count > 0 ? count + '개 배치됨' : '배치 없음';
+  if (_confirmBtnEl) {
+    _confirmBtnEl.disabled = count === 0;
+  }
   _confirmBar.style.left = _getFieldCenter() + 'px';
 }
 
