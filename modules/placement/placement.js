@@ -1730,6 +1730,7 @@ var _placementHelp = null;
 var _helpPaperObserver = null;
 var _helpTrackRAF = null;
 var _helpTrackTarget = null; // rAF가 추적할 실제 DOM 엘리먼트
+var _helpHideTimer = null;   // hide 애니메이션 대기 타이머
 
 function _findChatPaper() {
   var papers = document.querySelectorAll('.MuiDrawer-paperAnchorDockedRight');
@@ -1779,6 +1780,10 @@ function _stopHelpTracking() {
 function showPlacementHelp() {
   if (_placementHelp) return;
 
+  // 이전 hide 애니메이션 잔재 정리
+  if (_helpHideTimer) { clearTimeout(_helpHideTimer); _helpHideTimer = null; }
+  _stopHelpTracking();
+
   _placementHelp = document.createElement('div');
   _placementHelp.id = 'bwbr-placement-help';
   _placementHelp.style.cssText =
@@ -1793,7 +1798,8 @@ function showPlacementHelp() {
     'pointer-events:auto;' +
     'border:1px solid rgba(0,0,0,0.08);border-right:none;' +
     'opacity:0;overflow:hidden;box-sizing:border-box;' +
-    'transition:transform 0.35s cubic-bezier(0.22,1,0.36,1), opacity 0.3s ease, width 0.35s cubic-bezier(0.2,0.8,0.3,1);';
+    'clip-path:inset(0 0 0 0);' +
+    'transition:transform 0.35s cubic-bezier(0.22,1,0.36,1), opacity 0.3s ease, width 0.35s cubic-bezier(0.2,0.8,0.3,1), clip-path 0.3s ease;';
 
   _placementHelp.innerHTML =
     '<div id="bwbr-place-help-content" style="padding:14px 18px;white-space:nowrap;transition:opacity 0.25s;">' +
@@ -1878,12 +1884,13 @@ function hidePlacementHelp() {
     _helpPaperObserver = null;
   }
   if (!_placementHelp) return;
-  // 슬라이드 아웃: translateX(-100%) → translateX(0) + 페이드아웃
+  // clip-path로 오른쪽부터 잘라냄 → 드로어 뒤로 들어가는 효과
   _placementHelp.style.opacity = '0';
-  _placementHelp.style.transform = 'translateX(0)';
+  _placementHelp.style.clipPath = 'inset(0 100% 0 0)';
   _placementHelp = null;
   // rAF 추적은 애니메이션 끝날 때까지 유지 (left 동기화)
-  setTimeout(function () {
+  _helpHideTimer = setTimeout(function () {
+    _helpHideTimer = null;
     _stopHelpTracking();
   }, 400);
 }

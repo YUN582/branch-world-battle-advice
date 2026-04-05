@@ -63,6 +63,7 @@
   var _helpPanel = null;      // 전투 모드 도움말 패널
   var _helpTrackRAF = null;
   var _helpTrackTarget = null; // rAF가 추적할 실제 DOM 엘리먼트
+  var _helpHideTimer = null;   // hide 애니메이션 대기 타이머
 
   // ------------------------------------------------
   //  1. Zoom container finder
@@ -1060,6 +1061,10 @@
   function showHelpPanel() {
     if (_helpPanel) return;
 
+    // 이전 hide 애니메이션 잔재 정리
+    if (_helpHideTimer) { clearTimeout(_helpHideTimer); _helpHideTimer = null; }
+    _stopCombatHelpTracking();
+
     _helpPanel = document.createElement('div');
     _helpPanel.id = 'bwbr-combat-help';
 
@@ -1075,7 +1080,8 @@
       'pointer-events:auto;' +
       'border:1px solid rgba(255,255,255,0.1);border-right:none;' +
       'opacity:0;overflow:hidden;box-sizing:border-box;' +
-      'transition:transform 0.35s cubic-bezier(0.22,1,0.36,1), opacity 0.3s ease, width 0.35s cubic-bezier(0.2,0.8,0.3,1);';
+      'clip-path:inset(0 0 0 0);' +
+      'transition:transform 0.35s cubic-bezier(0.22,1,0.36,1), opacity 0.3s ease, width 0.35s cubic-bezier(0.2,0.8,0.3,1), clip-path 0.3s ease;';
 
     _helpPanel.innerHTML =
       '<div id="bwbr-help-content" style="padding:14px 18px;white-space:nowrap;' +
@@ -1147,12 +1153,13 @@
 
   function hideHelpPanel() {
     if (!_helpPanel) return;
-    // 슬라이드 아웃: translateX(-100%) → translateX(0) + 페이드아웃
+    // clip-path로 오른쪽부터 잘라냄 → 드로어 뒤로 들어가는 효과
     _helpPanel.style.opacity = '0';
-    _helpPanel.style.transform = 'translateX(0)';
+    _helpPanel.style.clipPath = 'inset(0 100% 0 0)';
     _helpPanel = null;
     // rAF 추적은 애니메이션 끝날 때까지 유지 (left 동기화)
-    setTimeout(function () {
+    _helpHideTimer = setTimeout(function () {
+      _helpHideTimer = null;
       _stopCombatHelpTracking();
     }, 400);
   }
