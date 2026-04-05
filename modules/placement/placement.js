@@ -2783,6 +2783,47 @@ function _drawClosedPointPath(ctx, pts) {
   ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
 }
 
+// 도형 전용 자연스러운 jitter (다중 주파수 noise + Math.random)
+function _applyShapeJitter(pts, amount) {
+  if (!amount || amount <= 0 || pts.length < 3) return pts;
+  var result = [];
+  var total = pts.length;
+  // 각 점에 대해 사전에 랜덤 오프셋 생성 (닫힌 경로이므로 끝→시작 연결 부드럽게)
+  var offsets = [];
+  for (var i = 0; i < total; i++) {
+    offsets.push((Math.random() - 0.5) * 2); // -1 ~ 1
+  }
+  // 닫힌 경로: 처음과 끝 오프셋이 같아야 이음매 없음
+  offsets[total - 1] = offsets[0];
+  if (total > 2) offsets[total - 2] = offsets[0] * 0.5 + offsets[total - 2] * 0.5;
+
+  for (var i = 0; i < total; i++) {
+    if (i === 0 || i === total - 1) {
+      // 첫/끝 점: 약간의 jitter만 (이음매 자연스럽게)
+      var next = pts[(i + 1) % total];
+      var prev = pts[(i - 1 + total) % total];
+      var dx = next.x - prev.x, dy = next.y - prev.y;
+      var len = Math.sqrt(dx * dx + dy * dy) || 1;
+      var nx = -dy / len, ny = dx / len;
+      var d = offsets[i] * amount * 0.3;
+      result.push({ x: pts[i].x + nx * d, y: pts[i].y + ny * d });
+      continue;
+    }
+    var prev = pts[i - 1];
+    var next = pts[(i + 1) % total];
+    var dx = next.x - prev.x, dy = next.y - prev.y;
+    var len = Math.sqrt(dx * dx + dy * dy) || 1;
+    var nx = -dy / len, ny = dx / len;
+    // 다중 주파수: 큰 물결(저주파) + 작은 물결(고주파)
+    var t = i / total;
+    var lowFreq = Math.sin(t * Math.PI * 2 * (3 + Math.floor(Math.random() * 3))) * 0.4;
+    var highFreq = offsets[i];
+    var combined = (lowFreq * 0.3 + highFreq * 0.7) * amount;
+    result.push({ x: pts[i].x + nx * combined, y: pts[i].y + ny * combined });
+  }
+  return result;
+}
+
 // 스케치 모드 렌더링 (jitter 적용 후 fill + stroke)
 function _renderSketchShapeToCtx(ctx, type, x, y, w, h, settings) {
   var jitter = settings.sketchJitter || 0;
@@ -2790,9 +2831,9 @@ function _renderSketchShapeToCtx(ctx, type, x, y, w, h, settings) {
   var pathArrays = _shapeToPointArrays(type, x, y, w, h, settings, step);
   if (pathArrays.length === 0) return;
 
-  // jitter 적용
+  // jitter 적용 (도형 전용 자연스러운 jitter)
   var jitteredArrays = pathArrays.map(function(pts) {
-    return _applyJitter(pts, jitter * 1.2);
+    return _applyShapeJitter(pts, jitter * 1.2);
   });
 
   // Fill
@@ -2855,21 +2896,23 @@ function _renderShapeToCtx(ctx, type, x, y, w, h, settings) {
 // _renderShapeDataUrl: 도형을 렌더해서 dataUrl 반환 (스탬프/배치 공용)
 function _renderShapeDataUrl(mapCoords) {
   var scale = COMPOSITE_PX_PER_TILE;  // 48px/tile
-  var cw = mapCoords.width * scale;
-  var ch = mapCoords.height * scale;
-  if (cw < 1 || ch < 1) return null;
-  var canvas = document.createElement('canvas');
-  canvas.width = cw;
-  canvas.height = ch;
-  var ctx = canvas.getContext('2d');
-  // composite 해상도 보정: strokeSize/cornerRadius를 디스플레이→composite 비율로 스케일
   var compositeRatio = COMPOSITE_PX_PER_TILE / CELL_PX;  // 48/24 = 2
   var scaledSettings = {};
   for (var k in _shapeSettings) scaledSettings[k] = _shapeSettings[k];
   scaledSettings.strokeSize = (_shapeSettings.strokeSize || 0) * compositeRatio;
   scaledSettings.cornerRadius = (_shapeSettings.cornerRadius || 0) * compositeRatio;
   scaledSettings.sketchJitter = (_shapeSettings.sketchJitter || 0) * compositeRatio;
-  _renderShapeToCtx(ctx, _shapeSettings.shapeType, 0, 0, cw, ch, scaledSettings);
+
+  // 윤곽선 + 스케치 떨림이 캔버스 밖으로 나가지 않도록 패딩 추가
+  var pad = Math.ceil((scaledSettings.strokeSize || 0) / 2 + (scaledSettings.sketchJitter || 0) * 1.5);
+  var cw = mapCoords.width * scale + pad * 2;
+  var ch = mapCoords.height * scale + pad * 2;
+  if (cw < 1 || ch < 1) return null;
+  var canvas = document.createElement('canvas');
+  canvas.width = cw;
+  canvas.height = ch;
+  var ctx = canvas.getContext('2d');
+  _renderShapeToCtx(ctx, _shapeSettings.shapeType, pad, pad, cw - pad * 2, ch - pad * 2, scaledSettings);
   return canvas.toDataURL('image/png');
 }
 
