@@ -11,7 +11,7 @@ var PLACEMENT_ICON = '<path fill="currentColor" d="M13 3V11H21V3H13M3 21H11V13H3
 var TOOL_ICONS = {
   image: '<path fill="currentColor" d="M21 3H3C2 3 1 4 1 5V19C1 20.1 1.9 21 3 21H21C22 21 23 20 23 19V5C23 3.9 22.1 3 21 3M5 17L8.5 12.5L11 15.5L14.5 11L19 17H5Z"/>',
   text: '<path fill="currentColor" d="M18.5 4L19.66 8.35L18.7 8.61C18.25 7.74 17.79 6.87 17.26 6.43C16.73 6 16.11 6 15.5 6H13V16.5C13 17 13 17.5 13.33 17.75C13.67 18 14.33 18 15 18V19H9V18C9.67 18 10.33 18 10.67 17.75C11 17.5 11 17 11 16.5V6H8.5C7.89 6 7.27 6 6.74 6.43C6.21 6.87 5.75 7.74 5.3 8.61L4.34 8.35L5.5 4H18.5Z"/>',
-  shape: '<path fill="currentColor" d="M2 2h9v9H2V2m11 0l4.5 9H8.5L13 2M6.5 14A4.5 4.5 0 1 1 6.5 23 4.5 4.5 0 0 1 6.5 14m8 0h7v7h-7v-7z"/>',
+  shape: '<path fill="currentColor" d="M11,13.5V21.5H3V13.5H11M12,2L17.5,11H6.5L12,2M17.5,13C20,13 22,15 22,17.5C22,20 20,22 17.5,22C15,22 13,20 13,17.5C13,15 15,13 17.5,13Z"/>',
   draw: '<path fill="currentColor" d="M20.71 7.04C21.1 6.65 21.1 6 20.71 5.63L18.37 3.29C18 2.9 17.35 2.9 16.96 3.29L15.12 5.12L18.87 8.87M3 17.25V21H6.75L17.81 9.93L14.06 6.18L3 17.25Z"/>'
 };
 
@@ -1018,13 +1018,6 @@ body.bwbr-placement-noselect .bwbr-text-editor * {
   padding-top: 4px;
 }
 
-.bwbr-shape-preview-canvas {
-  position: fixed;
-  inset: 0;
-  z-index: 103;
-  pointer-events: none;
-}
-
 /* ── 그리기 도구 패널 ──────────────────────────── */
 
 .bwbr-place-draw-menu {
@@ -1550,7 +1543,7 @@ var _drawColorHistoryEl = null; // 색상 히스토리 UI 컨테이너
 // ── 도형 도구 상태 ──────────────────────────────────────────────
 
 var _shapeSettings = {
-  shapeType: 'rect',        // 'rect' | 'ellipse' | 'triangle' | 'polygon' | 'star' | 'donut' | 'arrow' | 'bubble'
+  shapeType: 'rect',        // 'rect' | 'ellipse' | 'polygon' | 'donut' | 'arrow' | 'bubble'
   fillColor: '#ffffff',      // 채우기 색상
   fillOpacity: 1.0,          // 채우기 투명도 (0~1)
   fillEnabled: true,         // 채우기 활성
@@ -1559,19 +1552,16 @@ var _shapeSettings = {
   strokeOpacity: 1.0,        // 윤곽선 투명도 (0~1)
   strokeEnabled: true,       // 윤곽선 활성
   cornerRadius: 0,           // 둥근 모서리 (사각형 전용, px)
-  polygonSides: 6,           // 다각형 꼭짓점 수 (3~12)
-  starPoints: 5,             // 별 꼭짓점 수 (3~12)
-  starInnerRatio: 0.4,       // 별 내부 반지름 비율 (0.1~0.9)
+  polygonSides: 5,           // 다각형 꼭짓점 수 (3~12)
+  polygonInnerRatio: 1.0,    // 다각형 내부 비율 (0.1~1.0, 1.0=정다각형, <1=별)
   donutInnerRatio: 0.5,      // 도넛 내경 비율 (0.1~0.9)
   arrowDirection: 'right',   // 화살표 방향: 'up' | 'down' | 'left' | 'right'
   bubbleTailPos: 'bottom'    // 말풍선 꼬리 위치: 'top' | 'bottom' | 'left' | 'right'
 };
 
 var _shapeSettingsMenu = null;  // 도형 설정 메뉴 DOM
-var _shapeCanvas = null;        // 도형 프리뷰 캔버스
-var _shapeCtx = null;           // 도형 프리뷰 캔버스 컨텍스트
-var _shapeDragStart = null;     // 도형 드래그 시작 좌표 {x, y} (screen)
-var _shapeDragging = false;     // 도형 드래그 중
+var _shapeLastStampSize = null; // { w, h } (screen px) — 스탬프 모드용
+var _shapePendingDataUrl = null; // 현재 도형의 렌더된 dataUrl (스탬프 미리보기용)
 
 
 // ── DOM 요소 ────────────────────────────────────────────────────
@@ -1891,7 +1881,7 @@ function deactivateMode() {
   } else {
     cleanupDrawCanvas();
   }
-  cleanupShapeCanvas();
+  cleanupShapeState();
   updatePlacementCursor();
   updateAlignBar();
 }
@@ -1915,7 +1905,7 @@ function setSubTool(toolId) {
     if (_textSettingsMenu) _textSettingsMenu.style.display = 'none';
     if (_shapeSettingsMenu) _shapeSettingsMenu.style.display = 'none';
     if (_drawSettingsMenu) _drawSettingsMenu.style.display = 'none';
-    cleanupShapeCanvas();
+    cleanupShapeState();
     updatePlacementCursor();
     return;
   }
@@ -1928,9 +1918,9 @@ function setSubTool(toolId) {
       cleanupDrawCanvas();
     }
   }
-  // 이전 도구가 shape이었으면 프리뷰 캔버스 정리
+  // 이전 도구가 shape이었으면 스탬프 상태 정리
   if (_state.currentTool === 'shape') {
-    cleanupShapeCanvas();
+    cleanupShapeState();
   }
 
   _state.currentTool = toolId;
@@ -1950,7 +1940,6 @@ function setSubTool(toolId) {
     if (_textSettingsMenu) _textSettingsMenu.style.display = '';
   } else if (toolId === 'shape') {
     if (_shapeSettingsMenu) _shapeSettingsMenu.style.display = '';
-    initShapeCanvas();
   } else if (toolId === 'draw') {
     if (_drawSettingsMenu) _drawSettingsMenu.style.display = '';
     initDrawCanvas();
@@ -2294,14 +2283,12 @@ function createTextSettingsMenu() {
 // ── 도형 도구 패널 + 렌더링 ─────────────────────────────────────
 
 var _SHAPE_TYPES = [
-  { id: 'rect',     label: '사각형', svg: '<rect x="3" y="3" width="18" height="18" rx="3" fill="currentColor"/>' },
-  { id: 'ellipse',  label: '원',     svg: '<ellipse cx="12" cy="12" rx="9" ry="9" fill="currentColor"/>' },
-  { id: 'triangle', label: '삼각형', svg: '<polygon points="12,3 22,21 2,21" fill="currentColor"/>' },
-  { id: 'polygon',  label: '다각형', svg: '<polygon points="12,2 20,8 18,18 6,18 4,8" fill="currentColor"/>' },
-  { id: 'star',     label: '별',     svg: '<polygon points="12,2 15,9 22,9 16,14 18,21 12,17 6,21 8,14 2,9 9,9" fill="currentColor"/>' },
-  { id: 'donut',    label: '도넛',   svg: '<path fill="currentColor" fill-rule="evenodd" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 5a5 5 0 1 0 0 10 5 5 0 0 0 0-10z"/>' },
-  { id: 'arrow',    label: '화살표', svg: '<path fill="currentColor" d="M4 10h10V5l6 7-6 7v-5H4z"/>' },
-  { id: 'bubble',   label: '말풍선', svg: '<path fill="currentColor" d="M4 4h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H10l-4 4v-4H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/>' }
+  { id: 'rect',     label: '사각형', svg: '<path fill="currentColor" d="M8 3H16C18.76 3 21 5.24 21 8V16C21 18.76 18.76 21 16 21H8C5.24 21 3 18.76 3 16V8C3 5.24 5.24 3 8 3Z"/>' },
+  { id: 'ellipse',  label: '원',     svg: '<path fill="currentColor" d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"/>' },
+  { id: 'polygon',  label: '다각형', svg: '<path fill="currentColor" d="M12,2.5L2,9.8L5.8,21.5H18.2L22,9.8L12,2.5Z"/>' },
+  { id: 'donut',    label: '도넛',   svg: '<path fill="currentColor" d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M12,6A6,6 0 0,0 6,12A6,6 0 0,0 12,18A6,6 0 0,0 18,12A6,6 0 0,0 12,6M12,8A4,4 0 0,1 16,12A4,4 0 0,1 12,16A4,4 0 0,1 8,12A4,4 0 0,1 12,8Z"/>' },
+  { id: 'arrow',    label: '화살표', svg: '<path fill="currentColor" d="M4,15V9H12V4.16L19.84,12L12,19.84V15H4Z"/>' },
+  { id: 'bubble',   label: '말풍선', svg: '<path fill="currentColor" d="M20,2H4A2,2 0 0,0 2,4V22L6,18H20A2,2 0 0,0 22,16V4C22,2.89 21.1,2 20,2Z"/>' }
 ];
 
 function createShapeSettingsMenu() {
@@ -2458,13 +2445,8 @@ function _updateShapeExtraOptions() {
       _shapeSettings.polygonSides = v;
     });
     container.appendChild(sGrp);
-  } else if (type === 'star') {
-    var ptGrp = _createShapeSlider('꼭짓점 수', 3, 12, _shapeSettings.starPoints, '', function(v) {
-      _shapeSettings.starPoints = v;
-    });
-    container.appendChild(ptGrp);
-    var irGrp = _createShapeSlider('내부 비율', 10, 90, Math.round(_shapeSettings.starInnerRatio * 100), '%', function(v) {
-      _shapeSettings.starInnerRatio = v / 100;
+    var irGrp = _createShapeSlider('내부 비율', 10, 100, Math.round(_shapeSettings.polygonInnerRatio * 100), '%', function(v) {
+      _shapeSettings.polygonInnerRatio = v / 100;
     });
     container.appendChild(irGrp);
   } else if (type === 'donut') {
@@ -2518,26 +2500,11 @@ function _updateShapeExtraOptions() {
 }
 
 
-// ── 도형 프리뷰 캔버스 ─────────────────────────────────────────
+// ── 도형 상태 정리 ─────────────────────────────────────────────
 
-function initShapeCanvas() {
-  if (_shapeCanvas) return;
-  _shapeCanvas = document.createElement('canvas');
-  _shapeCanvas.className = 'bwbr-shape-preview-canvas';
-  _shapeCanvas.width = window.innerWidth;
-  _shapeCanvas.height = window.innerHeight;
-  _shapeCtx = _shapeCanvas.getContext('2d');
-  document.body.appendChild(_shapeCanvas);
-}
-
-function cleanupShapeCanvas() {
-  if (_shapeCanvas) {
-    _shapeCanvas.remove();
-    _shapeCanvas = null;
-    _shapeCtx = null;
-  }
-  _shapeDragStart = null;
-  _shapeDragging = false;
+function cleanupShapeState() {
+  _shapeLastStampSize = null;
+  _shapePendingDataUrl = null;
 }
 
 
@@ -2569,37 +2536,28 @@ function _buildShapePath(ctx, type, x, y, w, h, settings) {
       ctx.ellipse(cx, cy, w / 2, h / 2, 0, 0, Math.PI * 2);
       break;
     }
-    case 'triangle': {
-      ctx.moveTo(x + w / 2, y);
-      ctx.lineTo(x + w, y + h);
-      ctx.lineTo(x, y + h);
-      ctx.closePath();
-      break;
-    }
     case 'polygon': {
-      var sides = settings.polygonSides || 6;
+      var sides = settings.polygonSides || 5;
+      var inner = settings.polygonInnerRatio != null ? settings.polygonInnerRatio : 1.0;
       var cx = x + w / 2, cy = y + h / 2;
       var rx = w / 2, ry = h / 2;
-      for (var i = 0; i < sides; i++) {
-        var angle = (Math.PI * 2 * i / sides) - Math.PI / 2;
-        var px = cx + rx * Math.cos(angle);
-        var py = cy + ry * Math.sin(angle);
-        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-      }
-      ctx.closePath();
-      break;
-    }
-    case 'star': {
-      var points = settings.starPoints || 5;
-      var inner = settings.starInnerRatio || 0.4;
-      var cx = x + w / 2, cy = y + h / 2;
-      var rx = w / 2, ry = h / 2;
-      for (var i = 0; i < points * 2; i++) {
-        var angle = (Math.PI * i / points) - Math.PI / 2;
-        var ratio = (i % 2 === 0) ? 1 : inner;
-        var px = cx + rx * ratio * Math.cos(angle);
-        var py = cy + ry * ratio * Math.sin(angle);
-        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      if (inner >= 1.0) {
+        // 정다각형
+        for (var i = 0; i < sides; i++) {
+          var angle = (Math.PI * 2 * i / sides) - Math.PI / 2;
+          var px = cx + rx * Math.cos(angle);
+          var py = cy + ry * Math.sin(angle);
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+      } else {
+        // 별 모양 (내부 비율 < 1)
+        for (var i = 0; i < sides * 2; i++) {
+          var angle = (Math.PI * i / sides) - Math.PI / 2;
+          var ratio = (i % 2 === 0) ? 1 : inner;
+          var px = cx + rx * ratio * Math.cos(angle);
+          var py = cy + ry * ratio * Math.sin(angle);
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
       }
       ctx.closePath();
       break;
@@ -2708,57 +2666,39 @@ function _renderShapeToCtx(ctx, type, x, y, w, h, settings) {
   ctx.restore();
 }
 
-function _renderShapePreview(screenRect) {
-  if (!_shapeCtx) return;
-  _shapeCtx.clearRect(0, 0, _shapeCanvas.width, _shapeCanvas.height);
-  if (!screenRect) return;
-  var x = screenRect.x, y = screenRect.y, w = screenRect.w, h = screenRect.h;
-  if (w < 2 && h < 2) return;
-  _renderShapeToCtx(_shapeCtx, _shapeSettings.shapeType, x, y, w, h, _shapeSettings);
-}
 
+// ── 도형 스탬프 배치 ────────────────────────────────────────────
 
-// ── 도형 → stageObject ─────────────────────────────────────────
-
-function _commitShapeToStage(screenRect) {
-  if (!screenRect || screenRect.w < 2 || screenRect.h < 2) return;
-
-  var zoom = getZoomScale();
-  var origin = getMapOriginOnScreen();
-
-  // 화면 좌표 → 맵 픽셀 좌표 변환
-  var mapX = (screenRect.x - origin.x) / zoom;
-  var mapY = (screenRect.y - origin.y) / zoom;
-  var mapW = screenRect.w / zoom;
-  var mapH = screenRect.h / zoom;
-
-  // 고해상도 캔버스에 렌더
-  var scale = COMPOSITE_PX_PER_TILE / CELL_PX;  // 2x
-  var cw = Math.round(mapW * scale);
-  var ch = Math.round(mapH * scale);
-  if (cw < 1 || ch < 1) return;
+// _renderShapeDataUrl: 도형을 렌더해서 dataUrl 반환 (스탬프/배치 공용)
+function _renderShapeDataUrl(mapCoords) {
+  var scale = COMPOSITE_PX_PER_TILE;  // 48px/tile
+  var cw = mapCoords.width * scale;
+  var ch = mapCoords.height * scale;
+  if (cw < 1 || ch < 1) return null;
   var canvas = document.createElement('canvas');
   canvas.width = cw;
   canvas.height = ch;
   var ctx = canvas.getContext('2d');
-  ctx.scale(scale, scale);
+  _renderShapeToCtx(ctx, _shapeSettings.shapeType, 0, 0, cw, ch, _shapeSettings);
+  return canvas.toDataURL('image/png');
+}
 
-  // 도형 렌더 (맵 좌표 기준 0,0)
-  _renderShapeToCtx(ctx, _shapeSettings.shapeType, 0, 0, mapW, mapH, _shapeSettings);
+// _stageShapeObject: 도형을 stageObject 경로로 배치 (이미지 도구와 동일 구조)
+function _stageShapeObject(screenRect) {
+  var mapCoords = screenToMapCoords(screenRect);
+  if (!mapCoords) return;
 
-  var dataUrl = canvas.toDataURL('image/png');
+  var dataUrl = _renderShapeDataUrl(mapCoords);
+  if (!dataUrl) return;
 
-  // DOM에서 직접 설정값 읽기
+  // 스탬프 미리보기용 dataUrl 저장
+  _shapePendingDataUrl = dataUrl;
+
   readSettingsFromDOM();
 
   var obj = {
     id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
-    mapCoords: {
-      x: mapX / CELL_PX,
-      y: mapY / CELL_PX,
-      width: mapW / CELL_PX,
-      height: mapH / CELL_PX
-    },
+    mapCoords: mapCoords,
     angle: 0,
     imageDataUrl: dataUrl,
     settings: {
@@ -2773,55 +2713,6 @@ function _commitShapeToStage(screenRect) {
   renderStagedItem(obj);
   pushUndo({ type: 'stage', ids: [obj.id] });
   updateConfirmBar();
-
-  // 프리뷰 정리
-  if (_shapeCtx) _shapeCtx.clearRect(0, 0, _shapeCanvas.width, _shapeCanvas.height);
-}
-
-
-// ── 도형 오버레이 마우스 핸들러 ─────────────────────────────────
-
-function onShapeMouseDown(e) {
-  _shapeDragStart = { x: e.clientX, y: e.clientY };
-  _shapeDragging = true;
-}
-
-function onShapeMouseMove(e) {
-  if (!_shapeDragging || !_shapeDragStart) return;
-  var sx = _shapeDragStart.x, sy = _shapeDragStart.y;
-  var cx = e.clientX, cy = e.clientY;
-
-  // Shift: 정비례 (정사각형/정원)
-  if (e.shiftKey) {
-    var size = Math.max(Math.abs(cx - sx), Math.abs(cy - sy));
-    cx = sx + (cx >= sx ? size : -size);
-    cy = sy + (cy >= sy ? size : -size);
-  }
-
-  var x = Math.min(sx, cx), y = Math.min(sy, cy);
-  var w = Math.abs(cx - sx), h = Math.abs(cy - sy);
-
-  _renderShapePreview({ x: x, y: y, w: w, h: h });
-}
-
-function onShapeMouseUp(e) {
-  if (!_shapeDragging || !_shapeDragStart) return;
-  var sx = _shapeDragStart.x, sy = _shapeDragStart.y;
-  var cx = e.clientX, cy = e.clientY;
-
-  if (e.shiftKey) {
-    var size = Math.max(Math.abs(cx - sx), Math.abs(cy - sy));
-    cx = sx + (cx >= sx ? size : -size);
-    cy = sy + (cy >= sy ? size : -size);
-  }
-
-  var x = Math.min(sx, cx), y = Math.min(sy, cy);
-  var w = Math.abs(cx - sx), h = Math.abs(cy - sy);
-
-  _shapeDragging = false;
-  _shapeDragStart = null;
-
-  _commitShapeToStage({ x: x, y: y, w: w, h: h });
 }
 
 
@@ -5554,10 +5445,12 @@ function onOverlayMouseDown(e) {
     return;
   }
 
-  // 도형 도구: 드래그로 도형 배치
+  // 도형 도구: 이미지 도구와 동일한 드래그/스탬프 배치
   if (_state.currentTool === 'shape') {
-    _overlay.setPointerCapture(e.pointerId);
-    onShapeMouseDown(e);
+    _state.placing = true;
+    updatePreview();
+    _preview.classList.add('bwbr-placement-preview--visible');
+    // 프리뷰 캔버스에 실시간 도형 표시는 하지 않음 (드래그 영역만 표시)
     return;
   }
 
@@ -5586,17 +5479,12 @@ function onOverlayMouseMove(e) {
     onDrawMouseMove(e);
     return;
   }
-  // 도형 도구: 드래그 중 실시간 프리뷰
-  if (_shapeDragging && _state.currentTool === 'shape') {
-    onShapeMouseMove(e);
-    return;
-  }
   if (_state.placing) {
     _state.drag.currentX = e.clientX;
     _state.drag.currentY = e.clientY;
 
-    // Shift: 정사각형 제약 (이미지 배치 드래그)
-    if (e.shiftKey && _state.currentTool === 'image') {
+    // Shift: 정사각형 제약 (이미지/도형 배치 드래그)
+    if (e.shiftKey && (_state.currentTool === 'image' || _state.currentTool === 'shape')) {
       var dw = Math.abs(_state.drag.currentX - _state.drag.startX);
       var dh = Math.abs(_state.drag.currentY - _state.drag.startY);
       var side = Math.max(dw, dh);
@@ -5607,11 +5495,14 @@ function onOverlayMouseMove(e) {
     updatePreview();
     return;
   }
-  // 스탬프 미리보기: 드래그 중이 아닐 때 이전 크기로 커서 위치에 표시 (이미지 전용)
-  if (_state.lastStampSize && _state.mode === 'edit' && _state.currentTool === 'image') {
-    if (_state.pendingImage) {
-      var sw = _state.lastStampSize.w;
-      var sh = _state.lastStampSize.h;
+  // 스탬프 미리보기: 드래그 중이 아닐 때 이전 크기로 커서 위치에 표시 (이미지/도형)
+  if (_state.mode === 'edit') {
+    var isImageStamp = _state.lastStampSize && _state.currentTool === 'image' && _state.pendingImage;
+    var isShapeStamp = _shapeLastStampSize && _state.currentTool === 'shape' && _shapePendingDataUrl;
+    if (isImageStamp || isShapeStamp) {
+      var sw = isImageStamp ? _state.lastStampSize.w : _shapeLastStampSize.w;
+      var sh = isImageStamp ? _state.lastStampSize.h : _shapeLastStampSize.h;
+      var imgSrc = isImageStamp ? _state.pendingImage.dataUrl : _shapePendingDataUrl;
       _preview.style.left = (e.clientX - sw / 2) + 'px';
       _preview.style.top = (e.clientY - sh / 2) + 'px';
       _preview.style.width = sw + 'px';
@@ -5619,7 +5510,7 @@ function onOverlayMouseMove(e) {
       _preview.style.transform = '';
       if (!_preview.classList.contains('bwbr-placement-preview--visible')) {
         _preview.classList.add('bwbr-placement-preview--visible');
-        _preview.innerHTML = '<img src="' + _state.pendingImage.dataUrl + '" alt="">';
+        _preview.innerHTML = '<img src="' + imgSrc + '" alt="">';
       }
     }
   }
@@ -5634,11 +5525,6 @@ function onOverlayMouseUp(e) {
   // 그리기 도구: 스트로크 완료
   if (_isDrawing && _state.currentTool === 'draw') {
     onDrawMouseUp(e);
-    return;
-  }
-  // 도형 도구: 드래그 완료 → 도형 스테이징
-  if (_shapeDragging && _state.currentTool === 'shape') {
-    onShapeMouseUp(e);
     return;
   }
   if (!_state.placing) return;
@@ -5657,7 +5543,7 @@ function onOverlayMouseUp(e) {
 
   if (rect.w < 5 && rect.h < 5) {
     // 클릭(드래그 없음) → 스탬프 모드: 이전 크기로 배치
-    if (_state.lastStampSize && _state.currentTool === 'image' && _state.pendingImage) {
+    if (_state.currentTool === 'image' && _state.lastStampSize && _state.pendingImage) {
       var sw = _state.lastStampSize.w;
       var sh = _state.lastStampSize.h;
       var stampRect = {
@@ -5668,16 +5554,43 @@ function onOverlayMouseUp(e) {
       };
       deselectStaged();
       stageObject(stampRect);
-      // 스탬프 미리보기 유지 (다음 클릭을 위해)
       _preview.classList.add('bwbr-placement-preview--visible');
       if (!_preview.querySelector('img')) {
         _preview.innerHTML = '<img src="' + _state.pendingImage.dataUrl + '" alt="">';
+      }
+    } else if (_state.currentTool === 'shape' && _shapeLastStampSize) {
+      var sw = _shapeLastStampSize.w;
+      var sh = _shapeLastStampSize.h;
+      var stampRect = {
+        x: _state.drag.startX - sw / 2,
+        y: _state.drag.startY - sh / 2,
+        w: sw,
+        h: sh
+      };
+      deselectStaged();
+      _stageShapeObject(stampRect);
+      _preview.classList.add('bwbr-placement-preview--visible');
+      if (_shapePendingDataUrl && !_preview.querySelector('img')) {
+        _preview.innerHTML = '<img src="' + _shapePendingDataUrl + '" alt="">';
       }
     }
     return;
   }
 
-  // 드래그 배치 → 크기 저장 (스탬프 모드용)
+  // 드래그 배치
+  if (_state.currentTool === 'shape') {
+    _shapeLastStampSize = { w: rect.w, h: rect.h };
+    deselectStaged();
+    _stageShapeObject(rect);
+    // 스탬프 미리보기 유지
+    if (_shapePendingDataUrl) {
+      _preview.classList.add('bwbr-placement-preview--visible');
+      _preview.innerHTML = '<img src="' + _shapePendingDataUrl + '" alt="">';
+    }
+    return;
+  }
+
+  // 이미지 드래그 배치 → 크기 저장 (스탬프 모드용)
   _state.lastStampSize = { w: rect.w, h: rect.h };
 
   deselectStaged();
@@ -7460,9 +7373,11 @@ function setupKeyboard() {
         _state.placing = false;
         _preview.classList.remove('bwbr-placement-preview--visible', 'bwbr-placement-preview--text');
         _preview.innerHTML = '';
-      } else if (_state.lastStampSize && _state.mode === 'edit') {
+      } else if ((_state.lastStampSize || _shapeLastStampSize) && _state.mode === 'edit') {
         // 스탬프 모드 해제
         _state.lastStampSize = null;
+        _shapeLastStampSize = null;
+        _shapePendingDataUrl = null;
         _preview.classList.remove('bwbr-placement-preview--visible');
         _preview.innerHTML = '';
       } else if (_state.selectedStagedIds.length > 0) {
