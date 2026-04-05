@@ -2624,7 +2624,7 @@ function createDrawSettingsMenu() {
 
   // ── 안내 문구 (맨 위) ──
   var notice = document.createElement('div');
-  notice.style.cssText = 'text-align:center;padding:2px 4px 4px;color:#999;font-size:10px;line-height:1.5;';
+  notice.style.cssText = 'text-align:center;padding:4px 4px 6px;color:#888;font-size:11.5px;line-height:1.5;';
   notice.innerHTML = '오버레이에서 자유롭게 그리세요.<br>Shift+드래그: 직선 · 완료 버튼으로 확정';
   menu.appendChild(notice);
 
