@@ -1886,7 +1886,7 @@ function hidePlacementHelp() {
   if (!_placementHelp) return;
   // clip-path로 오른쪽부터 잘라냄 → 드로어 뒤로 들어가는 효과
   _placementHelp.style.opacity = '0';
-  _placementHelp.style.clipPath = 'inset(0 100% 0 0)';
+  _placementHelp.style.clipPath = 'inset(0 0 0 100%)';
   _placementHelp = null;
   // rAF 추적은 애니메이션 끝날 때까지 유지 (left 동기화)
   _helpHideTimer = setTimeout(function () {
