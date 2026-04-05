@@ -2699,14 +2699,15 @@ function _redrawShapeMergePreview() {
 
   if (_shapeMergeBuffer.length === 0) return;
 
-  // 전체 바운딩 박스 (타일 좌표)
+  // 전체 바운딩 박스 (타일 좌표) + 스트로크/지터 패딩
   var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   _shapeMergeBuffer.forEach(function(entry) {
     var mc = entry.mapCoords;
-    minX = Math.min(minX, mc.x);
-    minY = Math.min(minY, mc.y);
-    maxX = Math.max(maxX, mc.x + mc.width);
-    maxY = Math.max(maxY, mc.y + mc.height);
+    var padTiles = ((entry.settings.strokeSize || 0) + (entry.settings.sketchJitter || 0) * 1.5) / CELL_PX;
+    minX = Math.min(minX, mc.x - padTiles);
+    minY = Math.min(minY, mc.y - padTiles);
+    maxX = Math.max(maxX, mc.x + mc.width + padTiles);
+    maxY = Math.max(maxY, mc.y + mc.height + padTiles);
   });
   var totalW = maxX - minX;
   var totalH = maxY - minY;
@@ -2776,11 +2777,12 @@ function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
 
   entries.forEach(function(e) {
     var s = e.scaledSettings;
-    // stroke 캔버스에 stroke 그리기
+    // stroke 캔버스에 stroke 그리기 (2배 굵기 — fill 영역 제거 후 원래 굵기가 되도록)
     if (s.strokeSize > 0 && s.strokeOpacity > 0) {
       var strokeOnly = {};
       for (var k in s) strokeOnly[k] = s[k];
       strokeOnly.fillOpacity = 0; // fill 끔
+      strokeOnly.strokeSize = s.strokeSize * 2; // 2배 굵기 (destination-out 보정)
       _renderShapeToCtx(sCtx, e.shapeType, e.relX, e.relY, e.drawW, e.drawH, strokeOnly);
     }
     // fill 캔버스에 fill 그리기 (불투명 마스크용 — opacity=1로 그려서 마스크로 사용)
@@ -2833,8 +2835,8 @@ function _finishShapeMerge() {
   var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   _shapeMergeBuffer.forEach(function(entry) {
     var mc = entry.mapCoords;
-    // 스트로크 + 스케치 떨림 패딩 (타일 단위)
-    var padTiles = ((entry.settings.strokeSize || 0) / 2 + (entry.settings.sketchJitter || 0) * 1.5) / CELL_PX;
+    // 스트로크 + 스케치 떨림 패딩 (타일 단위) — 병합 렌더링은 2x stroke 사용
+    var padTiles = ((entry.settings.strokeSize || 0) + (entry.settings.sketchJitter || 0) * 1.5) / CELL_PX;
     if (mc.x - padTiles < minX) minX = mc.x - padTiles;
     if (mc.y - padTiles < minY) minY = mc.y - padTiles;
     if (mc.x + mc.width + padTiles > maxX) maxX = mc.x + mc.width + padTiles;
