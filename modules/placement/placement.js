@@ -680,8 +680,9 @@ body.bwbr-placement-noselect .bwbr-text-editor * {
 .bwbr-shape-merge-canvas {
   position: fixed;
   inset: 0;
-  z-index: 103;
+  z-index: 102;
   pointer-events: none;
+  opacity: 0.5;
 }
 
 /* ── 도형 연속/개별 토글 ───────────────────────── */
@@ -2703,7 +2704,7 @@ function _redrawShapeMergePreview() {
   var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   _shapeMergeBuffer.forEach(function(entry) {
     var mc = entry.mapCoords;
-    var padTiles = ((entry.settings.strokeSize || 0) + (entry.settings.sketchJitter || 0) * 1.5) / CELL_PX;
+    var padTiles = ((entry.settings.strokeSize || 0) / 2 + (entry.settings.sketchJitter || 0) * 1.5) / CELL_PX;
     minX = Math.min(minX, mc.x - padTiles);
     minY = Math.min(minY, mc.y - padTiles);
     maxX = Math.max(maxX, mc.x + mc.width + padTiles);
@@ -2746,66 +2747,21 @@ function _redrawShapeMergePreview() {
 }
 
 // 병합 렌더링 공통: 여러 도형을 윤곽선 병합 방식으로 ctx에 그리기
+// 각 도형의 stroke에서 "다른 도형의 fill 영역"만 제거 → 자기 fill 위의 stroke는 보존
 // entries: [{ shapeType, relX, relY, drawW, drawH, scaledSettings }]
 function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
   var hasStroke = entries.some(function(e) {
     return e.scaledSettings.strokeSize > 0 && e.scaledSettings.strokeOpacity > 0;
   });
-  var hasFill = entries.some(function(e) {
-    return e.scaledSettings.fillOpacity > 0;
-  });
 
   if (!hasStroke) {
-    // 윤곽선 없음: 단순히 fill만 그리면 됨
     entries.forEach(function(e) {
       _renderShapeToCtx(ctx, e.shapeType, e.relX, e.relY, e.drawW, e.drawH, e.scaledSettings);
     });
     return;
   }
 
-  // ── 윤곽선 병합 렌더링 (2-캔버스 합성) ──
-  // 1) stroke 캔버스: 모든 도형의 stroke를 그림
-  var strokeCanvas = document.createElement('canvas');
-  strokeCanvas.width = cw; strokeCanvas.height = ch;
-  var sCtx = strokeCanvas.getContext('2d');
-  sCtx.lineCap = 'round'; sCtx.lineJoin = 'round';
-
-  // 2) fill 캔버스: 모든 도형의 fill 영역 (불투명 마스크)
-  var fillCanvas = document.createElement('canvas');
-  fillCanvas.width = cw; fillCanvas.height = ch;
-  var fCtx = fillCanvas.getContext('2d');
-
-  entries.forEach(function(e) {
-    var s = e.scaledSettings;
-    // stroke 캔버스에 stroke 그리기 (2배 굵기 — fill 영역 제거 후 원래 굵기가 되도록)
-    if (s.strokeSize > 0 && s.strokeOpacity > 0) {
-      var strokeOnly = {};
-      for (var k in s) strokeOnly[k] = s[k];
-      strokeOnly.fillOpacity = 0; // fill 끔
-      strokeOnly.strokeSize = s.strokeSize * 2; // 2배 굵기 (destination-out 보정)
-      _renderShapeToCtx(sCtx, e.shapeType, e.relX, e.relY, e.drawW, e.drawH, strokeOnly);
-    }
-    // fill 캔버스에 fill 그리기 (불투명 마스크용 — opacity=1로 그려서 마스크로 사용)
-    if (hasFill) {
-      var fillMask = {};
-      for (var k in s) fillMask[k] = s[k];
-      fillMask.strokeSize = 0; // stroke 끔
-      fillMask.fillOpacity = 1; // 마스크는 불투명
-      _renderShapeToCtx(fCtx, e.shapeType, e.relX, e.relY, e.drawW, e.drawH, fillMask);
-    }
-  });
-
-  // 3) stroke 캔버스에서 fill 영역을 destination-out으로 뚫기 (내부 윤곽선 제거)
-  if (hasFill) {
-    sCtx.globalCompositeOperation = 'destination-out';
-    sCtx.drawImage(fillCanvas, 0, 0);
-    sCtx.globalCompositeOperation = 'source-over';
-  }
-
-  // 4) 최종 합성: stroke(외곽) → fill
-  ctx.save();
-  ctx.drawImage(strokeCanvas, 0, 0);
-  // fill을 원래 설정대로 다시 그리기 (올바른 opacity/color 적용)
+  // 1) 모든 fill을 메인 ctx에 그리기
   entries.forEach(function(e) {
     var s = e.scaledSettings;
     if (s.fillOpacity > 0) {
@@ -2815,7 +2771,43 @@ function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
       _renderShapeToCtx(ctx, e.shapeType, e.relX, e.relY, e.drawW, e.drawH, fillOnly);
     }
   });
-  ctx.restore();
+
+  // 2) 각 도형의 stroke를 그리되, 다른 도형의 fill 영역은 잘라내기
+  var tmp = document.createElement('canvas');
+  tmp.width = cw; tmp.height = ch;
+  var tCtx = tmp.getContext('2d');
+
+  for (var i = 0; i < entries.length; i++) {
+    var e = entries[i];
+    var s = e.scaledSettings;
+    if (!(s.strokeSize > 0 && s.strokeOpacity > 0)) continue;
+
+    // 이 도형의 stroke 그리기
+    tCtx.clearRect(0, 0, cw, ch);
+    var strokeOnly = {};
+    for (var k in s) strokeOnly[k] = s[k];
+    strokeOnly.fillOpacity = 0;
+    _renderShapeToCtx(tCtx, e.shapeType, e.relX, e.relY, e.drawW, e.drawH, strokeOnly);
+
+    // 다른 도형의 fill로 destination-out (자기 fill은 안 건드림)
+    tCtx.globalCompositeOperation = 'destination-out';
+    for (var j = 0; j < entries.length; j++) {
+      if (j === i) continue;
+      var ej = entries[j];
+      var sj = ej.scaledSettings;
+      if (sj.fillOpacity > 0) {
+        var fillMask = {};
+        for (var k2 in sj) fillMask[k2] = sj[k2];
+        fillMask.strokeSize = 0;
+        fillMask.fillOpacity = 1;
+        _renderShapeToCtx(tCtx, ej.shapeType, ej.relX, ej.relY, ej.drawW, ej.drawH, fillMask);
+      }
+    }
+    tCtx.globalCompositeOperation = 'source-over';
+
+    // 메인 ctx에 합성 (fill 위에 stroke)
+    ctx.drawImage(tmp, 0, 0);
+  }
 }
 
 // 버퍼 비우기
@@ -2835,8 +2827,8 @@ function _finishShapeMerge() {
   var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   _shapeMergeBuffer.forEach(function(entry) {
     var mc = entry.mapCoords;
-    // 스트로크 + 스케치 떨림 패딩 (타일 단위) — 병합 렌더링은 2x stroke 사용
-    var padTiles = ((entry.settings.strokeSize || 0) + (entry.settings.sketchJitter || 0) * 1.5) / CELL_PX;
+    // 스트로크 + 스케치 떨림 패딩 (타일 단위)
+    var padTiles = ((entry.settings.strokeSize || 0) / 2 + (entry.settings.sketchJitter || 0) * 1.5) / CELL_PX;
     if (mc.x - padTiles < minX) minX = mc.x - padTiles;
     if (mc.y - padTiles < minY) minY = mc.y - padTiles;
     if (mc.x + mc.width + padTiles > maxX) maxX = mc.x + mc.width + padTiles;
