@@ -2286,7 +2286,7 @@ var _SHAPE_TYPES = [
   { id: 'rect',     label: '사각형', svg: '<path fill="currentColor" d="M8 3H16C18.76 3 21 5.24 21 8V16C21 18.76 18.76 21 16 21H8C5.24 21 3 18.76 3 16V8C3 5.24 5.24 3 8 3Z"/>' },
   { id: 'ellipse',  label: '원',     svg: '<path fill="currentColor" d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"/>' },
   { id: 'polygon',  label: '다각형', svg: '<path fill="currentColor" d="M12,2.5L2,9.8L5.8,21.5H18.2L22,9.8L12,2.5Z"/>' },
-  { id: 'donut',    label: '도넛',   svg: '<path fill="currentColor" d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M12,6A6,6 0 0,0 6,12A6,6 0 0,0 12,18A6,6 0 0,0 18,12A6,6 0 0,0 12,6M12,8A4,4 0 0,1 16,12A4,4 0 0,1 12,16A4,4 0 0,1 8,12A4,4 0 0,1 12,8Z"/>' },
+  { id: 'donut',    label: '도넛',   svg: '<path fill="currentColor" d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2Z M12,6A6,6 0 0,0 6,12A6,6 0 0,0 12,18A6,6 0 0,0 18,12A6,6 0 0,0 12,6Z"/>' },
   { id: 'arrow',    label: '화살표', svg: '<path fill="currentColor" d="M4,15V9H12V4.16L19.84,12L12,19.84V15H4Z"/>' },
   { id: 'bubble',   label: '말풍선', svg: '<path fill="currentColor" d="M20,2H4A2,2 0 0,0 2,4V22L6,18H20A2,2 0 0,0 22,16V4C22,2.89 21.1,2 20,2Z"/>' }
 ];
@@ -2526,6 +2526,7 @@ function _buildShapePath(ctx, type, x, y, w, h, settings) {
         ctx.arcTo(x, y + h, x, y + h - r, r);
         ctx.lineTo(x, y + r);
         ctx.arcTo(x, y, x + r, y, r);
+        ctx.closePath();
       } else {
         ctx.rect(x, y, w, h);
       }
@@ -2539,26 +2540,32 @@ function _buildShapePath(ctx, type, x, y, w, h, settings) {
     case 'polygon': {
       var sides = settings.polygonSides || 5;
       var inner = settings.polygonInnerRatio != null ? settings.polygonInnerRatio : 1.0;
-      var cx = x + w / 2, cy = y + h / 2;
-      var rx = w / 2, ry = h / 2;
+      // 단위 원 위 꼭짓점 계산
+      var verts = [];
       if (inner >= 1.0) {
-        // 정다각형
         for (var i = 0; i < sides; i++) {
           var angle = (Math.PI * 2 * i / sides) - Math.PI / 2;
-          var px = cx + rx * Math.cos(angle);
-          var py = cy + ry * Math.sin(angle);
-          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+          verts.push({ x: Math.cos(angle), y: Math.sin(angle) });
         }
       } else {
-        // 별 모양 (내부 비율 < 1)
         for (var i = 0; i < sides * 2; i++) {
           var angle = (Math.PI * i / sides) - Math.PI / 2;
           var ratio = (i % 2 === 0) ? 1 : inner;
-          var px = cx + rx * ratio * Math.cos(angle);
-          var py = cy + ry * ratio * Math.sin(angle);
-          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+          verts.push({ x: ratio * Math.cos(angle), y: ratio * Math.sin(angle) });
         }
       }
+      // 바운딩 박스 → 할당 영역에 맞춰 정렬+채우기
+      var bMinX = Infinity, bMinY = Infinity, bMaxX = -Infinity, bMaxY = -Infinity;
+      verts.forEach(function(v) {
+        if (v.x < bMinX) bMinX = v.x; if (v.y < bMinY) bMinY = v.y;
+        if (v.x > bMaxX) bMaxX = v.x; if (v.y > bMaxY) bMaxY = v.y;
+      });
+      var bw = bMaxX - bMinX || 1, bh = bMaxY - bMinY || 1;
+      verts.forEach(function(v, i) {
+        var px = x + (v.x - bMinX) / bw * w;
+        var py = y + (v.y - bMinY) / bh * h;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      });
       ctx.closePath();
       break;
     }
@@ -2679,7 +2686,13 @@ function _renderShapeDataUrl(mapCoords) {
   canvas.width = cw;
   canvas.height = ch;
   var ctx = canvas.getContext('2d');
-  _renderShapeToCtx(ctx, _shapeSettings.shapeType, 0, 0, cw, ch, _shapeSettings);
+  // composite 해상도 보정: strokeSize/cornerRadius를 디스플레이→composite 비율로 스케일
+  var compositeRatio = COMPOSITE_PX_PER_TILE / CELL_PX;  // 48/24 = 2
+  var scaledSettings = {};
+  for (var k in _shapeSettings) scaledSettings[k] = _shapeSettings[k];
+  scaledSettings.strokeSize = (_shapeSettings.strokeSize || 0) * compositeRatio;
+  scaledSettings.cornerRadius = (_shapeSettings.cornerRadius || 0) * compositeRatio;
+  _renderShapeToCtx(ctx, _shapeSettings.shapeType, 0, 0, cw, ch, scaledSettings);
   return canvas.toDataURL('image/png');
 }
 
@@ -5448,9 +5461,9 @@ function onOverlayMouseDown(e) {
   // 도형 도구: 이미지 도구와 동일한 드래그/스탬프 배치
   if (_state.currentTool === 'shape') {
     _state.placing = true;
+    _preview.innerHTML = '';  // 스탬프 미리보기 이미지 제거
     updatePreview();
     _preview.classList.add('bwbr-placement-preview--visible');
-    // 프리뷰 캔버스에 실시간 도형 표시는 하지 않음 (드래그 영역만 표시)
     return;
   }
 
