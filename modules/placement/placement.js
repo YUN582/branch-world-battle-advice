@@ -1530,6 +1530,7 @@ var _state = {
 
   // 스탬프 모드: 이전 배치 크기 기억 (클릭만으로 연속 배치)
   lastStampSize: null,     // { w, h } (screen px) — 드래그 배치 후 저장됨
+  stampAngle: 0,           // 스탬프 회전 각도 (R/Shift+R로 조절)
 
   // 텍스트 도구 (Phase 2 — area-first WYSIWYG)
   pendingTextDataUrl: null,
@@ -2650,7 +2651,7 @@ function _renderShapeDataUrl(mapCoords) {
 }
 
 // _stageShapeObject: 도형을 stageObject 경로로 배치 (이미지 도구와 동일 구조)
-function _stageShapeObject(screenRect) {
+function _stageShapeObject(screenRect, initialAngle) {
   var mapCoords = screenToMapCoords(screenRect);
   if (!mapCoords) return;
 
@@ -2665,7 +2666,7 @@ function _stageShapeObject(screenRect) {
   var obj = {
     id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
     mapCoords: mapCoords,
-    angle: 0,
+    angle: initialAngle || 0,
     imageDataUrl: dataUrl,
     settings: {
       type: _state.panelSettings.type,
@@ -5482,7 +5483,8 @@ function _updateStampPreview(cx, cy) {
   _preview.style.top = (cy - sh / 2) + 'px';
   _preview.style.width = sw + 'px';
   _preview.style.height = sh + 'px';
-  _preview.style.transform = '';
+  var rot = _state.stampAngle ? 'rotate(' + _state.stampAngle + 'deg)' : '';
+  _preview.style.transform = rot;
   if (!_preview.classList.contains('bwbr-placement-preview--visible')) {
     _preview.classList.add('bwbr-placement-preview--visible');
     _preview.innerHTML = '<img src="' + imgSrc + '" alt="">';
@@ -5527,7 +5529,7 @@ function onOverlayMouseUp(e) {
         h: sh
       };
       deselectStaged();
-      stageObject(stampRect);
+      stageObject(stampRect, _state.stampAngle || 0);
       _preview.classList.add('bwbr-placement-preview--visible');
       if (!_preview.querySelector('img')) {
         _preview.innerHTML = '<img src="' + _state.pendingImage.dataUrl + '" alt="">';
@@ -5542,7 +5544,7 @@ function onOverlayMouseUp(e) {
         h: sh
       };
       deselectStaged();
-      _stageShapeObject(stampRect);
+      _stageShapeObject(stampRect, _state.stampAngle || 0);
       _preview.classList.add('bwbr-placement-preview--visible');
       if (_shapePendingDataUrl && !_preview.querySelector('img')) {
         _preview.innerHTML = '<img src="' + _shapePendingDataUrl + '" alt="">';
@@ -5555,6 +5557,7 @@ function onOverlayMouseUp(e) {
   var mapCoords = screenToMapCoords(rect);
   if (_state.currentTool === 'shape') {
     _shapeLastStampSize = { tw: mapCoords ? mapCoords.width : 1, th: mapCoords ? mapCoords.height : 1 };
+    _state.stampAngle = 0;
     deselectStaged();
     _stageShapeObject(rect);
     if (_shapePendingDataUrl) {
@@ -5566,6 +5569,7 @@ function onOverlayMouseUp(e) {
 
   // 이미지 드래그 배치 → 타일 단위 크기 저장 (스탬프 모드용)
   _state.lastStampSize = { tw: mapCoords ? mapCoords.width : 1, th: mapCoords ? mapCoords.height : 1 };
+  _state.stampAngle = 0;
 
   deselectStaged();
   stageObject(rect);
@@ -5591,7 +5595,7 @@ function getPreviewRect() {
 
 // ── 스테이징 시스템 ─────────────────────────────────────────────
 
-function stageObject(screenRect) {
+function stageObject(screenRect, initialAngle) {
   var mapCoords = screenToMapCoords(screenRect);
   if (!mapCoords) return;
 
@@ -5611,7 +5615,7 @@ function stageObject(screenRect) {
   var obj = {
     id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
     mapCoords: mapCoords,
-    angle: 0,
+    angle: initialAngle || 0,
     imageDataUrl: _state.pendingImage ? _state.pendingImage.dataUrl :
                   _state.pendingTextDataUrl ? _state.pendingTextDataUrl : null,
     settings: {
@@ -7379,6 +7383,7 @@ function setupKeyboard() {
         _state.lastStampSize = null;
         _shapeLastStampSize = null;
         _shapePendingDataUrl = null;
+        _state.stampAngle = 0;
         _preview.classList.remove('bwbr-placement-preview--visible');
         _preview.innerHTML = '';
       } else if (_state.selectedStagedIds.length > 0) {
@@ -7427,10 +7432,19 @@ function setupKeyboard() {
       setSubTool('draw'); return;
     }
 
-    // R: 선택된 스테이징 오브젝트 회전 (15도 단위)
-    if ((e.key === 'r' || e.key === 'R') && _state.selectedStagedIds.length > 0) {
-      e.preventDefault();
-      rotateSelectedStaged(e.shiftKey ? -15 : 15);
+    // R: 회전 (15도 단위) — 선택 오브젝트 또는 스탬프 프리뷰
+    if (e.key === 'r' || e.key === 'R') {
+      var delta = e.shiftKey ? -15 : 15;
+      if (_state.selectedStagedIds.length > 0) {
+        e.preventDefault();
+        rotateSelectedStaged(delta);
+      } else if (_state.mode === 'edit' && (_state.lastStampSize || _shapeLastStampSize)) {
+        e.preventDefault();
+        _state.stampAngle = ((_state.stampAngle || 0) + delta) % 360;
+        if (_state.stampAngle < 0) _state.stampAngle += 360;
+        _updateStampPreview();
+        _showStampAngleIndicator(_state.stampAngle);
+      }
     }
 
     // Delete / Backspace: 선택된 스테이징 오브젝트 삭제
@@ -7442,6 +7456,25 @@ function setupKeyboard() {
 }
 
 var _angleTimeout = null;
+
+function _showStampAngleIndicator(angle) {
+  _angleIndicator.textContent = angle + '°';
+  var r = _preview.getBoundingClientRect();
+  if (r.width > 0) {
+    _angleIndicator.style.left = (r.left + r.width / 2) + 'px';
+    _angleIndicator.style.top = (r.top - 30) + 'px';
+    _angleIndicator.style.transform = 'translateX(-50%)';
+  } else {
+    _angleIndicator.style.left = _lastStampMouse.x + 'px';
+    _angleIndicator.style.top = (_lastStampMouse.y - 60) + 'px';
+    _angleIndicator.style.transform = 'translateX(-50%)';
+  }
+  _angleIndicator.classList.add('bwbr-placement-angle-indicator--visible');
+  clearTimeout(_angleTimeout);
+  _angleTimeout = setTimeout(function () {
+    _angleIndicator.classList.remove('bwbr-placement-angle-indicator--visible');
+  }, 1200);
+}
 
 function showAngleIndicator(angle) {
   _angleIndicator.textContent = angle + '°';
