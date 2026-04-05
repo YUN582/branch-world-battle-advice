@@ -2776,6 +2776,7 @@ function _drawClosedPointPath(ctx, pts) {
     ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
   }
   ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+  ctx.closePath();
 }
 
 // 도형 전용 자연스러운 jitter (다중 주파수 noise + Math.random)
