@@ -1879,8 +1879,7 @@ function hidePlacementHelp() {
     _helpPaperObserver = null;
   }
   if (!_placementHelp) return;
-  // 슬라이드 아웃: translateX + clip-path 동시 → 드로어 벽 뒤로 숨김
-  _placementHelp.style.transform = 'translateX(0)';
+  // clip-path로 드로어 벽 뒤로 숨김 (translateX 없이 clip-path만)
   _placementHelp.style.clipPath = 'inset(0 0 0 100%)';
   _placementHelp = null;
   // rAF 추적은 애니메이션 끝날 때까지 유지 (left 동기화)
