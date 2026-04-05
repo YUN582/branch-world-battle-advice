@@ -675,30 +675,6 @@ body.bwbr-placement-noselect .bwbr-text-editor * {
   cursor: default;
 }
 
-/* ── 도형 연속(병합) 모드 조작 바 ──────────────── */
-
-.bwbr-shape-merge-bar {
-  position: fixed;
-  bottom: 82px;
-  transform: translateX(-50%);
-  z-index: 105;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: #fff;
-  border-radius: 12px;
-  padding: 8px 16px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
-}
-
-.bwbr-shape-merge-bar .bwbr-shape-merge-count {
-  font-size: 13px;
-  color: #666;
-  white-space: nowrap;
-  min-width: 50px;
-  text-align: center;
-}
-
 /* ── 도형 연속 모드 프리뷰 캔버스 ──────────────── */
 
 .bwbr-shape-merge-canvas {
@@ -1652,7 +1628,6 @@ var _shapeMergeMode = false;       // true=연속(병합), false=개별(기본)
 var _shapeMergeBuffer = [];        // { mapCoords, shapeType, settings(복제) } 배열
 var _shapeMergeCanvas = null;      // 화면 위 프리뷰 캔버스 (fixed overlay)
 var _shapeMergeCtx = null;         // 프리뷰 캔버스 context
-var _shapeMergeBar = null;         // 연속 모드 조작 바 (완료/모두 지우기)
 
 
 // ── DOM 요소 ────────────────────────────────────────────────────
@@ -2631,7 +2606,6 @@ function _setShapeMergeMode(on) {
   _shapeMergeMode = on;
   if (on) {
     _initShapeMergeCanvas();
-    _showShapeMergeBar();
   } else {
     _cleanupShapeMerge();
   }
@@ -2681,57 +2655,11 @@ function _removeShapeMergeCanvas() {
   _shapeMergeCtx = null;
 }
 
-function _showShapeMergeBar() {
-  _hideShapeMergeBar();
-  _shapeMergeBar = document.createElement('div');
-  _shapeMergeBar.className = 'bwbr-shape-merge-bar';
-  _shapeMergeBar.style.left = _getFieldCenter() + 'px';
 
-  var clearBtn = document.createElement('button');
-  clearBtn.className = 'bwbr-place-confirm-bar-btn bwbr-place-cancel-btn';
-  clearBtn.textContent = '🗑 모두 지우기';
-  clearBtn.addEventListener('click', _clearShapeMergeBuffer);
-
-  var countEl = document.createElement('span');
-  countEl.className = 'bwbr-shape-merge-count';
-  countEl.textContent = '0개';
-  _shapeMergeBar._countEl = countEl;
-
-  var finishBtn = document.createElement('button');
-  finishBtn.className = 'bwbr-place-confirm-bar-btn bwbr-place-confirm-btn';
-  finishBtn.textContent = '✓ 완료';
-  finishBtn.disabled = true;
-  finishBtn.addEventListener('click', _finishShapeMerge);
-  _shapeMergeBar._finishBtn = finishBtn;
-
-  _shapeMergeBar.appendChild(clearBtn);
-  _shapeMergeBar.appendChild(countEl);
-  _shapeMergeBar.appendChild(finishBtn);
-  document.body.appendChild(_shapeMergeBar);
-}
-
-function _hideShapeMergeBar() {
-  if (_shapeMergeBar && _shapeMergeBar.parentNode) {
-    _shapeMergeBar.parentNode.removeChild(_shapeMergeBar);
-  }
-  _shapeMergeBar = null;
-}
-
-function _updateShapeMergeBar() {
-  if (!_shapeMergeBar) return;
-  var count = _shapeMergeBuffer.length;
-  if (_shapeMergeBar._countEl) {
-    _shapeMergeBar._countEl.textContent = count > 0 ? count + '개' : '0개';
-  }
-  if (_shapeMergeBar._finishBtn) {
-    _shapeMergeBar._finishBtn.disabled = count === 0;
-  }
-}
 
 function _cleanupShapeMerge() {
   _shapeMergeBuffer = [];
   _removeShapeMergeCanvas();
-  _hideShapeMergeBar();
 }
 
 // 연속 모드: 도형을 버퍼에 추가
@@ -2752,7 +2680,7 @@ function _addShapeToMergeBuffer(screenRect) {
   _shapePendingDataUrl = _renderShapeDataUrl(mapCoords);
 
   _redrawShapeMergePreview();
-  _updateShapeMergeBar();
+  updateConfirmBar();
 }
 
 // 프리뷰 캔버스에 모든 버퍼 도형 그리기
@@ -2769,31 +2697,130 @@ function _redrawShapeMergePreview() {
   var zoom = getZoomScale();
   if (!origin || !zoom) return;
 
+  if (_shapeMergeBuffer.length === 0) return;
+
+  // 전체 바운딩 박스 (타일 좌표)
+  var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   _shapeMergeBuffer.forEach(function(entry) {
     var mc = entry.mapCoords;
-    // 맵 타일 좌표 → 화면 좌표
-    var sx = origin.x + mc.x * CELL_PX * zoom;
-    var sy = origin.y + mc.y * CELL_PX * zoom;
-    var sw = mc.width * CELL_PX * zoom;
-    var sh = mc.height * CELL_PX * zoom;
-
-    _shapeMergeCtx.save();
-    _shapeMergeCtx.translate(sx, sy);
-    _shapeMergeCtx.scale(zoom, zoom);
-
-    // 화면 해상도에서 직접 도형 렌더
-    var drawW = mc.width * CELL_PX;
-    var drawH = mc.height * CELL_PX;
-    _renderShapeToCtx(_shapeMergeCtx, entry.shapeType, 0, 0, drawW, drawH, entry.settings);
-    _shapeMergeCtx.restore();
+    minX = Math.min(minX, mc.x);
+    minY = Math.min(minY, mc.y);
+    maxX = Math.max(maxX, mc.x + mc.width);
+    maxY = Math.max(maxY, mc.y + mc.height);
   });
+  var totalW = maxX - minX;
+  var totalH = maxY - minY;
+  if (totalW <= 0 || totalH <= 0) return;
+
+  // 오프스크린 캔버스에 병합 렌더링 (화면 해상도)
+  var drawScale = CELL_PX * zoom;
+  var cw = Math.ceil(totalW * drawScale);
+  var ch = Math.ceil(totalH * drawScale);
+  var offscreen = document.createElement('canvas');
+  offscreen.width = cw; offscreen.height = ch;
+  var offCtx = offscreen.getContext('2d');
+
+  var entries = _shapeMergeBuffer.map(function(entry) {
+    var mc = entry.mapCoords;
+    var scaledSettings = {};
+    for (var k in entry.settings) scaledSettings[k] = entry.settings[k];
+    scaledSettings.strokeSize = (entry.settings.strokeSize || 0) * zoom;
+    scaledSettings.cornerRadius = (entry.settings.cornerRadius || 0) * zoom;
+    scaledSettings.sketchJitter = (entry.settings.sketchJitter || 0) * zoom;
+    return {
+      shapeType: entry.shapeType,
+      relX: (mc.x - minX) * drawScale,
+      relY: (mc.y - minY) * drawScale,
+      drawW: mc.width * drawScale,
+      drawH: mc.height * drawScale,
+      scaledSettings: scaledSettings
+    };
+  });
+  _renderMergedShapesToCtx(offCtx, cw, ch, entries);
+
+  // 화면 위치에 결과 이미지 배치
+  var screenX = origin.x + minX * CELL_PX * zoom;
+  var screenY = origin.y + minY * CELL_PX * zoom;
+  _shapeMergeCtx.drawImage(offscreen, screenX, screenY);
+}
+
+// 병합 렌더링 공통: 여러 도형을 윤곽선 병합 방식으로 ctx에 그리기
+// entries: [{ shapeType, relX, relY, drawW, drawH, scaledSettings }]
+function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
+  var hasStroke = entries.some(function(e) {
+    return e.scaledSettings.strokeSize > 0 && e.scaledSettings.strokeOpacity > 0;
+  });
+  var hasFill = entries.some(function(e) {
+    return e.scaledSettings.fillOpacity > 0;
+  });
+
+  if (!hasStroke) {
+    // 윤곽선 없음: 단순히 fill만 그리면 됨
+    entries.forEach(function(e) {
+      _renderShapeToCtx(ctx, e.shapeType, e.relX, e.relY, e.drawW, e.drawH, e.scaledSettings);
+    });
+    return;
+  }
+
+  // ── 윤곽선 병합 렌더링 (2-캔버스 합성) ──
+  // 1) stroke 캔버스: 모든 도형의 stroke를 그림
+  var strokeCanvas = document.createElement('canvas');
+  strokeCanvas.width = cw; strokeCanvas.height = ch;
+  var sCtx = strokeCanvas.getContext('2d');
+  sCtx.lineCap = 'round'; sCtx.lineJoin = 'round';
+
+  // 2) fill 캔버스: 모든 도형의 fill 영역 (불투명 마스크)
+  var fillCanvas = document.createElement('canvas');
+  fillCanvas.width = cw; fillCanvas.height = ch;
+  var fCtx = fillCanvas.getContext('2d');
+
+  entries.forEach(function(e) {
+    var s = e.scaledSettings;
+    // stroke 캔버스에 stroke 그리기
+    if (s.strokeSize > 0 && s.strokeOpacity > 0) {
+      var strokeOnly = {};
+      for (var k in s) strokeOnly[k] = s[k];
+      strokeOnly.fillOpacity = 0; // fill 끔
+      _renderShapeToCtx(sCtx, e.shapeType, e.relX, e.relY, e.drawW, e.drawH, strokeOnly);
+    }
+    // fill 캔버스에 fill 그리기 (불투명 마스크용 — opacity=1로 그려서 마스크로 사용)
+    if (hasFill) {
+      var fillMask = {};
+      for (var k in s) fillMask[k] = s[k];
+      fillMask.strokeSize = 0; // stroke 끔
+      fillMask.fillOpacity = 1; // 마스크는 불투명
+      _renderShapeToCtx(fCtx, e.shapeType, e.relX, e.relY, e.drawW, e.drawH, fillMask);
+    }
+  });
+
+  // 3) stroke 캔버스에서 fill 영역을 destination-out으로 뚫기 (내부 윤곽선 제거)
+  if (hasFill) {
+    sCtx.globalCompositeOperation = 'destination-out';
+    sCtx.drawImage(fillCanvas, 0, 0);
+    sCtx.globalCompositeOperation = 'source-over';
+  }
+
+  // 4) 최종 합성: stroke(외곽) → fill
+  ctx.save();
+  ctx.drawImage(strokeCanvas, 0, 0);
+  // fill을 원래 설정대로 다시 그리기 (올바른 opacity/color 적용)
+  entries.forEach(function(e) {
+    var s = e.scaledSettings;
+    if (s.fillOpacity > 0) {
+      var fillOnly = {};
+      for (var k in s) fillOnly[k] = s[k];
+      fillOnly.strokeSize = 0;
+      _renderShapeToCtx(ctx, e.shapeType, e.relX, e.relY, e.drawW, e.drawH, fillOnly);
+    }
+  });
+  ctx.restore();
 }
 
 // 버퍼 비우기
 function _clearShapeMergeBuffer() {
   _shapeMergeBuffer = [];
   _redrawShapeMergePreview();
-  _updateShapeMergeBar();
+  updateConfirmBar();
 }
 
 // 병합 완료: 모든 버퍼 도형 → 하나의 PNG → 스테이징
@@ -2826,23 +2853,24 @@ function _finishShapeMerge() {
   canvas.height = ch;
   var ctx = canvas.getContext('2d');
 
-  // 3. 각 도형 렌더 (합성 해상도)
-  _shapeMergeBuffer.forEach(function(entry) {
+  // 3. 병합 렌더링 엔트리 준비
+  var entries = _shapeMergeBuffer.map(function(entry) {
     var mc = entry.mapCoords;
-    var relX = (mc.x - minX) * COMPOSITE_PX_PER_TILE;
-    var relY = (mc.y - minY) * COMPOSITE_PX_PER_TILE;
-    var drawW = mc.width * COMPOSITE_PX_PER_TILE;
-    var drawH = mc.height * COMPOSITE_PX_PER_TILE;
-
-    // 스케일된 설정
     var scaledSettings = {};
     for (var k in entry.settings) scaledSettings[k] = entry.settings[k];
     scaledSettings.strokeSize = (entry.settings.strokeSize || 0) * compositeRatio;
     scaledSettings.cornerRadius = (entry.settings.cornerRadius || 0) * compositeRatio;
     scaledSettings.sketchJitter = (entry.settings.sketchJitter || 0) * compositeRatio;
-
-    _renderShapeToCtx(ctx, entry.shapeType, relX, relY, drawW, drawH, scaledSettings);
+    return {
+      shapeType: entry.shapeType,
+      relX: (mc.x - minX) * COMPOSITE_PX_PER_TILE,
+      relY: (mc.y - minY) * COMPOSITE_PX_PER_TILE,
+      drawW: mc.width * COMPOSITE_PX_PER_TILE,
+      drawH: mc.height * COMPOSITE_PX_PER_TILE,
+      scaledSettings: scaledSettings
+    };
   });
+  _renderMergedShapesToCtx(ctx, cw, ch, entries);
 
   var dataUrl = canvas.toDataURL('image/png');
 
@@ -2868,7 +2896,6 @@ function _finishShapeMerge() {
   // 5. 버퍼 초기화 (연속 모드는 유지)
   _shapeMergeBuffer = [];
   _redrawShapeMergePreview();
-  _updateShapeMergeBar();
   updateConfirmBar();
 }
 
@@ -7017,7 +7044,6 @@ function setupSelectModeHandlers() {
     if (e.target.closest('.bwbr-placement-toolbar')) return;
     if (e.target.closest('.bwbr-place-confirm-bar')) return;
     if (e.target.closest('.bwbr-place-align-bar')) return;
-    if (e.target.closest('.bwbr-shape-merge-bar')) return;
     if (e.target.closest('.bwbr-text-toolbar')) return;
     if (e.target.closest('.bwbr-text-editor-wrap')) return;
     if (e.target.closest('.bwbr-place-confirm-dialog-overlay')) return;
@@ -7057,7 +7083,6 @@ function setupSelectModeHandlers() {
     if (!_state.active) return;
     if (e.target.closest('.bwbr-placement-toolbar') ||
         e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar') ||
-        e.target.closest('.bwbr-shape-merge-bar') ||
         e.target.closest('.bwbr-text-toolbar') || e.target.closest('.bwbr-placement-overlay') ||
         e.target.closest('.bwbr-place-confirm-dialog-overlay') ||
         e.target.closest('.bwbr-color-popup') || e.target.closest('.bwbr-text-editor-wrap')) return;
@@ -7073,7 +7098,6 @@ function setupSelectModeHandlers() {
     if (!_state.active || e.button !== 0) return;
     if (e.target.closest('.bwbr-placement-toolbar') ||
         e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar') ||
-        e.target.closest('.bwbr-shape-merge-bar') ||
         e.target.closest('.bwbr-text-toolbar') ||
         e.target.closest('.bwbr-text-editor-wrap') ||
         e.target.closest('.bwbr-place-confirm-dialog-overlay') ||
@@ -7096,7 +7120,6 @@ function setupSelectModeHandlers() {
     if (_state.mode !== 'select' && _state.mode !== 'edit') return;
     if (e.target.closest('.bwbr-placement-toolbar') ||
         e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar') ||
-        e.target.closest('.bwbr-shape-merge-bar') ||
         e.target.closest('.bwbr-text-toolbar') ||
         e.target.closest('.bwbr-placement-overlay') ||
         e.target.closest('.bwbr-place-confirm-dialog-overlay') ||
@@ -7353,7 +7376,14 @@ function createConfirmBar() {
   var cancelBtn = document.createElement('button');
   cancelBtn.className = 'bwbr-place-confirm-bar-btn bwbr-place-cancel-btn';
   cancelBtn.textContent = '전체 취소';
-  cancelBtn.addEventListener('click', clearAllStaged);
+  cancelBtn.addEventListener('click', function() {
+    if (_shapeMergeMode && _shapeMergeBuffer.length > 0) {
+      _clearShapeMergeBuffer();
+    } else {
+      clearAllStaged();
+    }
+  });
+  _confirmBar._cancelBtn = cancelBtn;
 
   _stagedCountEl = document.createElement('span');
   _stagedCountEl.className = 'bwbr-place-staged-count';
@@ -7389,7 +7419,13 @@ function createConfirmBar() {
   _confirmBtnEl = document.createElement('button');
   _confirmBtnEl.className = 'bwbr-place-confirm-bar-btn bwbr-place-confirm-btn';
   _confirmBtnEl.textContent = '✓ 확인';
-  _confirmBtnEl.addEventListener('click', showConfirmDialog);
+  _confirmBtnEl.addEventListener('click', function() {
+    if (_shapeMergeMode && _shapeMergeBuffer.length > 0) {
+      _finishShapeMerge();
+    } else {
+      showConfirmDialog();
+    }
+  });
 
   _confirmBar.appendChild(cancelBtn);
   _confirmBar.appendChild(_stagedCountEl);
@@ -7404,11 +7440,29 @@ function updateConfirmBar() {
     _confirmBar.classList.remove('bwbr-place-confirm-bar--visible');
     return;
   }
-  var count = _state.stagedObjects.length;
+  var stagedCount = _state.stagedObjects.length;
+  var mergeCount = _shapeMergeMode ? _shapeMergeBuffer.length : 0;
   _confirmBar.classList.add('bwbr-place-confirm-bar--visible');
-  _stagedCountEl.textContent = count > 0 ? count + '개 배치됨' : '배치 없음';
+
+  // 카운트 표시: 연속 모드에서 버퍼가 있으면 우선 표시
+  if (mergeCount > 0) {
+    _stagedCountEl.textContent = '연속: ' + mergeCount + '개';
+  } else {
+    _stagedCountEl.textContent = stagedCount > 0 ? stagedCount + '개 배치됨' : '배치 없음';
+  }
+
+  // 버튼 상태
   if (_confirmBtnEl) {
-    _confirmBtnEl.disabled = count === 0 && !_shapeMergeMode;
+    if (mergeCount > 0) {
+      _confirmBtnEl.textContent = '✓ 병합 완료';
+      _confirmBtnEl.disabled = false;
+    } else {
+      _confirmBtnEl.textContent = '✓ 확인';
+      _confirmBtnEl.disabled = stagedCount === 0;
+    }
+  }
+  if (_confirmBar._cancelBtn) {
+    _confirmBar._cancelBtn.textContent = mergeCount > 0 ? '🗑 모두 지우기' : '전체 취소';
   }
   _confirmBar.style.left = _getFieldCenter() + 'px';
 
