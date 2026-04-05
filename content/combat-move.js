@@ -61,6 +61,8 @@
   var _waypointMarkers = [];  // 경유지 DOM 마커
   var _totalWaypointDist = 0; // 이미 소비된 이동 거리
   var _helpPanel = null;      // 전투 모드 도움말 패널
+  var _helpTrackRAF = null;
+  var _helpLastLeft = null;
 
   // ------------------------------------------------
   //  1. Zoom container finder
@@ -1011,27 +1013,59 @@
   // ------------------------------------------------
   /** 채팅 드로어 paper 요소 탐색 */
   function _findDrawerPaper() {
-    return document.querySelector('.MuiDrawer-paperAnchorDockedRight')
-      || document.querySelector('.MuiDrawer-paperAnchorRight')
-      || document.querySelector('.MuiDrawer-paper');
+    var papers = document.querySelectorAll('.MuiDrawer-paperAnchorDockedRight');
+    if (papers.length > 0) return papers[0];
+    papers = document.querySelectorAll('.MuiDrawer-paperAnchorRight');
+    if (papers.length > 0) return papers[0];
+    papers = document.querySelectorAll('.MuiDrawer-paper');
+    if (papers.length > 0) return papers[0];
+    return null;
+  }
+
+  function _syncCombatHelpPosition() {
+    if (!_helpPanel) return;
+    var paper = _findDrawerPaper();
+    var newLeft;
+    if (!paper) {
+      newLeft = window.innerWidth;
+    } else {
+      newLeft = Math.round(paper.getBoundingClientRect().left);
+    }
+    if (newLeft !== _helpLastLeft) {
+      _helpLastLeft = newLeft;
+      _helpPanel.style.left = newLeft + 'px';
+    }
+  }
+
+  function _startCombatHelpTracking() {
+    if (_helpTrackRAF) return;
+    _helpLastLeft = null;
+    function track() {
+      _syncCombatHelpPosition();
+      if (_helpPanel) {
+        _helpTrackRAF = requestAnimationFrame(track);
+      }
+    }
+    _helpTrackRAF = requestAnimationFrame(track);
+  }
+
+  function _stopCombatHelpTracking() {
+    if (_helpTrackRAF) {
+      cancelAnimationFrame(_helpTrackRAF);
+      _helpTrackRAF = null;
+    }
+    _helpLastLeft = null;
   }
 
   function showHelpPanel() {
     if (_helpPanel) return;
 
-    var paper = _findDrawerPaper();
-    if (!paper) return;
-
-    var paperLeft = paper.getBoundingClientRect().left;
-
     _helpPanel = document.createElement('div');
     _helpPanel.id = 'bwbr-combat-help';
 
-    // 초기 상태: 오른쪽으로 밀려나 있음 (translateX(0) = 드로어 안쪽에 숨김)
     _helpPanel.style.cssText =
-      'position:fixed;top:140px;' +
-      'left:' + paperLeft + 'px;' +
-      'transform:translateX(0);' +
+      'position:fixed;top:140px;left:100vw;' +
+      'transform:translateX(-100%);' +
       'z-index:10;width:220px;' +
       'background:rgba(30,30,30,0.92);color:#eee;' +
       'border-radius:8px 0 0 8px;' +
@@ -1041,10 +1075,8 @@
       'pointer-events:auto;' +
       'border:1px solid rgba(255,255,255,0.1);border-right:none;' +
       'opacity:0;overflow:hidden;box-sizing:border-box;' +
-      'transition:transform 0.4s cubic-bezier(0.22,1,0.36,1), opacity 0.3s ease, width 0.35s cubic-bezier(0.2,0.8,0.3,1);';
+      'transition:left 0.225s cubic-bezier(0,0,0.2,1), opacity 0.3s ease, width 0.35s cubic-bezier(0.2,0.8,0.3,1);';
 
-    // content: 펼침 시 보임, 접힘 시 opacity로 숨김 (overflow:hidden이 잘라줌)
-    // tab: 접힘 시 보임, position:absolute로 좁은 폭에 맞춤
     _helpPanel.innerHTML =
       '<div id="bwbr-help-content" style="padding:14px 18px;white-space:nowrap;' +
       'transition:opacity 0.25s;">' +
@@ -1063,7 +1095,8 @@
       'letter-spacing:2px;cursor:pointer;' +
       'opacity:0;pointer-events:none;transition:opacity 0.25s;">⚔️ 전투</div>';
 
-    paper.appendChild(_helpPanel);
+    document.body.appendChild(_helpPanel);
+    _startCombatHelpTracking();
 
     // 클릭으로 접기/펼치기
     _helpPanel.addEventListener('click', function () {
@@ -1074,12 +1107,10 @@
       }
     });
 
-    // 슬라이드 인: 오른쪽에서 왼쪽으로 자연스럽게 나오기
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
         if (_helpPanel) {
           _helpPanel.style.opacity = '1';
-          _helpPanel.style.transform = 'translateX(-100%)';
         }
       });
     });
@@ -1113,10 +1144,9 @@
   }
 
   function hideHelpPanel() {
+    _stopCombatHelpTracking();
     if (!_helpPanel) return;
-    // 슬라이드 아웃: 왼쪽에서 오른쪽으로 드로어 안으로 돌아감
     _helpPanel.style.opacity = '0';
-    _helpPanel.style.transform = 'translateX(0)';
     var panel = _helpPanel;
     _helpPanel = null;
     setTimeout(function () { panel.remove(); }, 450);

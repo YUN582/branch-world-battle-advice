@@ -1729,9 +1729,10 @@ function togglePlacementMode() {
 var _placementHelp = null;
 var _helpPaperObserver = null;
 var _helpTrackRAF = null;
+var _helpLastLeft = null;
 
 function _findChatPaper() {
-  // 채팅 패널(첫 번째 drawer)만 선택 — 두 번째 drawer는 다른 패널
+  // 채팅 패널(첫 번째 drawer)만 선택
   var papers = document.querySelectorAll('.MuiDrawer-paperAnchorDockedRight');
   if (papers.length > 0) return papers[0];
   papers = document.querySelectorAll('.MuiDrawer-paperAnchorRight');
@@ -1744,18 +1745,22 @@ function _findChatPaper() {
 function _syncHelpPosition() {
   if (!_placementHelp) return;
   var paper = _findChatPaper();
+  var newLeft;
   if (!paper) {
-    // paper 없으면 화면 밖으로
-    _placementHelp.style.left = '100vw';
-    return;
+    newLeft = window.innerWidth;
+  } else {
+    newLeft = Math.round(paper.getBoundingClientRect().left);
   }
-  var rect = paper.getBoundingClientRect();
-  // paper의 왼쪽 모서리에 맞춤 (도움말은 translateX(-100%)로 왼쪽 바깥에 표시)
-  _placementHelp.style.left = rect.left + 'px';
+  // 값이 바뀌었을 때만 세팅 → CSS transition이 동작
+  if (newLeft !== _helpLastLeft) {
+    _helpLastLeft = newLeft;
+    _placementHelp.style.left = newLeft + 'px';
+  }
 }
 
 function _startHelpTracking() {
   if (_helpTrackRAF) return;
+  _helpLastLeft = null;
   function track() {
     _syncHelpPosition();
     if (_placementHelp) {
@@ -1770,6 +1775,7 @@ function _stopHelpTracking() {
     cancelAnimationFrame(_helpTrackRAF);
     _helpTrackRAF = null;
   }
+  _helpLastLeft = null;
 }
 
 function showPlacementHelp() {
@@ -1779,7 +1785,7 @@ function showPlacementHelp() {
   _placementHelp.id = 'bwbr-placement-help';
   _placementHelp.style.cssText =
     'position:fixed;top:140px;left:100vw;' +
-    'transform:translateX(0);' +
+    'transform:translateX(-100%);' +
     'z-index:10;width:250px;' +
     'background:rgba(255,255,255,0.96);color:#333;' +
     'border-radius:8px 0 0 8px;' +
@@ -1789,7 +1795,7 @@ function showPlacementHelp() {
     'pointer-events:auto;' +
     'border:1px solid rgba(0,0,0,0.08);border-right:none;' +
     'opacity:0;overflow:hidden;box-sizing:border-box;' +
-    'transition:opacity 0.3s ease, width 0.35s cubic-bezier(0.2,0.8,0.3,1);';
+    'transition:left 0.225s cubic-bezier(0,0,0.2,1), opacity 0.3s ease, width 0.35s cubic-bezier(0.2,0.8,0.3,1);';
 
   _placementHelp.innerHTML =
     '<div id="bwbr-place-help-content" style="padding:14px 18px;white-space:nowrap;transition:opacity 0.25s;">' +
@@ -1830,11 +1836,11 @@ function showPlacementHelp() {
   document.body.appendChild(_placementHelp);
   _startHelpTracking();
 
+  // 다음 프레임에서 opacity만 페이드인 (left는 rAF 추적이 세팅)
   requestAnimationFrame(function () {
     requestAnimationFrame(function () {
       if (_placementHelp) {
         _placementHelp.style.opacity = '1';
-        _placementHelp.style.transform = 'translateX(-100%)';
       }
     });
   });
@@ -1875,7 +1881,6 @@ function hidePlacementHelp() {
   }
   if (!_placementHelp) return;
   _placementHelp.style.opacity = '0';
-  _placementHelp.style.transform = 'translateX(0)';
   var panel = _placementHelp;
   _placementHelp = null;
   setTimeout(function () { panel.remove(); }, 450);
