@@ -1119,28 +1119,6 @@ body.bwbr-placement-noselect .bwbr-text-editor * {
 .bwbr-brush-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
 .bwbr-brush-btn span { color: inherit; }
 
-.bwbr-draw-color-history {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
-.bwbr-draw-color-history-item {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 1.5px solid #ccc;
-  cursor: pointer;
-  padding: 0;
-  background: none;
-  transition: border-color 0.15s, transform 0.15s;
-}
-
-.bwbr-draw-color-history-item:hover {
-  border-color: #666;
-  transform: scale(1.15);
-}
-
 .bwbr-draw-range-row {
   display: flex;
   align-items: center;
@@ -1573,8 +1551,7 @@ var _drawPoints = [];      // 현재 스트로크 포인트 [{x,y}]
 var _drawStrokes = [];     // 완료된 스트로크 목록 [{points, penSize, penColor, penOpacity, outlineEnabled, outlineSize, outlineColor}]
 var _drawSettingsMenu = null; // 그리기 설정 메뉴 DOM
 var _drawFinishBar = null; // 그리기 완료/취소 바
-var _drawColorHistory = [];    // 최근 사용 색상 (최대 8개)
-var _drawColorHistoryEl = null; // 색상 히스토리 UI 컨테이너
+var _colorHistories = { fill: [], outline: [] }; // 카테고리별 최근 사용 색상 (최대 8개)
 
 
 // ── 도형 도구 상태 ──────────────────────────────────────────────
@@ -2373,7 +2350,7 @@ function createShapeSettingsMenu() {
     _openColorPopup(fillSwatch, _shapeSettings.fillColor, false, false, function(hex) {
       _shapeSettings.fillColor = hex;
       fillSwatch.style.background = hex;
-    });
+    }, 'fill');
   });
   fillRow.appendChild(fillSwatch);
 
@@ -2399,7 +2376,7 @@ function createShapeSettingsMenu() {
     _openColorPopup(strokeSwatch, _shapeSettings.strokeColor, false, false, function(hex) {
       _shapeSettings.strokeColor = hex;
       strokeSwatch.style.background = hex;
-    });
+    }, 'outline');
   });
   strokeRow.appendChild(strokeSwatch);
 
@@ -2662,7 +2639,7 @@ function createDrawSettingsMenu() {
     _openColorPopup(colorBtn, _drawSettings.penColor, false, false, function(hex) {
       _drawSettings.penColor = hex;
       colorBtn.style.background = hex;
-    });
+    }, 'fill');
   });
   colorOpRow.appendChild(colorBtn);
 
@@ -2822,7 +2799,7 @@ function createDrawSettingsMenu() {
     _openColorPopup(outlineColorBtn, _drawSettings.outlineColor, false, false, function(hex) {
       _drawSettings.outlineColor = hex;
       outlineColorBtn.style.background = hex;
-    });
+    }, 'outline');
   });
   outlineBody.appendChild(outlineColorBtn);
 
@@ -3061,8 +3038,10 @@ function onDrawMouseUp(e) {
   _isDrawing = false;
   if (_drawPoints.length > 0 && _drawCurrentStrokeSettings) {
     if (!_drawCurrentStrokeSettings.isEraser) {
-      _pushColorHistory(_drawCurrentStrokeSettings.penColor);
-      _updateColorHistoryUI();
+      _pushColorToHistory('fill', _drawCurrentStrokeSettings.penColor);
+      if (_drawCurrentStrokeSettings.outlineEnabled) {
+        _pushColorToHistory('outline', _drawCurrentStrokeSettings.outlineColor);
+      }
     }
     _drawStrokes.push({
       points: _drawPoints.slice(),
@@ -3091,31 +3070,13 @@ function undoDrawStroke() {
 }
 
 // ── 색상 히스토리 헬퍼 ──
-function _pushColorHistory(hex) {
+function _pushColorToHistory(key, hex) {
   hex = hex.toLowerCase();
-  var idx = _drawColorHistory.indexOf(hex);
-  if (idx !== -1) _drawColorHistory.splice(idx, 1);
-  _drawColorHistory.unshift(hex);
-  if (_drawColorHistory.length > 8) _drawColorHistory.pop();
-}
-
-function _updateColorHistoryUI(penSwatchBtn) {
-  if (!_drawColorHistoryEl) return;
-  // penSwatchBtn 캐시 (최초 호출 시 저장, length=0 early return 전에)
-  if (penSwatchBtn) _drawColorHistoryEl._penSwatch = penSwatchBtn;
-  _drawColorHistoryEl.innerHTML = '';
-  if (_drawColorHistory.length === 0) return;
-  _drawColorHistory.forEach(function(hex) {
-    var btn = document.createElement('button');
-    btn.className = 'bwbr-draw-color-history-item';
-    btn.style.background = hex;
-    btn.addEventListener('click', function() {
-      _drawSettings.penColor = hex;
-      var swatch = _drawColorHistoryEl._penSwatch;
-      if (swatch) swatch.style.background = hex;
-    });
-    _drawColorHistoryEl.appendChild(btn);
-  });
+  var arr = _colorHistories[key] || (_colorHistories[key] = []);
+  var idx = arr.indexOf(hex);
+  if (idx !== -1) arr.splice(idx, 1);
+  arr.unshift(hex);
+  if (arr.length > 8) arr.pop();
 }
 
 // ── 가변 굵기 헬퍼 ──
@@ -4403,7 +4364,7 @@ function createTextToolbar() {
       _fgHex = hex; _fgTrans = isTrans;
       fgInd.style.background = isTrans ? 'repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%) 50%/6px 6px' : hex;
       _colorOnChange('color', color, isTrans, hex);
-    });
+    }, 'fill');
   });
   row2.appendChild(fgWrap);
 
@@ -4425,7 +4386,7 @@ function createTextToolbar() {
       _textStrokeColor = hex;
       strokeInd.style.background = hex;
       _updateStrokePreview();
-    });
+    }, 'outline');
   });
   row2.appendChild(strokeColorWrap);
 
@@ -4448,7 +4409,7 @@ function createTextToolbar() {
       _bgHex = hex; _bgTrans = isTrans;
       bgInd.style.background = isTrans ? 'repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%) 50%/6px 6px' : hex;
       _colorOnChange('backgroundColor', color, isTrans, hex);
-    });
+    }, 'fill');
   });
   row2.appendChild(bgWrap);
 
@@ -4471,7 +4432,7 @@ function createTextToolbar() {
       boxBgInd.style.background = isTrans ? 'repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%) 50%/6px 6px' : hex;
       _textBgColor = isTrans ? '' : hex;
       if (_textEditorWrap) _textEditorWrap.style.background = isTrans ? 'transparent' : hex;
-    });
+    }, 'fill');
   });
   row2.appendChild(boxBgWrap);
 
@@ -4589,14 +4550,28 @@ function _pickColorFromScreen(cb) {
 }
 
 function _closeColorPopup() {
-  if (_colorPopupEl && _colorPopupEl.parentNode) _colorPopupEl.parentNode.removeChild(_colorPopupEl);
+  if (_colorPopupEl) {
+    // 팝업 닫힐 때 마지막 선택 색상을 히스토리에 추가
+    if (_colorPopupEl._lastHex && !_colorPopupEl._isTrans) {
+      var key = _colorPopupEl._histKey || 'fill';
+      var arr = _colorHistories[key] || (_colorHistories[key] = []);
+      var hex = _colorPopupEl._lastHex.toLowerCase();
+      var idx = arr.indexOf(hex);
+      if (idx !== -1) arr.splice(idx, 1);
+      arr.unshift(hex);
+      if (arr.length > 8) arr.pop();
+    }
+    if (_colorPopupEl.parentNode) _colorPopupEl.parentNode.removeChild(_colorPopupEl);
+  }
   _colorPopupEl = null;
   if (_colorPopupClose) { document.removeEventListener('mousedown', _colorPopupClose, true); _colorPopupClose = null; }
 }
 
-function _openColorPopup(anchorEl, currentHex, isTransparent, allowTransparent, onChange) {
+function _openColorPopup(anchorEl, currentHex, isTransparent, allowTransparent, onChange, historyKey) {
   _closeColorPopup();
   var PW = 160, SV_H = 100, HUE_H = 12;
+  var _histKey = historyKey || 'fill';
+  var _histArr = _colorHistories[_histKey] || (_colorHistories[_histKey] = []);
 
   // 현재 색상 파싱
   var rgb = _hexToRgb(currentHex || '#000000');
@@ -4683,10 +4658,11 @@ function _openColorPopup(anchorEl, currentHex, isTransparent, allowTransparent, 
   popup.appendChild(row);
 
   // ── 색상 히스토리 (팝업 하단) ──
-  if (_drawColorHistory && _drawColorHistory.length > 0) {
-    var histRow = document.createElement('div');
-    histRow.style.cssText = 'display:flex;gap:3px;flex-wrap:wrap;padding-top:4px;border-top:1px solid rgba(0,0,0,0.1);margin-top:2px;';
-    _drawColorHistory.forEach(function(hx) {
+  var histRow = document.createElement('div');
+  histRow.style.cssText = 'display:flex;gap:3px;flex-wrap:wrap;padding-top:4px;margin-top:2px;';
+  function _rebuildHistRow() {
+    histRow.innerHTML = '';
+    _histArr.forEach(function(hx) {
       var hBtn = document.createElement('button');
       hBtn.style.cssText = 'width:16px;height:16px;border-radius:50%;border:1.5px solid rgba(0,0,0,0.15);cursor:pointer;padding:0;background:' + hx + ';transition:border-color 0.15s,transform 0.15s;';
       hBtn.addEventListener('mouseenter', function() { hBtn.style.borderColor = '#666'; hBtn.style.transform = 'scale(1.15)'; });
@@ -4700,8 +4676,12 @@ function _openColorPopup(anchorEl, currentHex, isTransparent, allowTransparent, 
       });
       histRow.appendChild(hBtn);
     });
-    popup.appendChild(histRow);
   }
+  _rebuildHistRow();
+  popup.appendChild(histRow);
+  popup._histKey = _histKey;
+  popup._histArr = _histArr;
+  popup._rebuildHistRow = _rebuildHistRow;
 
   // 그리기
   function drawSV() {
@@ -4744,6 +4724,8 @@ function _openColorPopup(anchorEl, currentHex, isTransparent, allowTransparent, 
   function commit() {
     var c = _hsvToRgb(ch, cs, cv);
     var hex = _rgbToHex(c[0], c[1], c[2]);
+    popup._lastHex = hex;
+    popup._isTrans = trans;
     onChange(trans ? 'transparent' : hex, trans, hex);
   }
   function redraw() { drawSV(); drawHue(); updatePreview(); }
