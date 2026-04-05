@@ -1727,22 +1727,41 @@ function togglePlacementMode() {
 // ── 배치 모드 안내 패널 (드로어 좌측 슬라이드인) ─────────────────
 
 var _placementHelp = null;
+var _helpPaperObserver = null;
+
+function _findChatPaper() {
+  return document.querySelector('.MuiDrawer-paperAnchorDockedRight')
+    || document.querySelector('.MuiDrawer-paperAnchorRight')
+    || document.querySelector('.MuiDrawer-paper');
+}
+
+function _attachHelpToPaper(paper) {
+  if (_placementHelp && _placementHelp.parentNode) return; // 이미 붙어 있음
+  if (!_placementHelp) return;
+
+  // paper가 absolute 자식을 수용할 수 있도록
+  var cs = getComputedStyle(paper);
+  if (cs.position === 'static') paper.style.position = 'relative';
+
+  paper.appendChild(_placementHelp);
+
+  requestAnimationFrame(function () {
+    requestAnimationFrame(function () {
+      if (_placementHelp) {
+        _placementHelp.style.opacity = '1';
+        _placementHelp.style.transform = 'translateX(-100%)';
+      }
+    });
+  });
+}
 
 function showPlacementHelp() {
   if (_placementHelp) return;
 
-  var paper = document.querySelector('.MuiDrawer-paperAnchorDockedRight')
-    || document.querySelector('.MuiDrawer-paperAnchorRight')
-    || document.querySelector('.MuiDrawer-paper');
-  if (!paper) return;
-
-  var paperLeft = paper.getBoundingClientRect().left;
-
   _placementHelp = document.createElement('div');
   _placementHelp.id = 'bwbr-placement-help';
   _placementHelp.style.cssText =
-    'position:fixed;top:140px;' +
-    'left:' + paperLeft + 'px;' +
+    'position:absolute;top:140px;left:0;' +
     'transform:translateX(0);' +
     'z-index:10;width:250px;' +
     'background:rgba(255,255,255,0.96);color:#333;' +
@@ -1781,8 +1800,6 @@ function showPlacementHelp() {
     'letter-spacing:2px;cursor:pointer;' +
     'opacity:0;pointer-events:none;transition:opacity 0.25s;">\uD83D\uDDBC\uFE0F 배치</div>';
 
-  paper.appendChild(_placementHelp);
-
   // 클릭으로 접기/펼치기
   _placementHelp.addEventListener('click', function () {
     if (_placementHelp.style.width === '28px') {
@@ -1792,14 +1809,13 @@ function showPlacementHelp() {
     }
   });
 
-  requestAnimationFrame(function () {
-    requestAnimationFrame(function () {
-      if (_placementHelp) {
-        _placementHelp.style.opacity = '1';
-        _placementHelp.style.transform = 'translateX(-100%)';
-      }
-    });
-  });
+  // paper 찾아서 붙이기 (없으면 MutationObserver로 대기)
+  var paper = _findChatPaper();
+  if (paper) {
+    _attachHelpToPaper(paper);
+  } else {
+    _waitForPaper();
+  }
 
   // 3초 후 자동 접기
   // setTimeout(function () { collapsePlacementHelp(); }, 3000); // 사용자 요청으로 툴팁 자동 닫힘 제거
@@ -1830,12 +1846,29 @@ function expandPlacementHelp() {
 }
 
 function hidePlacementHelp() {
+  if (_helpPaperObserver) {
+    _helpPaperObserver.disconnect();
+    _helpPaperObserver = null;
+  }
   if (!_placementHelp) return;
   _placementHelp.style.opacity = '0';
   _placementHelp.style.transform = 'translateX(0)';
   var panel = _placementHelp;
   _placementHelp = null;
   setTimeout(function () { panel.remove(); }, 450);
+}
+
+function _waitForPaper() {
+  if (_helpPaperObserver) return;
+  _helpPaperObserver = new MutationObserver(function () {
+    var paper = _findChatPaper();
+    if (paper && _placementHelp && !_placementHelp.parentNode) {
+      _attachHelpToPaper(paper);
+      _helpPaperObserver.disconnect();
+      _helpPaperObserver = null;
+    }
+  });
+  _helpPaperObserver.observe(document.body, { childList: true, subtree: true });
 }
 
 
