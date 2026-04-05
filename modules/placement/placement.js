@@ -613,20 +613,25 @@ body.bwbr-placement-noselect .bwbr-text-editor * {
   position: fixed;
   bottom: 24px;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(-50%) translateY(20px);
   /* left는 JS에서 필드 영역 기준으로 재계산됨 */
   z-index: 105;
-  display: none;
+  display: flex;
   align-items: center;
   gap: 12px;
   background: #fff;
   border-radius: 12px;
   padding: 8px 16px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .bwbr-place-confirm-bar--visible {
-  display: flex;
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .bwbr-place-staged-count {
@@ -1185,7 +1190,7 @@ body.bwbr-placement-noselect .bwbr-text-editor * {
 
 .bwbr-draw-finish-bar {
   position: fixed;
-  bottom: 88px;
+  bottom: 82px;
   transform: translateX(-50%);
   z-index: 105;
   display: flex;
