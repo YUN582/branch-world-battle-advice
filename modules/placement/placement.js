@@ -613,7 +613,7 @@ body.bwbr-placement-noselect .bwbr-text-editor * {
   position: fixed;
   bottom: 24px;
   left: 50%;
-  transform: translateX(-50%) translateY(20px);
+  transform: translateX(-50%) translateY(calc(100% + 30px));
   /* left는 JS에서 필드 영역 기준으로 재계산됨 */
   z-index: 105;
   display: flex;
@@ -1796,7 +1796,8 @@ function showPlacementHelp() {
     'pointer-events:auto;' +
     'border:1px solid rgba(0,0,0,0.08);border-right:none;' +
     'overflow:hidden;box-sizing:border-box;' +
-    'transition:transform 0.35s cubic-bezier(0.22,1,0.36,1), width 0.35s cubic-bezier(0.2,0.8,0.3,1);';
+    'clip-path:inset(0 0 0 0);' +
+    'transition:transform 0.35s cubic-bezier(0.22,1,0.36,1), clip-path 0.35s cubic-bezier(0.22,1,0.36,1), width 0.35s cubic-bezier(0.2,0.8,0.3,1);';
 
   _placementHelp.innerHTML =
     '<div id="bwbr-place-help-content" style="padding:14px 18px;white-space:nowrap;transition:opacity 0.25s;">' +
@@ -1878,8 +1879,9 @@ function hidePlacementHelp() {
     _helpPaperObserver = null;
   }
   if (!_placementHelp) return;
-  // clip-path로 오른쪽부터 잘라냄 → 드로어 뒤로 들어가는 효과
+  // 슬라이드 아웃: translateX + clip-path 동시 → 드로어 벽 뒤로 숨김
   _placementHelp.style.transform = 'translateX(0)';
+  _placementHelp.style.clipPath = 'inset(0 0 0 100%)';
   _placementHelp = null;
   // rAF 추적은 애니메이션 끝날 때까지 유지 (left 동기화)
   _helpHideTimer = setTimeout(function () {

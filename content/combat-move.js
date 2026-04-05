@@ -1080,7 +1080,8 @@
       'pointer-events:auto;' +
       'border:1px solid rgba(255,255,255,0.1);border-right:none;' +
       'overflow:hidden;box-sizing:border-box;' +
-      'transition:transform 0.35s cubic-bezier(0.22,1,0.36,1), width 0.35s cubic-bezier(0.2,0.8,0.3,1);';
+      'clip-path:inset(0 0 0 0);' +
+      'transition:transform 0.35s cubic-bezier(0.22,1,0.36,1), clip-path 0.35s cubic-bezier(0.22,1,0.36,1), width 0.35s cubic-bezier(0.2,0.8,0.3,1);';
 
     _helpPanel.innerHTML =
       '<div id="bwbr-help-content" style="padding:14px 18px;white-space:nowrap;' +
@@ -1149,8 +1150,9 @@
 
   function hideHelpPanel() {
     if (!_helpPanel) return;
-    // clip-path로 오른쪽부터 잘라냄 → 드로어 뒤로 들어가는 효과
+    // 슬라이드 아웃: translateX + clip-path 동시 → 드로어 벽 뒤로 숨김
     _helpPanel.style.transform = 'translateX(0)';
+    _helpPanel.style.clipPath = 'inset(0 0 0 100%)';
     _helpPanel = null;
     // rAF 추적은 애니메이션 끝날 때까지 유지 (left 동기화)
     _helpHideTimer = setTimeout(function () {
