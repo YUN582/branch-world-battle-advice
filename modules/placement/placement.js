@@ -1749,7 +1749,7 @@ function _syncHelpPosition() {
   } else {
     newLeft = Math.round(paper.getBoundingClientRect().left);
   }
-  _helpTrackTarget.style.left = newLeft + 'px';
+  _helpTrackTarget.style.left = (newLeft - _helpTrackTarget.offsetWidth) + 'px';
 }
 
 function _startHelpTracking(el) {
@@ -1782,12 +1782,19 @@ function showPlacementHelp() {
   if (_helpHideTimer) { clearTimeout(_helpHideTimer); _helpHideTimer = null; }
   _stopHelpTracking();
 
+  // wrapper: overflow:hidden으로 드로어 벽 역할
+  var wrapper = document.createElement('div');
+  wrapper.id = 'bwbr-placement-help-wrap';
+  wrapper.style.cssText =
+    'position:fixed;top:140px;left:100vw;' +
+    'width:260px;height:auto;overflow:hidden;' +
+    'z-index:10;pointer-events:none;';
+
   _placementHelp = document.createElement('div');
   _placementHelp.id = 'bwbr-placement-help';
   _placementHelp.style.cssText =
-    'position:fixed;top:140px;left:100vw;' +
-    'transform:translateX(0);' +
-    'z-index:10;width:250px;' +
+    'position:relative;width:250px;' +
+    'transform:translateX(100%);' +
     'background:rgba(255,255,255,0.96);color:#333;' +
     'border-radius:8px 0 0 8px;' +
     'box-shadow:-2px 0 16px rgba(0,0,0,0.15);' +
@@ -1796,8 +1803,7 @@ function showPlacementHelp() {
     'pointer-events:auto;' +
     'border:1px solid rgba(0,0,0,0.08);border-right:none;' +
     'overflow:hidden;box-sizing:border-box;' +
-    'clip-path:inset(0 0 0 0);' +
-    'transition:transform 0.35s cubic-bezier(0.22,1,0.36,1), clip-path 0.35s cubic-bezier(0.22,1,0.36,1), width 0.35s cubic-bezier(0.2,0.8,0.3,1);';
+    'transition:transform 0.35s cubic-bezier(0.22,1,0.36,1), width 0.35s cubic-bezier(0.2,0.8,0.3,1);';
 
   _placementHelp.innerHTML =
     '<div id="bwbr-place-help-content" style="padding:14px 18px;white-space:nowrap;transition:opacity 0.25s;">' +
@@ -1834,21 +1840,19 @@ function showPlacementHelp() {
     }
   });
 
-  // body에 붙이고 rAF로 paper 위치 추적
-  document.body.appendChild(_placementHelp);
-  _startHelpTracking(_placementHelp);
+  wrapper.appendChild(_placementHelp);
+  document.body.appendChild(wrapper);
+  // rAF로 wrapper의 left를 paper 기준 추적
+  _startHelpTracking(wrapper);
 
-  // 슬라이드 인: translateX(0) → translateX(-100%)
+  // 슬라이드 인: translateX(100%) → translateX(0)
   requestAnimationFrame(function () {
     requestAnimationFrame(function () {
       if (_placementHelp) {
-        _placementHelp.style.transform = 'translateX(-100%)';
+        _placementHelp.style.transform = 'translateX(0)';
       }
     });
   });
-
-  // 3초 후 자동 접기
-  // setTimeout(function () { collapsePlacementHelp(); }, 3000); // 사용자 요청으로 툴팁 자동 닫힘 제거
 }
 
 function collapsePlacementHelp() {
@@ -1879,8 +1883,8 @@ function hidePlacementHelp() {
     _helpPaperObserver = null;
   }
   if (!_placementHelp) return;
-  // clip-path로 드로어 벽 뒤로 숨김 (translateX 없이 clip-path만)
-  _placementHelp.style.clipPath = 'inset(0 0 0 100%)';
+  // 슬라이드 아웃: translateX(0) → translateX(100%) — wrapper의 overflow:hidden이 잘라냄
+  _placementHelp.style.transform = 'translateX(100%)';
   _placementHelp = null;
   // rAF 추적은 애니메이션 끝날 때까지 유지 (left 동기화)
   _helpHideTimer = setTimeout(function () {

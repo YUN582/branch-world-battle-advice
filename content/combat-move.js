@@ -1032,7 +1032,7 @@
     } else {
       newLeft = Math.round(paper.getBoundingClientRect().left);
     }
-    _helpTrackTarget.style.left = newLeft + 'px';
+    _helpTrackTarget.style.left = (newLeft - _helpTrackTarget.offsetWidth) + 'px';
   }
 
   function _startCombatHelpTracking(el) {
@@ -1065,13 +1065,20 @@
     if (_helpHideTimer) { clearTimeout(_helpHideTimer); _helpHideTimer = null; }
     _stopCombatHelpTracking();
 
+    // wrapper: overflow:hidden으로 드로어 벽 역할
+    var wrapper = document.createElement('div');
+    wrapper.id = 'bwbr-combat-help-wrap';
+    wrapper.style.cssText =
+      'position:fixed;top:140px;left:100vw;' +
+      'width:230px;height:auto;overflow:hidden;' +
+      'z-index:10;pointer-events:none;';
+
     _helpPanel = document.createElement('div');
     _helpPanel.id = 'bwbr-combat-help';
 
     _helpPanel.style.cssText =
-      'position:fixed;top:140px;left:100vw;' +
-      'transform:translateX(0);' +
-      'z-index:10;width:220px;' +
+      'position:relative;width:220px;' +
+      'transform:translateX(100%);' +
       'background:rgba(30,30,30,0.92);color:#eee;' +
       'border-radius:8px 0 0 8px;' +
       'box-shadow:-2px 0 16px rgba(0,0,0,0.4);' +
@@ -1080,8 +1087,7 @@
       'pointer-events:auto;' +
       'border:1px solid rgba(255,255,255,0.1);border-right:none;' +
       'overflow:hidden;box-sizing:border-box;' +
-      'clip-path:inset(0 0 0 0);' +
-      'transition:transform 0.35s cubic-bezier(0.22,1,0.36,1), clip-path 0.35s cubic-bezier(0.22,1,0.36,1), width 0.35s cubic-bezier(0.2,0.8,0.3,1);';
+      'transition:transform 0.35s cubic-bezier(0.22,1,0.36,1), width 0.35s cubic-bezier(0.2,0.8,0.3,1);';
 
     _helpPanel.innerHTML =
       '<div id="bwbr-help-content" style="padding:14px 18px;white-space:nowrap;' +
@@ -1101,8 +1107,9 @@
       'letter-spacing:2px;cursor:pointer;' +
       'opacity:0;pointer-events:none;transition:opacity 0.25s;">⚔️ 전투</div>';
 
-    document.body.appendChild(_helpPanel);
-    _startCombatHelpTracking(_helpPanel);
+    wrapper.appendChild(_helpPanel);
+    document.body.appendChild(wrapper);
+    _startCombatHelpTracking(wrapper);
 
     // 클릭으로 접기/펼치기
     _helpPanel.addEventListener('click', function () {
@@ -1113,11 +1120,11 @@
       }
     });
 
-    // 슬라이드 인: translateX(0) → translateX(-100%)
+    // 슬라이드 인: translateX(100%) → translateX(0)
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
         if (_helpPanel) {
-          _helpPanel.style.transform = 'translateX(-100%)';
+          _helpPanel.style.transform = 'translateX(0)';
         }
       });
     });
@@ -1150,8 +1157,8 @@
 
   function hideHelpPanel() {
     if (!_helpPanel) return;
-    // clip-path로 드로어 벽 뒤로 숨김 (translateX 없이 clip-path만)
-    _helpPanel.style.clipPath = 'inset(0 0 0 100%)';
+    // 슬라이드 아웃: translateX(0) → translateX(100%) — wrapper의 overflow:hidden이 잘라냄
+    _helpPanel.style.transform = 'translateX(100%)';
     _helpPanel = null;
     // rAF 추적은 애니메이션 끝날 때까지 유지 (left 동기화)
     _helpHideTimer = setTimeout(function () {
