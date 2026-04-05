@@ -1576,7 +1576,8 @@ var _shapeSettings = {
   cornerRadius: 0,           // 둥근 모서리 (사각형 전용, px)
   polygonSides: 5,           // 다각형 꼭짓점 수 (3~12)
   polygonInnerRatio: 1.0,    // 다각형 내부 비율 (0.1~1.0, 1.0=정다각형, <1=별)
-  donutInnerRatio: 0.5       // 도넛 내경 비율 (0.1~0.9)
+  donutInnerRatio: 0.5,      // 도넛 내경 비율 (0.1~0.9)
+  sketchJitter: 0            // 스케치 떨림 강도 (0=없음, 1~10=연필 질감)
 };
 
 var _shapeSettingsMenu = null;  // 도형 설정 메뉴 DOM
@@ -2460,6 +2461,17 @@ function createShapeSettingsMenu() {
   });
   menu.appendChild(strokeSizeGrp);
 
+  // ── 스케치 떨림 (0 = 없음, 연필 질감 효과) ──
+  var sketchLabel = document.createElement('div');
+  sketchLabel.className = 'bwbr-shape-section-label';
+  sketchLabel.textContent = '스케치';
+  menu.appendChild(sketchLabel);
+
+  var sketchGrp = _createShapeSlider('떨림', 0, 10, _shapeSettings.sketchJitter, '', function(v) {
+    _shapeSettings.sketchJitter = v;
+  });
+  menu.appendChild(sketchGrp);
+
   // 초기 추가 옵션 렌더
   _updateShapeExtraOptions();
 
@@ -2608,7 +2620,217 @@ function _buildShapePath(ctx, type, x, y, w, h, settings) {
   }
 }
 
+// ── 도형 패스 → 점 배열 변환 (스케치 효과용) ──
+
+// 두 점 사이를 균등 분할하여 점 추가
+function _subdivideLine(x1, y1, x2, y2, step) {
+  var dx = x2 - x1, dy = y2 - y1;
+  var dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist < step) return [{ x: x2, y: y2 }];
+  var n = Math.ceil(dist / step);
+  var pts = [];
+  for (var i = 1; i <= n; i++) {
+    var t = i / n;
+    pts.push({ x: x1 + dx * t, y: y1 + dy * t });
+  }
+  return pts;
+}
+
+// 원호를 점으로 분할 (cx,cy 중심, rx,ry 반지름, 시작/끝 각도, 반시계 여부)
+function _subdivideArc(cx, cy, rx, ry, startAngle, endAngle, ccw, step) {
+  var pts = [];
+  var circumApprox = Math.PI * (3 * (rx + ry) - Math.sqrt((3 * rx + ry) * (rx + 3 * ry)));
+  var totalAngle = endAngle - startAngle;
+  if (ccw) totalAngle = -totalAngle;
+  if (totalAngle < 0) totalAngle += Math.PI * 2;
+  if (totalAngle > Math.PI * 2) totalAngle = Math.PI * 2;
+  var arcLen = circumApprox * (totalAngle / (Math.PI * 2));
+  var n = Math.max(Math.ceil(arcLen / step), 8);
+  for (var i = 1; i <= n; i++) {
+    var t = i / n;
+    var a = ccw ? startAngle - totalAngle * t : startAngle + totalAngle * t;
+    pts.push({ x: cx + rx * Math.cos(a), y: cy + ry * Math.sin(a) });
+  }
+  return pts;
+}
+
+// arcTo의 두 접선에서 원호 중심/각도를 역산하여 점으로 분할
+function _subdivideArcTo(x0, y0, x1, y1, x2, y2, r, step) {
+  // 접선 벡터
+  var d1x = x1 - x0, d1y = y1 - y0;
+  var d2x = x2 - x1, d2y = y2 - y1;
+  var l1 = Math.sqrt(d1x * d1x + d1y * d1y) || 1;
+  var l2 = Math.sqrt(d2x * d2x + d2y * d2y) || 1;
+  d1x /= l1; d1y /= l1;
+  d2x /= l2; d2y /= l2;
+  // 반각
+  var dot = d1x * d2x + d1y * d2y;
+  var halfAngle = Math.acos(Math.max(-1, Math.min(1, dot))) / 2;
+  if (halfAngle < 0.001) return [{ x: x1, y: y1 }];
+  var tanHalf = Math.abs(Math.tan(halfAngle));
+  var tangentLen = r / tanHalf;
+  // 접점
+  var t1x = x1 - d1x * tangentLen, t1y = y1 - d1y * tangentLen;
+  var t2x = x1 + d2x * tangentLen, t2y = y1 + d2y * tangentLen;
+  // 원호 중심
+  var cross = d1x * d2y - d1y * d2x;
+  var sign = cross >= 0 ? 1 : -1;
+  var nx = -d1y * sign, ny = d1x * sign;
+  var cx = t1x + nx * r, cy = t1y + ny * r;
+  var startA = Math.atan2(t1y - cy, t1x - cx);
+  var endA = Math.atan2(t2y - cy, t2x - cx);
+  return _subdivideArc(cx, cy, r, r, startA, endA, cross < 0, step);
+}
+
+// 도형을 점 배열(들)로 변환, 도넛은 [외부, 내부] 반환
+function _shapeToPointArrays(type, x, y, w, h, settings, step) {
+  step = step || 4;
+  switch (type) {
+    case 'rect': {
+      var r = Math.min(settings.cornerRadius || 0, Math.min(w, h) / 2);
+      var pts = [];
+      if (r > 0) {
+        pts.push({ x: x + r, y: y });
+        // 상단 → 우상단 arcTo
+        pts = pts.concat(_subdivideLine(x + r, y, x + w - r, y, step));
+        pts = pts.concat(_subdivideArcTo(x + r, y, x + w, y, x + w, y + r, r, step));
+        // 우측 → 우하단 arcTo
+        pts = pts.concat(_subdivideLine(x + w, y + r, x + w, y + h - r, step));
+        pts = pts.concat(_subdivideArcTo(x + w, y + r, x + w, y + h, x + w - r, y + h, r, step));
+        // 하단 → 좌하단 arcTo
+        pts = pts.concat(_subdivideLine(x + w - r, y + h, x + r, y + h, step));
+        pts = pts.concat(_subdivideArcTo(x + w - r, y + h, x, y + h, x, y + h - r, r, step));
+        // 좌측 → 좌상단 arcTo
+        pts = pts.concat(_subdivideLine(x, y + h - r, x, y + r, step));
+        pts = pts.concat(_subdivideArcTo(x, y + h - r, x, y, x + r, y, r, step));
+      } else {
+        pts.push({ x: x, y: y });
+        pts = pts.concat(_subdivideLine(x, y, x + w, y, step));
+        pts = pts.concat(_subdivideLine(x + w, y, x + w, y + h, step));
+        pts = pts.concat(_subdivideLine(x + w, y + h, x, y + h, step));
+        pts = pts.concat(_subdivideLine(x, y + h, x, y, step));
+      }
+      pts.push(pts[0]); // close
+      return [pts];
+    }
+    case 'ellipse': {
+      var cx = x + w / 2, cy = y + h / 2;
+      var pts = _subdivideArc(cx, cy, w / 2, h / 2, 0, Math.PI * 2, false, step);
+      pts.push(pts[0]); // close
+      return [pts];
+    }
+    case 'polygon': {
+      var sides = settings.polygonSides || 5;
+      var inner = settings.polygonInnerRatio != null ? settings.polygonInnerRatio : 1.0;
+      var verts = [];
+      if (inner >= 1.0) {
+        for (var i = 0; i < sides; i++) {
+          var angle = (Math.PI * 2 * i / sides) - Math.PI / 2;
+          verts.push({ x: Math.cos(angle), y: Math.sin(angle) });
+        }
+      } else {
+        for (var i = 0; i < sides * 2; i++) {
+          var angle = (Math.PI * i / sides) - Math.PI / 2;
+          var ratio = (i % 2 === 0) ? 1 : inner;
+          verts.push({ x: ratio * Math.cos(angle), y: ratio * Math.sin(angle) });
+        }
+      }
+      var bMinX = Infinity, bMinY = Infinity, bMaxX = -Infinity, bMaxY = -Infinity;
+      verts.forEach(function(v) {
+        if (v.x < bMinX) bMinX = v.x; if (v.y < bMinY) bMinY = v.y;
+        if (v.x > bMaxX) bMaxX = v.x; if (v.y > bMaxY) bMaxY = v.y;
+      });
+      var bw = bMaxX - bMinX || 1, bh = bMaxY - bMinY || 1;
+      var pts = [];
+      for (var i = 0; i < verts.length; i++) {
+        var px = x + (verts[i].x - bMinX) / bw * w;
+        var py = y + (verts[i].y - bMinY) / bh * h;
+        if (i === 0) {
+          pts.push({ x: px, y: py });
+        } else {
+          pts = pts.concat(_subdivideLine(pts[pts.length - 1].x, pts[pts.length - 1].y, px, py, step));
+        }
+      }
+      // close: 마지막→첫 번째
+      pts = pts.concat(_subdivideLine(pts[pts.length - 1].x, pts[pts.length - 1].y, pts[0].x, pts[0].y, step));
+      pts.push(pts[0]);
+      return [pts];
+    }
+    case 'donut': {
+      var cx = x + w / 2, cy = y + h / 2;
+      var orx = w / 2, ory = h / 2;
+      var irx = orx * (settings.donutInnerRatio || 0.5);
+      var iry = ory * (settings.donutInnerRatio || 0.5);
+      var outer = _subdivideArc(cx, cy, orx, ory, 0, Math.PI * 2, false, step);
+      outer.push(outer[0]);
+      var inner = _subdivideArc(cx, cy, irx, iry, 0, Math.PI * 2, true, step);
+      inner.push(inner[0]);
+      return [outer, inner];
+    }
+  }
+  return [];
+}
+
+// 점 배열로 닫힌 패스 그리기 (quadratic 보간으로 부드럽게)
+function _drawClosedPointPath(ctx, pts) {
+  if (pts.length < 2) return;
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (var i = 1; i < pts.length - 1; i++) {
+    var mx = (pts[i].x + pts[i + 1].x) / 2;
+    var my = (pts[i].y + pts[i + 1].y) / 2;
+    ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
+  }
+  ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+}
+
+// 스케치 모드 렌더링 (jitter 적용 후 fill + stroke)
+function _renderSketchShapeToCtx(ctx, type, x, y, w, h, settings) {
+  var jitter = settings.sketchJitter || 0;
+  var step = Math.max(2, 6 - jitter * 0.3); // 높을수록 촘촘한 점
+  var pathArrays = _shapeToPointArrays(type, x, y, w, h, settings, step);
+  if (pathArrays.length === 0) return;
+
+  // jitter 적용
+  var jitteredArrays = pathArrays.map(function(pts) {
+    return _applyJitter(pts, jitter * 1.2);
+  });
+
+  // Fill
+  if (settings.fillOpacity > 0) {
+    ctx.save();
+    ctx.globalAlpha = settings.fillOpacity;
+    ctx.fillStyle = settings.fillColor;
+    ctx.beginPath();
+    jitteredArrays.forEach(function(pts) {
+      _drawClosedPointPath(ctx, pts);
+    });
+    ctx.fill('evenodd');
+    ctx.restore();
+  }
+
+  // Stroke
+  if (settings.strokeSize > 0 && settings.strokeOpacity > 0) {
+    ctx.save();
+    ctx.globalAlpha = settings.strokeOpacity;
+    ctx.strokeStyle = settings.strokeColor;
+    ctx.lineWidth = settings.strokeSize;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    jitteredArrays.forEach(function(pts) {
+      _drawClosedPointPath(ctx, pts);
+    });
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
 function _renderShapeToCtx(ctx, type, x, y, w, h, settings) {
+  // 스케치 모드: jitter > 0이면 점 기반 렌더링
+  if (settings.sketchJitter && settings.sketchJitter > 0) {
+    _renderSketchShapeToCtx(ctx, type, x, y, w, h, settings);
+    return;
+  }
   ctx.save();
   _buildShapePath(ctx, type, x, y, w, h, settings);
 
@@ -2646,6 +2868,7 @@ function _renderShapeDataUrl(mapCoords) {
   for (var k in _shapeSettings) scaledSettings[k] = _shapeSettings[k];
   scaledSettings.strokeSize = (_shapeSettings.strokeSize || 0) * compositeRatio;
   scaledSettings.cornerRadius = (_shapeSettings.cornerRadius || 0) * compositeRatio;
+  scaledSettings.sketchJitter = (_shapeSettings.sketchJitter || 0) * compositeRatio;
   _renderShapeToCtx(ctx, _shapeSettings.shapeType, 0, 0, cw, ch, scaledSettings);
   return canvas.toDataURL('image/png');
 }
