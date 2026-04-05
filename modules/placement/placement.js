@@ -1787,7 +1787,7 @@ function showPlacementHelp() {
   wrapper.id = 'bwbr-placement-help-wrap';
   wrapper.style.cssText =
     'position:fixed;top:140px;left:100vw;' +
-    'width:260px;height:auto;overflow:hidden;' +
+    'width:250px;overflow:hidden;' +
     'z-index:10;pointer-events:none;';
 
   _placementHelp = document.createElement('div');
@@ -1890,7 +1890,7 @@ function hidePlacementHelp() {
   _helpHideTimer = setTimeout(function () {
     _helpHideTimer = null;
     _stopHelpTracking();
-  }, 400);
+  }, 500);
 }
 
 function _waitForPaper() {

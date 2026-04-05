@@ -1070,7 +1070,7 @@
     wrapper.id = 'bwbr-combat-help-wrap';
     wrapper.style.cssText =
       'position:fixed;top:140px;left:100vw;' +
-      'width:230px;height:auto;overflow:hidden;' +
+      'width:220px;overflow:hidden;' +
       'z-index:10;pointer-events:none;';
 
     _helpPanel = document.createElement('div');
@@ -1164,7 +1164,7 @@
     _helpHideTimer = setTimeout(function () {
       _helpHideTimer = null;
       _stopCombatHelpTracking();
-    }, 400);
+    }, 500);
   }
 
   // ------------------------------------------------
