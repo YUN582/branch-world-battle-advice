@@ -11,7 +11,7 @@ var PLACEMENT_ICON = '<path fill="currentColor" d="M13 3V11H21V3H13M3 21H11V13H3
 var TOOL_ICONS = {
   image: '<path fill="currentColor" d="M21 3H3C2 3 1 4 1 5V19C1 20.1 1.9 21 3 21H21C22 21 23 20 23 19V5C23 3.9 22.1 3 21 3M5 17L8.5 12.5L11 15.5L14.5 11L19 17H5Z"/>',
   text: '<path fill="currentColor" d="M18.5 4L19.66 8.35L18.7 8.61C18.25 7.74 17.79 6.87 17.26 6.43C16.73 6 16.11 6 15.5 6H13V16.5C13 17 13 17.5 13.33 17.75C13.67 18 14.33 18 15 18V19H9V18C9.67 18 10.33 18 10.67 17.75C11 17.5 11 17 11 16.5V6H8.5C7.89 6 7.27 6 6.74 6.43C6.21 6.87 5.75 7.74 5.3 8.61L4.34 8.35L5.5 4H18.5Z"/>',
-  shape: '<path fill="currentColor" d="M11 13.5v8H3v-8h8m-2 2H5v4h4v-4m4.5-2.5L17 7l3.5 6h-7m1.75 2h3.5L15 9.5 13.25 13M6.5 2A4.5 4.5 0 0 0 2 6.5 4.5 4.5 0 0 0 6.5 11 4.5 4.5 0 0 0 11 6.5 4.5 4.5 0 0 0 6.5 2m0 2A2.5 2.5 0 0 1 9 6.5 2.5 2.5 0 0 1 6.5 9 2.5 2.5 0 0 1 4 6.5 2.5 2.5 0 0 1 6.5 4M22 13.5V22h-8.5v-8.5H22m-2 2H15.5V20H20v-4.5Z"/>',
+  shape: '<path fill="currentColor" d="M2 2h9v9H2V2m11 0l4.5 9H8.5L13 2M6.5 14A4.5 4.5 0 1 1 6.5 23 4.5 4.5 0 0 1 6.5 14m8 0h7v7h-7v-7z"/>',
   draw: '<path fill="currentColor" d="M20.71 7.04C21.1 6.65 21.1 6 20.71 5.63L18.37 3.29C18 2.9 17.35 2.9 16.96 3.29L15.12 5.12L18.87 8.87M3 17.25V21H6.75L17.81 9.93L14.06 6.18L3 17.25Z"/>'
 };
 
@@ -911,8 +911,8 @@ body.bwbr-placement-noselect .bwbr-text-editor * {
   aspect-ratio: 1;
   border: 2px solid transparent;
   border-radius: 8px;
-  background: rgba(255,255,255,0.06);
-  color: rgba(255,255,255,0.6);
+  background: rgba(0,0,0,0.04);
+  color: rgba(0,0,0,0.5);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -924,14 +924,14 @@ body.bwbr-placement-noselect .bwbr-text-editor * {
 }
 
 .bwbr-shape-type-btn:hover {
-  background: rgba(255,255,255,0.12);
-  color: rgba(255,255,255,0.8);
+  background: rgba(0,0,0,0.08);
+  color: rgba(0,0,0,0.7);
 }
 
 .bwbr-shape-type-btn--active {
   border-color: #42a5f5;
-  background: rgba(66,165,245,0.15);
-  color: #42a5f5;
+  background: rgba(66,165,245,0.1);
+  color: #1976d2;
 }
 
 .bwbr-shape-type-btn svg {
@@ -942,11 +942,12 @@ body.bwbr-placement-noselect .bwbr-text-editor * {
 .bwbr-shape-type-btn span {
   font-size: 9px;
   white-space: nowrap;
+  color: inherit;
 }
 
 .bwbr-shape-section-label {
   font-size: 11px;
-  color: #888;
+  color: #555;
   font-weight: 600;
   margin-top: 4px;
 }
@@ -985,12 +986,12 @@ body.bwbr-placement-noselect .bwbr-text-editor * {
   justify-content: space-between;
   align-items: center;
   font-size: 11px;
-  color: #888;
+  color: #666;
   font-weight: 500;
 }
 
 .bwbr-shape-slider-header span:last-child {
-  color: #555;
+  color: #333;
   font-weight: 600;
   min-width: 32px;
   text-align: right;
@@ -1001,7 +1002,7 @@ body.bwbr-placement-noselect .bwbr-text-editor * {
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #bbb;
+  color: #555;
   cursor: pointer;
   user-select: none;
 }
@@ -1987,8 +1988,8 @@ function createToolbar() {
   var tools = [
     { id: 'image', label: '이미지 (I)', icon: TOOL_ICONS.image },
     { id: 'text',  label: '텍스트 (T)', icon: TOOL_ICONS.text },
-    { id: 'shape', label: '도형 (S) / Shift: 정비례', icon: TOOL_ICONS.shape },
-    { id: 'draw',  label: '그리기 (D) / Shift: 직선', icon: TOOL_ICONS.draw }
+    { id: 'shape', label: '도형 (S)', icon: TOOL_ICONS.shape },
+    { id: 'draw',  label: '그리기 (D)', icon: TOOL_ICONS.draw }
   ];
 
   tools.forEach(function (tool) {
@@ -2018,8 +2019,8 @@ function createSubToolRow() {
   var tools = [
     { id: 'image', label: '이미지 (I)', icon: TOOL_ICONS.image },
     { id: 'text',  label: '텍스트 (T)', icon: TOOL_ICONS.text },
-    { id: 'shape', label: '도형 (S) / Shift: 정비례', icon: TOOL_ICONS.shape },
-    { id: 'draw',  label: '그리기 (D) / Shift: 직선', icon: TOOL_ICONS.draw }
+    { id: 'shape', label: '도형 (S)', icon: TOOL_ICONS.shape },
+    { id: 'draw',  label: '그리기 (D)', icon: TOOL_ICONS.draw }
   ];
 
   tools.forEach(function (tool) {
@@ -2293,14 +2294,14 @@ function createTextSettingsMenu() {
 // ── 도형 도구 패널 + 렌더링 ─────────────────────────────────────
 
 var _SHAPE_TYPES = [
-  { id: 'rect',     label: '사각형', svg: '<rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>' },
-  { id: 'ellipse',  label: '원',     svg: '<ellipse cx="12" cy="12" rx="9" ry="9" fill="none" stroke="currentColor" stroke-width="2"/>' },
-  { id: 'triangle', label: '삼각형', svg: '<polygon points="12,3 22,21 2,21" fill="none" stroke="currentColor" stroke-width="2"/>' },
-  { id: 'polygon',  label: '다각형', svg: '<polygon points="12,2 20,8 18,18 6,18 4,8" fill="none" stroke="currentColor" stroke-width="2"/>' },
-  { id: 'star',     label: '별',     svg: '<polygon points="12,2 15,9 22,9 16,14 18,21 12,17 6,21 8,14 2,9 9,9" fill="none" stroke="currentColor" stroke-width="1.5"/>' },
-  { id: 'donut',    label: '도넛',   svg: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/>' },
-  { id: 'arrow',    label: '화살표', svg: '<path d="M4 10h10V5l6 7-6 7v-5H4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>' },
-  { id: 'bubble',   label: '말풍선', svg: '<path d="M4 4h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H10l-4 4v-4H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="2"/>' }
+  { id: 'rect',     label: '사각형', svg: '<rect x="3" y="3" width="18" height="18" rx="3" fill="currentColor"/>' },
+  { id: 'ellipse',  label: '원',     svg: '<ellipse cx="12" cy="12" rx="9" ry="9" fill="currentColor"/>' },
+  { id: 'triangle', label: '삼각형', svg: '<polygon points="12,3 22,21 2,21" fill="currentColor"/>' },
+  { id: 'polygon',  label: '다각형', svg: '<polygon points="12,2 20,8 18,18 6,18 4,8" fill="currentColor"/>' },
+  { id: 'star',     label: '별',     svg: '<polygon points="12,2 15,9 22,9 16,14 18,21 12,17 6,21 8,14 2,9 9,9" fill="currentColor"/>' },
+  { id: 'donut',    label: '도넛',   svg: '<path fill="currentColor" fill-rule="evenodd" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 5a5 5 0 1 0 0 10 5 5 0 0 0 0-10z"/>' },
+  { id: 'arrow',    label: '화살표', svg: '<path fill="currentColor" d="M4 10h10V5l6 7-6 7v-5H4z"/>' },
+  { id: 'bubble',   label: '말풍선', svg: '<path fill="currentColor" d="M4 4h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H10l-4 4v-4H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/>' }
 ];
 
 function createShapeSettingsMenu() {
