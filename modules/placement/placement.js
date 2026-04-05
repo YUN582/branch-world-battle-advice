@@ -1696,6 +1696,7 @@ function togglePlacementMode() {
     activateMode('select');
     showPlacementHelp();
     _startStagingGuard();
+    updateConfirmBar();
   } else {
     _toolbar.classList.remove('bwbr-placement-toolbar--open');
     document.body.classList.remove('bwbr-placement-noselect');
@@ -1706,6 +1707,7 @@ function togglePlacementMode() {
     updatePlacementCursor();
     hidePlacementHelp();
     _stopStagingGuard();
+    updateConfirmBar();
   }
 }
 
@@ -2625,7 +2627,7 @@ function createDrawSettingsMenu() {
   // ── 안내 문구 (맨 위) ──
   var notice = document.createElement('div');
   notice.style.cssText = 'text-align:center;padding:4px 4px 6px;color:#888;font-size:11.5px;line-height:1.5;';
-  notice.innerHTML = '오버레이에서 자유롭게 그리세요.<br>Shift+드래그: 직선 · 완료 버튼으로 확정';
+  notice.innerHTML = '오버레이에서 자유롭게 그리세요.<br>Shift+드래그: 직선 · Ctrl+Z: 실행취소';
   menu.appendChild(notice);
 
   // ── 채우기 섹션 라벨 ──
@@ -2924,11 +2926,6 @@ function _showDrawFinishBar() {
   _drawFinishBar.className = 'bwbr-draw-finish-bar';
   _drawFinishBar.style.left = _getFieldCenter() + 'px';
 
-  var undoBtn = document.createElement('button');
-  undoBtn.className = 'bwbr-place-confirm-bar-btn bwbr-place-cancel-btn';
-  undoBtn.textContent = '↩ 실행취소';
-  undoBtn.addEventListener('click', undoDrawStroke);
-
   var cancelBtn = document.createElement('button');
   cancelBtn.className = 'bwbr-place-confirm-bar-btn bwbr-place-cancel-btn';
   cancelBtn.textContent = '🗑 모두 지우기';
@@ -2942,7 +2939,6 @@ function _showDrawFinishBar() {
   confirmBtn.textContent = '✓ 완료';
   confirmBtn.addEventListener('click', finishDrawing);
 
-  _drawFinishBar.appendChild(undoBtn);
   _drawFinishBar.appendChild(cancelBtn);
   _drawFinishBar.appendChild(confirmBtn);
   document.body.appendChild(_drawFinishBar);
@@ -6678,14 +6674,14 @@ function createConfirmBar() {
 }
 
 function updateConfirmBar() {
-  var count = _state.stagedObjects.length;
-  if (count > 0) {
-    _confirmBar.classList.add('bwbr-place-confirm-bar--visible');
-    _stagedCountEl.textContent = count + '개 배치됨';
-    _confirmBar.style.left = _getFieldCenter() + 'px';
-  } else {
+  if (!_state.active) {
     _confirmBar.classList.remove('bwbr-place-confirm-bar--visible');
+    return;
   }
+  var count = _state.stagedObjects.length;
+  _confirmBar.classList.add('bwbr-place-confirm-bar--visible');
+  _stagedCountEl.textContent = count > 0 ? count + '개 배치됨' : '배치 없음';
+  _confirmBar.style.left = _getFieldCenter() + 'px';
 }
 
 
