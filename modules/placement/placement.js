@@ -902,7 +902,7 @@ body.bwbr-placement-noselect .bwbr-text-editor * {
 
 .bwbr-shape-type-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 4px;
 }
 
@@ -1543,20 +1543,16 @@ var _drawColorHistoryEl = null; // 색상 히스토리 UI 컨테이너
 // ── 도형 도구 상태 ──────────────────────────────────────────────
 
 var _shapeSettings = {
-  shapeType: 'rect',        // 'rect' | 'ellipse' | 'polygon' | 'donut' | 'arrow' | 'bubble'
+  shapeType: 'rect',        // 'rect' | 'ellipse' | 'polygon' | 'donut'
   fillColor: '#ffffff',      // 채우기 색상
   fillOpacity: 1.0,          // 채우기 투명도 (0~1)
-  fillEnabled: true,         // 채우기 활성
   strokeColor: '#000000',    // 윤곽선 색상
-  strokeSize: 2,             // 윤곽선 두께 (px)
+  strokeSize: 0,             // 윤곽선 두께 (px, 0=비활성)
   strokeOpacity: 1.0,        // 윤곽선 투명도 (0~1)
-  strokeEnabled: true,       // 윤곽선 활성
   cornerRadius: 0,           // 둥근 모서리 (사각형 전용, px)
   polygonSides: 5,           // 다각형 꼭짓점 수 (3~12)
   polygonInnerRatio: 1.0,    // 다각형 내부 비율 (0.1~1.0, 1.0=정다각형, <1=별)
-  donutInnerRatio: 0.5,      // 도넛 내경 비율 (0.1~0.9)
-  arrowDirection: 'right',   // 화살표 방향: 'up' | 'down' | 'left' | 'right'
-  bubbleTailPos: 'bottom'    // 말풍선 꼬리 위치: 'top' | 'bottom' | 'left' | 'right'
+  donutInnerRatio: 0.5       // 도넛 내경 비율 (0.1~0.9)
 };
 
 var _shapeSettingsMenu = null;  // 도형 설정 메뉴 DOM
@@ -1975,10 +1971,10 @@ function createToolbar() {
 
   // 서브 도구 버튼 (개별 48x48 버튼)
   var tools = [
-    { id: 'image', label: '이미지 (I)', icon: TOOL_ICONS.image },
     { id: 'text',  label: '텍스트 (T)', icon: TOOL_ICONS.text },
+    { id: 'draw',  label: '그리기 (D)', icon: TOOL_ICONS.draw },
     { id: 'shape', label: '도형 (S)', icon: TOOL_ICONS.shape },
-    { id: 'draw',  label: '그리기 (D)', icon: TOOL_ICONS.draw }
+    { id: 'image', label: '이미지 (I)', icon: TOOL_ICONS.image }
   ];
 
   tools.forEach(function (tool) {
@@ -2006,10 +2002,10 @@ function createSubToolRow() {
   row.className = 'bwbr-place-subtool-row';
 
   var tools = [
-    { id: 'image', label: '이미지 (I)', icon: TOOL_ICONS.image },
     { id: 'text',  label: '텍스트 (T)', icon: TOOL_ICONS.text },
+    { id: 'draw',  label: '그리기 (D)', icon: TOOL_ICONS.draw },
     { id: 'shape', label: '도형 (S)', icon: TOOL_ICONS.shape },
-    { id: 'draw',  label: '그리기 (D)', icon: TOOL_ICONS.draw }
+    { id: 'image', label: '이미지 (I)', icon: TOOL_ICONS.image }
   ];
 
   tools.forEach(function (tool) {
@@ -2286,9 +2282,7 @@ var _SHAPE_TYPES = [
   { id: 'rect',     label: '사각형', svg: '<path fill="currentColor" d="M8 3H16C18.76 3 21 5.24 21 8V16C21 18.76 18.76 21 16 21H8C5.24 21 3 18.76 3 16V8C3 5.24 5.24 3 8 3Z"/>' },
   { id: 'ellipse',  label: '원',     svg: '<path fill="currentColor" d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"/>' },
   { id: 'polygon',  label: '다각형', svg: '<path fill="currentColor" d="M12,2.5L2,9.8L5.8,21.5H18.2L22,9.8L12,2.5Z"/>' },
-  { id: 'donut',    label: '도넛',   svg: '<path fill="currentColor" d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2Z M12,6A6,6 0 0,0 6,12A6,6 0 0,0 12,18A6,6 0 0,0 18,12A6,6 0 0,0 12,6Z"/>' },
-  { id: 'arrow',    label: '화살표', svg: '<path fill="currentColor" d="M4,15V9H12V4.16L19.84,12L12,19.84V15H4Z"/>' },
-  { id: 'bubble',   label: '말풍선', svg: '<path fill="currentColor" d="M20,2H4A2,2 0 0,0 2,4V22L6,18H20A2,2 0 0,0 22,16V4C22,2.89 21.1,2 20,2Z"/>' }
+  { id: 'donut',    label: '도넛',   svg: '<path fill="currentColor" d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2Z M12,6A6,6 0 0,0 6,12A6,6 0 0,0 12,18A6,6 0 0,0 18,12A6,6 0 0,0 12,6Z"/>' }
 ];
 
 function createShapeSettingsMenu() {
@@ -2296,7 +2290,7 @@ function createShapeSettingsMenu() {
   menu.className = 'bwbr-place-shape-menu';
   menu.style.display = 'none';
 
-  // ── 도형 타입 그리드 ──
+  // ── 도형 타입 그리드 (2×2) ──
   var grid = document.createElement('div');
   grid.className = 'bwbr-shape-type-grid';
   var _shapeTypeBtns = {};
@@ -2316,22 +2310,24 @@ function createShapeSettingsMenu() {
   });
   menu.appendChild(grid);
 
-  // ── 채우기 섹션 ──
+  // ── 도형별 추가 옵션 (도형 선택과 색상 설정 사이) ──
+  var extraOpts = document.createElement('div');
+  extraOpts.className = 'bwbr-shape-extra-options';
+  menu.appendChild(extraOpts);
+  menu._extraOpts = extraOpts;
+  menu._shapeTypeBtns = _shapeTypeBtns;
+
+  // ── 채우기: 색상 + 투명도 (체크박스 없음) ──
   var fillLabel = document.createElement('div');
   fillLabel.className = 'bwbr-shape-section-label';
   fillLabel.textContent = '채우기';
   menu.appendChild(fillLabel);
 
   var fillRow = document.createElement('div');
-  fillRow.className = 'bwbr-shape-prop-row';
-  var fillToggle = document.createElement('input');
-  fillToggle.type = 'checkbox';
-  fillToggle.checked = _shapeSettings.fillEnabled;
-  fillToggle.addEventListener('change', function() { _shapeSettings.fillEnabled = fillToggle.checked; });
-  fillRow.appendChild(fillToggle);
+  fillRow.className = 'bwbr-draw-compact-row';
 
   var fillSwatch = document.createElement('button');
-  fillSwatch.className = 'bwbr-shape-color-swatch';
+  fillSwatch.className = 'bwbr-draw-color-swatch';
   fillSwatch.style.background = _shapeSettings.fillColor;
   fillSwatch.addEventListener('click', function() {
     _openColorPopup(fillSwatch, _shapeSettings.fillColor, false, false, function(hex) {
@@ -2341,28 +2337,23 @@ function createShapeSettingsMenu() {
   });
   fillRow.appendChild(fillSwatch);
 
-  var fillOpGrp = _createShapeSlider('투명도', 5, 100, Math.round(_shapeSettings.fillOpacity * 100), '%', function(v) {
+  var fillOpGrp = _createShapeSlider('투명도', 0, 100, Math.round(_shapeSettings.fillOpacity * 100), '%', function(v) {
     _shapeSettings.fillOpacity = v / 100;
   });
   fillRow.appendChild(fillOpGrp);
   menu.appendChild(fillRow);
 
-  // ── 윤곽선 섹션 ──
+  // ── 윤곽선: 색상 + 투명도 (체크박스 없음) ──
   var strokeLabel = document.createElement('div');
   strokeLabel.className = 'bwbr-shape-section-label';
   strokeLabel.textContent = '윤곽선';
   menu.appendChild(strokeLabel);
 
   var strokeRow = document.createElement('div');
-  strokeRow.className = 'bwbr-shape-prop-row';
-  var strokeToggle = document.createElement('input');
-  strokeToggle.type = 'checkbox';
-  strokeToggle.checked = _shapeSettings.strokeEnabled;
-  strokeToggle.addEventListener('change', function() { _shapeSettings.strokeEnabled = strokeToggle.checked; });
-  strokeRow.appendChild(strokeToggle);
+  strokeRow.className = 'bwbr-draw-compact-row';
 
   var strokeSwatch = document.createElement('button');
-  strokeSwatch.className = 'bwbr-shape-color-swatch';
+  strokeSwatch.className = 'bwbr-draw-color-swatch';
   strokeSwatch.style.background = _shapeSettings.strokeColor;
   strokeSwatch.addEventListener('click', function() {
     _openColorPopup(strokeSwatch, _shapeSettings.strokeColor, false, false, function(hex) {
@@ -2372,27 +2363,17 @@ function createShapeSettingsMenu() {
   });
   strokeRow.appendChild(strokeSwatch);
 
-  var strokeSizeGrp = _createShapeSlider('두께', 1, 20, _shapeSettings.strokeSize, 'px', function(v) {
-    _shapeSettings.strokeSize = v;
-  });
-  strokeRow.appendChild(strokeSizeGrp);
-  menu.appendChild(strokeRow);
-
-  var strokeOpRow = document.createElement('div');
-  strokeOpRow.className = 'bwbr-shape-prop-row';
-  strokeOpRow.style.paddingLeft = '36px';
-  var strokeOpGrp = _createShapeSlider('투명도', 5, 100, Math.round(_shapeSettings.strokeOpacity * 100), '%', function(v) {
+  var strokeOpGrp = _createShapeSlider('투명도', 0, 100, Math.round(_shapeSettings.strokeOpacity * 100), '%', function(v) {
     _shapeSettings.strokeOpacity = v / 100;
   });
-  strokeOpRow.appendChild(strokeOpGrp);
-  menu.appendChild(strokeOpRow);
+  strokeRow.appendChild(strokeOpGrp);
+  menu.appendChild(strokeRow);
 
-  // ── 도형별 추가 옵션 ──
-  var extraOpts = document.createElement('div');
-  extraOpts.className = 'bwbr-shape-extra-options';
-  menu.appendChild(extraOpts);
-  menu._extraOpts = extraOpts;
-  menu._shapeTypeBtns = _shapeTypeBtns;
+  // ── 윤곽선 굵기 (0 = 윤곽선 없음) ──
+  var strokeSizeGrp = _createShapeSlider('윤곽 굵기', 0, 20, _shapeSettings.strokeSize, 'px', function(v) {
+    _shapeSettings.strokeSize = v;
+  });
+  menu.appendChild(strokeSizeGrp);
 
   // 초기 추가 옵션 렌더
   _updateShapeExtraOptions();
@@ -2454,48 +2435,6 @@ function _updateShapeExtraOptions() {
       _shapeSettings.donutInnerRatio = v / 100;
     });
     container.appendChild(diGrp);
-  } else if (type === 'arrow') {
-    var dirRow = document.createElement('div');
-    dirRow.className = 'bwbr-shape-prop-row';
-    var dirLabel = document.createElement('span');
-    dirLabel.style.cssText = 'font-size:11px;color:#888;';
-    dirLabel.textContent = '방향';
-    dirRow.appendChild(dirLabel);
-    ['up', 'down', 'left', 'right'].forEach(function(dir) {
-      var b = document.createElement('button');
-      b.className = 'bwbr-shape-type-btn' + (_shapeSettings.arrowDirection === dir ? ' bwbr-shape-type-btn--active' : '');
-      b.style.cssText = 'width:32px;height:32px;aspect-ratio:auto;';
-      var arrows = { up: '↑', down: '↓', left: '←', right: '→' };
-      b.textContent = arrows[dir];
-      b.addEventListener('click', function() {
-        _shapeSettings.arrowDirection = dir;
-        dirRow.querySelectorAll('.bwbr-shape-type-btn').forEach(function(x) { x.classList.remove('bwbr-shape-type-btn--active'); });
-        b.classList.add('bwbr-shape-type-btn--active');
-      });
-      dirRow.appendChild(b);
-    });
-    container.appendChild(dirRow);
-  } else if (type === 'bubble') {
-    var tailRow = document.createElement('div');
-    tailRow.className = 'bwbr-shape-prop-row';
-    var tailLabel = document.createElement('span');
-    tailLabel.style.cssText = 'font-size:11px;color:#888;';
-    tailLabel.textContent = '꼬리';
-    tailRow.appendChild(tailLabel);
-    ['top', 'bottom', 'left', 'right'].forEach(function(pos) {
-      var b = document.createElement('button');
-      b.className = 'bwbr-shape-type-btn' + (_shapeSettings.bubbleTailPos === pos ? ' bwbr-shape-type-btn--active' : '');
-      b.style.cssText = 'width:32px;height:32px;aspect-ratio:auto;';
-      var labels = { top: '上', bottom: '下', left: '左', right: '右' };
-      b.textContent = labels[pos];
-      b.addEventListener('click', function() {
-        _shapeSettings.bubbleTailPos = pos;
-        tailRow.querySelectorAll('.bwbr-shape-type-btn').forEach(function(x) { x.classList.remove('bwbr-shape-type-btn--active'); });
-        b.classList.add('bwbr-shape-type-btn--active');
-      });
-      tailRow.appendChild(b);
-    });
-    container.appendChild(tailRow);
   }
 }
 
@@ -2581,76 +2520,6 @@ function _buildShapePath(ctx, type, x, y, w, h, settings) {
       ctx.ellipse(cx, cy, irx, iry, 0, 0, Math.PI * 2, true);
       break;
     }
-    case 'arrow': {
-      var dir = settings.arrowDirection || 'right';
-      // 기본 오른쪽 화살표 좌표 → 방향에 따라 변환
-      var pts;
-      if (dir === 'right') {
-        pts = [[0, 0.25], [0.6, 0.25], [0.6, 0], [1, 0.5], [0.6, 1], [0.6, 0.75], [0, 0.75]];
-      } else if (dir === 'left') {
-        pts = [[1, 0.25], [0.4, 0.25], [0.4, 0], [0, 0.5], [0.4, 1], [0.4, 0.75], [1, 0.75]];
-      } else if (dir === 'up') {
-        pts = [[0.25, 1], [0.25, 0.4], [0, 0.4], [0.5, 0], [1, 0.4], [0.75, 0.4], [0.75, 1]];
-      } else { // down
-        pts = [[0.25, 0], [0.25, 0.6], [0, 0.6], [0.5, 1], [1, 0.6], [0.75, 0.6], [0.75, 0]];
-      }
-      pts.forEach(function(p, i) {
-        var px = x + p[0] * w, py = y + p[1] * h;
-        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-      });
-      ctx.closePath();
-      break;
-    }
-    case 'bubble': {
-      var tailPos = settings.bubbleTailPos || 'bottom';
-      var r = Math.min(w, h) * 0.1;
-      var tailSize = Math.min(w, h) * 0.15;
-      // 본체 사각형 (꼬리 방향에 따라 축소)
-      var bx = x, by = y, bw = w, bh = h;
-      if (tailPos === 'bottom') bh -= tailSize;
-      else if (tailPos === 'top') { by += tailSize; bh -= tailSize; }
-      else if (tailPos === 'left') { bx += tailSize; bw -= tailSize; }
-      else if (tailPos === 'right') bw -= tailSize;
-
-      r = Math.min(r, Math.min(bw, bh) / 2);
-
-      // 둥근 사각형 본체
-      ctx.moveTo(bx + r, by);
-      ctx.lineTo(bx + bw - r, by);
-      ctx.arcTo(bx + bw, by, bx + bw, by + r, r);
-      // 오른쪽 변 + 오른쪽 꼬리
-      if (tailPos === 'right') {
-        ctx.lineTo(bx + bw, by + bh * 0.35);
-        ctx.lineTo(bx + bw + tailSize, by + bh * 0.5);
-        ctx.lineTo(bx + bw, by + bh * 0.65);
-      }
-      ctx.lineTo(bx + bw, by + bh - r);
-      ctx.arcTo(bx + bw, by + bh, bx + bw - r, by + bh, r);
-      // 아래 변 + 아래 꼬리
-      if (tailPos === 'bottom') {
-        ctx.lineTo(bx + bw * 0.45, by + bh);
-        ctx.lineTo(bx + bw * 0.3, by + bh + tailSize);
-        ctx.lineTo(bx + bw * 0.25, by + bh);
-      }
-      ctx.lineTo(bx + r, by + bh);
-      ctx.arcTo(bx, by + bh, bx, by + bh - r, r);
-      // 왼쪽 변 + 왼쪽 꼬리
-      if (tailPos === 'left') {
-        ctx.lineTo(bx, by + bh * 0.65);
-        ctx.lineTo(bx - tailSize, by + bh * 0.5);
-        ctx.lineTo(bx, by + bh * 0.35);
-      }
-      ctx.lineTo(bx, by + r);
-      ctx.arcTo(bx, by, bx + r, by, r);
-      // 위 변 + 위 꼬리
-      if (tailPos === 'top') {
-        ctx.lineTo(bx + bw * 0.25, by);
-        ctx.lineTo(bx + bw * 0.3, by - tailSize);
-        ctx.lineTo(bx + bw * 0.45, by);
-      }
-      ctx.closePath();
-      break;
-    }
   }
 }
 
@@ -2658,12 +2527,12 @@ function _renderShapeToCtx(ctx, type, x, y, w, h, settings) {
   ctx.save();
   _buildShapePath(ctx, type, x, y, w, h, settings);
 
-  if (settings.fillEnabled) {
+  if (settings.fillOpacity > 0) {
     ctx.globalAlpha = settings.fillOpacity;
     ctx.fillStyle = settings.fillColor;
     ctx.fill('evenodd');
   }
-  if (settings.strokeEnabled && settings.strokeSize > 0) {
+  if (settings.strokeSize > 0 && settings.strokeOpacity > 0) {
     ctx.globalAlpha = settings.strokeOpacity;
     ctx.strokeStyle = settings.strokeColor;
     ctx.lineWidth = settings.strokeSize;
@@ -2736,9 +2605,15 @@ function createDrawSettingsMenu() {
   menu.className = 'bwbr-place-draw-menu';
   menu.style.display = 'none';
 
-  // ── 색상 + 굵기 (한 줄) ──
-  var colorSizeRow = document.createElement('div');
-  colorSizeRow.className = 'bwbr-draw-compact-row';
+  // ── 안내 문구 (맨 위) ──
+  var notice = document.createElement('div');
+  notice.style.cssText = 'text-align:center;padding:2px 4px 4px;color:#999;font-size:10px;line-height:1.5;';
+  notice.innerHTML = '오버레이에서 자유롭게 그리세요.<br>Shift+드래그: 직선 · 완료 버튼으로 확정';
+  menu.appendChild(notice);
+
+  // ── 색상 + 투명도 (한 줄) ──
+  var colorOpRow = document.createElement('div');
+  colorOpRow.className = 'bwbr-draw-compact-row';
 
   var colorBtn = document.createElement('button');
   colorBtn.className = 'bwbr-draw-color-swatch';
@@ -2749,8 +2624,41 @@ function createDrawSettingsMenu() {
       colorBtn.style.background = hex;
     });
   });
-  colorSizeRow.appendChild(colorBtn);
+  colorOpRow.appendChild(colorBtn);
 
+  var opacityGroup = document.createElement('div');
+  opacityGroup.className = 'bwbr-draw-slider-group';
+  var opacityHeader = document.createElement('div');
+  opacityHeader.className = 'bwbr-draw-slider-header';
+  var opacityLabel = document.createElement('span');
+  opacityLabel.textContent = '투명도';
+  var opacityVal = document.createElement('span');
+  opacityVal.textContent = Math.round(_drawSettings.penOpacity * 100) + '%';
+  opacityHeader.appendChild(opacityLabel);
+  opacityHeader.appendChild(opacityVal);
+  var opacitySlider = document.createElement('input');
+  opacitySlider.type = 'range';
+  opacitySlider.min = '5';
+  opacitySlider.max = '100';
+  opacitySlider.value = String(Math.round(_drawSettings.penOpacity * 100));
+  opacitySlider.className = 'bwbr-draw-slider';
+  opacitySlider.addEventListener('input', function() {
+    _drawSettings.penOpacity = parseInt(opacitySlider.value, 10) / 100;
+    opacityVal.textContent = opacitySlider.value + '%';
+  });
+  opacityGroup.appendChild(opacityHeader);
+  opacityGroup.appendChild(opacitySlider);
+  colorOpRow.appendChild(opacityGroup);
+  menu.appendChild(colorOpRow);
+
+  // ── 색상 히스토리 ──
+  var historyRow = document.createElement('div');
+  historyRow.className = 'bwbr-draw-color-history';
+  _drawColorHistoryEl = historyRow;
+  _updateColorHistoryUI(colorBtn);
+  menu.appendChild(historyRow);
+
+  // ── 굵기 ──
   var sizeGroup = document.createElement('div');
   sizeGroup.className = 'bwbr-draw-slider-group';
   var sizeHeader = document.createElement('div');
@@ -2773,21 +2681,26 @@ function createDrawSettingsMenu() {
   });
   sizeGroup.appendChild(sizeHeader);
   sizeGroup.appendChild(sizeSlider);
-  colorSizeRow.appendChild(sizeGroup);
-  menu.appendChild(colorSizeRow);
+  menu.appendChild(sizeGroup);
 
-  // ── 브러쉬 모양 + 색상 히스토리 (한 줄) ──
-  var shapeHistoryRow = document.createElement('div');
-  shapeHistoryRow.style.cssText = 'display:flex;align-items:center;gap:4px;';
+  // ── 브러쉬 모양 (컴팩트 3버튼) ──
+  var brushRow = document.createElement('div');
+  brushRow.style.cssText = 'display:flex;align-items:center;gap:6px;';
+
+  var brushLabel = document.createElement('span');
+  brushLabel.style.cssText = 'font-size:11px;color:#888;font-weight:500;flex-shrink:0;';
+  brushLabel.textContent = '브러쉬';
+  brushRow.appendChild(brushLabel);
 
   var shapes = [
-    { id: 'round', svg: '<circle cx="10" cy="10" r="7" fill="currentColor"/>' },
-    { id: 'square', svg: '<rect x="3" y="3" width="14" height="14" fill="currentColor"/>' },
-    { id: 'triangle', svg: '<polygon points="10,2 18,17 2,17" fill="currentColor"/>' }
+    { id: 'round', label: '원형', svg: '<circle cx="10" cy="10" r="7" fill="currentColor"/>' },
+    { id: 'square', label: '사각', svg: '<rect x="3" y="3" width="14" height="14" fill="currentColor"/>' },
+    { id: 'triangle', label: '삼각', svg: '<polygon points="10,2 18,17 2,17" fill="currentColor"/>' }
   ];
   var shapeBtns = {};
   shapes.forEach(function(sh) {
     var btn = document.createElement('button');
+    btn.title = sh.label + ' 브러쉬';
     btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 20 20">' + sh.svg + '</svg>';
     var isActive = sh.id === _drawSettings.brushShape;
     btn.style.cssText = 'background:' + (isActive ? 'rgba(0,0,0,0.12)' : 'none') +
@@ -2811,43 +2724,9 @@ function createDrawSettingsMenu() {
       updateShapeStyles();
     });
     shapeBtns[sh.id] = btn;
-    shapeHistoryRow.appendChild(btn);
+    brushRow.appendChild(btn);
   });
-
-  // 색상 히스토리 (모양 버튼 오른쪽)
-  var historyRow = document.createElement('div');
-  historyRow.className = 'bwbr-draw-color-history';
-  historyRow.style.cssText += 'flex:1;min-width:0;justify-content:flex-end;';
-  _drawColorHistoryEl = historyRow;
-  _updateColorHistoryUI(colorBtn);
-  shapeHistoryRow.appendChild(historyRow);
-
-  menu.appendChild(shapeHistoryRow);
-
-  // ── 투명도 ──
-  var opacityGroup = document.createElement('div');
-  opacityGroup.className = 'bwbr-draw-slider-group';
-  var opacityHeader = document.createElement('div');
-  opacityHeader.className = 'bwbr-draw-slider-header';
-  var opacityLabel = document.createElement('span');
-  opacityLabel.textContent = '투명도';
-  var opacityVal = document.createElement('span');
-  opacityVal.textContent = Math.round(_drawSettings.penOpacity * 100) + '%';
-  opacityHeader.appendChild(opacityLabel);
-  opacityHeader.appendChild(opacityVal);
-  var opacitySlider = document.createElement('input');
-  opacitySlider.type = 'range';
-  opacitySlider.min = '5';
-  opacitySlider.max = '100';
-  opacitySlider.value = String(Math.round(_drawSettings.penOpacity * 100));
-  opacitySlider.className = 'bwbr-draw-slider';
-  opacitySlider.addEventListener('input', function() {
-    _drawSettings.penOpacity = parseInt(opacitySlider.value, 10) / 100;
-    opacityVal.textContent = opacitySlider.value + '%';
-  });
-  opacityGroup.appendChild(opacityHeader);
-  opacityGroup.appendChild(opacitySlider);
-  menu.appendChild(opacityGroup);
+  menu.appendChild(brushRow);
 
   // ── 떨림 ──
   var jitterGroup = document.createElement('div');
@@ -2917,11 +2796,11 @@ function createDrawSettingsMenu() {
   var outlineToggle = createToggleField('윤곽선', _drawSettings.outlineEnabled, function(val) {
     _drawSettings.outlineEnabled = val;
     outlineBody.style.display = val ? 'flex' : 'none';
-    outlineOpacityGroup.style.display = val ? '' : 'none';
+    outlineSizeGroup.style.display = val ? '' : 'none';
   });
   outlineWrap.appendChild(outlineToggle);
 
-  // ── 윤곽선 세부 (색상 + 굵기) — 펜과 동일 레이아웃 ──
+  // ── 윤곽선 세부 (색상 + 투명도) ──
   var outlineBody = document.createElement('div');
   outlineBody.className = 'bwbr-draw-compact-row';
   outlineBody.style.display = _drawSettings.outlineEnabled ? 'flex' : 'none';
@@ -2937,35 +2816,8 @@ function createDrawSettingsMenu() {
   });
   outlineBody.appendChild(outlineColorBtn);
 
-  var outlineSizeGroup = document.createElement('div');
-  outlineSizeGroup.className = 'bwbr-draw-slider-group';
-  var outlineSizeHeader = document.createElement('div');
-  outlineSizeHeader.className = 'bwbr-draw-slider-header';
-  var outlineSizeLabel = document.createElement('span');
-  outlineSizeLabel.textContent = '굵기';
-  var outlineSizeVal = document.createElement('span');
-  outlineSizeVal.textContent = _drawSettings.outlineSize + 'px';
-  outlineSizeHeader.appendChild(outlineSizeLabel);
-  outlineSizeHeader.appendChild(outlineSizeVal);
-  var outlineSizeSlider = document.createElement('input');
-  outlineSizeSlider.type = 'range';
-  outlineSizeSlider.min = '1';
-  outlineSizeSlider.max = '20';
-  outlineSizeSlider.value = String(_drawSettings.outlineSize);
-  outlineSizeSlider.className = 'bwbr-draw-slider';
-  outlineSizeSlider.addEventListener('input', function() {
-    _drawSettings.outlineSize = parseInt(outlineSizeSlider.value, 10);
-    outlineSizeVal.textContent = _drawSettings.outlineSize + 'px';
-  });
-  outlineSizeGroup.appendChild(outlineSizeHeader);
-  outlineSizeGroup.appendChild(outlineSizeSlider);
-  outlineBody.appendChild(outlineSizeGroup);
-  outlineWrap.appendChild(outlineBody);
-
-  // ── 윤곽선 투명도 ──
   var outlineOpacityGroup = document.createElement('div');
   outlineOpacityGroup.className = 'bwbr-draw-slider-group';
-  outlineOpacityGroup.style.display = _drawSettings.outlineEnabled ? '' : 'none';
   var outlineOpacityHeader = document.createElement('div');
   outlineOpacityHeader.className = 'bwbr-draw-slider-header';
   var outlineOpacityLabel = document.createElement('span');
@@ -2986,15 +2838,36 @@ function createDrawSettingsMenu() {
   });
   outlineOpacityGroup.appendChild(outlineOpacityHeader);
   outlineOpacityGroup.appendChild(outlineOpacitySlider);
-  outlineWrap.appendChild(outlineOpacityGroup);
+  outlineBody.appendChild(outlineOpacityGroup);
+  outlineWrap.appendChild(outlineBody);
+
+  // ── 윤곽선 굵기 ──
+  var outlineSizeGroup = document.createElement('div');
+  outlineSizeGroup.className = 'bwbr-draw-slider-group';
+  outlineSizeGroup.style.display = _drawSettings.outlineEnabled ? '' : 'none';
+  var outlineSizeHeader = document.createElement('div');
+  outlineSizeHeader.className = 'bwbr-draw-slider-header';
+  var outlineSizeLabel = document.createElement('span');
+  outlineSizeLabel.textContent = '굵기';
+  var outlineSizeVal = document.createElement('span');
+  outlineSizeVal.textContent = _drawSettings.outlineSize + 'px';
+  outlineSizeHeader.appendChild(outlineSizeLabel);
+  outlineSizeHeader.appendChild(outlineSizeVal);
+  var outlineSizeSlider = document.createElement('input');
+  outlineSizeSlider.type = 'range';
+  outlineSizeSlider.min = '1';
+  outlineSizeSlider.max = '20';
+  outlineSizeSlider.value = String(_drawSettings.outlineSize);
+  outlineSizeSlider.className = 'bwbr-draw-slider';
+  outlineSizeSlider.addEventListener('input', function() {
+    _drawSettings.outlineSize = parseInt(outlineSizeSlider.value, 10);
+    outlineSizeVal.textContent = _drawSettings.outlineSize + 'px';
+  });
+  outlineSizeGroup.appendChild(outlineSizeHeader);
+  outlineSizeGroup.appendChild(outlineSizeSlider);
+  outlineWrap.appendChild(outlineSizeGroup);
 
   menu.appendChild(outlineWrap);
-
-  // ── 안내 문구 ──
-  var notice = document.createElement('div');
-  notice.style.cssText = 'text-align:center;padding:6px 4px 2px;color:#999;font-size:10px;line-height:1.5;';
-  notice.innerHTML = '오버레이에서 자유롭게 그리세요.<br>Shift+드래그: 직선<br>완료 버튼으로 확정합니다.';
-  menu.appendChild(notice);
 
   return menu;
 }
@@ -5509,12 +5382,15 @@ function onOverlayMouseMove(e) {
     return;
   }
   // 스탬프 미리보기: 드래그 중이 아닐 때 이전 크기로 커서 위치에 표시 (이미지/도형)
+  // 타일 단위로 저장된 크기를 현재 줌에 맞게 화면 px 변환
   if (_state.mode === 'edit') {
     var isImageStamp = _state.lastStampSize && _state.currentTool === 'image' && _state.pendingImage;
     var isShapeStamp = _shapeLastStampSize && _state.currentTool === 'shape' && _shapePendingDataUrl;
     if (isImageStamp || isShapeStamp) {
-      var sw = isImageStamp ? _state.lastStampSize.w : _shapeLastStampSize.w;
-      var sh = isImageStamp ? _state.lastStampSize.h : _shapeLastStampSize.h;
+      var stampTiles = isImageStamp ? _state.lastStampSize : _shapeLastStampSize;
+      var zoom = getZoomScale();
+      var sw = stampTiles.tw * CELL_PX * zoom;
+      var sh = stampTiles.th * CELL_PX * zoom;
       var imgSrc = isImageStamp ? _state.pendingImage.dataUrl : _shapePendingDataUrl;
       _preview.style.left = (e.clientX - sw / 2) + 'px';
       _preview.style.top = (e.clientY - sh / 2) + 'px';
@@ -5555,10 +5431,11 @@ function onOverlayMouseUp(e) {
   }
 
   if (rect.w < 5 && rect.h < 5) {
-    // 클릭(드래그 없음) → 스탬프 모드: 이전 크기로 배치
+    // 클릭(드래그 없음) → 스탬프 모드: 타일 단위 크기를 현재 줌으로 화면 px 변환
+    var zoom = getZoomScale();
     if (_state.currentTool === 'image' && _state.lastStampSize && _state.pendingImage) {
-      var sw = _state.lastStampSize.w;
-      var sh = _state.lastStampSize.h;
+      var sw = _state.lastStampSize.tw * CELL_PX * zoom;
+      var sh = _state.lastStampSize.th * CELL_PX * zoom;
       var stampRect = {
         x: _state.drag.startX - sw / 2,
         y: _state.drag.startY - sh / 2,
@@ -5572,8 +5449,8 @@ function onOverlayMouseUp(e) {
         _preview.innerHTML = '<img src="' + _state.pendingImage.dataUrl + '" alt="">';
       }
     } else if (_state.currentTool === 'shape' && _shapeLastStampSize) {
-      var sw = _shapeLastStampSize.w;
-      var sh = _shapeLastStampSize.h;
+      var sw = _shapeLastStampSize.tw * CELL_PX * zoom;
+      var sh = _shapeLastStampSize.th * CELL_PX * zoom;
       var stampRect = {
         x: _state.drag.startX - sw / 2,
         y: _state.drag.startY - sh / 2,
@@ -5590,12 +5467,12 @@ function onOverlayMouseUp(e) {
     return;
   }
 
-  // 드래그 배치
+  // 드래그 배치 — 스탬프 크기를 타일 단위로 저장
+  var mapCoords = screenToMapCoords(rect);
   if (_state.currentTool === 'shape') {
-    _shapeLastStampSize = { w: rect.w, h: rect.h };
+    _shapeLastStampSize = { tw: mapCoords ? mapCoords.width : 1, th: mapCoords ? mapCoords.height : 1 };
     deselectStaged();
     _stageShapeObject(rect);
-    // 스탬프 미리보기 유지
     if (_shapePendingDataUrl) {
       _preview.classList.add('bwbr-placement-preview--visible');
       _preview.innerHTML = '<img src="' + _shapePendingDataUrl + '" alt="">';
@@ -5603,8 +5480,8 @@ function onOverlayMouseUp(e) {
     return;
   }
 
-  // 이미지 드래그 배치 → 크기 저장 (스탬프 모드용)
-  _state.lastStampSize = { w: rect.w, h: rect.h };
+  // 이미지 드래그 배치 → 타일 단위 크기 저장 (스탬프 모드용)
+  _state.lastStampSize = { tw: mapCoords ? mapCoords.width : 1, th: mapCoords ? mapCoords.height : 1 };
 
   deselectStaged();
   stageObject(rect);
