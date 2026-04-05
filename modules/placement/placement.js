@@ -2671,18 +2671,19 @@ function _addShapeToMergeBuffer(screenRect) {
   var settingsCopy = {};
   for (var k in _shapeSettings) settingsCopy[k] = _shapeSettings[k];
 
-  // 이 도형 하나만 렌더 → dataUrl 저장 (미리보기용)
-  var dataUrl = _renderShapeDataUrl(mapCoords);
+  // 이 도형 하나만 렌더 → canvas + dataUrl 저장 (미리보기용)
+  var rendered = _renderShapeDataUrl(mapCoords);
+  if (!rendered) return;
 
   _shapeMergeBuffer.push({
     mapCoords: mapCoords,
     shapeType: _shapeSettings.shapeType,
     settings: settingsCopy,
-    cachedDataUrl: dataUrl // 개별 렌더 캐시
+    _cachedCanvas: rendered.canvas // canvas 직접 저장 (동기 drawImage 가능)
   });
 
   // 스탬프 미리보기용 dataUrl 갱신
-  _shapePendingDataUrl = dataUrl;
+  _shapePendingDataUrl = rendered.dataUrl;
 
   _redrawShapeMergePreview();
   updateConfirmBar();
@@ -2703,11 +2704,7 @@ function _redrawShapeMergePreview() {
   if (!origin || !zoom) return;
 
   _shapeMergeBuffer.forEach(function(entry) {
-    if (!entry._img) {
-      entry._img = new Image();
-      entry._img.src = entry.cachedDataUrl;
-    }
-    if (!entry._img.complete || !entry._img.naturalWidth) return;
+    if (!entry._cachedCanvas) return;
     var mc = entry.mapCoords;
     // 패딩 계산 (개별 모드의 _renderShapeDataUrl과 동일)
     var compositeRatio = COMPOSITE_PX_PER_TILE / CELL_PX;
@@ -2715,12 +2712,12 @@ function _redrawShapeMergePreview() {
     var scaledJitter = (entry.settings.sketchJitter || 0) * compositeRatio;
     var pad = Math.ceil(scaledStroke / 2 + scaledJitter * 1.5);
     var padTiles = pad / COMPOSITE_PX_PER_TILE;
-    // 화면 좌표
+    // 화면 좌표 (패딩 포함 — 스트로크/지터가 캔버스 밖으로 안 잘리도록)
     var sx = origin.x + (mc.x - padTiles) * CELL_PX * zoom;
     var sy = origin.y + (mc.y - padTiles) * CELL_PX * zoom;
     var sw = (mc.width + padTiles * 2) * CELL_PX * zoom;
     var sh = (mc.height + padTiles * 2) * CELL_PX * zoom;
-    _shapeMergeCtx.drawImage(entry._img, sx, sy, sw, sh);
+    _shapeMergeCtx.drawImage(entry._cachedCanvas, sx, sy, sw, sh);
   });
 }
 
@@ -3255,7 +3252,7 @@ function _renderShapeDataUrl(mapCoords) {
   canvas.height = ch;
   var ctx = canvas.getContext('2d');
   _renderShapeToCtx(ctx, _shapeSettings.shapeType, pad, pad, cw - pad * 2, ch - pad * 2, scaledSettings);
-  return canvas.toDataURL('image/png');
+  return { canvas: canvas, dataUrl: canvas.toDataURL('image/png') };
 }
 
 // _stageShapeObject: 도형을 stageObject 경로로 배치 (이미지 도구와 동일 구조)
@@ -3274,11 +3271,11 @@ function _stageShapeObject(screenRect, initialAngle) {
   var mapCoords = screenToMapCoords(screenRect);
   if (!mapCoords) return;
 
-  var dataUrl = _renderShapeDataUrl(mapCoords);
-  if (!dataUrl) return;
+  var rendered = _renderShapeDataUrl(mapCoords);
+  if (!rendered) return;
 
   // 스탬프 미리보기용 dataUrl 저장
-  _shapePendingDataUrl = dataUrl;
+  _shapePendingDataUrl = rendered.dataUrl;
 
   readSettingsFromDOM();
 
@@ -3286,7 +3283,7 @@ function _stageShapeObject(screenRect, initialAngle) {
     id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
     mapCoords: mapCoords,
     angle: initialAngle || 0,
-    imageDataUrl: dataUrl,
+    imageDataUrl: rendered.dataUrl,
     settings: {
       type: _state.panelSettings.type,
       z: _state.panelSettings.z,
