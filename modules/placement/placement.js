@@ -675,6 +675,69 @@ body.bwbr-placement-noselect .bwbr-text-editor * {
   cursor: default;
 }
 
+/* ── 도형 연속(병합) 모드 조작 바 ──────────────── */
+
+.bwbr-shape-merge-bar {
+  position: fixed;
+  bottom: 82px;
+  transform: translateX(-50%);
+  z-index: 105;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border-radius: 12px;
+  padding: 8px 16px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+}
+
+.bwbr-shape-merge-bar .bwbr-shape-merge-count {
+  font-size: 13px;
+  color: #666;
+  white-space: nowrap;
+  min-width: 50px;
+  text-align: center;
+}
+
+/* ── 도형 연속 모드 프리뷰 캔버스 ──────────────── */
+
+.bwbr-shape-merge-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 103;
+  pointer-events: none;
+}
+
+/* ── 도형 연속/개별 토글 ───────────────────────── */
+
+.bwbr-shape-mode-toggle {
+  display: flex;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid #e0e0e0;
+  font-size: 12px;
+}
+
+.bwbr-shape-mode-toggle button {
+  padding: 4px 10px;
+  border: none;
+  background: #f5f5f5;
+  color: #888;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.bwbr-shape-mode-toggle button:first-child {
+  border-right: 1px solid #e0e0e0;
+}
+
+.bwbr-shape-mode-toggle button.bwbr-shape-mode--active {
+  background: #42a5f5;
+  color: #fff;
+}
+
 /* ── 확인 설정 다이얼로그 ──────────────────────── */
 
 .bwbr-place-confirm-dialog-overlay {
@@ -1584,6 +1647,13 @@ var _shapeSettingsMenu = null;  // 도형 설정 메뉴 DOM
 var _shapeLastStampSize = null; // { w, h } (screen px) — 스탬프 모드용
 var _shapePendingDataUrl = null; // 현재 도형의 렌더된 dataUrl (스탬프 미리보기용)
 
+// ── 도형 연속(병합) 모드 ─────────────────────────
+var _shapeMergeMode = false;       // true=연속(병합), false=개별(기본)
+var _shapeMergeBuffer = [];        // { mapCoords, shapeType, settings(복제) } 배열
+var _shapeMergeCanvas = null;      // 화면 위 프리뷰 캔버스 (fixed overlay)
+var _shapeMergeCtx = null;         // 프리뷰 캔버스 context
+var _shapeMergeBar = null;         // 연속 모드 조작 바 (완료/모두 지우기)
+
 
 // ── DOM 요소 ────────────────────────────────────────────────────
 
@@ -1980,6 +2050,10 @@ function setSubTool(toolId) {
     } else {
       cleanupDrawCanvas();
     }
+    // 도형 연속 모드 버퍼 자동 완료
+    if (toolId === 'shape' && _shapeMergeMode && _shapeMergeBuffer.length > 0) {
+      _finishShapeMerge();
+    }
     _state.currentTool = null;
     _overlay.classList.remove('bwbr-placement-overlay--active');
     _settingsPanel.classList.remove('bwbr-place-settings--open');
@@ -1997,8 +2071,11 @@ function setSubTool(toolId) {
       cleanupDrawCanvas();
     }
   }
-  // 이전 도구가 shape이었으면 스탬프 상태 정리
+  // 이전 도구가 shape이었으면 연속 모드 버퍼 자동 완료 + 스탬프 상태 정리
   if (_state.currentTool === 'shape') {
+    if (_shapeMergeMode && _shapeMergeBuffer.length > 0) {
+      _finishShapeMerge();
+    }
     cleanupShapeState();
   }
 
@@ -2539,6 +2616,260 @@ function _updateShapeExtraOptions() {
 function cleanupShapeState() {
   _shapeLastStampSize = null;
   _shapePendingDataUrl = null;
+  _cleanupShapeMerge();
+}
+
+
+// ── 도형 연속(병합) 모드 함수들 ─────────────────────────────────
+
+function _setShapeMergeMode(on) {
+  if (_shapeMergeMode === on) return;
+  // 기존 버퍼가 있으면 정리
+  if (_shapeMergeMode && _shapeMergeBuffer.length > 0) {
+    _cleanupShapeMerge();
+  }
+  _shapeMergeMode = on;
+  if (on) {
+    _initShapeMergeCanvas();
+    _showShapeMergeBar();
+  } else {
+    _cleanupShapeMerge();
+  }
+  updateConfirmBar();
+}
+
+function _initShapeMergeCanvas() {
+  if (_shapeMergeCanvas) return;
+  _shapeMergeCanvas = document.createElement('canvas');
+  _shapeMergeCanvas.className = 'bwbr-shape-merge-canvas';
+  _shapeMergeCanvas.width = window.innerWidth;
+  _shapeMergeCanvas.height = window.innerHeight;
+  _shapeMergeCtx = _shapeMergeCanvas.getContext('2d');
+  document.body.appendChild(_shapeMergeCanvas);
+  // 줌/패닝 변경 감시 시작
+  _shapeMergeLastZoom = getZoomScale();
+  _shapeMergeLastOrigin = getMapOriginOnScreen();
+  _shapeMergeZoomWatchId = requestAnimationFrame(_shapeMergeZoomWatch);
+}
+
+var _shapeMergeLastZoom = 1;
+var _shapeMergeLastOrigin = null;
+var _shapeMergeZoomWatchId = null;
+
+function _shapeMergeZoomWatch() {
+  if (!_shapeMergeCanvas) return;
+  _shapeMergeZoomWatchId = requestAnimationFrame(_shapeMergeZoomWatch);
+  var z = getZoomScale();
+  var o = getMapOriginOnScreen();
+  if (!o || !_shapeMergeLastOrigin) { _shapeMergeLastZoom = z; _shapeMergeLastOrigin = o; return; }
+  if (z !== _shapeMergeLastZoom || o.x !== _shapeMergeLastOrigin.x || o.y !== _shapeMergeLastOrigin.y) {
+    _shapeMergeLastZoom = z;
+    _shapeMergeLastOrigin = o;
+    _redrawShapeMergePreview();
+  }
+}
+
+function _removeShapeMergeCanvas() {
+  if (_shapeMergeZoomWatchId) {
+    cancelAnimationFrame(_shapeMergeZoomWatchId);
+    _shapeMergeZoomWatchId = null;
+  }
+  if (_shapeMergeCanvas && _shapeMergeCanvas.parentNode) {
+    _shapeMergeCanvas.parentNode.removeChild(_shapeMergeCanvas);
+  }
+  _shapeMergeCanvas = null;
+  _shapeMergeCtx = null;
+}
+
+function _showShapeMergeBar() {
+  _hideShapeMergeBar();
+  _shapeMergeBar = document.createElement('div');
+  _shapeMergeBar.className = 'bwbr-shape-merge-bar';
+  _shapeMergeBar.style.left = _getFieldCenter() + 'px';
+
+  var clearBtn = document.createElement('button');
+  clearBtn.className = 'bwbr-place-confirm-bar-btn bwbr-place-cancel-btn';
+  clearBtn.textContent = '🗑 모두 지우기';
+  clearBtn.addEventListener('click', _clearShapeMergeBuffer);
+
+  var countEl = document.createElement('span');
+  countEl.className = 'bwbr-shape-merge-count';
+  countEl.textContent = '0개';
+  _shapeMergeBar._countEl = countEl;
+
+  var finishBtn = document.createElement('button');
+  finishBtn.className = 'bwbr-place-confirm-bar-btn bwbr-place-confirm-btn';
+  finishBtn.textContent = '✓ 완료';
+  finishBtn.disabled = true;
+  finishBtn.addEventListener('click', _finishShapeMerge);
+  _shapeMergeBar._finishBtn = finishBtn;
+
+  _shapeMergeBar.appendChild(clearBtn);
+  _shapeMergeBar.appendChild(countEl);
+  _shapeMergeBar.appendChild(finishBtn);
+  document.body.appendChild(_shapeMergeBar);
+}
+
+function _hideShapeMergeBar() {
+  if (_shapeMergeBar && _shapeMergeBar.parentNode) {
+    _shapeMergeBar.parentNode.removeChild(_shapeMergeBar);
+  }
+  _shapeMergeBar = null;
+}
+
+function _updateShapeMergeBar() {
+  if (!_shapeMergeBar) return;
+  var count = _shapeMergeBuffer.length;
+  if (_shapeMergeBar._countEl) {
+    _shapeMergeBar._countEl.textContent = count > 0 ? count + '개' : '0개';
+  }
+  if (_shapeMergeBar._finishBtn) {
+    _shapeMergeBar._finishBtn.disabled = count === 0;
+  }
+}
+
+function _cleanupShapeMerge() {
+  _shapeMergeBuffer = [];
+  _removeShapeMergeCanvas();
+  _hideShapeMergeBar();
+}
+
+// 연속 모드: 도형을 버퍼에 추가
+function _addShapeToMergeBuffer(screenRect) {
+  var mapCoords = screenToMapCoords(screenRect);
+  if (!mapCoords) return;
+  // 설정 복제 (현재 시점의 설정 스냅샷)
+  var settingsCopy = {};
+  for (var k in _shapeSettings) settingsCopy[k] = _shapeSettings[k];
+
+  _shapeMergeBuffer.push({
+    mapCoords: mapCoords,
+    shapeType: _shapeSettings.shapeType,
+    settings: settingsCopy
+  });
+
+  // 스탬프 미리보기용 dataUrl 갱신
+  _shapePendingDataUrl = _renderShapeDataUrl(mapCoords);
+
+  _redrawShapeMergePreview();
+  _updateShapeMergeBar();
+}
+
+// 프리뷰 캔버스에 모든 버퍼 도형 그리기
+function _redrawShapeMergePreview() {
+  if (!_shapeMergeCanvas || !_shapeMergeCtx) return;
+  // 캔버스 리사이즈 (창 크기 변경 대응)
+  if (_shapeMergeCanvas.width !== window.innerWidth || _shapeMergeCanvas.height !== window.innerHeight) {
+    _shapeMergeCanvas.width = window.innerWidth;
+    _shapeMergeCanvas.height = window.innerHeight;
+  }
+  _shapeMergeCtx.clearRect(0, 0, _shapeMergeCanvas.width, _shapeMergeCanvas.height);
+
+  var origin = getMapOriginOnScreen();
+  var zoom = getCurrentZoom();
+  if (!origin || !zoom) return;
+
+  _shapeMergeBuffer.forEach(function(entry) {
+    var mc = entry.mapCoords;
+    // 맵 타일 좌표 → 화면 좌표
+    var sx = origin.x + mc.x * CELL_PX * zoom;
+    var sy = origin.y + mc.y * CELL_PX * zoom;
+    var sw = mc.width * CELL_PX * zoom;
+    var sh = mc.height * CELL_PX * zoom;
+
+    _shapeMergeCtx.save();
+    _shapeMergeCtx.translate(sx, sy);
+    _shapeMergeCtx.scale(zoom, zoom);
+
+    // 화면 해상도에서 직접 도형 렌더
+    var drawW = mc.width * CELL_PX;
+    var drawH = mc.height * CELL_PX;
+    _renderShapeToCtx(_shapeMergeCtx, entry.shapeType, 0, 0, drawW, drawH, entry.settings);
+    _shapeMergeCtx.restore();
+  });
+}
+
+// 버퍼 비우기
+function _clearShapeMergeBuffer() {
+  _shapeMergeBuffer = [];
+  _redrawShapeMergePreview();
+  _updateShapeMergeBar();
+}
+
+// 병합 완료: 모든 버퍼 도형 → 하나의 PNG → 스테이징
+function _finishShapeMerge() {
+  if (_shapeMergeBuffer.length === 0) return;
+
+  var compositeRatio = COMPOSITE_PX_PER_TILE / CELL_PX; // 2
+
+  // 1. 전체 바운딩 박스 (타일 좌표) 계산
+  var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  _shapeMergeBuffer.forEach(function(entry) {
+    var mc = entry.mapCoords;
+    // 스트로크 + 스케치 떨림 패딩 (타일 단위)
+    var padTiles = ((entry.settings.strokeSize || 0) / 2 + (entry.settings.sketchJitter || 0) * 1.5) / CELL_PX;
+    if (mc.x - padTiles < minX) minX = mc.x - padTiles;
+    if (mc.y - padTiles < minY) minY = mc.y - padTiles;
+    if (mc.x + mc.width + padTiles > maxX) maxX = mc.x + mc.width + padTiles;
+    if (mc.y + mc.height + padTiles > maxY) maxY = mc.y + mc.height + padTiles;
+  });
+
+  var totalW = maxX - minX;
+  var totalH = maxY - minY;
+  if (totalW <= 0 || totalH <= 0) return;
+
+  // 2. 고해상도 합성 캔버스
+  var cw = Math.ceil(totalW * COMPOSITE_PX_PER_TILE);
+  var ch = Math.ceil(totalH * COMPOSITE_PX_PER_TILE);
+  var canvas = document.createElement('canvas');
+  canvas.width = cw;
+  canvas.height = ch;
+  var ctx = canvas.getContext('2d');
+
+  // 3. 각 도형 렌더 (합성 해상도)
+  _shapeMergeBuffer.forEach(function(entry) {
+    var mc = entry.mapCoords;
+    var relX = (mc.x - minX) * COMPOSITE_PX_PER_TILE;
+    var relY = (mc.y - minY) * COMPOSITE_PX_PER_TILE;
+    var drawW = mc.width * COMPOSITE_PX_PER_TILE;
+    var drawH = mc.height * COMPOSITE_PX_PER_TILE;
+
+    // 스케일된 설정
+    var scaledSettings = {};
+    for (var k in entry.settings) scaledSettings[k] = entry.settings[k];
+    scaledSettings.strokeSize = (entry.settings.strokeSize || 0) * compositeRatio;
+    scaledSettings.cornerRadius = (entry.settings.cornerRadius || 0) * compositeRatio;
+    scaledSettings.sketchJitter = (entry.settings.sketchJitter || 0) * compositeRatio;
+
+    _renderShapeToCtx(ctx, entry.shapeType, relX, relY, drawW, drawH, scaledSettings);
+  });
+
+  var dataUrl = canvas.toDataURL('image/png');
+
+  // 4. 단일 오브젝트로 스테이징
+  readSettingsFromDOM();
+  var obj = {
+    id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+    mapCoords: { x: minX, y: minY, width: totalW, height: totalH },
+    angle: 0,
+    imageDataUrl: dataUrl,
+    settings: {
+      type: _state.panelSettings.type,
+      z: _state.panelSettings.z,
+      memo: _state.panelSettings.memo,
+      locked: _state.panelSettings.locked,
+      freezed: _state.panelSettings.freezed
+    }
+  };
+  _state.stagedObjects.push(obj);
+  renderStagedItem(obj);
+  pushUndo({ type: 'stage', ids: [obj.id] });
+
+  // 5. 버퍼 초기화 (연속 모드는 유지)
+  _shapeMergeBuffer = [];
+  _redrawShapeMergePreview();
+  _updateShapeMergeBar();
+  updateConfirmBar();
 }
 
 
@@ -2930,6 +3261,17 @@ function _renderShapeDataUrl(mapCoords) {
 
 // _stageShapeObject: 도형을 stageObject 경로로 배치 (이미지 도구와 동일 구조)
 function _stageShapeObject(screenRect, initialAngle) {
+  // 연속(병합) 모드: 버퍼에 추가
+  if (_shapeMergeMode) {
+    _addShapeToMergeBuffer(screenRect);
+    // 스탬프 모드 유지를 위해 크기 저장
+    var mc = screenToMapCoords(screenRect);
+    if (mc) {
+      _shapeLastStampSize = { tw: mc.width, th: mc.height };
+    }
+    return;
+  }
+
   var mapCoords = screenToMapCoords(screenRect);
   if (!mapCoords) return;
 
@@ -6675,6 +7017,7 @@ function setupSelectModeHandlers() {
     if (e.target.closest('.bwbr-placement-toolbar')) return;
     if (e.target.closest('.bwbr-place-confirm-bar')) return;
     if (e.target.closest('.bwbr-place-align-bar')) return;
+    if (e.target.closest('.bwbr-shape-merge-bar')) return;
     if (e.target.closest('.bwbr-text-toolbar')) return;
     if (e.target.closest('.bwbr-text-editor-wrap')) return;
     if (e.target.closest('.bwbr-place-confirm-dialog-overlay')) return;
@@ -6714,6 +7057,7 @@ function setupSelectModeHandlers() {
     if (!_state.active) return;
     if (e.target.closest('.bwbr-placement-toolbar') ||
         e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar') ||
+        e.target.closest('.bwbr-shape-merge-bar') ||
         e.target.closest('.bwbr-text-toolbar') || e.target.closest('.bwbr-placement-overlay') ||
         e.target.closest('.bwbr-place-confirm-dialog-overlay') ||
         e.target.closest('.bwbr-color-popup') || e.target.closest('.bwbr-text-editor-wrap')) return;
@@ -6729,6 +7073,7 @@ function setupSelectModeHandlers() {
     if (!_state.active || e.button !== 0) return;
     if (e.target.closest('.bwbr-placement-toolbar') ||
         e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar') ||
+        e.target.closest('.bwbr-shape-merge-bar') ||
         e.target.closest('.bwbr-text-toolbar') ||
         e.target.closest('.bwbr-text-editor-wrap') ||
         e.target.closest('.bwbr-place-confirm-dialog-overlay') ||
@@ -6751,6 +7096,7 @@ function setupSelectModeHandlers() {
     if (_state.mode !== 'select' && _state.mode !== 'edit') return;
     if (e.target.closest('.bwbr-placement-toolbar') ||
         e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar') ||
+        e.target.closest('.bwbr-shape-merge-bar') ||
         e.target.closest('.bwbr-text-toolbar') ||
         e.target.closest('.bwbr-placement-overlay') ||
         e.target.closest('.bwbr-place-confirm-dialog-overlay') ||
@@ -7013,6 +7359,33 @@ function createConfirmBar() {
   _stagedCountEl.className = 'bwbr-place-staged-count';
   _stagedCountEl.textContent = '0개';
 
+  // 도형 연속/개별 모드 토글 (도형 도구일 때만 표시)
+  var modeToggle = document.createElement('div');
+  modeToggle.className = 'bwbr-shape-mode-toggle';
+  modeToggle.style.display = 'none';
+  var btnIndiv = document.createElement('button');
+  btnIndiv.textContent = '개별';
+  btnIndiv.className = 'bwbr-shape-mode--active';
+  var btnMerge = document.createElement('button');
+  btnMerge.textContent = '연속';
+  btnIndiv.addEventListener('click', function() {
+    if (!_shapeMergeMode) return;
+    _setShapeMergeMode(false);
+    btnIndiv.classList.add('bwbr-shape-mode--active');
+    btnMerge.classList.remove('bwbr-shape-mode--active');
+  });
+  btnMerge.addEventListener('click', function() {
+    if (_shapeMergeMode) return;
+    _setShapeMergeMode(true);
+    btnMerge.classList.add('bwbr-shape-mode--active');
+    btnIndiv.classList.remove('bwbr-shape-mode--active');
+  });
+  modeToggle.appendChild(btnIndiv);
+  modeToggle.appendChild(btnMerge);
+  _confirmBar._modeToggle = modeToggle;
+  _confirmBar._modeIndivBtn = btnIndiv;
+  _confirmBar._modeMergeBtn = btnMerge;
+
   _confirmBtnEl = document.createElement('button');
   _confirmBtnEl.className = 'bwbr-place-confirm-bar-btn bwbr-place-confirm-btn';
   _confirmBtnEl.textContent = '✓ 확인';
@@ -7020,6 +7393,7 @@ function createConfirmBar() {
 
   _confirmBar.appendChild(cancelBtn);
   _confirmBar.appendChild(_stagedCountEl);
+  _confirmBar.appendChild(modeToggle);
   _confirmBar.appendChild(_confirmBtnEl);
 
   document.body.appendChild(_confirmBar);
@@ -7034,9 +7408,14 @@ function updateConfirmBar() {
   _confirmBar.classList.add('bwbr-place-confirm-bar--visible');
   _stagedCountEl.textContent = count > 0 ? count + '개 배치됨' : '배치 없음';
   if (_confirmBtnEl) {
-    _confirmBtnEl.disabled = count === 0;
+    _confirmBtnEl.disabled = count === 0 && !_shapeMergeMode;
   }
   _confirmBar.style.left = _getFieldCenter() + 'px';
+
+  // 도형 도구일 때만 모드 토글 표시
+  if (_confirmBar._modeToggle) {
+    _confirmBar._modeToggle.style.display = (_state.currentTool === 'shape') ? '' : 'none';
+  }
 }
 
 
