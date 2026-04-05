@@ -1,193 +1,168 @@
-# 배치 모드 — Phase 2 & 3 구현 계획
+# 배치 모드 — 구현 상태 & 디자인 시스템
 
-> Phase 1 (이미지 배치) 완료. 이 문서는 Phase 2 (텍스트)와 Phase 3 (그리기) 구현 계획.
-
----
-
-## Phase 2: 텍스트 도구
-
-### 핵심 흐름 (area-first)
-
-```
-1. T키 또는 텍스트 버튼으로 텍스트 도구 활성화
-2. 오버레이에서 드래그 → 텍스트 영역 사각형 생성
-3. 해당 위치에 contentEditable 박스 표시 → WYSIWYG 텍스트 편집
-4. 플로팅 서식 바로 서식 적용 (볼드, 이탤릭 등)
-5. 편집 완료 → Canvas 렌더 → WebP → stageObject() → 기존 커밋 파이프라인
-```
-
-### Step 2-1: 영역 지정
-
-- 텍스트 도구 활성화 → 오버레이에서 드래그로 텍스트 박스 영역 생성
-- 영역은 스테이징 영역(bwbr-staged-item)처럼 보이되, 편집 가능 상태 표시
-- 스탬프 모드 불필요 (텍스트는 매번 새로 작성하므로)
-
-### Step 2-2: contentEditable WYSIWYG 편집
-
-- 드래그 완료 → 해당 위치에 `contentEditable` div 생성 (position: fixed)
-- 자동 포커스, 즉시 타이핑 가능
-- 텍스트 박스 크기에 맞춤 자동 줄바꿈 (CSS `word-break: break-all; overflow-wrap: break-word`)
-- Enter → 줄바꿈
-
-### Step 2-3: 플로팅 서식 바
-
-텍스트 영역 상단 또는 하단에 서식 바 표시:
-
-| 기능 | 구현 방식 |
-|------|----------|
-| **볼드** | `document.execCommand('bold')` → `<b>` 태그 |
-| **이탤릭** | `document.execCommand('italic')` → `<i>` 태그 |
-| **밑줄** | `document.execCommand('underline')` → `<u>` 태그 |
-| **취소선** | `document.execCommand('strikethrough')` → `<s>` 태그 |
-| **루비 문자** | 커스텀 처리: 선택 텍스트를 `<ruby>` 태그로 감쌈 + prompt로 루비 텍스트 입력 |
-| **드롭캡** | 첫 글자에 커스텀 span 적용 (font-size 확대 + float left) |
-| **폰트색** | `document.execCommand('foreColor', false, color)` |
-| **배경색** | `document.execCommand('hiliteColor', false, color)` |
-| **폰트 크기** | 커스텀: 선택 범위에 span + `font-size` 인라인 스타일 |
-| **폰트 선택** | 커스텀: 선택 범위에 span + `font-family` 인라인 스타일 |
-
-### Step 2-4: 폰트 지원
-
-1. **Font Access API** (Chromium 103+):
-   - `window.queryLocalFonts()` → 로컬 설치 폰트 목록
-   - 사용자 권한 요청 필요 (한 번만)
-   - ISOLATED world에서 사용 가능
-2. **기본 폰트 Fallback**: 고딕/명조/고정폭/필기체 (CSS generic families)
-3. **Google Fonts** (확장 가능): CDN `@import` 주입으로 웹폰트 로드
-
-### Step 2-5: Canvas 직접 렌더
-
-- contentEditable 편집 완료 (Esc 또는 영역 바깥 클릭)
-- contentEditable DOM → 자체 파서로 분석 (execCommand HTML 의존 X)
-- Canvas 2D API로 직접 렌더링:
-  ```
-  ctx.font = "bold 32px 'Noto Sans KR'"
-  ctx.fillText(...)      // 일반 텍스트
-  ctx.fillStyle = color  // 색상 변경
-  // ... 서식별 처리
-  ```
-- 멀티라인: 줄바꿈 위치 계산 (텍스트 박스 너비 기준)
-- 결과 → `canvas.toDataURL('image/webp', 0.85)` → `stageObject()` → 기존 파이프라인
-
-### 파일 구조
-
-```
-modules/placement/
-  placement.js         ← 기존 (Phase 1 이미지 + 공통 인프라)
-  placement-text.js    ← NEW: 텍스트 도구 전체 로직
-```
-
-- `placement-text.js`를 `placement.js`에서 동적 import:
-  ```javascript
-  var textModule = null;
-  function getTextModule() {
-    if (!textModule) {
-      textModule = import(chrome.runtime.getURL('modules/placement/placement-text.js'));
-    }
-    return textModule;
-  }
-  ```
-- `setSubTool('text')` 시 텍스트 모듈 로드 → 텍스트 도구 UI 초기화
-
-### 주요 고려사항
-
-- **execCommand 브라우저 차이**: HTML 출력이 브라우저마다 다를 수 있음 → DOM 파싱 후 자체 렌더
-- **Canvas 텍스트 측정**: `ctx.measureText()` 정확도 (font metrics)
-- **IME 입력**: 한국어 조합 중 키 이벤트 처리 (`compositionstart`/`compositionend`)
-- **포커스 관리**: 배치 모드 단축키 vs 텍스트 입력 → 텍스트 편집 중엔 키보드 이벤트 차단
-- **리사이즈**: 텍스트 박스 모서리 드래그로 크기 조절 → 자동 줄바꿈 재계산
+> **현재**: Phase 1~3 모두 구현 완료. 이 문서는 구현 상태와 UI 디자인 시스템을 정리한 참고 문서.
 
 ---
 
-## Phase 3: 그리기 도구
+## 구현 상태
 
-### Step 3-1: 도형 서브메뉴
-
-D키 또는 그리기 버튼 → 도형 선택 패널:
-
-| 도형 | SVG 기반 | 매개변수 |
-|------|----------|----------|
-| 사각형 | `<rect>` | w, h, rx (둥근 모서리) |
-| 삼각형 | `<polygon>` | 3점 |
-| 원/타원 | `<ellipse>` | rx, ry |
-| 다각형 | `<polygon>` | 꼭짓점 수 (3~12) |
-| 별 | `<polygon>` | 꼭짓점 수, 내부 반지름 비율 |
-| 도넛 | `<circle>` × 2 + clip | 외경, 내경 |
-
-### Step 3-2: 도형 속성
-
-**채우기 (Fill)**:
-- 단색 (color picker)
-- 그라데이션: 선형(Linear) / 방사형(Radial)
-  - 2~3 컬러 스톱, 각도/중심점 설정
-- 투명 (none)
-
-**윤곽선 (Stroke)**:
-- 색상: 단색 / 그라데이션
-- 두께: 1~50px
-- 스타일: 실선 / 점선 / 파선 / 쇄선
-- 위치: 내부(inset) / 중앙(center) / 외부(outset)
-  - Canvas: `ctx.lineWidth` 기본은 center → inset/outset은 clip으로 구현
-
-**공통**: 투명도(opacity) 0~100%
-
-### Step 3-3: 연필/펜 도구
-
-- 프리핸드 드로잉: `mousedown` → 점 수집 → `mousemove` → 선 그리기
-- SVG `<path>` 내부 관리
-- 속성: 선 굵기, 색상, 투명도
-- 스무딩: Catmull-Rom 또는 quadratic 보간
-
-### Step 3-4: 아이콘 라이브러리
-
-- **Material Icons** (Apache 2.0 라이선스):
-  - 카테고리별 브라우징 + 검색
-  - SVG 직접 삽입 → 색상/크기 변경 가능
-- JSON 인덱스 파일로 아이콘 목록 관리 (lazy load)
-- 선택 → 드래그 배치 → SVG → Canvas → WebP
-
-### Step 3-5: 렌더링 파이프라인
-
-```
-도형/연필 → SVG 내부 관리 → Canvas 렌더 → WebP → compositeAndCommit()
-```
-
-- 모든 도형은 내부적으로 SVG로 관리 (편집 가능 상태 유지)
-- 편집 완료 → SVG → Canvas (`drawImage()` with SVG Blob URL) → WebP
-
-### 파일 구조
-
-```
-modules/placement/
-  placement.js          ← 공통 인프라
-  placement-text.js     ← Phase 2: 텍스트
-  placement-draw.js     ← Phase 3: 그리기 전체
-  icons/                ← Material Icons SVG (lazy load)
-    index.json          ← 아이콘 메타데이터
-    *.svg               ← 개별 아이콘
-```
-
-### 향후 고려 (Phase 3+)
-
-- **패스파인더**: 도형 합집합/교집합/차집합 (복잡 — 별도 Phase)
-- **레이어 관리**: 도형 간 z-order
-- **그룹화**: 여러 도형을 하나의 오브젝트로
+| Phase | 도구 | 상태 | 파일 |
+|-------|------|------|------|
+| 1 | 이미지 배치 (스탬프/드래그 배치) | ✅ 완료 | `placement.js` |
+| 2 | 텍스트 (contentEditable WYSIWYG + Canvas 렌더) | ✅ 완료 | `placement.js` |
+| 3-A | 그리기 (프리핸드 브러쉬 + 윤곽선) | ✅ 완료 | `placement.js` |
+| 3-B | 도형 (사각/타원/다각/도넛) | ✅ 완료 | `placement.js` |
 
 ---
 
-## 구현 순서
+## 도구 순서
+
+**툴바 & 패널**: 그리기(D) → 텍스트(T) → 도형(S) → 이미지(I)
+
+---
+
+## UI 디자인 시스템
+
+### 공통 원칙
+
+1. **토글 대신 값으로 제어**: 기능 활성/비활성은 별도 토글 없이 값(예: 굵기=0이면 비활성)으로 판단
+2. **색상+투명도 한 줄**: 색 스워치(32px 원) + 투명도 슬라이더를 `bwbr-draw-compact-row`로 한 행에 배치
+3. **컬러 히스토리**: 별도 행에 표시하지 않고, 컬러 팝업 하단에 인라인으로 포함
+4. **레이블 통일**: 동일 개념은 동일 문구 사용 (예: "굵기", "투명도")
+5. **선택 버튼 스타일 통일**: 도형 타입/브러쉬 모양 모두 `아이콘+라벨` 가로 배치 + 2열 그리드
+
+### CSS 클래스 체계
+
+| 클래스 | 용도 |
+|--------|------|
+| `bwbr-draw-compact-row` | 색 스워치 + 슬라이더를 한 행으로 |
+| `bwbr-draw-color-swatch` | 색상 선택 버튼 (32px 원형) |
+| `bwbr-draw-slider-group` | 슬라이더 + 라벨 세로 묶음 |
+| `bwbr-draw-slider-header` | 슬라이더 위 라벨+값 행 |
+| `bwbr-draw-slider` | range input 공통 스타일 |
+| `bwbr-draw-section-sep` | 구분선 (1px #e0e0e0) |
+| `bwbr-shape-section-label` | 섹션 제목 (11px, #555, 600) |
+| `bwbr-brush-grid` | 브러쉬/도형 선택 2열 그리드 |
+| `bwbr-brush-btn` / `bwbr-brush-btn--active` | 브러쉬 선택 버튼 |
+| `bwbr-shape-type-grid` | 도형 타입 2열 그리드 |
+| `bwbr-shape-type-btn` / `bwbr-shape-type-btn--active` | 도형 선택 버튼 |
+
+### 슬라이더 스타일 통일
+
+모든 슬라이더는 동일한 스타일을 따름:
+- `font-size: 11px`, `color: #888`, `font-weight: 500` (라벨)
+- `color: #555`, `font-weight: 600`, `min-width: 32px` (값)
+- gap: 3px (그룹 내), flex: 1, min-width: 0
+
+### 선택 버튼 통일 (브러쉬 & 도형)
+
+| 속성 | 값 |
+|------|-----|
+| border | 1.5px solid rgba(0,0,0,0.12) / 활성: #42a5f5 |
+| border-radius | 6px |
+| background | rgba(0,0,0,0.03) / 활성: rgba(66,165,245,0.1) |
+| padding | 4~5px 6px |
+| font-size | 10px, weight 500 |
+| 레이아웃 | flex row, gap: 4px, 아이콘(16~18px) + 라벨 텍스트 |
+
+---
+
+## 도구별 패널 레이아웃
+
+### 그리기 도구
 
 ```
-Phase 2-1  영역 지정 드래그 + contentEditable 박스 생성
-Phase 2-2  기본 서식 바 (볼드/이탤릭/색상)
-Phase 2-3  고급 서식 (루비/드롭캡/폰트 선택)
-Phase 2-4  Canvas 직접 렌더 → WebP → 커밋
-Phase 2-5  Font Access API + 폰트 목록
-Phase 3-1  기본 도형 (사각형/원/삼각형)
-Phase 3-2  도형 속성 (채우기/윤곽선)
-Phase 3-3  연필 도구
-Phase 3-4  고급 도형 (다각형/별/도넛/그라데이션)
-Phase 3-5  Material Icons 통합
+[안내 문구]
+[색상●] [투명도 ━━━━━━━ 100%]
+┌──────────┬──────────┐
+│ ● 원형 브러쉬 │ ■ 사각 브러쉬 │
+├──────────┼──────────┤
+│ ▲ 삼각 브러쉬 │ ◇ 지우개     │
+└──────────┴──────────┘
+굵기        ━━━━━━━━━ 4px
+떨림        ━━━━━━━━━ 없음
+굵기 변화   ━━━━━━━━━ 없음
+────────────────────────
+윤곽선
+[색상●] [투명도 ━━━━━━━ 100%]
+굵기        ━━━━━━━━━ 0px
 ```
 
-각 단계는 독립적으로 테스트 가능하며, 이전 단계 위에 증분 빌드.
+- 브러쉬 선택에 지우개 포함 (별도 토글 없음)
+- 윤곽선: 토글 없이 항상 노출, 굵기=0이면 비활성
+- 기본값: outlineSize=0
+
+### 도형 도구
+
+```
+┌──────────┬──────────┐
+│ □ 사각형   │ ○ 원      │
+├──────────┼──────────┤
+│ ⬠ 다각형  │ ◎ 도넛    │
+└──────────┴──────────┘
+[도형별 세부 옵션: 둥근모서리/꼭짓점수/내경 등]
+채우기
+[색상●] [투명도 ━━━━━━━ 100%]
+윤곽선
+[색상●] [투명도 ━━━━━━━ 100%]
+굵기        ━━━━━━━━━ 0px
+```
+
+- 채우기/윤곽선: 체크박스 없음, 투명도=0%이면 비활성
+- 윤곽선 굵기=0이면 윤곽선 없음
+- 도형별 세부옵션은 도형 선택 ↔ 색상 설정 사이에 배치
+
+### 텍스트 도구
+
+- 드래그로 영역 생성 → contentEditable WYSIWYG 편집
+- 플로팅 서식 바: 볼드/이탤릭/밑줄/취소선/루비/폰트색/배경색/크기/폰트
+- Canvas 2D 직접 렌더 → WebP → stageObject()
+
+### 이미지 도구
+
+- 드래그: 영역 지정 → 이미지 선택 → 배치
+- 스탬프: 타일 단위(`tw`,`th`)로 저장, 줌에 따라 화면 크기 자동 조정
+
+---
+
+## 컬러 팝업 구조
+
+```
+┌────────────────────┐
+│  [SV 캔버스]        │
+│  [Hue 바]          │
+│  💧 [미리보기] #hex │
+│  ● ● ● ● ● (히스토리)│
+└────────────────────┘
+```
+
+- 스포이드(EyeDropper API) + 미리보기 + HEX 입력
+- 색상 히스토리: 팝업 하단에 인라인 표시
+- 투명 옵션: `allowTransparent` 일 때만 체크박스 표시
+
+---
+
+## 렌더링 파이프라인
+
+```
+그리기   → Canvas 2D 직접 → compositeAndCommit() → WebP → Firestore
+도형     → Canvas 2D 직접 → compositeAndCommit() → WebP → Firestore
+텍스트   → Canvas 2D 직접 → stageObject()        → WebP → Firestore
+이미지   → 원본 resize     → stageObject()        → WebP → Firestore
+```
+
+### 좌표계
+
+- `CELL_PX = 24` (1 맵 타일 = 24 화면 px)
+- `COMPOSITE_PX_PER_TILE = 48` (합성용 고해상도, composite ratio = 2x)
+- 스탬프 크기: `{tw, th}` (타일 단위) → 화면 표시: `tw * CELL_PX * zoom`
+
+---
+
+## 향후 과제
+
+- 그라데이션 채우기 (선형/방사형)
+- 윤곽선 스타일 (점선/파선)
+- Material Icons 라이브러리 통합
+- 패스파인더 (도형 합집합/교집합/차집합)
+- 레이어/z-order 관리
