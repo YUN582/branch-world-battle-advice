@@ -2638,6 +2638,7 @@ function _subdivideArc(cx, cy, rx, ry, startAngle, endAngle, ccw, step) {
   var totalAngle = endAngle - startAngle;
   if (ccw) totalAngle = -totalAngle;
   if (totalAngle < 0) totalAngle += Math.PI * 2;
+  if (totalAngle <= 0) totalAngle += Math.PI * 2; // CCW 풀서클: -2π→0→2π 보정
   if (totalAngle > Math.PI * 2) totalAngle = Math.PI * 2;
   var arcLen = circumApprox * (totalAngle / (Math.PI * 2));
   var n = Math.max(Math.ceil(arcLen / step), 8);
@@ -2758,7 +2759,7 @@ function _shapeToPointArrays(type, x, y, w, h, settings, step) {
       var iry = ory * (settings.donutInnerRatio || 0.5);
       var outer = _subdivideArc(cx, cy, orx, ory, 0, Math.PI * 2, false, step);
       outer.push(outer[0]);
-      var inner = _subdivideArc(cx, cy, irx, iry, 0, Math.PI * 2, true, step);
+      var inner = _subdivideArc(cx, cy, irx, iry, 0, Math.PI * 2, false, step);
       inner.push(inner[0]);
       return [outer, inner];
     }
