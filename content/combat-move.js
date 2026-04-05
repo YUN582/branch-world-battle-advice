@@ -1079,9 +1079,8 @@
       'font-size:12px;line-height:1.7;' +
       'pointer-events:auto;' +
       'border:1px solid rgba(255,255,255,0.1);border-right:none;' +
-      'opacity:0;overflow:hidden;box-sizing:border-box;' +
-      'clip-path:inset(0 0 0 0);' +
-      'transition:transform 0.35s cubic-bezier(0.22,1,0.36,1), opacity 0.3s ease, width 0.35s cubic-bezier(0.2,0.8,0.3,1), clip-path 0.3s ease;';
+      'overflow:hidden;box-sizing:border-box;' +
+      'transition:transform 0.35s cubic-bezier(0.22,1,0.36,1), width 0.35s cubic-bezier(0.2,0.8,0.3,1);';
 
     _helpPanel.innerHTML =
       '<div id="bwbr-help-content" style="padding:14px 18px;white-space:nowrap;' +
@@ -1113,11 +1112,10 @@
       }
     });
 
-    // 슬라이드 인: translateX(0) → translateX(-100%) + 페이드인
+    // 슬라이드 인: translateX(0) → translateX(-100%)
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
         if (_helpPanel) {
-          _helpPanel.style.opacity = '1';
           _helpPanel.style.transform = 'translateX(-100%)';
         }
       });
@@ -1133,7 +1131,6 @@
     if (content) content.style.opacity = '0';
     if (tab) tab.style.opacity = '1';
     _helpPanel.style.width = '28px';
-    _helpPanel.style.opacity = '0.7';
     _helpPanel.style.cursor = 'pointer';
   }
 
@@ -1142,7 +1139,6 @@
     var content = _helpPanel.querySelector('#bwbr-help-content');
     var tab = _helpPanel.querySelector('#bwbr-help-tab');
     _helpPanel.style.width = '220px';
-    _helpPanel.style.opacity = '1';
     _helpPanel.style.cursor = 'pointer';
     if (tab) tab.style.opacity = '0';
     // width 전환 후 content 페이드인
@@ -1154,8 +1150,7 @@
   function hideHelpPanel() {
     if (!_helpPanel) return;
     // clip-path로 오른쪽부터 잘라냄 → 드로어 뒤로 들어가는 효과
-    _helpPanel.style.opacity = '0';
-    _helpPanel.style.clipPath = 'inset(0 0 0 100%)';
+    _helpPanel.style.transform = 'translateX(0)';
     _helpPanel = null;
     // rAF 추적은 애니메이션 끝날 때까지 유지 (left 동기화)
     _helpHideTimer = setTimeout(function () {

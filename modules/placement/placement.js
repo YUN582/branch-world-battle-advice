@@ -623,14 +623,12 @@ body.bwbr-placement-noselect .bwbr-text-editor * {
   border-radius: 12px;
   padding: 8px 16px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.2);
-  opacity: 0;
   pointer-events: none;
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .bwbr-place-confirm-bar--visible {
   transform: translateX(-50%) translateY(0);
-  opacity: 1;
   pointer-events: auto;
 }
 
@@ -1797,9 +1795,8 @@ function showPlacementHelp() {
     'font-size:12px;line-height:1.7;' +
     'pointer-events:auto;' +
     'border:1px solid rgba(0,0,0,0.08);border-right:none;' +
-    'opacity:0;overflow:hidden;box-sizing:border-box;' +
-    'clip-path:inset(0 0 0 0);' +
-    'transition:transform 0.35s cubic-bezier(0.22,1,0.36,1), opacity 0.3s ease, width 0.35s cubic-bezier(0.2,0.8,0.3,1), clip-path 0.3s ease;';
+    'overflow:hidden;box-sizing:border-box;' +
+    'transition:transform 0.35s cubic-bezier(0.22,1,0.36,1), width 0.35s cubic-bezier(0.2,0.8,0.3,1);';
 
   _placementHelp.innerHTML =
     '<div id="bwbr-place-help-content" style="padding:14px 18px;white-space:nowrap;transition:opacity 0.25s;">' +
@@ -1840,11 +1837,10 @@ function showPlacementHelp() {
   document.body.appendChild(_placementHelp);
   _startHelpTracking(_placementHelp);
 
-  // 슬라이드 인: translateX(0) → translateX(-100%) + 페이드인
+  // 슬라이드 인: translateX(0) → translateX(-100%)
   requestAnimationFrame(function () {
     requestAnimationFrame(function () {
       if (_placementHelp) {
-        _placementHelp.style.opacity = '1';
         _placementHelp.style.transform = 'translateX(-100%)';
       }
     });
@@ -1861,7 +1857,6 @@ function collapsePlacementHelp() {
   if (content) content.style.opacity = '0';
   if (tab) { tab.style.opacity = '1'; tab.style.pointerEvents = 'auto'; }
   _placementHelp.style.width = '28px';
-  _placementHelp.style.opacity = '0.7';
   _placementHelp.style.cursor = 'pointer';
 }
 
@@ -1870,7 +1865,6 @@ function expandPlacementHelp() {
   var content = _placementHelp.querySelector('#bwbr-place-help-content');
   var tab = _placementHelp.querySelector('#bwbr-place-help-tab');
   _placementHelp.style.width = '250px';
-  _placementHelp.style.opacity = '1';
   _placementHelp.style.cursor = 'default';
   if (tab) { tab.style.opacity = '0'; tab.style.pointerEvents = 'none'; }
   if (content) {
@@ -1885,8 +1879,7 @@ function hidePlacementHelp() {
   }
   if (!_placementHelp) return;
   // clip-path로 오른쪽부터 잘라냄 → 드로어 뒤로 들어가는 효과
-  _placementHelp.style.opacity = '0';
-  _placementHelp.style.clipPath = 'inset(0 0 0 100%)';
+  _placementHelp.style.transform = 'translateX(0)';
   _placementHelp = null;
   // rAF 추적은 애니메이션 끝날 때까지 유지 (left 동기화)
   _helpHideTimer = setTimeout(function () {
