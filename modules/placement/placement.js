@@ -2461,7 +2461,8 @@ function createShapeSettingsMenu() {
   });
   menu.appendChild(strokeSizeGrp);
 
-  // 초기 추가 옵션 렌더
+  // 초기 추가 옵션 렌더 (_updateShapeExtraOptions가 _shapeSettingsMenu를 참조하므로 먼저 할당)
+  _shapeSettingsMenu = menu;
   _updateShapeExtraOptions();
 
   return menu;
