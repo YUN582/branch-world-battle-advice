@@ -1179,7 +1179,7 @@ body.bwbr-placement-noselect .bwbr-text-editor * {
 
 .bwbr-draw-finish-bar {
   position: fixed;
-  bottom: 24px;
+  bottom: 76px;
   transform: translateX(-50%);
   z-index: 105;
   display: flex;
@@ -2283,10 +2283,10 @@ function createTextSettingsMenu() {
   menu.style.display = 'none';
 
   var notice = document.createElement('div');
-  notice.style.cssText = 'text-align:center;padding:16px 12px;color:#888;font-size:13px;line-height:1.6;';
+  notice.style.cssText = 'text-align:center;padding:16px 12px;color:#888;font-size:13px;line-height:1.8;';
   notice.innerHTML = '<div style="font-size:20px;margin-bottom:6px;">\uD83D\uDCDD</div>' +
     '<b>텍스트 도구</b><br>' +
-    '<span style="font-size:11px;opacity:0.7;">오버레이에서 드래그하여<br>텍스트 영역을 지정하세요</span>';
+    '<span style="font-size:12px;opacity:0.7;">오버레이에서 드래그하여<br>텍스트 영역을 지정하세요</span>';
   menu.appendChild(notice);
 
   return menu;
