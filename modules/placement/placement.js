@@ -2852,7 +2852,7 @@ function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
   }
 
   // ── 헬퍼: stroke 그리기 ──
-  function drawStroke(c, idx) {
+  function drawStroke(c, idx, widthMul) {
     var e = entries[idx];
     var s = e.scaledSettings;
     if (s.strokeSize <= 0 || s.strokeOpacity <= 0) return;
@@ -2860,7 +2860,7 @@ function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
       cc.save();
       cc.globalAlpha = s.strokeOpacity;
       cc.strokeStyle = s.strokeColor;
-      cc.lineWidth = s.strokeSize;
+      cc.lineWidth = s.strokeSize * (widthMul || 1);
       if (entryPaths[idx]) {
         cc.lineJoin = 'round';
         cc.lineCap = 'round';
@@ -2896,12 +2896,12 @@ function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
     drawFill(silCtx, i, 1);
   }
 
-  // Step 3: 모든 도형의 stroke를 모아서 그리기 (2× 너비)
+  // Step 3: 모든 도형의 stroke를 모아서 그리기 (2× 너비 — dest-out으로 내부 절반 제거 후 1×가 됨)
   var strokeCanvas = document.createElement('canvas');
   strokeCanvas.width = cw; strokeCanvas.height = ch;
   var sCtx = strokeCanvas.getContext('2d');
   for (var i = 0; i < entries.length; i++) {
-    drawStroke(sCtx, i);
+    drawStroke(sCtx, i, 2);
   }
 
   // Step 4: fill 실루엣으로 stroke 내부를 제거 → 외곽만 남김
