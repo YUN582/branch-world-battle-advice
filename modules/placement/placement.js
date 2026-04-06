@@ -2704,84 +2704,13 @@ function _addShapeToMergeBuffer(screenRect, angle) {
   // 스탬프 미리보기용 dataUrl 갱신
   _shapePendingDataUrl = rendered.dataUrl;
 
-  _rebuildShapeMergeCache();
   _redrawShapeMergePreview();
   updateConfirmBar();
 }
 
-// 병합 캐시 캔버스 재구축 (도형 추가/삭제 시 호출)
-function _rebuildShapeMergeCache() {
-  _shapeMergeCachedCanvas = null;
-  _shapeMergeCachedBounds = null;
-  _shapeMergePaddedBounds = null;
-  if (_shapeMergeBuffer.length === 0) return;
-
-  var compositeRatio = COMPOSITE_PX_PER_TILE / CELL_PX; // 2
-
-  // 1. 바운딩 박스 계산: 패딩 포함(캔버스용) + 패딩 미포함(미리보기/스테이징용, 개별 배치와 동일)
-  var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  var pureMinX = Infinity, pureMinY = Infinity, pureMaxX = -Infinity, pureMaxY = -Infinity;
-  _shapeMergeBuffer.forEach(function(entry) {
-    var mc = entry.mapCoords;
-    var padTiles = ((entry.settings.strokeSize || 0) / 2 + (entry.settings.sketchJitter || 0) * 1.5) / CELL_PX;
-    var aabb = _rotatedAABB(mc.x, mc.y, mc.width, mc.height, entry.angle || 0);
-    // 패딩 포함 (캔버스 전체 영역)
-    if (aabb.minX - padTiles < minX) minX = aabb.minX - padTiles;
-    if (aabb.minY - padTiles < minY) minY = aabb.minY - padTiles;
-    if (aabb.maxX + padTiles > maxX) maxX = aabb.maxX + padTiles;
-    if (aabb.maxY + padTiles > maxY) maxY = aabb.maxY + padTiles;
-    // 패딩 미포함 (순수 도형 영역)
-    if (aabb.minX < pureMinX) pureMinX = aabb.minX;
-    if (aabb.minY < pureMinY) pureMinY = aabb.minY;
-    if (aabb.maxX > pureMaxX) pureMaxX = aabb.maxX;
-    if (aabb.maxY > pureMaxY) pureMaxY = aabb.maxY;
-  });
-
-  var totalW = maxX - minX;
-  var totalH = maxY - minY;
-  if (totalW <= 0 || totalH <= 0) return;
-
-  // 2. 고해상도 합성 캔버스 (패딩 포함 크기)
-  var cw = Math.ceil(totalW * COMPOSITE_PX_PER_TILE);
-  var ch = Math.ceil(totalH * COMPOSITE_PX_PER_TILE);
-  var canvas = document.createElement('canvas');
-  canvas.width = cw;
-  canvas.height = ch;
-  var ctx = canvas.getContext('2d');
-
-  // 3. 병합 렌더링 엔트리 (패딩 포함 원점 기준)
-  var entries = _shapeMergeBuffer.map(function(entry) {
-    var mc = entry.mapCoords;
-    var scaledSettings = {};
-    for (var k in entry.settings) scaledSettings[k] = entry.settings[k];
-    scaledSettings.strokeSize = (entry.settings.strokeSize || 0) * compositeRatio;
-    scaledSettings.cornerRadius = (entry.settings.cornerRadius || 0) * compositeRatio;
-    scaledSettings.sketchJitter = (entry.settings.sketchJitter || 0) * compositeRatio;
-    return {
-      shapeType: entry.shapeType,
-      relX: (mc.x - minX) * COMPOSITE_PX_PER_TILE,
-      relY: (mc.y - minY) * COMPOSITE_PX_PER_TILE,
-      drawW: mc.width * COMPOSITE_PX_PER_TILE,
-      drawH: mc.height * COMPOSITE_PX_PER_TILE,
-      scaledSettings: scaledSettings,
-      angle: entry.angle || 0
-    };
-  });
-  _renderMergedShapesToCtx(ctx, cw, ch, entries);
-
-  _shapeMergeCachedCanvas = canvas;
-  // 순수 도형 영역 (개별 배치와 크기 일치시키기 위해 unpadded)
-  _shapeMergeCachedBounds = {
-    x: pureMinX, y: pureMinY,
-    width: pureMaxX - pureMinX, height: pureMaxY - pureMinY
-  };
-  // 패딩 포함 영역 (캔버스 실제 범위)
-  _shapeMergePaddedBounds = { x: minX, y: minY, width: totalW, height: totalH };
-}
-
-// 프리뷰 캔버스에 병합 캐시를 unpadded 영역에 그리기
-// → padded 캔버스를 unpadded 크기로 drawImage = object-fit:fill과 동일한 패딩 압축 효과
-// → 실 배치(renderStagedItem)와 정확히 같은 모양
+// 프리뷰 캔버스: 각 도형의 개별 padded 캔버스를 unpadded 영역에 drawImage
+// → 개별 배치의 object-fit:fill과 동일한 패딩 비율 유지 → 크기 정확
+// → 도형 추가/삭제해도 기존 도형의 크기/위치 변하지 않음
 function _redrawShapeMergePreview() {
   if (!_shapeMergeCanvas || !_shapeMergeCtx) return;
   if (_shapeMergeCanvas.width !== window.innerWidth || _shapeMergeCanvas.height !== window.innerHeight) {
@@ -2789,19 +2718,34 @@ function _redrawShapeMergePreview() {
     _shapeMergeCanvas.height = window.innerHeight;
   }
   _shapeMergeCtx.clearRect(0, 0, _shapeMergeCanvas.width, _shapeMergeCanvas.height);
-  if (!_shapeMergeCachedCanvas || !_shapeMergeCachedBounds) return;
+  if (_shapeMergeBuffer.length === 0) return;
 
   var origin = getMapOriginOnScreen();
   var zoom = getZoomScale();
   if (!origin || !zoom) return;
 
-  // unpadded bounds = 스테이징 시 mapCoords와 동일 → object-fit:fill 시뮬레이션
-  var b = _shapeMergeCachedBounds;
-  var sx = origin.x + b.x * CELL_PX * zoom;
-  var sy = origin.y + b.y * CELL_PX * zoom;
-  var sw = b.width * CELL_PX * zoom;
-  var sh = b.height * CELL_PX * zoom;
-  _shapeMergeCtx.drawImage(_shapeMergeCachedCanvas, sx, sy, sw, sh);
+  for (var i = 0; i < _shapeMergeBuffer.length; i++) {
+    var entry = _shapeMergeBuffer[i];
+    var mc = entry.mapCoords;
+    var cvs = entry.canvas;
+    if (!cvs) continue;
+
+    // 각 도형의 unpadded 맵 좌표 → 화면 좌표
+    var sx = origin.x + mc.x * CELL_PX * zoom;
+    var sy = origin.y + mc.y * CELL_PX * zoom;
+    var sw = mc.width * CELL_PX * zoom;
+    var sh = mc.height * CELL_PX * zoom;
+
+    if (entry.angle) {
+      _shapeMergeCtx.save();
+      _shapeMergeCtx.translate(sx + sw / 2, sy + sh / 2);
+      _shapeMergeCtx.rotate(entry.angle * Math.PI / 180);
+      _shapeMergeCtx.drawImage(cvs, -sw / 2, -sh / 2, sw, sh);
+      _shapeMergeCtx.restore();
+    } else {
+      _shapeMergeCtx.drawImage(cvs, sx, sy, sw, sh);
+    }
+  }
 }
 
 // 병합 렌더링 공통: 여러 도형을 윤곽선 병합 방식으로 ctx에 그리기
@@ -2898,7 +2842,6 @@ function _clearShapeMergeBuffer() {
 function _undoShapeMerge() {
   if (_shapeMergeBuffer.length === 0) return;
   _shapeMergeBuffer.pop();
-  _rebuildShapeMergeCache();
   _redrawShapeMergePreview();
   updateConfirmBar();
 }
