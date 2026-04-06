@@ -1629,9 +1629,7 @@ var _shapeMergeMode = false;       // true=연속(병합), false=개별(기본)
 var _shapeMergeBuffer = [];        // { mapCoords, shapeType, settings(복제) } 배열
 var _shapeMergeCanvas = null;      // 화면 위 프리뷰 캔버스 (fixed overlay)
 var _shapeMergeCtx = null;         // 프리뷰 캔버스 context
-var _shapeMergeCachedCanvas = null; // 병합 렌더링 캐시 캔버스
-var _shapeMergeCachedBounds = null; // 순수 도형 영역 바운딩 박스 (패딩 미포함, 맵 좌표) — 미리보기+스테이징용
-var _shapeMergePaddedBounds = null; // 패딩 포함 바운딩 박스 — 캔버스 렌더링용
+
 
 
 // ── DOM 요소 ────────────────────────────────────────────────────
@@ -2675,9 +2673,6 @@ function _removeShapeMergeCanvas() {
 
 function _cleanupShapeMerge() {
   _shapeMergeBuffer = [];
-  _shapeMergeCachedCanvas = null;
-  _shapeMergeCachedBounds = null;
-  _shapeMergePaddedBounds = null;
   _removeShapeMergeCanvas();
 }
 
@@ -2689,28 +2684,23 @@ function _addShapeToMergeBuffer(screenRect, angle) {
   var settingsCopy = {};
   for (var k in _shapeSettings) settingsCopy[k] = _shapeSettings[k];
 
-  // 이 도형 하나만 렌더 → canvas + dataUrl 저장 (미리보기용)
-  var rendered = _renderShapeDataUrl(mapCoords);
-  if (!rendered) return;
-
   _shapeMergeBuffer.push({
     mapCoords: mapCoords,
     shapeType: _shapeSettings.shapeType,
     settings: settingsCopy,
-    angle: angle || 0,
-    canvas: rendered.canvas  // 개별 렌더링된 캔버스 (미리보기용)
+    angle: angle || 0
   });
 
-  // 스탬프 미리보기용 dataUrl 갱신
-  _shapePendingDataUrl = rendered.dataUrl;
+  // 스탬프 미리보기용 dataUrl (개별 렌더)
+  var rendered = _renderShapeDataUrl(mapCoords);
+  if (rendered) _shapePendingDataUrl = rendered.dataUrl;
 
   _redrawShapeMergePreview();
   updateConfirmBar();
 }
 
-// 프리뷰 캔버스: 각 도형의 개별 padded 캔버스를 unpadded 영역에 drawImage
-// → 개별 배치의 object-fit:fill과 동일한 패딩 비율 유지 → 크기 정확
-// → 도형 추가/삭제해도 기존 도형의 크기/위치 변하지 않음
+// 프리뷰 캔버스: 화면 공간에서 직접 병합 렌더링
+// → 패딩 비율 문제 없음, 크기 안정, 윤곽선 연결, 그리드 정렬 유지
 function _redrawShapeMergePreview() {
   if (!_shapeMergeCanvas || !_shapeMergeCtx) return;
   if (_shapeMergeCanvas.width !== window.innerWidth || _shapeMergeCanvas.height !== window.innerHeight) {
@@ -2724,28 +2714,30 @@ function _redrawShapeMergePreview() {
   var zoom = getZoomScale();
   if (!origin || !zoom) return;
 
-  for (var i = 0; i < _shapeMergeBuffer.length; i++) {
-    var entry = _shapeMergeBuffer[i];
+  // 화면 공간 기준 스케일: 1타일 = CELL_PX * zoom 픽셀
+  var screenScale = CELL_PX * zoom;
+
+  // 각 버퍼 엔트리 → 화면 좌표 기반 entries 생성
+  var entries = _shapeMergeBuffer.map(function(entry) {
     var mc = entry.mapCoords;
-    var cvs = entry.canvas;
-    if (!cvs) continue;
+    var scaledSettings = {};
+    for (var k in entry.settings) scaledSettings[k] = entry.settings[k];
+    // 설정값을 화면 스케일에 맞게 변환
+    scaledSettings.strokeSize = (entry.settings.strokeSize || 0) * zoom;
+    scaledSettings.cornerRadius = (entry.settings.cornerRadius || 0) * zoom;
+    scaledSettings.sketchJitter = (entry.settings.sketchJitter || 0) * zoom;
+    return {
+      shapeType: entry.shapeType,
+      relX: origin.x + mc.x * screenScale,
+      relY: origin.y + mc.y * screenScale,
+      drawW: mc.width * screenScale,
+      drawH: mc.height * screenScale,
+      scaledSettings: scaledSettings,
+      angle: entry.angle || 0
+    };
+  });
 
-    // 각 도형의 unpadded 맵 좌표 → 화면 좌표
-    var sx = origin.x + mc.x * CELL_PX * zoom;
-    var sy = origin.y + mc.y * CELL_PX * zoom;
-    var sw = mc.width * CELL_PX * zoom;
-    var sh = mc.height * CELL_PX * zoom;
-
-    if (entry.angle) {
-      _shapeMergeCtx.save();
-      _shapeMergeCtx.translate(sx + sw / 2, sy + sh / 2);
-      _shapeMergeCtx.rotate(entry.angle * Math.PI / 180);
-      _shapeMergeCtx.drawImage(cvs, -sw / 2, -sh / 2, sw, sh);
-      _shapeMergeCtx.restore();
-    } else {
-      _shapeMergeCtx.drawImage(cvs, sx, sy, sw, sh);
-    }
-  }
+  _renderMergedShapesToCtx(_shapeMergeCtx, _shapeMergeCanvas.width, _shapeMergeCanvas.height, entries);
 }
 
 // 병합 렌더링 공통: 여러 도형을 윤곽선 병합 방식으로 ctx에 그리기
@@ -2779,61 +2771,58 @@ function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
     return;
   }
 
-  // 1) 모든 fill을 메인 ctx에 그리기
-  entries.forEach(function(e) {
-    var s = e.scaledSettings;
-    if (s.fillOpacity > 0) {
-      var fillOnly = {};
-      for (var k in s) fillOnly[k] = s[k];
-      fillOnly.strokeSize = 0;
-      renderRotated(ctx, e, fillOnly);
-    }
-  });
+  // ── "하나의 도형" 병합 알고리즘 ──
+  // 모든 도형을 합체된 하나의 실루엣으로 취급:
+  // 1) tmp에 모든 fill+stroke 합성 (전체 실루엣)
+  // 2) 모든 fill 영역으로 destination-out → 내부 stroke 전부 제거 → 외곽 윤곽선만 남음
+  // 3) 메인 ctx에 외곽 윤곽선 그리기
+  // 4) destination-over로 fill을 윤곽선 뒤에 깔기
 
-  // 2) 각 도형의 stroke를 그리되, 다른 도형의 fill 영역은 잘라내기
   var tmp = document.createElement('canvas');
   tmp.width = cw; tmp.height = ch;
   var tCtx = tmp.getContext('2d');
 
+  // Step 1: 모든 도형의 fill+stroke을 한 캔버스에 합성 (전체 실루엣)
   for (var i = 0; i < entries.length; i++) {
-    var e = entries[i];
-    var s = e.scaledSettings;
-    if (!(s.strokeSize > 0 && s.strokeOpacity > 0)) continue;
-
-    // 이 도형의 stroke 그리기
-    tCtx.clearRect(0, 0, cw, ch);
-    var strokeOnly = {};
-    for (var k in s) strokeOnly[k] = s[k];
-    strokeOnly.fillOpacity = 0;
-    renderRotated(tCtx, e, strokeOnly);
-
-    // 다른 도형의 fill로 destination-out (자기 fill은 안 건드림)
-    tCtx.globalCompositeOperation = 'destination-out';
-    for (var j = 0; j < entries.length; j++) {
-      if (j === i) continue;
-      var ej = entries[j];
-      var sj = ej.scaledSettings;
-      if (sj.fillOpacity > 0) {
-        var fillMask = {};
-        for (var k2 in sj) fillMask[k2] = sj[k2];
-        fillMask.strokeSize = 0;
-        fillMask.fillOpacity = 1;
-        renderRotated(tCtx, ej, fillMask);
-      }
-    }
-    tCtx.globalCompositeOperation = 'source-over';
-
-    // 메인 ctx에 합성 (fill 위에 stroke)
-    ctx.drawImage(tmp, 0, 0);
+    renderRotated(tCtx, entries[i], entries[i].scaledSettings);
   }
+
+  // Step 2: 모든 도형의 fill 영역으로 destination-out → fill 내부 stroke 전부 제거
+  tCtx.globalCompositeOperation = 'destination-out';
+  for (var j = 0; j < entries.length; j++) {
+    var ej = entries[j];
+    var sj = ej.scaledSettings;
+    if (sj.fillOpacity > 0) {
+      var fillMask = {};
+      for (var k in sj) fillMask[k] = sj[k];
+      fillMask.strokeSize = 0;
+      fillMask.fillOpacity = 1;
+      renderRotated(tCtx, ej, fillMask);
+    }
+  }
+  tCtx.globalCompositeOperation = 'source-over';
+
+  // Step 3: 외곽 윤곽선을 메인 ctx에 그리기
+  ctx.drawImage(tmp, 0, 0);
+
+  // Step 4: fill을 윤곽선 뒤에 깔기 (destination-over)
+  ctx.globalCompositeOperation = 'destination-over';
+  for (var fi = 0; fi < entries.length; fi++) {
+    var ef = entries[fi];
+    var sf = ef.scaledSettings;
+    if (sf.fillOpacity > 0) {
+      var fillOnly = {};
+      for (var k2 in sf) fillOnly[k2] = sf[k2];
+      fillOnly.strokeSize = 0;
+      renderRotated(ctx, ef, fillOnly);
+    }
+  }
+  ctx.globalCompositeOperation = 'source-over';
 }
 
 // 버퍼 비우기
 function _clearShapeMergeBuffer() {
   _shapeMergeBuffer = [];
-  _shapeMergeCachedCanvas = null;
-  _shapeMergeCachedBounds = null;
-  _shapeMergePaddedBounds = null;
   _redrawShapeMergePreview();
   updateConfirmBar();
 }
@@ -2924,9 +2913,6 @@ function _finishShapeMerge() {
 
   // 5. 버퍼 초기화 (연속 모드는 유지)
   _shapeMergeBuffer = [];
-  _shapeMergeCachedCanvas = null;
-  _shapeMergeCachedBounds = null;
-  _shapeMergePaddedBounds = null;
   _redrawShapeMergePreview();
   updateConfirmBar();
 }
