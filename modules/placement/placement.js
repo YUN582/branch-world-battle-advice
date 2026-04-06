@@ -489,7 +489,7 @@ body.bwbr-placement-noselect .bwbr-text-editor * {
 .bwbr-placement-preview img {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: fill;
   opacity: 0.7;
 }
 
@@ -2779,8 +2779,9 @@ function _rebuildShapeMergeCache() {
   _shapeMergePaddedBounds = { x: minX, y: minY, width: totalW, height: totalH };
 }
 
-// 프리뷰 캔버스에 병합 캐시를 padded 영역에 1:1로 그리기
-// → 윤곽선 연결이 보이고, 각 도형의 절대 위치도 정확
+// 프리뷰 캔버스에 병합 캐시를 unpadded 영역에 그리기
+// → padded 캔버스를 unpadded 크기로 drawImage = object-fit:fill과 동일한 패딩 압축 효과
+// → 실 배치(renderStagedItem)와 정확히 같은 모양
 function _redrawShapeMergePreview() {
   if (!_shapeMergeCanvas || !_shapeMergeCtx) return;
   if (_shapeMergeCanvas.width !== window.innerWidth || _shapeMergeCanvas.height !== window.innerHeight) {
@@ -2788,14 +2789,14 @@ function _redrawShapeMergePreview() {
     _shapeMergeCanvas.height = window.innerHeight;
   }
   _shapeMergeCtx.clearRect(0, 0, _shapeMergeCanvas.width, _shapeMergeCanvas.height);
-  if (!_shapeMergeCachedCanvas || !_shapeMergePaddedBounds) return;
+  if (!_shapeMergeCachedCanvas || !_shapeMergeCachedBounds) return;
 
   var origin = getMapOriginOnScreen();
   var zoom = getZoomScale();
   if (!origin || !zoom) return;
 
-  // padded bounds에 1:1 비율로 그리기 (비율 왜곡 없음)
-  var b = _shapeMergePaddedBounds;
+  // unpadded bounds = 스테이징 시 mapCoords와 동일 → object-fit:fill 시뮬레이션
+  var b = _shapeMergeCachedBounds;
   var sx = origin.x + b.x * CELL_PX * zoom;
   var sy = origin.y + b.y * CELL_PX * zoom;
   var sw = b.width * CELL_PX * zoom;
