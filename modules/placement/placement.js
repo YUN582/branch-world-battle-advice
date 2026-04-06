@@ -2785,18 +2785,30 @@ function _redrawShapeMergePreview() {
     var bx = origin.x + cx * ss;
     var by = origin.y + cy * ss;
 
-    // 상단 경계: (cx, cy-1) 비점유
-    if (!occupied[cx + ',' + (cy - 1)])
-      tCtx.fillRect(bx, by, ss, halfS);
-    // 하단 경계: (cx, cy+1) 비점유
-    if (!occupied[cx + ',' + (cy + 1)])
-      tCtx.fillRect(bx, by + ss - halfS, ss, halfS);
-    // 좌측 경계: (cx-1, cy) 비점유
-    if (!occupied[(cx - 1) + ',' + cy])
-      tCtx.fillRect(bx, by, halfS, ss);
-    // 우측 경계: (cx+1, cy) 비점유
-    if (!occupied[(cx + 1) + ',' + cy])
-      tCtx.fillRect(bx + ss - halfS, by, halfS, ss);
+    var noTop = !occupied[cx + ',' + (cy - 1)];
+    var noBot = !occupied[cx + ',' + (cy + 1)];
+    var noLeft = !occupied[(cx - 1) + ',' + cy];
+    var noRight = !occupied[(cx + 1) + ',' + cy];
+
+    // 4방향 경계 (안쪽 border strip)
+    if (noTop)   tCtx.fillRect(bx, by, ss, halfS);
+    if (noBot)   tCtx.fillRect(bx, by + ss - halfS, ss, halfS);
+    if (noLeft)  tCtx.fillRect(bx, by, halfS, ss);
+    if (noRight) tCtx.fillRect(bx + ss - halfS, by, halfS, ss);
+
+    // 대각선 코너 채우기: L자 꺾이는 부분의 빈 모서리
+    // 좌상 코너: 위와 왼쪽은 점유, 대각선(좌상)은 비점유
+    if (!noTop && !noLeft && !occupied[(cx - 1) + ',' + (cy - 1)])
+      tCtx.fillRect(bx, by, halfS, halfS);
+    // 우상 코너
+    if (!noTop && !noRight && !occupied[(cx + 1) + ',' + (cy - 1)])
+      tCtx.fillRect(bx + ss - halfS, by, halfS, halfS);
+    // 좌하 코너
+    if (!noBot && !noLeft && !occupied[(cx - 1) + ',' + (cy + 1)])
+      tCtx.fillRect(bx, by + ss - halfS, halfS, halfS);
+    // 우하 코너
+    if (!noBot && !noRight && !occupied[(cx + 1) + ',' + (cy + 1)])
+      tCtx.fillRect(bx + ss - halfS, by + ss - halfS, halfS, halfS);
   }
 
   // 2c) 메인 캔버스에 합성 (strokeOpacity 적용)
@@ -2901,68 +2913,119 @@ function _undoShapeMerge() {
   updateConfirmBar();
 }
 
-// 병합 완료: 모든 버퍼 도형 → 윤곽선 병합 → 하나의 PNG → 스테이징
+// 병합 완료: 그리드 경계(Grid Boundary) 방식 — 미리보기와 동일한 렌더링
 function _finishShapeMerge() {
   if (_shapeMergeBuffer.length === 0) return;
 
-  var compositeRatio = COMPOSITE_PX_PER_TILE / CELL_PX; // 2
+  var scale = COMPOSITE_PX_PER_TILE; // 48px per tile
 
-  // 1. 바운딩 박스: padded(캔버스) + unpadded(mapCoords)
-  var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  // 1. 점유 셀 맵 구축 + unpadded 바운딩 박스
+  var occupied = {};
   var pureMinX = Infinity, pureMinY = Infinity, pureMaxX = -Infinity, pureMaxY = -Infinity;
-  _shapeMergeBuffer.forEach(function(entry) {
-    var mc = entry.mapCoords;
-    var padTiles = ((entry.settings.strokeSize || 0) / 2 + (entry.settings.sketchJitter || 0) * 1.5) / CELL_PX;
-    var aabb = _rotatedAABB(mc.x, mc.y, mc.width, mc.height, entry.angle || 0);
-    if (aabb.minX - padTiles < minX) minX = aabb.minX - padTiles;
-    if (aabb.minY - padTiles < minY) minY = aabb.minY - padTiles;
-    if (aabb.maxX + padTiles > maxX) maxX = aabb.maxX + padTiles;
-    if (aabb.maxY + padTiles > maxY) maxY = aabb.maxY + padTiles;
-    if (aabb.minX < pureMinX) pureMinX = aabb.minX;
-    if (aabb.minY < pureMinY) pureMinY = aabb.minY;
-    if (aabb.maxX > pureMaxX) pureMaxX = aabb.maxX;
-    if (aabb.maxY > pureMaxY) pureMaxY = aabb.maxY;
-  });
+  for (var i = 0; i < _shapeMergeBuffer.length; i++) {
+    var mc = _shapeMergeBuffer[i].mapCoords;
+    var angle = _shapeMergeBuffer[i].angle || 0;
+    if (angle) {
+      var aabb = _rotatedAABB(mc.x, mc.y, mc.width, mc.height, angle);
+      var ax = Math.floor(aabb.minX), ay = Math.floor(aabb.minY);
+      var aw = Math.ceil(aabb.maxX) - ax, ah = Math.ceil(aabb.maxY) - ay;
+      for (var ty = ay; ty < ay + ah; ty++)
+        for (var tx = ax; tx < ax + aw; tx++)
+          occupied[tx + ',' + ty] = true;
+      if (ax < pureMinX) pureMinX = ax;
+      if (ay < pureMinY) pureMinY = ay;
+      if (ax + aw > pureMaxX) pureMaxX = ax + aw;
+      if (ay + ah > pureMaxY) pureMaxY = ay + ah;
+    } else {
+      for (var ty = mc.y; ty < mc.y + mc.height; ty++)
+        for (var tx = mc.x; tx < mc.x + mc.width; tx++)
+          occupied[tx + ',' + ty] = true;
+      if (mc.x < pureMinX) pureMinX = mc.x;
+      if (mc.y < pureMinY) pureMinY = mc.y;
+      if (mc.x + mc.width > pureMaxX) pureMaxX = mc.x + mc.width;
+      if (mc.y + mc.height > pureMaxY) pureMaxY = mc.y + mc.height;
+    }
+  }
 
-  var paddedW = maxX - minX;
-  var paddedH = maxY - minY;
-  if (paddedW <= 0 || paddedH <= 0) return;
+  var tileW = pureMaxX - pureMinX;
+  var tileH = pureMaxY - pureMinY;
+  if (tileW <= 0 || tileH <= 0) return;
 
-  // 2. 고해상도 합성 캔버스 (padded 크기 — stroke가 잘리지 않도록)
-  var cw = Math.ceil(paddedW * COMPOSITE_PX_PER_TILE);
-  var ch = Math.ceil(paddedH * COMPOSITE_PX_PER_TILE);
+  // 2. 캔버스: unpadded 영역 크기 (패딩 없음 → object-fit:fill과 1:1 일치)
+  var cw = tileW * scale;
+  var ch = tileH * scale;
   var canvas = document.createElement('canvas');
   canvas.width = cw;
   canvas.height = ch;
   var ctx = canvas.getContext('2d');
 
-  // 3. 윤곽선 병합 렌더링 (padded 원점 기준)
-  var entries = _shapeMergeBuffer.map(function(entry) {
-    var mc = entry.mapCoords;
-    var scaledSettings = {};
-    for (var k in entry.settings) scaledSettings[k] = entry.settings[k];
-    scaledSettings.strokeSize = (entry.settings.strokeSize || 0) * compositeRatio;
-    scaledSettings.cornerRadius = (entry.settings.cornerRadius || 0) * compositeRatio;
-    scaledSettings.sketchJitter = (entry.settings.sketchJitter || 0) * compositeRatio;
-    return {
-      shapeType: entry.shapeType,
-      relX: (mc.x - minX) * COMPOSITE_PX_PER_TILE,
-      relY: (mc.y - minY) * COMPOSITE_PX_PER_TILE,
-      drawW: mc.width * COMPOSITE_PX_PER_TILE,
-      drawH: mc.height * COMPOSITE_PX_PER_TILE,
-      scaledSettings: scaledSettings,
-      angle: entry.angle || 0
-    };
-  });
-  _renderMergedShapesToCtx(ctx, cw, ch, entries);
+  // 3. fill 그리기
+  var lastEntry = _shapeMergeBuffer[_shapeMergeBuffer.length - 1];
+  var fillColor = lastEntry.settings.fillColor || '#ffffff';
+  var fillOpacity = lastEntry.settings.fillOpacity;
+  if (fillOpacity > 0) {
+    ctx.save();
+    ctx.globalAlpha = fillOpacity;
+    ctx.fillStyle = fillColor;
+    for (var key in occupied) {
+      var parts = key.split(',');
+      var cx = parseInt(parts[0]), cy = parseInt(parts[1]);
+      ctx.fillRect((cx - pureMinX) * scale, (cy - pureMinY) * scale, scale, scale);
+    }
+    ctx.restore();
+  }
+
+  // 4. stroke: 그리드 경계 내부 테두리
+  var strokeW = (lastEntry.settings.strokeSize || 0) * (COMPOSITE_PX_PER_TILE / CELL_PX);
+  var strokeColor = lastEntry.settings.strokeColor || '#000000';
+  var strokeOpacity = lastEntry.settings.strokeOpacity || 0;
+  if (strokeW > 0 && strokeOpacity > 0) {
+    var tmpCvs = document.createElement('canvas');
+    tmpCvs.width = cw; tmpCvs.height = ch;
+    var tCtx = tmpCvs.getContext('2d');
+    tCtx.fillStyle = strokeColor;
+
+    var halfS = strokeW / 2;
+    for (var key in occupied) {
+      var parts = key.split(',');
+      var cx = parseInt(parts[0]), cy = parseInt(parts[1]);
+      var bx = (cx - pureMinX) * scale;
+      var by = (cy - pureMinY) * scale;
+
+      var noTop = !occupied[cx + ',' + (cy - 1)];
+      var noBot = !occupied[cx + ',' + (cy + 1)];
+      var noLeft = !occupied[(cx - 1) + ',' + cy];
+      var noRight = !occupied[(cx + 1) + ',' + cy];
+
+      if (noTop)   tCtx.fillRect(bx, by, scale, halfS);
+      if (noBot)   tCtx.fillRect(bx, by + scale - halfS, scale, halfS);
+      if (noLeft)  tCtx.fillRect(bx, by, halfS, scale);
+      if (noRight) tCtx.fillRect(bx + scale - halfS, by, halfS, scale);
+
+      // 대각선 코너 채우기
+      if (!noTop && !noLeft && !occupied[(cx - 1) + ',' + (cy - 1)])
+        tCtx.fillRect(bx, by, halfS, halfS);
+      if (!noTop && !noRight && !occupied[(cx + 1) + ',' + (cy - 1)])
+        tCtx.fillRect(bx + scale - halfS, by, halfS, halfS);
+      if (!noBot && !noLeft && !occupied[(cx - 1) + ',' + (cy + 1)])
+        tCtx.fillRect(bx, by + scale - halfS, halfS, halfS);
+      if (!noBot && !noRight && !occupied[(cx + 1) + ',' + (cy + 1)])
+        tCtx.fillRect(bx + scale - halfS, by + scale - halfS, halfS, halfS);
+    }
+
+    ctx.save();
+    ctx.globalAlpha = strokeOpacity;
+    ctx.drawImage(tmpCvs, 0, 0);
+    ctx.restore();
+  }
 
   var dataUrl = canvas.toDataURL('image/png');
 
-  // 4. 스테이징: unpadded mapCoords (개별 배치와 동일 — object-fit:fill이 패딩 압축)
+  // 5. 스테이징: unpadded mapCoords (캔버스 크기와 1:1 매칭)
   readSettingsFromDOM();
   var obj = {
     id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
-    mapCoords: { x: pureMinX, y: pureMinY, width: pureMaxX - pureMinX, height: pureMaxY - pureMinY },
+    mapCoords: { x: pureMinX, y: pureMinY, width: tileW, height: tileH },
     angle: 0,
     imageDataUrl: dataUrl,
     settings: {
@@ -3338,7 +3401,7 @@ function _renderShapeToCtx(ctx, type, x, y, w, h, settings) {
     ctx.globalAlpha = settings.strokeOpacity;
     ctx.strokeStyle = settings.strokeColor;
     ctx.lineWidth = settings.strokeSize;
-    ctx.lineJoin = 'round';
+    ctx.lineJoin = (settings.cornerRadius && settings.cornerRadius > 0) ? 'round' : 'miter';
     ctx.stroke();
   }
   ctx.restore();
