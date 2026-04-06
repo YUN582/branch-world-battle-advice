@@ -2055,6 +2055,15 @@ function setSubTool(toolId) {
     }
     cleanupShapeState();
   }
+  // 이전 도구가 image였으면 스탬프 미리보기 정리
+  if (_state.currentTool === 'image') {
+    _state.lastStampSize = null;
+  }
+  // 스탬프 미리보기 DOM 정리 (이전 도구의 잔상 방지)
+  if (_preview) {
+    _preview.classList.remove('bwbr-placement-preview--visible');
+    _preview.innerHTML = '';
+  }
 
   _state.currentTool = toolId;
   _subToolButtons[toolId].classList.add('bwbr-place-tool-btn--active');
@@ -2078,6 +2087,7 @@ function setSubTool(toolId) {
     initDrawCanvas();
   }
   updatePlacementCursor();
+  updateConfirmBar();
 }
 
 
@@ -2699,6 +2709,82 @@ function _addShapeToMergeBuffer(screenRect, angle) {
   updateConfirmBar();
 }
 
+// 점유 셀 맵에서 외곽 윤곽선 경로를 추출 (마칭 스퀘어 방식)
+// occupied: { "x,y": true, ... }, cellSize: 1셀의 픽셀 크기, ox/oy: 원점 오프셋
+// returns: [ [{x,y}, ...], ... ] — 닫힌 폴리곤 배열 (여러 분리된 영역 가능)
+function _traceGridContours(occupied, cellSize, ox, oy) {
+  // 1) 경계 엣지 수집: (x,y)→(x2,y2) 형태의 방향 있는 에지
+  // 각 셀의 4변 중 이웃이 없는 변만 수집
+  var edges = [];
+  var edgeMap = {}; // "startX,startY" → [{ ex, ey, used }]
+  function addEdge(sx, sy, ex, ey) {
+    var e = { sx: sx, sy: sy, ex: ex, ey: ey, used: false };
+    edges.push(e);
+    var key = sx + ',' + sy;
+    if (!edgeMap[key]) edgeMap[key] = [];
+    edgeMap[key].push(e);
+  }
+  for (var key in occupied) {
+    var parts = key.split(',');
+    var cx = parseInt(parts[0]), cy = parseInt(parts[1]);
+    var px = ox + cx * cellSize, py = oy + cy * cellSize;
+    // 시계 방향 에지 (외부에서 볼 때)
+    if (!occupied[cx + ',' + (cy - 1)]) addEdge(px, py, px + cellSize, py);             // top: 왼→오
+    if (!occupied[(cx + 1) + ',' + cy]) addEdge(px + cellSize, py, px + cellSize, py + cellSize); // right: 위→아래
+    if (!occupied[cx + ',' + (cy + 1)]) addEdge(px + cellSize, py + cellSize, px, py + cellSize); // bottom: 오→왼
+    if (!occupied[(cx - 1) + ',' + cy]) addEdge(px, py + cellSize, px, py);              // left: 아래→위
+  }
+
+  // 2) 에지 체인으로 연결하여 닫힌 폴리곤 구성
+  var contours = [];
+  for (var i = 0; i < edges.length; i++) {
+    if (edges[i].used) continue;
+    var contour = [];
+    var cur = edges[i];
+    cur.used = true;
+    contour.push({ x: cur.sx, y: cur.sy });
+    var startKey = cur.sx + ',' + cur.sy;
+    while (true) {
+      var nextKey = cur.ex + ',' + cur.ey;
+      if (nextKey === startKey) break; // 닫힘
+      contour.push({ x: cur.ex, y: cur.ey });
+      var candidates = edgeMap[nextKey];
+      var found = false;
+      if (candidates) {
+        for (var j = 0; j < candidates.length; j++) {
+          if (!candidates[j].used) {
+            cur = candidates[j];
+            cur.used = true;
+            found = true;
+            break;
+          }
+        }
+      }
+      if (!found) break; // 열린 경로 (이론적으로 발생 안 함)
+    }
+    if (contour.length >= 3) contours.push(contour);
+  }
+  return contours;
+}
+
+// 폴리곤 경로를 일정 간격으로 세분화 (jitter 적용을 위해 점 수 늘리기)
+function _subdivideContour(pts, step) {
+  if (!pts || pts.length < 2) return pts;
+  var result = [];
+  for (var i = 0; i < pts.length; i++) {
+    var a = pts[i];
+    var b = pts[(i + 1) % pts.length];
+    var dx = b.x - a.x, dy = b.y - a.y;
+    var len = Math.sqrt(dx * dx + dy * dy);
+    var segs = Math.max(1, Math.round(len / step));
+    for (var s = 0; s < segs; s++) {
+      var t = s / segs;
+      result.push({ x: a.x + dx * t, y: a.y + dy * t });
+    }
+  }
+  return result;
+}
+
 // 프리뷰 캔버스: 그리드 경계(Grid Boundary) 기반 렌더링
 // 1) 각 도형의 fill을 타일 경계에 맞춰 그리기
 // 2) 점유된 셀의 외곽 경계만 감지 → 안쪽으로 border strip 그리기
@@ -2750,6 +2836,7 @@ function _redrawShapeMergePreview() {
   var strokeW = (lastEntry.settings.strokeSize || 0) * zoom;
   var strokeColor = lastEntry.settings.strokeColor || '#000000';
   var strokeOpacity = lastEntry.settings.strokeOpacity || 0;
+  var sketchJitter = lastEntry.settings.sketchJitter || 0;
   if (!(strokeW > 0 && strokeOpacity > 0)) return;
 
   // 2a) 점유 셀 맵 구축
@@ -2771,48 +2858,70 @@ function _redrawShapeMergePreview() {
     }
   }
 
-  // 2b) 경계 테두리를 임시 캔버스에 그리기 (겹침 영역 알파 중복 방지)
-  var tmpCvs = document.createElement('canvas');
-  tmpCvs.width = _shapeMergeCanvas.width;
-  tmpCvs.height = _shapeMergeCanvas.height;
-  var tCtx = tmpCvs.getContext('2d');
-  tCtx.fillStyle = strokeColor;
+  if (sketchJitter > 0) {
+    // ─── 스케치(떨림) 모드: 윤곽선 경로 추출 → jitter 적용 → path stroke ────
+    var contours = _traceGridContours(occupied, ss, origin.x, origin.y);
+    var tmpCvs = document.createElement('canvas');
+    tmpCvs.width = _shapeMergeCanvas.width;
+    tmpCvs.height = _shapeMergeCanvas.height;
+    var tCtx = tmpCvs.getContext('2d');
+    tCtx.strokeStyle = strokeColor;
+    tCtx.lineWidth = strokeW;
+    tCtx.lineJoin = 'round';
+    tCtx.lineCap = 'round';
+    var jitterAmount = sketchJitter * zoom * 1.2;
+    var subdivStep = Math.max(4, ss / 3); // 1셀을 ~3등분
+    for (var ci = 0; ci < contours.length; ci++) {
+      var subdivided = _subdivideContour(contours[ci], subdivStep);
+      var jittered = _applyShapeJitter(subdivided, jitterAmount);
+      tCtx.beginPath();
+      _drawClosedPointPath(tCtx, jittered);
+      tCtx.stroke();
+    }
+    ctx.save();
+    ctx.globalAlpha = strokeOpacity;
+    ctx.drawImage(tmpCvs, 0, 0);
+    ctx.restore();
+  } else {
+    // ─── 일반 모드: fillRect border strip ────
+    var tmpCvs = document.createElement('canvas');
+    tmpCvs.width = _shapeMergeCanvas.width;
+    tmpCvs.height = _shapeMergeCanvas.height;
+    var tCtx = tmpCvs.getContext('2d');
+    tCtx.fillStyle = strokeColor;
 
-  // strokeW 전체를 border strip 두께로 사용 (개별 배치와 동일한 시각적 두께)
-  var bw = strokeW;
-  for (var key in occupied) {
-    var parts = key.split(',');
-    var cx = parseInt(parts[0]), cy = parseInt(parts[1]);
-    var bx = origin.x + cx * ss;
-    var by = origin.y + cy * ss;
+    var bw = strokeW;
+    for (var key in occupied) {
+      var parts = key.split(',');
+      var cx = parseInt(parts[0]), cy = parseInt(parts[1]);
+      var bx = origin.x + cx * ss;
+      var by = origin.y + cy * ss;
 
-    var noTop = !occupied[cx + ',' + (cy - 1)];
-    var noBot = !occupied[cx + ',' + (cy + 1)];
-    var noLeft = !occupied[(cx - 1) + ',' + cy];
-    var noRight = !occupied[(cx + 1) + ',' + cy];
+      var noTop = !occupied[cx + ',' + (cy - 1)];
+      var noBot = !occupied[cx + ',' + (cy + 1)];
+      var noLeft = !occupied[(cx - 1) + ',' + cy];
+      var noRight = !occupied[(cx + 1) + ',' + cy];
 
-    // 4방향 경계 (안쪽 border strip)
-    if (noTop)   tCtx.fillRect(bx, by, ss, bw);
-    if (noBot)   tCtx.fillRect(bx, by + ss - bw, ss, bw);
-    if (noLeft)  tCtx.fillRect(bx, by, bw, ss);
-    if (noRight) tCtx.fillRect(bx + ss - bw, by, bw, ss);
+      if (noTop)   tCtx.fillRect(bx, by, ss, bw);
+      if (noBot)   tCtx.fillRect(bx, by + ss - bw, ss, bw);
+      if (noLeft)  tCtx.fillRect(bx, by, bw, ss);
+      if (noRight) tCtx.fillRect(bx + ss - bw, by, bw, ss);
 
-    // 대각선 코너 채우기: L자 꺾이는 부분의 빈 모서리
-    if (!noTop && !noLeft && !occupied[(cx - 1) + ',' + (cy - 1)])
-      tCtx.fillRect(bx, by, bw, bw);
-    if (!noTop && !noRight && !occupied[(cx + 1) + ',' + (cy - 1)])
-      tCtx.fillRect(bx + ss - bw, by, bw, bw);
-    if (!noBot && !noLeft && !occupied[(cx - 1) + ',' + (cy + 1)])
-      tCtx.fillRect(bx, by + ss - bw, bw, bw);
-    if (!noBot && !noRight && !occupied[(cx + 1) + ',' + (cy + 1)])
-      tCtx.fillRect(bx + ss - bw, by + ss - bw, bw, bw);
+      if (!noTop && !noLeft && !occupied[(cx - 1) + ',' + (cy - 1)])
+        tCtx.fillRect(bx, by, bw, bw);
+      if (!noTop && !noRight && !occupied[(cx + 1) + ',' + (cy - 1)])
+        tCtx.fillRect(bx + ss - bw, by, bw, bw);
+      if (!noBot && !noLeft && !occupied[(cx - 1) + ',' + (cy + 1)])
+        tCtx.fillRect(bx, by + ss - bw, bw, bw);
+      if (!noBot && !noRight && !occupied[(cx + 1) + ',' + (cy + 1)])
+        tCtx.fillRect(bx + ss - bw, by + ss - bw, bw, bw);
+    }
+
+    ctx.save();
+    ctx.globalAlpha = strokeOpacity;
+    ctx.drawImage(tmpCvs, 0, 0);
+    ctx.restore();
   }
-
-  // 2c) 메인 캔버스에 합성 (strokeOpacity 적용)
-  ctx.save();
-  ctx.globalAlpha = strokeOpacity;
-  ctx.drawImage(tmpCvs, 0, 0);
-  ctx.restore();
 }
 
 // 병합 렌더링 공통: 여러 도형을 윤곽선 병합 방식으로 ctx에 그리기
@@ -2976,45 +3085,89 @@ function _finishShapeMerge() {
   var strokeW = (lastEntry.settings.strokeSize || 0) * (COMPOSITE_PX_PER_TILE / CELL_PX);
   var strokeColor = lastEntry.settings.strokeColor || '#000000';
   var strokeOpacity = lastEntry.settings.strokeOpacity || 0;
+  var sketchJitter = lastEntry.settings.sketchJitter || 0;
   if (strokeW > 0 && strokeOpacity > 0) {
-    var tmpCvs = document.createElement('canvas');
-    tmpCvs.width = cw; tmpCvs.height = ch;
-    var tCtx = tmpCvs.getContext('2d');
-    tCtx.fillStyle = strokeColor;
+    if (sketchJitter > 0) {
+      // ─── 스케치(떨림) 모드: 윤곽선 경로 추출 → jitter 적용 → path stroke ────
+      // jitter가 캔버스 밖으로 나갈 수 있으므로 패딩 추가
+      var jitterPad = Math.ceil(sketchJitter * (COMPOSITE_PX_PER_TILE / CELL_PX) * 1.5 + strokeW / 2);
+      var padCw = cw + jitterPad * 2;
+      var padCh = ch + jitterPad * 2;
+      // 기존 fill 캔버스를 패딩 캔버스에 복사
+      var padCanvas = document.createElement('canvas');
+      padCanvas.width = padCw; padCanvas.height = padCh;
+      var padCtx = padCanvas.getContext('2d');
+      padCtx.drawImage(canvas, jitterPad, jitterPad);
 
-    // strokeW 전체를 border strip 두께로 사용 (개별 배치와 동일한 시각적 두께)
-    var bw = strokeW;
-    for (var key in occupied) {
-      var parts = key.split(',');
-      var cx = parseInt(parts[0]), cy = parseInt(parts[1]);
-      var bx = (cx - pureMinX) * scale;
-      var by = (cy - pureMinY) * scale;
+      var contours = _traceGridContours(occupied, scale, -pureMinX * scale + jitterPad, -pureMinY * scale + jitterPad);
+      var tmpCvs = document.createElement('canvas');
+      tmpCvs.width = padCw; tmpCvs.height = padCh;
+      var tCtx = tmpCvs.getContext('2d');
+      tCtx.strokeStyle = strokeColor;
+      tCtx.lineWidth = strokeW;
+      tCtx.lineJoin = 'round';
+      tCtx.lineCap = 'round';
+      var jitterAmount = sketchJitter * (COMPOSITE_PX_PER_TILE / CELL_PX) * 1.2;
+      var subdivStep = Math.max(4, scale / 3);
+      for (var ci = 0; ci < contours.length; ci++) {
+        var subdivided = _subdivideContour(contours[ci], subdivStep);
+        var jittered = _applyShapeJitter(subdivided, jitterAmount);
+        tCtx.beginPath();
+        _drawClosedPointPath(tCtx, jittered);
+        tCtx.stroke();
+      }
+      padCtx.save();
+      padCtx.globalAlpha = strokeOpacity;
+      padCtx.drawImage(tmpCvs, 0, 0);
+      padCtx.restore();
 
-      var noTop = !occupied[cx + ',' + (cy - 1)];
-      var noBot = !occupied[cx + ',' + (cy + 1)];
-      var noLeft = !occupied[(cx - 1) + ',' + cy];
-      var noRight = !occupied[(cx + 1) + ',' + cy];
+      // 패딩 포함 캔버스로 교체, mapCoords 조정
+      canvas = padCanvas;
+      cw = padCw; ch = padCh;
+      var padTiles = jitterPad / scale;
+      pureMinX -= padTiles;
+      pureMinY -= padTiles;
+      tileW += padTiles * 2;
+      tileH += padTiles * 2;
+    } else {
+      // ─── 일반 모드: fillRect border strip ────
+      var tmpCvs = document.createElement('canvas');
+      tmpCvs.width = cw; tmpCvs.height = ch;
+      var tCtx = tmpCvs.getContext('2d');
+      tCtx.fillStyle = strokeColor;
 
-      if (noTop)   tCtx.fillRect(bx, by, scale, bw);
-      if (noBot)   tCtx.fillRect(bx, by + scale - bw, scale, bw);
-      if (noLeft)  tCtx.fillRect(bx, by, bw, scale);
-      if (noRight) tCtx.fillRect(bx + scale - bw, by, bw, scale);
+      var bw = strokeW;
+      for (var key in occupied) {
+        var parts = key.split(',');
+        var cx = parseInt(parts[0]), cy = parseInt(parts[1]);
+        var bx = (cx - pureMinX) * scale;
+        var by = (cy - pureMinY) * scale;
 
-      // 대각선 코너 채우기
-      if (!noTop && !noLeft && !occupied[(cx - 1) + ',' + (cy - 1)])
-        tCtx.fillRect(bx, by, bw, bw);
-      if (!noTop && !noRight && !occupied[(cx + 1) + ',' + (cy - 1)])
-        tCtx.fillRect(bx + scale - bw, by, bw, bw);
-      if (!noBot && !noLeft && !occupied[(cx - 1) + ',' + (cy + 1)])
-        tCtx.fillRect(bx, by + scale - bw, bw, bw);
-      if (!noBot && !noRight && !occupied[(cx + 1) + ',' + (cy + 1)])
-        tCtx.fillRect(bx + scale - bw, by + scale - bw, bw, bw);
+        var noTop = !occupied[cx + ',' + (cy - 1)];
+        var noBot = !occupied[cx + ',' + (cy + 1)];
+        var noLeft = !occupied[(cx - 1) + ',' + cy];
+        var noRight = !occupied[(cx + 1) + ',' + cy];
+
+        if (noTop)   tCtx.fillRect(bx, by, scale, bw);
+        if (noBot)   tCtx.fillRect(bx, by + scale - bw, scale, bw);
+        if (noLeft)  tCtx.fillRect(bx, by, bw, scale);
+        if (noRight) tCtx.fillRect(bx + scale - bw, by, bw, scale);
+
+        if (!noTop && !noLeft && !occupied[(cx - 1) + ',' + (cy - 1)])
+          tCtx.fillRect(bx, by, bw, bw);
+        if (!noTop && !noRight && !occupied[(cx + 1) + ',' + (cy - 1)])
+          tCtx.fillRect(bx + scale - bw, by, bw, bw);
+        if (!noBot && !noLeft && !occupied[(cx - 1) + ',' + (cy + 1)])
+          tCtx.fillRect(bx, by + scale - bw, bw, bw);
+        if (!noBot && !noRight && !occupied[(cx + 1) + ',' + (cy + 1)])
+          tCtx.fillRect(bx + scale - bw, by + scale - bw, bw, bw);
+      }
+
+      ctx.save();
+      ctx.globalAlpha = strokeOpacity;
+      ctx.drawImage(tmpCvs, 0, 0);
+      ctx.restore();
     }
-
-    ctx.save();
-    ctx.globalAlpha = strokeOpacity;
-    ctx.drawImage(tmpCvs, 0, 0);
-    ctx.restore();
   }
 
   var dataUrl = canvas.toDataURL('image/png');
