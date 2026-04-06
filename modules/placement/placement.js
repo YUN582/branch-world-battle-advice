@@ -675,6 +675,33 @@ body.bwbr-placement-noselect .bwbr-text-editor * {
   cursor: default;
 }
 
+/* ── 그리드 스냅 토글 ──────────────────────────── */
+
+.bwbr-grid-snap-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1.5px solid #ccc;
+  border-radius: 8px;
+  background: #f5f5f5;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+
+.bwbr-grid-snap-btn:hover {
+  background: #e8e8e8;
+}
+
+.bwbr-grid-snap-btn--active {
+  background: #e3f2fd;
+  border-color: #42a5f5;
+  color: #1976d2;
+}
+
 /* ── 도형 연속 모드 프리뷰 캔버스 ──────────────── */
 
 .bwbr-shape-merge-canvas {
@@ -1628,6 +1655,16 @@ var _shapeMergeBuffer = [];        // { mapCoords, shapeType, settings(복제) }
 var _shapeMergeCanvas = null;      // 화면 위 프리뷰 캔버스 (fixed overlay)
 var _shapeMergeCtx = null;         // 프리뷰 캔버스 context
 
+// ── 그리드 스냅 ─────────────────────────────────
+var _gridSnap = false;             // true=드래그 시 그리드 스냅 활성
+
+function _loadGridSnap() {
+  try { _gridSnap = localStorage.getItem('bwbr-grid-snap') === '1'; } catch (e) {}
+}
+function _saveGridSnap() {
+  try { localStorage.setItem('bwbr-grid-snap', _gridSnap ? '1' : '0'); } catch (e) {}
+}
+
 
 
 // ── DOM 요소 ────────────────────────────────────────────────────
@@ -1685,6 +1722,7 @@ var _confirmDialogEls = {};
 // ── 초기화 ──────────────────────────────────────────────────────
 
 function init() {
+  _loadGridSnap();
   createToolbar();
   createOverlay();
   createConfirmBar();
@@ -6150,11 +6188,12 @@ function onOverlayMouseDown(e) {
     return;
   }
 
-  // 드래그 시작 좌표 기록
-  _state.drag.startX = e.clientX;
-  _state.drag.startY = e.clientY;
-  _state.drag.currentX = e.clientX;
-  _state.drag.currentY = e.clientY;
+  // 드래그 시작 좌표 기록 (그리드 스냅 적용)
+  var snapStart = _snapToGrid(e.clientX, e.clientY);
+  _state.drag.startX = snapStart.x;
+  _state.drag.startY = snapStart.y;
+  _state.drag.currentX = snapStart.x;
+  _state.drag.currentY = snapStart.y;
 
   // 선택 모드(기본): 드래그 배치 없음
   if (!_state.mode) return;
@@ -6213,8 +6252,9 @@ function onOverlayMouseMove(e) {
     return;
   }
   if (_state.placing) {
-    _state.drag.currentX = e.clientX;
-    _state.drag.currentY = e.clientY;
+    var snapCur = _snapToGrid(e.clientX, e.clientY);
+    _state.drag.currentX = snapCur.x;
+    _state.drag.currentY = snapCur.y;
 
     // Shift: 정사각형 제약 (이미지/도형 배치 드래그)
     if (e.shiftKey && (_state.currentTool === 'image' || _state.currentTool === 'shape')) {
@@ -6246,6 +6286,12 @@ function _updateStampPreview(cx, cy) {
   var sw = stampTiles.tw * CELL_PX * zoom;
   var sh = stampTiles.th * CELL_PX * zoom;
   var imgSrc = isImageStamp ? _state.pendingImage.dataUrl : _shapePendingDataUrl;
+  // 그리드 스냅: 스탬프 중심을 그리드에 맞춤
+  if (_gridSnap) {
+    var snapped = _snapToGrid(cx, cy);
+    cx = snapped.x;
+    cy = snapped.y;
+  }
   _preview.style.left = (cx - sw / 2) + 'px';
   _preview.style.top = (cy - sh / 2) + 'px';
   _preview.style.width = sw + 'px';
@@ -7550,6 +7596,21 @@ function createConfirmBar() {
   _confirmBar.appendChild(cancelBtn);
   _confirmBar.appendChild(_stagedCountEl);
   _confirmBar.appendChild(modeToggle);
+
+  // 그리드 스냅 토글
+  var snapBtn = document.createElement('button');
+  snapBtn.className = 'bwbr-grid-snap-btn' + (_gridSnap ? ' bwbr-grid-snap-btn--active' : '');
+  snapBtn.title = '그리드 스냅 (드래그 시 타일 경계에 맞춤)';
+  snapBtn.textContent = '⊞';
+  snapBtn.addEventListener('mousedown', function(ev) { ev.preventDefault(); });
+  snapBtn.addEventListener('click', function() {
+    _gridSnap = !_gridSnap;
+    snapBtn.classList.toggle('bwbr-grid-snap-btn--active', _gridSnap);
+    _saveGridSnap();
+  });
+  _confirmBar._snapBtn = snapBtn;
+  _confirmBar.appendChild(snapBtn);
+
   _confirmBar.appendChild(_confirmBtnEl);
 
   document.body.appendChild(_confirmBar);
@@ -8121,6 +8182,21 @@ function screenToMapCoords(screenRect) {
     width: Math.max(1, Math.round(mapPxW / CELL_PX)),
     height: Math.max(1, Math.round(mapPxH / CELL_PX))
   };
+}
+
+// 화면 좌표를 가장 가까운 그리드 교차점(타일 경계)으로 스냅
+function _snapToGrid(screenX, screenY) {
+  if (!_gridSnap) return { x: screenX, y: screenY };
+  var origin = getMapOriginOnScreen();
+  if (!origin) return { x: screenX, y: screenY };
+  var zoom = getZoomScale();
+  var tileScreenPx = CELL_PX * zoom; // 1타일 = 화면 px
+  // 맵 원점으로부터의 오프셋을 타일 단위로 반올림
+  var relX = screenX - origin.x;
+  var relY = screenY - origin.y;
+  var snappedX = Math.round(relX / tileScreenPx) * tileScreenPx + origin.x;
+  var snappedY = Math.round(relY / tileScreenPx) * tileScreenPx + origin.y;
+  return { x: snappedX, y: snappedY };
 }
 
 
