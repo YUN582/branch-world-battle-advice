@@ -2699,45 +2699,111 @@ function _addShapeToMergeBuffer(screenRect, angle) {
   updateConfirmBar();
 }
 
-// 프리뷰 캔버스: 화면 공간에서 직접 병합 렌더링
-// → 패딩 비율 문제 없음, 크기 안정, 윤곽선 연결, 그리드 정렬 유지
+// 프리뷰 캔버스: 그리드 경계(Grid Boundary) 기반 렌더링
+// 1) 각 도형의 fill을 타일 경계에 맞춰 그리기
+// 2) 점유된 셀의 외곽 경계만 감지 → 안쪽으로 border strip 그리기
+// → 인접 셀 사이에는 경계 없음 (자동 병합), stroke는 타일 안쪽, 크기 안정
 function _redrawShapeMergePreview() {
   if (!_shapeMergeCanvas || !_shapeMergeCtx) return;
   if (_shapeMergeCanvas.width !== window.innerWidth || _shapeMergeCanvas.height !== window.innerHeight) {
     _shapeMergeCanvas.width = window.innerWidth;
     _shapeMergeCanvas.height = window.innerHeight;
   }
-  _shapeMergeCtx.clearRect(0, 0, _shapeMergeCanvas.width, _shapeMergeCanvas.height);
+  var ctx = _shapeMergeCtx;
+  ctx.clearRect(0, 0, _shapeMergeCanvas.width, _shapeMergeCanvas.height);
   if (_shapeMergeBuffer.length === 0) return;
 
   var origin = getMapOriginOnScreen();
   var zoom = getZoomScale();
   if (!origin || !zoom) return;
 
-  // 화면 공간 기준 스케일: 1타일 = CELL_PX * zoom 픽셀
-  var screenScale = CELL_PX * zoom;
+  var ss = CELL_PX * zoom; // 1 tile = ss screen pixels
 
-  // 각 버퍼 엔트리 → 화면 좌표 기반 entries 생성
-  var entries = _shapeMergeBuffer.map(function(entry) {
+  // ─── 1) fill 그리기: 각 도형을 타일 경계에 맞춰 ────
+  for (var i = 0; i < _shapeMergeBuffer.length; i++) {
+    var entry = _shapeMergeBuffer[i];
     var mc = entry.mapCoords;
-    var scaledSettings = {};
-    for (var k in entry.settings) scaledSettings[k] = entry.settings[k];
-    // 설정값을 화면 스케일에 맞게 변환
-    scaledSettings.strokeSize = (entry.settings.strokeSize || 0) * zoom;
-    scaledSettings.cornerRadius = (entry.settings.cornerRadius || 0) * zoom;
-    scaledSettings.sketchJitter = (entry.settings.sketchJitter || 0) * zoom;
-    return {
-      shapeType: entry.shapeType,
-      relX: origin.x + mc.x * screenScale,
-      relY: origin.y + mc.y * screenScale,
-      drawW: mc.width * screenScale,
-      drawH: mc.height * screenScale,
-      scaledSettings: scaledSettings,
-      angle: entry.angle || 0
-    };
-  });
+    var s = entry.settings;
 
-  _renderMergedShapesToCtx(_shapeMergeCtx, _shapeMergeCanvas.width, _shapeMergeCanvas.height, entries);
+    if (s.fillOpacity > 0) {
+      ctx.save();
+      ctx.globalAlpha = s.fillOpacity;
+      ctx.fillStyle = s.fillColor;
+      var fx = origin.x + mc.x * ss;
+      var fy = origin.y + mc.y * ss;
+      var fw = mc.width * ss;
+      var fh = mc.height * ss;
+
+      if (entry.angle) {
+        ctx.translate(fx + fw / 2, fy + fh / 2);
+        ctx.rotate(entry.angle * Math.PI / 180);
+        ctx.fillRect(-fw / 2, -fh / 2, fw, fh);
+      } else {
+        ctx.fillRect(fx, fy, fw, fh);
+      }
+      ctx.restore();
+    }
+  }
+
+  // ─── 2) stroke: 그리드 경계 기반 내부 테두리 ────
+  var lastEntry = _shapeMergeBuffer[_shapeMergeBuffer.length - 1];
+  var strokeW = (lastEntry.settings.strokeSize || 0) * zoom;
+  var strokeColor = lastEntry.settings.strokeColor || '#000000';
+  var strokeOpacity = lastEntry.settings.strokeOpacity || 0;
+  if (!(strokeW > 0 && strokeOpacity > 0)) return;
+
+  // 2a) 점유 셀 맵 구축
+  var occupied = {};
+  for (var i = 0; i < _shapeMergeBuffer.length; i++) {
+    var mc = _shapeMergeBuffer[i].mapCoords;
+    var angle = _shapeMergeBuffer[i].angle || 0;
+    if (angle) {
+      var aabb = _rotatedAABB(mc.x, mc.y, mc.width, mc.height, angle);
+      var ax = Math.floor(aabb.minX), ay = Math.floor(aabb.minY);
+      var aw = Math.ceil(aabb.maxX) - ax, ah = Math.ceil(aabb.maxY) - ay;
+      for (var ty = ay; ty < ay + ah; ty++)
+        for (var tx = ax; tx < ax + aw; tx++)
+          occupied[tx + ',' + ty] = true;
+    } else {
+      for (var ty = mc.y; ty < mc.y + mc.height; ty++)
+        for (var tx = mc.x; tx < mc.x + mc.width; tx++)
+          occupied[tx + ',' + ty] = true;
+    }
+  }
+
+  // 2b) 경계 테두리를 임시 캔버스에 그리기 (겹침 영역 알파 중복 방지)
+  var tmpCvs = document.createElement('canvas');
+  tmpCvs.width = _shapeMergeCanvas.width;
+  tmpCvs.height = _shapeMergeCanvas.height;
+  var tCtx = tmpCvs.getContext('2d');
+  tCtx.fillStyle = strokeColor;
+
+  var halfS = strokeW / 2;
+  for (var key in occupied) {
+    var parts = key.split(',');
+    var cx = parseInt(parts[0]), cy = parseInt(parts[1]);
+    var bx = origin.x + cx * ss;
+    var by = origin.y + cy * ss;
+
+    // 상단 경계: (cx, cy-1) 비점유
+    if (!occupied[cx + ',' + (cy - 1)])
+      tCtx.fillRect(bx, by, ss, halfS);
+    // 하단 경계: (cx, cy+1) 비점유
+    if (!occupied[cx + ',' + (cy + 1)])
+      tCtx.fillRect(bx, by + ss - halfS, ss, halfS);
+    // 좌측 경계: (cx-1, cy) 비점유
+    if (!occupied[(cx - 1) + ',' + cy])
+      tCtx.fillRect(bx, by, halfS, ss);
+    // 우측 경계: (cx+1, cy) 비점유
+    if (!occupied[(cx + 1) + ',' + cy])
+      tCtx.fillRect(bx + ss - halfS, by, halfS, ss);
+  }
+
+  // 2c) 메인 캔버스에 합성 (strokeOpacity 적용)
+  ctx.save();
+  ctx.globalAlpha = strokeOpacity;
+  ctx.drawImage(tmpCvs, 0, 0);
+  ctx.restore();
 }
 
 // 병합 렌더링 공통: 여러 도형을 윤곽선 병합 방식으로 ctx에 그리기
