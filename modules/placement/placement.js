@@ -6529,10 +6529,13 @@ function renderStagedItem(obj) {
     el.appendChild(img);
   }
 
-  // 번호 배지
+  // 번호 배지 (회전 시 역회전으로 항상 정방향 유지)
   var badge = document.createElement('span');
   badge.className = 'bwbr-staged-badge';
   badge.textContent = _state.stagedObjects.length;
+  if (obj.angle) {
+    badge.style.transform = 'rotate(' + (-obj.angle) + 'deg)';
+  }
   el.appendChild(badge);
 
   // 직접 mousedown 처리 (stopPropagation으로 ccfolia 팬 방지)
@@ -6707,6 +6710,8 @@ function undo() {
       var el = document.querySelector('[data-staged-id="' + obj.id + '"]');
       if (el) {
         el.style.transform = obj.angle ? 'rotate(' + obj.angle + 'deg)' : '';
+        var badge = el.querySelector('.bwbr-staged-badge');
+        if (badge) badge.style.transform = obj.angle ? 'rotate(' + (-obj.angle) + 'deg)' : '';
       }
     });
   } else if (action.type === 'align') {
@@ -7057,6 +7062,8 @@ function rotateSelectedStaged(delta) {
     var el = document.querySelector('[data-staged-id="' + obj.id + '"]');
     if (el) {
       el.style.transform = obj.angle ? 'rotate(' + obj.angle + 'deg)' : '';
+      var badge = el.querySelector('.bwbr-staged-badge');
+      if (badge) badge.style.transform = obj.angle ? 'rotate(' + (-obj.angle) + 'deg)' : '';
     }
   });
   if (prevAngles.length > 0) pushUndo({ type: 'rotate', prev: prevAngles });
@@ -8348,9 +8355,9 @@ function setupKeyboard() {
       setSubTool('draw'); return;
     }
 
-    // R: 회전 (15도 단위) — 선택 오브젝트 또는 스탬프 프리뷰
+    // R: 회전 (45도 단위) — 선택 오브젝트 또는 스탬프 프리뷰
     if (e.key === 'r' || e.key === 'R') {
-      var delta = e.shiftKey ? -15 : 15;
+      var delta = e.shiftKey ? -45 : 45;
       if (_state.selectedStagedIds.length > 0) {
         e.preventDefault();
         rotateSelectedStaged(delta);
