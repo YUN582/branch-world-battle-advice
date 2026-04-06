@@ -2789,7 +2789,8 @@ function _redrawShapeMergePreview() {
     scaledSettings.strokeSize = (s.strokeSize || 0) * compositeRatio;
     scaledSettings.cornerRadius = (s.cornerRadius || 0) * compositeRatio;
     scaledSettings.sketchJitter = (s.sketchJitter || 0) * compositeRatio;
-    var inset = Math.ceil((scaledSettings.strokeSize || 0) / 2 + (scaledSettings.sketchJitter || 0) * 1.5);
+    // 인셋: strokeSize 전체 (2× stroke 외부 절반 수용)
+    var inset = Math.ceil((scaledSettings.strokeSize || 0) + (scaledSettings.sketchJitter || 0) * 1.5);
     entries.push({
       shapeType: entry.shapeType || s.shapeType || 'rect',
       relX: (mc.x - minX) * scale + inset,
@@ -2930,12 +2931,12 @@ function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
     drawFill(silCtx, i, 1);
   }
 
-  // Step 2: 모든 stroke를 합산 (1× 너비)
+  // Step 2: 모든 stroke를 합산 (2× 너비 — dest-out 후 외부 절반 = 1× = 개별 배치와 동일)
   var strokeCanvas = document.createElement('canvas');
   strokeCanvas.width = cw; strokeCanvas.height = ch;
   var sCtx = strokeCanvas.getContext('2d');
   for (var i = 0; i < entries.length; i++) {
-    drawStroke(sCtx, i);
+    drawStroke(sCtx, i, 2);
   }
 
   // Step 3: fill 실루엣으로 내부 경계 stroke 제거
@@ -3016,7 +3017,8 @@ function _finishShapeMerge() {
     scaledSettings.strokeSize = (s.strokeSize || 0) * compositeRatio;
     scaledSettings.cornerRadius = (s.cornerRadius || 0) * compositeRatio;
     scaledSettings.sketchJitter = (s.sketchJitter || 0) * compositeRatio;
-    var inset = Math.ceil((scaledSettings.strokeSize || 0) / 2 + (scaledSettings.sketchJitter || 0) * 1.5);
+    // 인셋: strokeSize 전체 (2× stroke 외부 절반 수용)
+    var inset = Math.ceil((scaledSettings.strokeSize || 0) + (scaledSettings.sketchJitter || 0) * 1.5);
     entries.push({
       shapeType: entry.shapeType || s.shapeType || 'rect',
       relX: (mc.x - pureMinX) * scale + inset,
