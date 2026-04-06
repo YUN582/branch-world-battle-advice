@@ -2760,7 +2760,8 @@ function _redrawShapeMergePreview() {
 
 // 병합 렌더링 공통: 여러 도형을 윤곽선 병합 방식으로 ctx에 그리기
 // - jitter 경로를 사전 계산하여 fill/stroke/mask가 동일 경로 사용 → 빈 공간 방지
-// - stroke를 2× 너비로 그린 뒤 fill로 dest-out → 외곽 1× 너비 = 개별 배치와 동일
+// - 각 도형의 stroke에서 "다른 도형의 fill 영역"만 제거 → 자기 fill 위의 stroke는 보존
+// - 결과: 개별 배치와 동일한 stroke 두께 + 내부 경계 stroke만 제거
 // entries: [{ shapeType, relX, relY, drawW, drawH, scaledSettings, angle }]
 function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
 
@@ -2782,7 +2783,6 @@ function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
   });
 
   if (!hasStroke) {
-    // stroke 없으면 개별 렌더
     for (var i = 0; i < entries.length; i++) {
       var e = entries[i];
       withRotation(ctx, e, function(c, x, y) {
@@ -2793,7 +2793,7 @@ function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
   }
 
   // ── 1. 도형별 jitter 경로 사전 계산 ──
-  var entryPaths = []; // null = non-jitter, else jitteredArrays
+  var entryPaths = [];
   for (var i = 0; i < entries.length; i++) {
     var e = entries[i];
     var s = e.scaledSettings;
@@ -2822,7 +2822,7 @@ function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
     }
   }
 
-  // ── 헬퍼: fill 그리기 (사전 계산 경로 또는 _buildShapePath) ──
+  // ── 헬퍼: fill 그리기 ──
   function drawFill(c, idx, alphaOverride) {
     var e = entries[idx];
     var s = e.scaledSettings;
@@ -2843,8 +2843,8 @@ function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
     });
   }
 
-  // ── 헬퍼: stroke 그리기 (사전 계산 경로 또는 _buildShapePath) ──
-  function drawStroke(c, idx, widthMult) {
+  // ── 헬퍼: stroke 그리기 ──
+  function drawStroke(c, idx) {
     var e = entries[idx];
     var s = e.scaledSettings;
     if (s.strokeSize <= 0 || s.strokeOpacity <= 0) return;
@@ -2852,7 +2852,7 @@ function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
       cc.save();
       cc.globalAlpha = s.strokeOpacity;
       cc.strokeStyle = s.strokeColor;
-      cc.lineWidth = s.strokeSize * (widthMult || 1);
+      cc.lineWidth = s.strokeSize;
       if (entryPaths[idx]) {
         cc.lineJoin = 'round';
         cc.lineCap = 'round';
@@ -2867,32 +2867,40 @@ function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
     });
   }
 
-  // ── 병합 알고리즘 ──
-  // fill/stroke에 동일한 사전 계산 경로 사용 → jitter 간극 방지
-  // stroke 2× 너비 → dest-out으로 내부 제거 → 외곽 1× = 개별 배치와 동일
-  var tmp = document.createElement('canvas');
-  tmp.width = cw; tmp.height = ch;
-  var tCtx = tmp.getContext('2d');
+  // ── 병합 알고리즘: per-shape clean stroke ──
+  // 1) 모든 fill을 메인 캔버스에 그리기
+  // 2) 각 도형별: stroke → "다른 도형의 fill 영역"만 dest-out → 메인에 합성
+  //    → 자기 fill 위의 stroke(내부 절반)는 보존 = 개별 배치와 동일한 두께
+  //    → 다른 도형의 fill에 침범한 stroke만 제거 = 내부 경계 정리
 
-  // Step 1: tmp에 stroke(2×) 그리기
-  for (var i = 0; i < entries.length; i++) {
-    drawStroke(tCtx, i, 2);
-  }
-
-  // Step 2: fill로 dest-out → 외곽 stroke만 남김 (동일 jitter 경로로 정확한 마스킹)
-  tCtx.globalCompositeOperation = 'destination-out';
-  for (var i = 0; i < entries.length; i++) {
-    drawFill(tCtx, i, 1);
-  }
-  tCtx.globalCompositeOperation = 'source-over';
-
-  // Step 3: 메인 ctx에 fill 그리기
+  // Step 1: 모든 fill 그리기
   for (var i = 0; i < entries.length; i++) {
     drawFill(ctx, i);
   }
 
-  // Step 4: 외곽 stroke를 fill 위에 그리기
-  ctx.drawImage(tmp, 0, 0);
+  // Step 2: 각 도형별 stroke cleanup
+  for (var i = 0; i < entries.length; i++) {
+    var ei = entries[i];
+    var si = ei.scaledSettings;
+    if (si.strokeSize <= 0 || si.strokeOpacity <= 0) continue;
+
+    var tmpStroke = document.createElement('canvas');
+    tmpStroke.width = cw; tmpStroke.height = ch;
+    var tCtx = tmpStroke.getContext('2d');
+
+    // 이 도형의 stroke 그리기 (1× 너비, 개별과 동일)
+    drawStroke(tCtx, i);
+
+    // 다른 도형의 fill 영역으로 dest-out → 침범한 부분만 제거
+    tCtx.globalCompositeOperation = 'destination-out';
+    for (var j = 0; j < entries.length; j++) {
+      if (j !== i) drawFill(tCtx, j, 1);
+    }
+    tCtx.globalCompositeOperation = 'source-over';
+
+    // 정리된 stroke를 메인에 합성
+    ctx.drawImage(tmpStroke, 0, 0);
+  }
 }
 
 // 버퍼 비우기
@@ -2940,11 +2948,11 @@ function _finishShapeMerge() {
   var tileH = pureMaxY - pureMinY;
   if (tileW <= 0 || tileH <= 0) return;
 
-  // 2. stroke/jitter 패딩 계산 (병합은 stroke 2×로 그리므로 외부 확장이 strokePx)
+  // 2. stroke/jitter 패딩 계산 (개별 배치와 동일한 공식)
   var lastEntry = _shapeMergeBuffer[_shapeMergeBuffer.length - 1];
   var strokePx = (lastEntry.settings.strokeSize || 0) * compositeRatio;
   var jitterPx = (lastEntry.settings.sketchJitter || 0) * compositeRatio;
-  var pad = Math.ceil(strokePx + jitterPx * 1.5);
+  var pad = Math.ceil(strokePx / 2 + jitterPx * 1.5);
   if (pad < 1) pad = 0;
 
   // 3. 캔버스: 바운딩 + 패딩
@@ -2982,12 +2990,11 @@ function _finishShapeMerge() {
 
   var dataUrl = canvas.toDataURL('image/png');
 
-  // 6. 스테이징: padded mapCoords (캔버스 패딩을 mapCoords에 포함 → display scale = compositeRatio)
-  var padTiles = pad / scale;
+  // 6. 스테이징: unpadded mapCoords (개별 배치와 동일한 압축 비율)
   readSettingsFromDOM();
   var obj = {
     id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
-    mapCoords: { x: pureMinX - padTiles, y: pureMinY - padTiles, width: tileW + padTiles * 2, height: tileH + padTiles * 2 },
+    mapCoords: { x: pureMinX, y: pureMinY, width: tileW, height: tileH },
     angle: 0,
     imageDataUrl: dataUrl,
     settings: {
@@ -3392,7 +3399,7 @@ function _renderShapeDataUrl(mapCoords) {
   canvas.height = ch;
   var ctx = canvas.getContext('2d');
   _renderShapeToCtx(ctx, _shapeSettings.shapeType, pad, pad, cw - pad * 2, ch - pad * 2, scaledSettings);
-  return { canvas: canvas, dataUrl: canvas.toDataURL('image/png'), pad: pad };
+  return { canvas: canvas, dataUrl: canvas.toDataURL('image/png') };
 }
 
 // _stageShapeObject: 도형을 stageObject 경로로 배치 (이미지 도구와 동일 구조)
@@ -3419,18 +3426,9 @@ function _stageShapeObject(screenRect, initialAngle) {
 
   readSettingsFromDOM();
 
-  // padded mapCoords: 캔버스 패딩을 mapCoords에 포함 → display scale = compositeRatio 정확히 일치
-  var padTiles = rendered.pad / COMPOSITE_PX_PER_TILE;
-  var paddedMC = {
-    x: mapCoords.x - padTiles,
-    y: mapCoords.y - padTiles,
-    width: mapCoords.width + padTiles * 2,
-    height: mapCoords.height + padTiles * 2
-  };
-
   var obj = {
     id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
-    mapCoords: paddedMC,
+    mapCoords: mapCoords,
     angle: initialAngle || 0,
     imageDataUrl: rendered.dataUrl,
     settings: {
