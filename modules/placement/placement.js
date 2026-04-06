@@ -2778,7 +2778,8 @@ function _redrawShapeMergePreview() {
   var tCtx = tmpCvs.getContext('2d');
   tCtx.fillStyle = strokeColor;
 
-  var halfS = strokeW / 2;
+  // strokeW 전체를 border strip 두께로 사용 (개별 배치와 동일한 시각적 두께)
+  var bw = strokeW;
   for (var key in occupied) {
     var parts = key.split(',');
     var cx = parseInt(parts[0]), cy = parseInt(parts[1]);
@@ -2791,24 +2792,20 @@ function _redrawShapeMergePreview() {
     var noRight = !occupied[(cx + 1) + ',' + cy];
 
     // 4방향 경계 (안쪽 border strip)
-    if (noTop)   tCtx.fillRect(bx, by, ss, halfS);
-    if (noBot)   tCtx.fillRect(bx, by + ss - halfS, ss, halfS);
-    if (noLeft)  tCtx.fillRect(bx, by, halfS, ss);
-    if (noRight) tCtx.fillRect(bx + ss - halfS, by, halfS, ss);
+    if (noTop)   tCtx.fillRect(bx, by, ss, bw);
+    if (noBot)   tCtx.fillRect(bx, by + ss - bw, ss, bw);
+    if (noLeft)  tCtx.fillRect(bx, by, bw, ss);
+    if (noRight) tCtx.fillRect(bx + ss - bw, by, bw, ss);
 
     // 대각선 코너 채우기: L자 꺾이는 부분의 빈 모서리
-    // 좌상 코너: 위와 왼쪽은 점유, 대각선(좌상)은 비점유
     if (!noTop && !noLeft && !occupied[(cx - 1) + ',' + (cy - 1)])
-      tCtx.fillRect(bx, by, halfS, halfS);
-    // 우상 코너
+      tCtx.fillRect(bx, by, bw, bw);
     if (!noTop && !noRight && !occupied[(cx + 1) + ',' + (cy - 1)])
-      tCtx.fillRect(bx + ss - halfS, by, halfS, halfS);
-    // 좌하 코너
+      tCtx.fillRect(bx + ss - bw, by, bw, bw);
     if (!noBot && !noLeft && !occupied[(cx - 1) + ',' + (cy + 1)])
-      tCtx.fillRect(bx, by + ss - halfS, halfS, halfS);
-    // 우하 코너
+      tCtx.fillRect(bx, by + ss - bw, bw, bw);
     if (!noBot && !noRight && !occupied[(cx + 1) + ',' + (cy + 1)])
-      tCtx.fillRect(bx + ss - halfS, by + ss - halfS, halfS, halfS);
+      tCtx.fillRect(bx + ss - bw, by + ss - bw, bw, bw);
   }
 
   // 2c) 메인 캔버스에 합성 (strokeOpacity 적용)
@@ -2985,7 +2982,8 @@ function _finishShapeMerge() {
     var tCtx = tmpCvs.getContext('2d');
     tCtx.fillStyle = strokeColor;
 
-    var halfS = strokeW / 2;
+    // strokeW 전체를 border strip 두께로 사용 (개별 배치와 동일한 시각적 두께)
+    var bw = strokeW;
     for (var key in occupied) {
       var parts = key.split(',');
       var cx = parseInt(parts[0]), cy = parseInt(parts[1]);
@@ -2997,20 +2995,20 @@ function _finishShapeMerge() {
       var noLeft = !occupied[(cx - 1) + ',' + cy];
       var noRight = !occupied[(cx + 1) + ',' + cy];
 
-      if (noTop)   tCtx.fillRect(bx, by, scale, halfS);
-      if (noBot)   tCtx.fillRect(bx, by + scale - halfS, scale, halfS);
-      if (noLeft)  tCtx.fillRect(bx, by, halfS, scale);
-      if (noRight) tCtx.fillRect(bx + scale - halfS, by, halfS, scale);
+      if (noTop)   tCtx.fillRect(bx, by, scale, bw);
+      if (noBot)   tCtx.fillRect(bx, by + scale - bw, scale, bw);
+      if (noLeft)  tCtx.fillRect(bx, by, bw, scale);
+      if (noRight) tCtx.fillRect(bx + scale - bw, by, bw, scale);
 
       // 대각선 코너 채우기
       if (!noTop && !noLeft && !occupied[(cx - 1) + ',' + (cy - 1)])
-        tCtx.fillRect(bx, by, halfS, halfS);
+        tCtx.fillRect(bx, by, bw, bw);
       if (!noTop && !noRight && !occupied[(cx + 1) + ',' + (cy - 1)])
-        tCtx.fillRect(bx + scale - halfS, by, halfS, halfS);
+        tCtx.fillRect(bx + scale - bw, by, bw, bw);
       if (!noBot && !noLeft && !occupied[(cx - 1) + ',' + (cy + 1)])
-        tCtx.fillRect(bx, by + scale - halfS, halfS, halfS);
+        tCtx.fillRect(bx, by + scale - bw, bw, bw);
       if (!noBot && !noRight && !occupied[(cx + 1) + ',' + (cy + 1)])
-        tCtx.fillRect(bx + scale - halfS, by + scale - halfS, halfS, halfS);
+        tCtx.fillRect(bx + scale - bw, by + scale - bw, bw, bw);
     }
 
     ctx.save();
