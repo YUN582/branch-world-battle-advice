@@ -2913,20 +2913,16 @@ function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
     });
   }
 
-  // ── 병합 알고리즘: 합산 실루엣 기반 외곽 stroke ──
-  // 1) 모든 fill을 메인 캔버스에 그리기
-  // 2) 모든 도형의 fill 합산으로 "fill 실루엣(union)" 생성
-  // 3) 모든 도형의 stroke를 임시 캔버스에 전부 그림
-  // 4) fill 실루엣을 확장(lineWidth만큼 inset)하여 "내부 마스크" 생성 → stroke에서 dest-out
-  //    = 외곽 경계 stroke만 남김 (겹치는 영역도 외곽이면 보존)
-  // 5) 정리된 stroke를 메인에 합성
+  // ── 병합 알고리즘: stroke → fill 덮기 방식 ──
+  // 개별 배치에서 stroke는 경로 양쪽으로 그려지고, fill이 내부 절반을 덮어서
+  // 시각적으로는 외부 절반만 보임. 동일한 원리를 병합에 적용:
+  // 1) 모든 stroke를 합산하여 그림 (1× 너비)
+  // 2) fill 합산 실루엣으로 내부 경계 stroke만 제거
+  // 3) 정리된 stroke를 메인에 그림 (아래 레이어)
+  // 4) 모든 fill을 메인에 그려서 stroke 내부 절반을 자연스럽게 덮음
+  // → 결과: 외부 절반만 보임 = 개별 배치와 동일한 두께
 
-  // Step 1: 모든 fill 그리기
-  for (var i = 0; i < entries.length; i++) {
-    drawFill(ctx, i);
-  }
-
-  // Step 2: fill 실루엣 (모든 도형의 합산 fill — alpha=1, 색은 검정)
+  // Step 1: fill 실루엣 (모든 도형의 합산 — alpha=1)
   var silCanvas = document.createElement('canvas');
   silCanvas.width = cw; silCanvas.height = ch;
   var silCtx = silCanvas.getContext('2d');
@@ -2934,21 +2930,26 @@ function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
     drawFill(silCtx, i, 1);
   }
 
-  // Step 3: 모든 도형의 stroke를 모아서 그리기 (2× 너비 — dest-out으로 내부 절반 제거 후 1×가 됨)
+  // Step 2: 모든 stroke를 합산 (1× 너비)
   var strokeCanvas = document.createElement('canvas');
   strokeCanvas.width = cw; strokeCanvas.height = ch;
   var sCtx = strokeCanvas.getContext('2d');
   for (var i = 0; i < entries.length; i++) {
-    drawStroke(sCtx, i, 2);
+    drawStroke(sCtx, i);
   }
 
-  // Step 4: fill 실루엣으로 stroke 내부를 제거 → 외곽만 남김
+  // Step 3: fill 실루엣으로 내부 경계 stroke 제거
   sCtx.globalCompositeOperation = 'destination-out';
   sCtx.drawImage(silCanvas, 0, 0);
   sCtx.globalCompositeOperation = 'source-over';
 
-  // Step 5: 정리된 외곽 stroke를 메인에 합성
+  // Step 4: 정리된 stroke를 메인에 합성 (fill 아래 레이어)
   ctx.drawImage(strokeCanvas, 0, 0);
+
+  // Step 5: 모든 fill을 메인에 그려서 stroke 내부 절반을 자연스럽게 덮음
+  for (var i = 0; i < entries.length; i++) {
+    drawFill(ctx, i);
+  }
 }
 
 // 버퍼 비우기
