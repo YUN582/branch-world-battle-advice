@@ -2790,22 +2790,44 @@ function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
   }
 
   // ── "하나의 도형" 병합 알고리즘 ──
-  // 모든 도형을 합체된 하나의 실루엣으로 취급:
-  // 1) tmp에 모든 fill+stroke 합성 (전체 실루엣)
-  // 2) 모든 fill 영역으로 destination-out → 내부 stroke 전부 제거 → 외곽 윤곽선만 남음
-  // 3) 메인 ctx에 외곽 윤곽선 그리기
-  // 4) destination-over로 fill을 윤곽선 뒤에 깔기
+  // fill은 jitter 없이 매끄럽게, stroke만 jitter 적용
+  // → dest-out 마스크와 fill 경계가 정확히 일치 → 빈 공간 없음
+  //
+  // 1) tmp에 fill(매끄러운) + stroke(떨림 포함) 합성
+  // 2) fill(매끄러운)으로 destination-out → 외곽 stroke만 남음
+  // 3) 메인 ctx에 외곽 stroke 그리기
+  // 4) destination-over로 fill(매끄러운)을 stroke 뒤에 깔기
 
   var tmp = document.createElement('canvas');
   tmp.width = cw; tmp.height = ch;
   var tCtx = tmp.getContext('2d');
 
-  // Step 1: 모든 도형의 fill+stroke을 한 캔버스에 합성 (전체 실루엣)
+  // Step 1a: 모든 도형의 fill을 jitter 없이 그리기 (매끄러운 채우기)
   for (var i = 0; i < entries.length; i++) {
-    renderRotated(tCtx, entries[i], entries[i].scaledSettings);
+    var ei = entries[i];
+    var si = ei.scaledSettings;
+    if (si.fillOpacity > 0) {
+      var cleanFill = {};
+      for (var k in si) cleanFill[k] = si[k];
+      cleanFill.strokeSize = 0;
+      cleanFill.sketchJitter = 0;
+      renderRotated(tCtx, ei, cleanFill);
+    }
   }
 
-  // Step 2: 모든 도형의 fill 영역으로 destination-out → fill 내부 stroke 전부 제거
+  // Step 1b: 모든 도형의 stroke를 그리기 (jitter 적용, fill 없이)
+  for (var i = 0; i < entries.length; i++) {
+    var ei = entries[i];
+    var si = ei.scaledSettings;
+    if (si.strokeSize > 0 && si.strokeOpacity > 0) {
+      var strokeOnly = {};
+      for (var k in si) strokeOnly[k] = si[k];
+      strokeOnly.fillOpacity = 0;
+      renderRotated(tCtx, ei, strokeOnly);
+    }
+  }
+
+  // Step 2: fill(매끄러운, jitter 없음)으로 destination-out → 외곽 stroke만 남김
   tCtx.globalCompositeOperation = 'destination-out';
   for (var j = 0; j < entries.length; j++) {
     var ej = entries[j];
@@ -2815,24 +2837,26 @@ function _renderMergedShapesToCtx(ctx, cw, ch, entries) {
       for (var k in sj) fillMask[k] = sj[k];
       fillMask.strokeSize = 0;
       fillMask.fillOpacity = 1;
+      fillMask.sketchJitter = 0;
       renderRotated(tCtx, ej, fillMask);
     }
   }
   tCtx.globalCompositeOperation = 'source-over';
 
-  // Step 3: 외곽 윤곽선을 메인 ctx에 그리기
+  // Step 3: 외곽 stroke를 메인 ctx에 그리기
   ctx.drawImage(tmp, 0, 0);
 
-  // Step 4: fill을 윤곽선 뒤에 깔기 (destination-over)
+  // Step 4: fill(매끄러운)을 stroke 뒤에 깔기 (destination-over)
   ctx.globalCompositeOperation = 'destination-over';
   for (var fi = 0; fi < entries.length; fi++) {
     var ef = entries[fi];
     var sf = ef.scaledSettings;
     if (sf.fillOpacity > 0) {
-      var fillOnly = {};
-      for (var k2 in sf) fillOnly[k2] = sf[k2];
-      fillOnly.strokeSize = 0;
-      renderRotated(ctx, ef, fillOnly);
+      var fillBehind = {};
+      for (var k2 in sf) fillBehind[k2] = sf[k2];
+      fillBehind.strokeSize = 0;
+      fillBehind.sketchJitter = 0;
+      renderRotated(ctx, ef, fillBehind);
     }
   }
   ctx.globalCompositeOperation = 'source-over';
@@ -2925,12 +2949,11 @@ function _finishShapeMerge() {
 
   var dataUrl = canvas.toDataURL('image/png');
 
-  // 6. 스테이징: 패딩 포함 mapCoords
-  var padTiles = pad / scale;
+  // 6. 스테이징: unpadded mapCoords (캨버스 패딩은 object-fit:fill로 흡수, 개별 배치와 동일)
   readSettingsFromDOM();
   var obj = {
     id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
-    mapCoords: { x: pureMinX - padTiles, y: pureMinY - padTiles, width: tileW + padTiles * 2, height: tileH + padTiles * 2 },
+    mapCoords: { x: pureMinX, y: pureMinY, width: tileW, height: tileH },
     angle: 0,
     imageDataUrl: dataUrl,
     settings: {
