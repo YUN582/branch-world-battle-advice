@@ -1630,7 +1630,8 @@ var _shapeMergeBuffer = [];        // { mapCoords, shapeType, settings(복제) }
 var _shapeMergeCanvas = null;      // 화면 위 프리뷰 캔버스 (fixed overlay)
 var _shapeMergeCtx = null;         // 프리뷰 캔버스 context
 var _shapeMergeCachedCanvas = null; // 병합 렌더링 캐시 캔버스
-var _shapeMergeCachedBounds = null; // 캐시 바운딩 박스 (패딩 포함, 맵 좌표)
+var _shapeMergeCachedBounds = null; // 순수 도형 영역 바운딩 박스 (패딩 미포함, 맵 좌표) — 미리보기+스테이징용
+var _shapeMergePaddedBounds = null; // 패딩 포함 바운딩 박스 — 캔버스 렌더링용
 
 
 // ── DOM 요소 ────────────────────────────────────────────────────
@@ -2676,6 +2677,7 @@ function _cleanupShapeMerge() {
   _shapeMergeBuffer = [];
   _shapeMergeCachedCanvas = null;
   _shapeMergeCachedBounds = null;
+  _shapeMergePaddedBounds = null;
   _removeShapeMergeCanvas();
 }
 
@@ -2710,27 +2712,35 @@ function _addShapeToMergeBuffer(screenRect, angle) {
 function _rebuildShapeMergeCache() {
   _shapeMergeCachedCanvas = null;
   _shapeMergeCachedBounds = null;
+  _shapeMergePaddedBounds = null;
   if (_shapeMergeBuffer.length === 0) return;
 
   var compositeRatio = COMPOSITE_PX_PER_TILE / CELL_PX; // 2
 
-  // 1. 전체 바운딩 박스 (타일 좌표, 패딩 포함, 회전 반영)
+  // 1. 바운딩 박스 계산: 패딩 포함(캔버스용) + 패딩 미포함(미리보기/스테이징용, 개별 배치와 동일)
   var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  var pureMinX = Infinity, pureMinY = Infinity, pureMaxX = -Infinity, pureMaxY = -Infinity;
   _shapeMergeBuffer.forEach(function(entry) {
     var mc = entry.mapCoords;
     var padTiles = ((entry.settings.strokeSize || 0) / 2 + (entry.settings.sketchJitter || 0) * 1.5) / CELL_PX;
     var aabb = _rotatedAABB(mc.x, mc.y, mc.width, mc.height, entry.angle || 0);
+    // 패딩 포함 (캔버스 전체 영역)
     if (aabb.minX - padTiles < minX) minX = aabb.minX - padTiles;
     if (aabb.minY - padTiles < minY) minY = aabb.minY - padTiles;
     if (aabb.maxX + padTiles > maxX) maxX = aabb.maxX + padTiles;
     if (aabb.maxY + padTiles > maxY) maxY = aabb.maxY + padTiles;
+    // 패딩 미포함 (순수 도형 영역)
+    if (aabb.minX < pureMinX) pureMinX = aabb.minX;
+    if (aabb.minY < pureMinY) pureMinY = aabb.minY;
+    if (aabb.maxX > pureMaxX) pureMaxX = aabb.maxX;
+    if (aabb.maxY > pureMaxY) pureMaxY = aabb.maxY;
   });
 
   var totalW = maxX - minX;
   var totalH = maxY - minY;
   if (totalW <= 0 || totalH <= 0) return;
 
-  // 2. 고해상도 합성 캔버스
+  // 2. 고해상도 합성 캔버스 (패딩 포함 크기)
   var cw = Math.ceil(totalW * COMPOSITE_PX_PER_TILE);
   var ch = Math.ceil(totalH * COMPOSITE_PX_PER_TILE);
   var canvas = document.createElement('canvas');
@@ -2738,7 +2748,7 @@ function _rebuildShapeMergeCache() {
   canvas.height = ch;
   var ctx = canvas.getContext('2d');
 
-  // 3. 병합 렌더링 엔트리
+  // 3. 병합 렌더링 엔트리 (패딩 포함 원점 기준)
   var entries = _shapeMergeBuffer.map(function(entry) {
     var mc = entry.mapCoords;
     var scaledSettings = {};
@@ -2759,7 +2769,13 @@ function _rebuildShapeMergeCache() {
   _renderMergedShapesToCtx(ctx, cw, ch, entries);
 
   _shapeMergeCachedCanvas = canvas;
-  _shapeMergeCachedBounds = { x: minX, y: minY, width: totalW, height: totalH };
+  // 순수 도형 영역 (개별 배치와 크기 일치시키기 위해 unpadded)
+  _shapeMergeCachedBounds = {
+    x: pureMinX, y: pureMinY,
+    width: pureMaxX - pureMinX, height: pureMaxY - pureMinY
+  };
+  // 패딩 포함 영역 (캔버스 실제 범위)
+  _shapeMergePaddedBounds = { x: minX, y: minY, width: totalW, height: totalH };
 }
 
 // 프리뷰 캔버스에 캐시된 병합 이미지 1장만 그리기 (줌/팬 시에도 경량)
@@ -2776,7 +2792,7 @@ function _redrawShapeMergePreview() {
   var zoom = getZoomScale();
   if (!origin || !zoom) return;
 
-  // 패딩 포함 좌표로 그리기 (최종 배치와 동일한 비율)
+  // 순수 도형 영역(unpadded) 크기로 그리기 — 개별 배치의 object-fit:fill과 동일한 압축 효과
   var b = _shapeMergeCachedBounds;
   var sx = origin.x + b.x * CELL_PX * zoom;
   var sy = origin.y + b.y * CELL_PX * zoom;
@@ -2870,6 +2886,7 @@ function _clearShapeMergeBuffer() {
   _shapeMergeBuffer = [];
   _shapeMergeCachedCanvas = null;
   _shapeMergeCachedBounds = null;
+  _shapeMergePaddedBounds = null;
   _redrawShapeMergePreview();
   updateConfirmBar();
 }
@@ -2889,17 +2906,23 @@ function _finishShapeMerge() {
 
   var compositeRatio = COMPOSITE_PX_PER_TILE / CELL_PX; // 2
 
-  // 1. 전체 바운딩 박스 (타일 좌표) 계산 (패딩 포함, 회전 반영)
+  // 1. 바운딩 박스 계산: 패딩 포함(캔버스용) + 패딩 미포함(mapCoords용, 개별 배치와 동일)
   var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  var pureMinX = Infinity, pureMinY = Infinity, pureMaxX = -Infinity, pureMaxY = -Infinity;
   _shapeMergeBuffer.forEach(function(entry) {
     var mc = entry.mapCoords;
-    // 스트로크 + 스케치 떨림 패딩 (타일 단위)
     var padTiles = ((entry.settings.strokeSize || 0) / 2 + (entry.settings.sketchJitter || 0) * 1.5) / CELL_PX;
     var aabb = _rotatedAABB(mc.x, mc.y, mc.width, mc.height, entry.angle || 0);
+    // 패딩 포함 (캔버스 전체 영역)
     if (aabb.minX - padTiles < minX) minX = aabb.minX - padTiles;
     if (aabb.minY - padTiles < minY) minY = aabb.minY - padTiles;
     if (aabb.maxX + padTiles > maxX) maxX = aabb.maxX + padTiles;
     if (aabb.maxY + padTiles > maxY) maxY = aabb.maxY + padTiles;
+    // 패딩 미포함 (순수 도형 영역)
+    if (aabb.minX < pureMinX) pureMinX = aabb.minX;
+    if (aabb.minY < pureMinY) pureMinY = aabb.minY;
+    if (aabb.maxX > pureMaxX) pureMaxX = aabb.maxX;
+    if (aabb.maxY > pureMaxY) pureMaxY = aabb.maxY;
   });
 
   var totalW = maxX - minX;
@@ -2936,11 +2959,11 @@ function _finishShapeMerge() {
 
   var dataUrl = canvas.toDataURL('image/png');
 
-  // 4. 단일 오브젝트로 스테이징 (패딩 포함 — 캔버스 비율 = div 비율)
+  // 4. 단일 오브젝트로 스테이징 (unpadded mapCoords — 개별 배치와 동일하게 object-fit:fill이 패딩 압축)
   readSettingsFromDOM();
   var obj = {
     id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
-    mapCoords: { x: minX, y: minY, width: totalW, height: totalH },
+    mapCoords: { x: pureMinX, y: pureMinY, width: pureMaxX - pureMinX, height: pureMaxY - pureMinY },
     angle: 0,
     imageDataUrl: dataUrl,
     settings: {
@@ -2959,6 +2982,7 @@ function _finishShapeMerge() {
   _shapeMergeBuffer = [];
   _shapeMergeCachedCanvas = null;
   _shapeMergeCachedBounds = null;
+  _shapeMergePaddedBounds = null;
   _redrawShapeMergePreview();
   updateConfirmBar();
 }
