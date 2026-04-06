@@ -2704,6 +2704,7 @@ function _addShapeToMergeBuffer(screenRect, angle) {
   // 스탬프 미리보기용 dataUrl 갱신
   _shapePendingDataUrl = rendered.dataUrl;
 
+  _rebuildShapeMergeCache();
   _redrawShapeMergePreview();
   updateConfirmBar();
 }
@@ -2778,8 +2779,8 @@ function _rebuildShapeMergeCache() {
   _shapeMergePaddedBounds = { x: minX, y: minY, width: totalW, height: totalH };
 }
 
-// 프리뷰 캔버스에 각 도형을 개별 배치와 동일한 방식으로 그리기
-// → 개별 배치: unpadded div + padded img + object-fit:fill 시뮬레이션
+// 프리뷰 캔버스에 병합 캐시를 padded 영역에 1:1로 그리기
+// → 윤곽선 연결이 보이고, 각 도형의 절대 위치도 정확
 function _redrawShapeMergePreview() {
   if (!_shapeMergeCanvas || !_shapeMergeCtx) return;
   if (_shapeMergeCanvas.width !== window.innerWidth || _shapeMergeCanvas.height !== window.innerHeight) {
@@ -2787,36 +2788,19 @@ function _redrawShapeMergePreview() {
     _shapeMergeCanvas.height = window.innerHeight;
   }
   _shapeMergeCtx.clearRect(0, 0, _shapeMergeCanvas.width, _shapeMergeCanvas.height);
-  if (_shapeMergeBuffer.length === 0) return;
+  if (!_shapeMergeCachedCanvas || !_shapeMergePaddedBounds) return;
 
   var origin = getMapOriginOnScreen();
   var zoom = getZoomScale();
   if (!origin || !zoom) return;
 
-  // 각 도형을 개별적으로 그리기 (개별 배치 CSS와 동일한 결과)
-  for (var i = 0; i < _shapeMergeBuffer.length; i++) {
-    var entry = _shapeMergeBuffer[i];
-    var mc = entry.mapCoords;
-    var cvs = entry.canvas;
-    if (!cvs) continue;
-
-    // unpadded 맵 좌표 → 화면 좌표 (renderStagedItem과 동일)
-    var sx = origin.x + mc.x * CELL_PX * zoom;
-    var sy = origin.y + mc.y * CELL_PX * zoom;
-    var sw = mc.width * CELL_PX * zoom;
-    var sh = mc.height * CELL_PX * zoom;
-
-    // padded 캔버스를 unpadded 영역에 그리기 = object-fit:fill 시뮬레이션
-    if (entry.angle) {
-      _shapeMergeCtx.save();
-      _shapeMergeCtx.translate(sx + sw / 2, sy + sh / 2);
-      _shapeMergeCtx.rotate(entry.angle * Math.PI / 180);
-      _shapeMergeCtx.drawImage(cvs, -sw / 2, -sh / 2, sw, sh);
-      _shapeMergeCtx.restore();
-    } else {
-      _shapeMergeCtx.drawImage(cvs, sx, sy, sw, sh);
-    }
-  }
+  // padded bounds에 1:1 비율로 그리기 (비율 왜곡 없음)
+  var b = _shapeMergePaddedBounds;
+  var sx = origin.x + b.x * CELL_PX * zoom;
+  var sy = origin.y + b.y * CELL_PX * zoom;
+  var sw = b.width * CELL_PX * zoom;
+  var sh = b.height * CELL_PX * zoom;
+  _shapeMergeCtx.drawImage(_shapeMergeCachedCanvas, sx, sy, sw, sh);
 }
 
 // 병합 렌더링 공통: 여러 도형을 윤곽선 병합 방식으로 ctx에 그리기
@@ -2913,68 +2897,73 @@ function _clearShapeMergeBuffer() {
 function _undoShapeMerge() {
   if (_shapeMergeBuffer.length === 0) return;
   _shapeMergeBuffer.pop();
+  _rebuildShapeMergeCache();
   _redrawShapeMergePreview();
   updateConfirmBar();
 }
 
-// 병합 완료: 모든 버퍼 도형 → 하나의 PNG → 스테이징
-// 개별 배치와 동일한 방식: 각 도형의 padded 캔버스를 unpadded 영역에 그려서 합침
+// 병합 완료: 모든 버퍼 도형 → 윤곽선 병합 → 하나의 PNG → 스테이징
 function _finishShapeMerge() {
   if (_shapeMergeBuffer.length === 0) return;
 
-  // 1. 전체 unpadded 바운딩 박스 (mapCoords 기준, 회전 반영)
+  var compositeRatio = COMPOSITE_PX_PER_TILE / CELL_PX; // 2
+
+  // 1. 바운딩 박스: padded(캔버스) + unpadded(mapCoords)
+  var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   var pureMinX = Infinity, pureMinY = Infinity, pureMaxX = -Infinity, pureMaxY = -Infinity;
   _shapeMergeBuffer.forEach(function(entry) {
     var mc = entry.mapCoords;
+    var padTiles = ((entry.settings.strokeSize || 0) / 2 + (entry.settings.sketchJitter || 0) * 1.5) / CELL_PX;
     var aabb = _rotatedAABB(mc.x, mc.y, mc.width, mc.height, entry.angle || 0);
+    if (aabb.minX - padTiles < minX) minX = aabb.minX - padTiles;
+    if (aabb.minY - padTiles < minY) minY = aabb.minY - padTiles;
+    if (aabb.maxX + padTiles > maxX) maxX = aabb.maxX + padTiles;
+    if (aabb.maxY + padTiles > maxY) maxY = aabb.maxY + padTiles;
     if (aabb.minX < pureMinX) pureMinX = aabb.minX;
     if (aabb.minY < pureMinY) pureMinY = aabb.minY;
     if (aabb.maxX > pureMaxX) pureMaxX = aabb.maxX;
     if (aabb.maxY > pureMaxY) pureMaxY = aabb.maxY;
   });
 
-  var totalW = pureMaxX - pureMinX;
-  var totalH = pureMaxY - pureMinY;
-  if (totalW <= 0 || totalH <= 0) return;
+  var paddedW = maxX - minX;
+  var paddedH = maxY - minY;
+  if (paddedW <= 0 || paddedH <= 0) return;
 
-  // 2. 고해상도 합성 캔버스 (unpadded 영역 기준)
-  var cw = Math.ceil(totalW * COMPOSITE_PX_PER_TILE);
-  var ch = Math.ceil(totalH * COMPOSITE_PX_PER_TILE);
+  // 2. 고해상도 합성 캔버스 (padded 크기 — stroke가 잘리지 않도록)
+  var cw = Math.ceil(paddedW * COMPOSITE_PX_PER_TILE);
+  var ch = Math.ceil(paddedH * COMPOSITE_PX_PER_TILE);
   var canvas = document.createElement('canvas');
   canvas.width = cw;
   canvas.height = ch;
   var ctx = canvas.getContext('2d');
 
-  // 3. 각 도형의 padded 캔버스를 unpadded 영역에 그리기 (object-fit:fill 시뮬레이션)
-  for (var i = 0; i < _shapeMergeBuffer.length; i++) {
-    var entry = _shapeMergeBuffer[i];
+  // 3. 윤곽선 병합 렌더링 (padded 원점 기준)
+  var entries = _shapeMergeBuffer.map(function(entry) {
     var mc = entry.mapCoords;
-    var cvs = entry.canvas;
-    if (!cvs) continue;
-
-    var dx = (mc.x - pureMinX) * COMPOSITE_PX_PER_TILE;
-    var dy = (mc.y - pureMinY) * COMPOSITE_PX_PER_TILE;
-    var dw = mc.width * COMPOSITE_PX_PER_TILE;
-    var dh = mc.height * COMPOSITE_PX_PER_TILE;
-
-    if (entry.angle) {
-      ctx.save();
-      ctx.translate(dx + dw / 2, dy + dh / 2);
-      ctx.rotate(entry.angle * Math.PI / 180);
-      ctx.drawImage(cvs, -dw / 2, -dh / 2, dw, dh);
-      ctx.restore();
-    } else {
-      ctx.drawImage(cvs, dx, dy, dw, dh);
-    }
-  }
+    var scaledSettings = {};
+    for (var k in entry.settings) scaledSettings[k] = entry.settings[k];
+    scaledSettings.strokeSize = (entry.settings.strokeSize || 0) * compositeRatio;
+    scaledSettings.cornerRadius = (entry.settings.cornerRadius || 0) * compositeRatio;
+    scaledSettings.sketchJitter = (entry.settings.sketchJitter || 0) * compositeRatio;
+    return {
+      shapeType: entry.shapeType,
+      relX: (mc.x - minX) * COMPOSITE_PX_PER_TILE,
+      relY: (mc.y - minY) * COMPOSITE_PX_PER_TILE,
+      drawW: mc.width * COMPOSITE_PX_PER_TILE,
+      drawH: mc.height * COMPOSITE_PX_PER_TILE,
+      scaledSettings: scaledSettings,
+      angle: entry.angle || 0
+    };
+  });
+  _renderMergedShapesToCtx(ctx, cw, ch, entries);
 
   var dataUrl = canvas.toDataURL('image/png');
 
-  // 4. 단일 오브젝트로 스테이징 (unpadded mapCoords — 개별 배치와 동일)
+  // 4. 스테이징: unpadded mapCoords (개별 배치와 동일 — object-fit:fill이 패딩 압축)
   readSettingsFromDOM();
   var obj = {
     id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
-    mapCoords: { x: pureMinX, y: pureMinY, width: totalW, height: totalH },
+    mapCoords: { x: pureMinX, y: pureMinY, width: pureMaxX - pureMinX, height: pureMaxY - pureMinY },
     angle: 0,
     imageDataUrl: dataUrl,
     settings: {
