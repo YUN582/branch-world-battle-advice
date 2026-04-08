@@ -310,13 +310,13 @@
     if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey) {
       const val = (el.value || el.textContent || '').trim();
 
-      // /ㅇ 시스템 메시지 명령
-      const sysMatch = val.match(/^\/ㅇ\s+(.+)$/);
+      // /ㅇ 시스템 메시지 명령 (/d, /desc, /ㅇㄷㄴㅊ 별칭)
+      const sysMatch = val.match(/^\/(?:ㅇ|d|desc|ㅇㄷㄴㅊ)\s+([\s\S]+)$/);
       if (sysMatch) {
         e.preventDefault();
         e.stopImmediatePropagation();
         _guard = true; setNative(el, ''); _guard = false;
-        _sendSystemMessage(sysMatch[1]);
+        _sendSystemMessage(sysMatch[1].trim());
         return;
       }
 

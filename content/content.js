@@ -1677,10 +1677,11 @@ ${rows.join('\n')}
         styleEl = document.createElement('style');
         styleEl.id = _SYS_CENTER_ID;
         // 순수 CSS 구조 셀렉터 — JS 태깅 불필요, 사전적 적용
+        // .MuiDrawer-paper = 채팅 사이드바로 범위 한정 (프로필 다이얼로그 등 영향 방지)
         // :has(.MuiListItemText-secondary) = 채팅 메시지만 (BGM 리스트는 secondary 없음)
         // :not(:has(.MuiListItemAvatar-root img)) = 시스템 메시지 (아바타 img 없음)
         // visibility:hidden으로 레이아웃 높이 유지 (display:none은 scrollHeight 변동 → 진동)
-        const sel = '.MuiListItem-root:has(.MuiListItemText-secondary):not(:has(.MuiListItemAvatar-root img))';
+        const sel = '.MuiDrawer-paper .MuiListItem-root:has(.MuiListItemText-secondary):not(:has(.MuiListItemAvatar-root img))';
         styleEl.textContent = `
 /* CE: 시스템 메시지 가운데 정렬 (순수 CSS, 태깅 불필요) */
 ${sel} .MuiListItemText-root {

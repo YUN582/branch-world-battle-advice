@@ -446,6 +446,8 @@ body.bwbr-placement-noselect * {
   user-select: none !important;
 }
 /* 텍스트 편집기 내부는 선택 허용 */
+body.bwbr-placement-noselect .bwbr-text-editor-wrap,
+body.bwbr-placement-noselect .bwbr-text-editor-wrap *,
 body.bwbr-placement-noselect .bwbr-text-editor,
 body.bwbr-placement-noselect .bwbr-text-editor * {
   -webkit-user-select: text !important;
@@ -705,9 +707,10 @@ body.bwbr-placement-noselect .bwbr-text-editor * {
 /* ── 도형 연속 모드 프리뷰 캔버스 ──────────────── */
 
 .bwbr-shape-merge-canvas {
-  position: absolute;
+  position: fixed;
   pointer-events: none;
   opacity: 0.5;
+  z-index: 103;
 }
 
 /* ── 도형 연속/개별 토글 ───────────────────────── */
@@ -2674,17 +2677,17 @@ function _setShapeMergeMode(on) {
 
 function _initShapeMergeCanvas() {
   if (_shapeMergeCanvas) return;
-  var zoomEl = getZoomContainer();
-  if (!zoomEl) return;
   _shapeMergeCanvas = document.createElement('canvas');
   _shapeMergeCanvas.className = 'bwbr-shape-merge-canvas';
   _shapeMergeCanvas.width = 1;
   _shapeMergeCanvas.height = 1;
   _shapeMergeCtx = _shapeMergeCanvas.getContext('2d');
-  zoomEl.appendChild(_shapeMergeCanvas);
+  document.body.appendChild(_shapeMergeCanvas);
+  _startMergeZoomWatch();
 }
 
 function _removeShapeMergeCanvas() {
+  _stopMergeZoomWatch();
   if (_shapeMergeCanvas && _shapeMergeCanvas.parentNode) {
     _shapeMergeCanvas.parentNode.removeChild(_shapeMergeCanvas);
   }
@@ -2692,10 +2695,47 @@ function _removeShapeMergeCanvas() {
   _shapeMergeCtx = null;
 }
 
+// 줄/패 변경 시 캐버스 위치 추적 (rAF 루프)
+var _mergeZoomWatchId = null;
+var _mergeBBox = null; // { minX, minY, tileW, tileH } in tile units
+
+function _startMergeZoomWatch() {
+  _stopMergeZoomWatch();
+  function tick() {
+    _invalidateZoomCache();
+    _positionMergeCanvas();
+    _mergeZoomWatchId = requestAnimationFrame(tick);
+  }
+  _mergeZoomWatchId = requestAnimationFrame(tick);
+}
+
+function _stopMergeZoomWatch() {
+  if (_mergeZoomWatchId) {
+    cancelAnimationFrame(_mergeZoomWatchId);
+    _mergeZoomWatchId = null;
+  }
+}
+
+function _positionMergeCanvas() {
+  if (!_shapeMergeCanvas || !_mergeBBox) return;
+  var origin = getMapOriginOnScreen();
+  if (!origin) return;
+  var zoom = getZoomScale();
+  var left = origin.x + _mergeBBox.minX * CELL_PX * zoom;
+  var top = origin.y + _mergeBBox.minY * CELL_PX * zoom;
+  var w = _mergeBBox.tileW * CELL_PX * zoom;
+  var h = _mergeBBox.tileH * CELL_PX * zoom;
+  _shapeMergeCanvas.style.left = left + 'px';
+  _shapeMergeCanvas.style.top = top + 'px';
+  _shapeMergeCanvas.style.width = w + 'px';
+  _shapeMergeCanvas.style.height = h + 'px';
+}
+
 
 
 function _cleanupShapeMerge() {
   _shapeMergeBuffer = [];
+  _mergeBBox = null;
   _removeShapeMergeCanvas();
 }
 
@@ -2722,19 +2762,13 @@ function _addShapeToMergeBuffer(screenRect, angle) {
   updateConfirmBar();
 }
 
-// 프리뷰 캔버스: 도형 병합 렌더링 (줌 컨테이너 내부, 맵 좌표계)
-// 줌/패닝 시 CSS transform으로 자연스럽게 따라감 → 매 프레임 재렌더 불필요
+// 프리뷰 캔버스: 도형 병합 렌더링 (position: fixed, rAF로 줌/패닝 추적)
 function _redrawShapeMergePreview() {
   if (!_shapeMergeCanvas || !_shapeMergeCtx) return;
 
-  // 줌 컨테이너 교체 감지 (React가 DOM 교체할 수 있음)
-  var zoomEl = getZoomContainer();
-  if (zoomEl && _shapeMergeCanvas.parentNode !== zoomEl) {
-    zoomEl.appendChild(_shapeMergeCanvas);
-  }
-
   if (_shapeMergeBuffer.length === 0) {
     _shapeMergeCanvas.style.display = 'none';
+    _mergeBBox = null;
     return;
   }
   _shapeMergeCanvas.style.display = '';
@@ -2764,13 +2798,11 @@ function _redrawShapeMergePreview() {
   var tileH = maxY - minY;
   if (tileW <= 0 || tileH <= 0) return;
 
-  // 캔버스 위치/크기 설정 (맵 좌표계)
+  // 캔버스 렌더링 해상도 설정 (화면 위치는 rAF에서 _positionMergeCanvas가 처리)
   var cw = tileW * scale;
   var ch = tileH * scale;
-  _shapeMergeCanvas.style.left = (minX * CELL_PX) + 'px';
-  _shapeMergeCanvas.style.top = (minY * CELL_PX) + 'px';
-  _shapeMergeCanvas.style.width = (tileW * CELL_PX) + 'px';
-  _shapeMergeCanvas.style.height = (tileH * CELL_PX) + 'px';
+  _mergeBBox = { minX: minX, minY: minY, tileW: tileW, tileH: tileH };
+  _positionMergeCanvas(); // 즉시 위치 갱신
   if (_shapeMergeCanvas.width !== cw || _shapeMergeCanvas.height !== ch) {
     _shapeMergeCanvas.width = cw;
     _shapeMergeCanvas.height = ch;
