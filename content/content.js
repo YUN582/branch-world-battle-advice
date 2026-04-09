@@ -1636,11 +1636,18 @@ ${rows.join('\n')}
       const item = items[i];
       const textEl = item.querySelector('.MuiListItemText-secondary');
       if (!textEl) continue;
-      if (textEl.getAttribute('data-bwbr-md') === '1') continue;
       const msgId = item.getAttribute('data-msg-id');
+      // 탭 전환 시 React DOM 재활용 대응: 이미 처리된 msgId와 현재 msgId 비교
+      const mdDone = textEl.getAttribute('data-bwbr-md');
+      if (mdDone === msgId) continue;  // 동일 메시지 — 스킵
+      if (mdDone && mdDone !== msgId) {
+        // DOM 노드가 다른 메시지로 재활용됨 — 마크다운 흔적 제거
+        // React가 textContent를 이미 갱신했으므로 innerHTML 초기화는 불필요
+        textEl.removeAttribute('data-bwbr-md');
+      }
       const raw = textEl.textContent || '';
       if (!_hasMarkdown(raw)) {
-        textEl.setAttribute('data-bwbr-md', '1');
+        textEl.setAttribute('data-bwbr-md', msgId);
         continue;
       }
       // 캐시 확인
@@ -1653,7 +1660,7 @@ ${rows.join('\n')}
         _mdCache.set(msgId, { raw, html });
       }
       textEl.innerHTML = html;
-      textEl.setAttribute('data-bwbr-md', '1');
+      textEl.setAttribute('data-bwbr-md', msgId);
     }
     _mdProcessing = false;
   }
