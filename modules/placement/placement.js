@@ -7307,10 +7307,12 @@ function setupSelectModeHandlers() {
     if (e.target.closest('.bwbr-placement-toolbar') ||
         e.target.closest('.bwbr-place-confirm-bar') || e.target.closest('.bwbr-place-align-bar') ||
         e.target.closest('.bwbr-text-toolbar') ||
-        e.target.closest('.bwbr-text-editor-wrap') ||
         e.target.closest('.bwbr-place-confirm-dialog-overlay') ||
         e.target.closest('.bwbr-color-popup') ||
         e.target.closest('.bwbr-placement-overlay')) return;
+
+    // 텍스트 에디터 클릭: ccfolia 핸들러 차단 (패닝 방지) but 기본 캐럿 동작 유지
+    if (e.target.closest('.bwbr-text-editor-wrap')) { e.stopPropagation(); return; }
 
     // 편집 모드: 항상 좌클릭 패닝 차단
     if (_state.mode === 'edit') { e.stopImmediatePropagation(); return; }
@@ -7337,8 +7339,8 @@ function setupSelectModeHandlers() {
     // 패닝 차단은 pointerdown capture에서 이미 처리됨
     if (e.target.closest('.bwbr-resize-handle')) return;
 
-    // 텍스트 에디터 영역 클릭: 통과
-    if (e.target.closest('.bwbr-text-editor-wrap')) return;
+    // 텍스트 에디터 영역 클릭: ccfolia 핸들러 차단 but 기본 캐럿 동작 유지
+    if (e.target.closest('.bwbr-text-editor-wrap')) { e.stopPropagation(); return; }
 
     // 스테이징 아이템 클릭: 텍스트 편집 중이면 무시 (툴바 Z 아래 스테이지 관통 방지)
     var stagedEl = e.target.closest('.bwbr-staged-item');

@@ -149,7 +149,7 @@
     loading.textContent = '로딩 중...';
     player.appendChild(loading);
     
-    // sliderContainer 바로 위에 삽입
+    // 기준 요소 바로 위에 삽입
     container.parentNode.insertBefore(player, container);
 
     let uiBuilt = false;
@@ -413,7 +413,9 @@
       // 볼륨 슬라이더 확인 (추가 검증)
       const volInput = form.querySelector('input[name="volume"]');
       if (!volInput) return;
-      const sliderContainer = volInput.closest('.sc-fpAljo') || volInput.parentNode;
+      // 볼륨 슬라이더 컨테이너: MuiSlider-root의 부모 (styled-components 해시 의존 제거)
+      const sliderRoot = volInput.closest('.MuiSlider-root');
+      const sliderContainer = sliderRoot ? sliderRoot.parentElement : volInput.parentNode;
 
       _currentPopover = popoverNode;
 
@@ -430,7 +432,7 @@
 
         if (!url) return;
 
-        // 사운드 음량바 위에 재생바 넣기
+        // 사운드 볼륨바 위에 재생바 삽입
         buildPlayer(sliderContainer, url, volume);
         
         // 미리듣기 버튼은 숨기기
